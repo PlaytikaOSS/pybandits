@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pybandits.core &mdash; PyBandits 1.0 documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+</head>
+
+<body class="wy-body-for-nav">
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> PyBandits
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="pybandits.html">Multi-Armed Bandit Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="help.html">Help</a></li>
+<li class="toctree-l1"><a class="reference internal" href="authors.html">Authors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">PyBandits</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>pybandits.core</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/fullapi.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+
+
+<style>
+/* CSS overrides for sphinx_rtd_theme */
+
+/* 24px margin */
+.nbinput.nblast.container,
+.nboutput.nblast.container {
+    margin-bottom: 19px;  /* padding has already 5px */
+}
+
+/* ... except between code cells! */
+.nblast.container + .nbinput.container {
+    margin-top: -19px;
+}
+
+.admonition > p:before {
+    margin-right: 4px;  /* make room for the exclamation icon */
+}
+
+/* Fix math alignment, see https://github.com/rtfd/sphinx_rtd_theme/pull/686 */
+.math {
+    text-align: unset;
+}
+</style>
+<section id="pybandits-core">
+<h1>pybandits.core<a class="headerlink" href="#pybandits-core" title="Permalink to this headline"></a></h1>
+<section id="module-pybandits.core.smab">
+<span id="pybandits-core-smab"></span><h2>pybandits.core.smab<a class="headerlink" href="#module-pybandits.core.smab" title="Permalink to this headline"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.core.smab.Smab">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.core.smab.</span></span><span class="sig-name descname"><span class="pre">Smab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">action_ids</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">success_priors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">failure_priors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.smab.Smab" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>action_ids</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>) – List of possible actions</p></li>
+<li><p><strong>success_priors</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>int</em><em>]</em>) – Dictionary containing the prior number of positive feedback (successes) for each action. keys are
+action IDs and values are successes counts. If None, each action’s prior is set to 1 by default.
+Success counts must be integers and &gt; 0.</p></li>
+<li><p><strong>failure_priors</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>int</em><em>]</em>) – Dictionary containing the prior number of negative feedback (failures) for each action. keys are
+action IDs and values are failures counts. If None, each action’s prior is set to 1 by default.
+Failure counts must be integers and &gt; 0.</p></li>
+<li><p><strong>random_seed</strong> (<em>int</em>) – Seed for random state. If specified, the model outputs deterministic results.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.core.smab.Smab.batch_update">
+<span class="sig-name descname"><span class="pre">batch_update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.smab.Smab.batch_update" title="Permalink to this definition"></a></dt>
+<dd><p>This method updates the SMAB for several action IDs at once, iterating over the batch.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>batch</strong> (<em>List</em><em>[</em><em>dict</em><em>]</em>) – List of dicts in the form [{‘action_id’: &lt;str&gt;, ‘n_successes’: &lt;int&gt;, ‘n_failures’:&lt;int&gt;}]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.core.smab.Smab.predict">
+<span class="sig-name descname"><span class="pre">predict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">forbidden_actions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.smab.Smab.predict" title="Permalink to this definition"></a></dt>
+<dd><p>Predict the best actions by randomly drawing samples from a beta distribution for each possible action.
+The action with the highest value is recommended to the user as the ‘best action’ considering current
+information. The Beta distributions’ alpha and beta parameters for each action are its associated counts
+of success and failure, respectively.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_samples</strong> (<em>int</em>) – Number of samples to predict (default 1).</p></li>
+<li><p><strong>forbidden_actions</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>) – List of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
+consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
+Note that: actions = allowed_actions U forbidden_actions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>best_actions</strong> (<em>list</em>) – The best actions according to the model, i.e. the actions whose distribution gave the greater sample.</p></li>
+<li><p><strong>probs</strong> (<em>list</em>) – The probabilities to get a positive reward for each action.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.core.smab.Smab.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">action_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_successes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_failures</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.smab.Smab.update" title="Permalink to this definition"></a></dt>
+<dd><p>This method updates the SMAB with feedbacks for a given action. The action’s associated success (resp.
+failure) counter is incremented by the number of successes (resp. failures) received.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>action_id</strong> (<em>str</em>) – The ID of the action to update.</p></li>
+<li><p><strong>n_successes</strong> (<em>int</em>) – The number of successes received for action_id.</p></li>
+<li><p><strong>n_failures</strong> (<em>int</em>) – The number of failures received for action_id.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-pybandits.core.cmab">
+<span id="pybandits-core-cmab"></span><h2>pybandits.core.cmab<a class="headerlink" href="#module-pybandits.core.cmab" title="Permalink to this headline"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.core.cmab.Cmab">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.core.cmab.</span></span><span class="sig-name descname"><span class="pre">Cmab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_features</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">actions_ids</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params_sample</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mu_alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mu_betas</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_betas</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nu_alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nu_betas</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.cmab.Cmab" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Contextual Multi-Armed Bandit with binary rewards. It is based on Thompson Sampling with bayesian logistic
+regression. It assumes a prior distribution over the parameters and it computes the posterior reward
+distributions applying Bayes’theorem via Markov Chain Monte Carlo simulation (MCMC).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_features</strong> (<em>int</em>) – The number of contextual features.</p></li>
+<li><p><strong>actions_ids</strong> (<em>list of strings with length = n_actions</em>) – List of actions names.</p></li>
+<li><p><strong>params_sample</strong> (<em>dict</em>) – Sampling parameters for pm.sample function from pymc3.</p></li>
+<li><p><strong>n_jobs</strong> (<em>int</em>) – The number of jobs to run in parallel. If n_jobs &gt; 1, both the update() and predict() functions will be run with
+parallelization via the multiprocessing package.</p></li>
+<li><p><strong>mu_alpha</strong> (<em>dict</em>) – Mu (location) parameters for alpha prior Student’s t distribution. By default all mu=0.
+The keys of the dict must be the actions_ids, and the values are floats.
+e.g. mu={‘action1’: 0., ‘action2’: 0.} with n_actions=2.</p></li>
+<li><p><strong>mu_betas</strong> (<em>dict</em>) – Mu (location) parameters for betas prior Student’s t distributions. By default all mu=0.
+The keys of the dict must be the actions_ids, and the values are lists of floats with length=n_features.
+e.g. mu={‘action1’: [0., 0., 0.], ‘action2’: [0., 0., 0.]} with n_actions=2 and n_features=3.</p></li>
+<li><p><strong>sigma_alpha</strong> (<em>dict</em>) – Sigma (scale) parameters for alpha prior Student’s t distribution. By default all sigma=10.
+The keys of the dict must be the actions_ids, and the values are floats.
+e.g. sigma={‘action1’: 10., ‘action2’: 10.} with n_actions=2.</p></li>
+<li><p><strong>sigma_betas</strong> (<em>dict</em>) – Sigma (scale) parameters for betas prior Student’s t distributions. By default all sigma=10.
+The keys of the dict must be the actions_ids, and the values are lists of floats with length=n_features.
+e.g. sigma={‘action1’: [10., 10., 10.], ‘action2’: [10., 10., 10.]} with n_actions=2 and n_features=3.</p></li>
+<li><p><strong>nu_alpha</strong> (<em>dict</em>) – Nu (normality) parameters for alpha prior Student’s t distribution. By default all nu=5.
+The keys of the dict must be the actions_ids, and the values are floats.
+e.g. nu={‘action1’: 5., ‘action2’: 5.} with n_actions=2.</p></li>
+<li><p><strong>nu_betas</strong> (<em>dict</em>) – Nu (normality) parameters for betas prior Student’s t distributions. By default all nu=5.
+The keys of the dict must be the actions_ids, and the values are lists of floats with length=n_features.
+e.g. nu={‘action1’: [5., 5., 5.], ‘action2’: [5., 5., 5.]} with n_actions=2 and n_features=3.</p></li>
+<li><p><strong>random_seed</strong> (<em>int</em>) – Seed for random state. If specified, the model outputs deterministic results.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.core.cmab.Cmab.fast_predict">
+<span class="sig-name descname"><span class="pre">fast_predict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.cmab.Cmab.fast_predict" title="Permalink to this definition"></a></dt>
+<dd><p>Compute the posterior reward probability for all actions sampling coefficients from student-t distribution
+as a real time faster alternative to fast_sample_posterior_predictive. It returns the action with the highest
+probability.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>X</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>, </em><em>n_features</em><em>)</em>) – Matrix with contextual features.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>best_actions</strong> (<em>list of len (n_samples)</em>) – Best action per each sample, i.e. action with the highest probability to get a positive reward.</p></li>
+<li><p><strong>probs</strong> (<em>array_like of shape (n_actions, n_samples)</em>) – Reward probability for each action-sample pair</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.core.cmab.Cmab.predict">
+<span class="sig-name descname"><span class="pre">predict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.cmab.Cmab.predict" title="Permalink to this definition"></a></dt>
+<dd><p>Generate posterior predictive probability from a model given the trace and the context X. It returns the action
+with the highest probability. If n_jobs &gt; 1, the prediction for each model action will be run in parallel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>X</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>, </em><em>n_features</em><em>)</em>) – Matrix with contextual features.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>best_actions</strong> (<em>list of len (n_samples)</em>) – Best action per each sample, i.e. action with the highest probability to get a positive reward.</p></li>
+<li><p><strong>probs</strong> (<em>array_like of shape (n_actions, n_samples)</em>) – Reward probability for each action-sample pair</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.core.cmab.Cmab.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">actions</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rewards</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.cmab.Cmab.update" title="Permalink to this definition"></a></dt>
+<dd><p>Update internal state of the models. Compute posterior distributions using new data set (actions, rewards and
+context). If n_jobs &gt; 1, the models of each actions will be updated in parallel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>X</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>, </em><em>n_features</em><em>)</em>) – Matrix with contextual features.</p></li>
+<li><p><strong>actions</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>,</em><em>)</em>) – Array of recommended actions per each sample.</p></li>
+<li><p><strong>rewards</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>,</em><em>)</em>) – Array of boolean rewards (0 or 1) per each sample.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pybandits.core.cmab.check_context_matrix">
+<span class="sig-prename descclassname"><span class="pre">pybandits.core.cmab.</span></span><span class="sig-name descname"><span class="pre">check_context_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">context</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_features</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.core.cmab.check_context_matrix" title="Permalink to this definition"></a></dt>
+<dd><p>Check context matrix</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>X</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>, </em><em>n_features</em><em>)</em>) – Matrix with contextual features.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+<section id="pybandits-utils">
+<h1>pybandits.utils<a class="headerlink" href="#pybandits-utils" title="Permalink to this headline"></a></h1>
+<section id="module-pybandits.utils.simulation_smab">
+<span id="pybandits-utils-simulation-smab"></span><h2>pybandits.utils.simulation_smab<a class="headerlink" href="#module-pybandits.utils.simulation_smab" title="Permalink to this headline"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_smab.SimulationSmab">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.utils.simulation_smab.</span></span><span class="sig-name descname"><span class="pre">SimulationSmab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">smab</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_updates</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probs_reward</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_smab.SimulationSmab" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Simulate environment for stochastic multi-armed bandits.</p>
+<p>This class performs simulation of stochastic Multi-Armed Bandits (sMAB). Data are processed in batches of size n&gt;=1.
+Per each batch of simulated samples, the sMAB selects one action and collects the corresponding simulated reward for
+each sample. Then, prior parameters are updated based on returned rewards from recommended actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>smab</strong> (<a class="reference internal" href="#pybandits.core.smab.Smab" title="pybandits.core.smab.Smab"><em>pybandits.core.smab.Smab</em></a>) – Stochastic multi-armed bandit model.</p></li>
+<li><p><strong>n_updates</strong> (<em>int</em><em>, </em><em>default=10</em>) – The number of updates (i.e. batches of samples) in the simulation.</p></li>
+<li><p><strong>batch_size</strong> (<em>int</em><em>, </em><em>default=100</em>) – The number of samples per batch.</p></li>
+<li><p><strong>probs_reward</strong> (<em>dict</em><em>, </em><em>default=None</em>) – The reward probability for the different actions. If None probabilities are set to 0.5.
+The keys of the dict must match the smab actions_ids, and the values are float in the interval [0, 1].
+e.g. probs_reward={‘action A’: 0.6, ‘action B’: 0.8, ‘action C’: 1.}</p></li>
+<li><p><strong>save</strong> (<em>bool</em><em>, </em><em>default=False</em>) – Boolean flag to save the results.</p></li>
+<li><p><strong>path</strong> (<em>string</em><em>, </em><em>default=''</em>) – Path where results are saved if save=True</p></li>
+<li><p><strong>random_seed</strong> (<em>int</em><em>, </em><em>default=None</em>) – Seed for random state. If specified, the model outputs deterministic results.</p></li>
+<li><p><strong>verbose</strong> (<em>bool</em><em>, </em><em>default=False</em>) – Enable verbose output. If True, detailed logging information about the simulation are provided.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_smab.SimulationSmab.get_count_selected_actions">
+<span class="sig-name descname"><span class="pre">get_count_selected_actions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_smab.SimulationSmab.get_count_selected_actions" title="Permalink to this definition"></a></dt>
+<dd><p>Get the count of actions selected by the bandit at the end of the process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Dictionary with keys=action_ids and values=count of recommended actions.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_smab.SimulationSmab.get_cumulative_proportions">
+<span class="sig-name descname"><span class="pre">get_cumulative_proportions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_smab.SimulationSmab.get_cumulative_proportions" title="Permalink to this definition"></a></dt>
+<dd><p>Get (i) the cumulative action proportions and (ii) the cumulative reward proportions per action.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Dictionary with keys=(actions, reward) and
+values=(cumulative action proportions, cumulative reward proportions per action)</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_smab.SimulationSmab.get_proportion_positive_reward">
+<span class="sig-name descname"><span class="pre">get_proportion_positive_reward</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_smab.SimulationSmab.get_proportion_positive_reward" title="Permalink to this definition"></a></dt>
+<dd><p>Get the observed proportion of positive rewards for each action at the end of the simulation process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Dictionary with keys=action_ids and values=proportion of positive rewards for each action.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_smab.SimulationSmab.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_smab.SimulationSmab.run" title="Permalink to this definition"></a></dt>
+<dd><dl>
+<dt>Start simulation process. It consists in the following steps:</dt><dd><dl>
+<dt>for i=0 to n_updates</dt><dd><p>Consider batch[i] of observation
+sMAB selects the best action as the action with the highest reward probability to each sample in</p>
+<blockquote>
+<div><p>batch[i].</p>
+</div></blockquote>
+<p>Rewards are returned for each recommended action
+Prior parameters are updated based on recommended actions and returned rewards</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-pybandits.utils.simulation_cmab">
+<span id="pybandits-utils-simulation-cmab"></span><h2>pybandits.utils.simulation_cmab<a class="headerlink" href="#module-pybandits.utils.simulation_cmab" title="Permalink to this headline"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_cmab.SimulationCmab">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.utils.simulation_cmab.</span></span><span class="sig-name descname"><span class="pre">SimulationCmab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cmab</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">X</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_updates</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prob_rewards</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_cmab.SimulationCmab" title="Permalink to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Simulate environment for contextual multi-armed bandit models.</p>
+<p>This class simulates information required by the contextual bandit. Generated data are processed by the bandit with
+batches of   size n&gt;=1. For each batch of samples, actions are recommended by the bandit and corresponding simulated
+rewards collected. Bandit policy parameters are then updated based on returned rewards from recommended actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>cmab</strong> (<a class="reference internal" href="#pybandits.core.cmab.Cmab" title="pybandits.core.cmab.Cmab"><em>pybandits.core.cmab.Cmab</em></a>) – Contextual multi-armed bandit model</p></li>
+<li><p><strong>X</strong> (<em>array_like of shape</em><em> (</em><em>n_samples</em><em>, </em><em>n_feature</em><em>)</em>) – Context matrix of samples features.</p></li>
+<li><p><strong>batch_size</strong> (<em>int</em><em>, </em><em>default=100</em>) – The number of samples per batch.</p></li>
+<li><p><strong>n_updates</strong> (<em>int</em><em>, </em><em>default=10</em>) – The number of updates in the simulation.</p></li>
+<li><p><strong>group</strong> (<em>list int with length=n_samples</em>) – Group to which each sample belongs. Samples which belongs to the same group have features that come from the
+same distribution and they have the same probability to receive a positive/negative feedback from each action.</p></li>
+<li><p><strong>prob_rewards</strong> (<em>pd.DataFrame of shape</em><em> (</em><em>n_groups</em><em>, </em><em>n_actions</em><em>)</em>) – Matrix of positive reward probability for each group-action combination. If None all probs are set to 0.5.</p></li>
+<li><p><strong>save</strong> (<em>bool</em><em>, </em><em>default=False</em>) – Boolean flag to save the results.</p></li>
+<li><p><strong>path</strong> (<em>string</em><em>, </em><em>default=''</em>) – Path where results are saved if save=True</p></li>
+<li><p><strong>verbose</strong> (<em>bool</em><em>, </em><em>default=False</em>) – Enable verbose output. If True produce detailed logging information about the simulation.</p></li>
+<li><p><strong>random_seed</strong> (<em>int</em><em>, </em><em>default=None</em>) – Seed for random state. If specified, the model outputs deterministic results.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_cmab.SimulationCmab.get_count_selected_actions">
+<span class="sig-name descname"><span class="pre">get_count_selected_actions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_cmab.SimulationCmab.get_count_selected_actions" title="Permalink to this definition"></a></dt>
+<dd><p>Get the proportion of recommended actions per group at the end of the process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>df</strong> – Matrix of the proportion of recommended actions per group.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>pandas DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_cmab.SimulationCmab.get_cumulative_proportions">
+<span class="sig-name descname"><span class="pre">get_cumulative_proportions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_cmab.SimulationCmab.get_cumulative_proportions" title="Permalink to this definition"></a></dt>
+<dd><dl class="simple">
+<dt>Plot results of the simulation. It will create two plots per each group which display:</dt><dd><ul class="simple">
+<li><p>The cumulated proportion of action</p></li>
+<li><p>The cumulated proportion of rewards</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>path</strong> (<em>str</em><em>, </em><em>default=''</em>) – Path in which plot figures are saved.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_cmab.SimulationCmab.get_proportion_positive_reward">
+<span class="sig-name descname"><span class="pre">get_proportion_positive_reward</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_cmab.SimulationCmab.get_proportion_positive_reward" title="Permalink to this definition"></a></dt>
+<dd><p>Get the proportion of positive rewards per group/action at the end of the process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>df</strong> – Matrix of the proportion of positive rewards per group/action.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>pandas DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.utils.simulation_cmab.SimulationCmab.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.utils.simulation_cmab.SimulationCmab.run" title="Permalink to this definition"></a></dt>
+<dd><p>Start simulation process. It consists in the following steps:</p>
+<blockquote>
+<div><ul class="simple">
+<li><dl class="simple">
+<dt>for i=0 to n_updates</dt><dd><ul>
+<li><p>Extract batch[i] of samples from X</p></li>
+<li><p>Model recommends the best actions as the action with the highest reward probability to each simulated
+sample in batch[i] and collect corresponding simulated rewards</p></li>
+<li><p>Model priors are updated using information from recommended actions and returned rewards</p></li>
+</ul>
+</dd>
+</dl>
+</li>
+</ul>
+</div></blockquote>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="id1">
+<h2>pybandits.utils.simulation_smab<a class="headerlink" href="#id1" title="Permalink to this headline"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright MIT License.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+</body>
+</html>

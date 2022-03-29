@@ -1,0 +1,244 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "pycharm": {
+     "name": "#%% md\n"
+    }
+   },
+   "source": [
+    "# Contextual Multi-Armed Bandit"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm ([Agrawal and Goyal, 2014](https://arxiv.org/pdf/1209.3352.pdf)) based on PyMC3."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "![title](img/cmab.png)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The following notebook contains an example of usage of the class Cmab, which implements the algorithm above."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {
+    "pycharm": {
+     "is_executing": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "from pybandits.core.cmab import Cmab"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "First, we need to define the input context matrix $X$ of size ($n\\_samples, n\\_features$) and the list of possible actions $a_i \\in A$ ."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {
+    "pycharm": {
+     "is_executing": false
+    }
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "X: context matrix of shape (n_samples, n_features)\n",
+      "[[-0.53211475 -0.40592956  0.05892565 -0.88067628 -0.84061481]\n",
+      " [-0.95680954 -0.00540581  0.09148556 -0.82021004 -0.63425381]\n",
+      " [-0.87792928 -0.51881823 -0.51767022 -0.05385187 -0.64499044]\n",
+      " [-0.10569516  0.30847784 -0.353929   -0.94831998 -0.52175713]\n",
+      " [-0.05088401  0.17155683 -0.4322128  -0.07509104 -0.78919832]\n",
+      " [-0.88604157  0.55037109  0.42634479 -0.87179776 -0.69767766]\n",
+      " [-0.0022063   0.99304089  0.76398198 -0.87343131 -0.12363411]\n",
+      " [ 0.36371019  0.6660538   0.17177652 -0.08891719 -0.91070485]\n",
+      " [-0.1056742  -0.72879406 -0.69367421 -0.8684397   0.70903817]\n",
+      " [-0.15422305  0.31069811 -0.47487951  0.00853137  0.23793364]]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# context\n",
+    "n_samples = 1000\n",
+    "n_features = 5\n",
+    "X = 2 * np.random.random_sample((n_samples, n_features)) - 1  # random float in the interval (-1, 1)\n",
+    "print('X: context matrix of shape (n_samples, n_features)')\n",
+    "print(X[:10])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# define actions\n",
+    "actions_ids= ['action A', 'action B', 'action C']"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We can now init the bandit given the number of features and the list of actions $a_i$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# init contextual Multi-Armed Bandit model\n",
+    "cmab = Cmab(n_features=n_features, actions_ids=actions_ids)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The predict function below returns the action selected by the bandit at time $t$: $a_t = argmax_k P(r=1|\\beta_k, x_t)$. The bandit selects one action per each sample of the contect matrix $X$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Recommended action: ['action C' 'action C' 'action B' 'action B' 'action C' 'action C'\n",
+      " 'action B' 'action C' 'action B' 'action C']\n"
+     ]
+    }
+   ],
+   "source": [
+    "# predict action\n",
+    "pred_actions, _ = cmab.predict(X) \n",
+    "print('Recommended action: {}'.format(pred_actions[:10]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now, we observe the rewards from the environment. In this example rewards are randomly simulated. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Simulated rewards: [1 0 0 0 0 0 0 0 1 1]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# simulate reward from environment\n",
+    "simulated_rewards = np.random.randint(2, size=n_samples)\n",
+    "print('Simulated rewards: {}'.format(simulated_rewards[:10]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Finally we update the model providing per each action sample: (i) its context $x_t$ (ii) the action $a_t$ selected by the bandit, (iii) the correspoding reward $r_t$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "Auto-assigning NUTS sampler...\n",
+      "Initializing NUTS using adapt_diag...\n",
+      "Sequential sampling (2 chains in 1 job)\n",
+      "NUTS: [beta4, beta3, beta2, beta1, beta0, alpha]\n",
+      "Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 5 seconds.\n",
+      "Auto-assigning NUTS sampler...\n",
+      "Initializing NUTS using adapt_diag...\n",
+      "Sequential sampling (2 chains in 1 job)\n",
+      "NUTS: [beta4, beta3, beta2, beta1, beta0, alpha]\n",
+      "Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.\n",
+      "Auto-assigning NUTS sampler...\n",
+      "Initializing NUTS using adapt_diag...\n",
+      "Sequential sampling (2 chains in 1 job)\n",
+      "NUTS: [beta4, beta3, beta2, beta1, beta0, alpha]\n",
+      "Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.\n"
+     ]
+    }
+   ],
+   "source": [
+    "# update model\n",
+    "cmab.update(X, actions=pred_actions, rewards=simulated_rewards)"
+   ]
+  }
+ ],
+ "metadata": {
+  "hide_input": false,
+  "kernelspec": {
+   "display_name": "mab",
+   "language": "python",
+   "name": "mab"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.5"
+  },
+  "pycharm": {
+   "stem_cell": {
+    "cell_type": "raw",
+    "metadata": {
+     "collapsed": false
+    },
+    "source": []
+   }
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
