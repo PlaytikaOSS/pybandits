@@ -28,7 +28,8 @@ For the sMAB, we implemented a Bernoulli multi-armed bandit based on Thompson Sa
 Installation
 ------------
 
-This library is distributed on [PyPI](https://pypi.org/project/pybandits/) and can be installed with ``pip``. The latest release is version ``0.0.2``. ``pybandits`` requires a Python version ``>= 8``.
+This library is distributed on [PyPI](https://pypi.org/project/pybandits/) and can be installed with ``pip``.
+The latest release is version ``0.0.2``. ``pybandits`` requires a Python version ``>= 3.8``.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 $ pip install pybandits
