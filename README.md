@@ -83,7 +83,7 @@ and
 Info for developers
 -------------------
 
-Pybandits is supported by the [AI for gaming and entertainment apps](https://www.meetup.com/ai-for-gaming-and-entertainment-apps/) community.
+PyBandits is supported by the [AI for gaming and entertainment apps](https://www.meetup.com/ai-for-gaming-and-entertainment-apps/) community.
 
 The source code of the project is available on [GitHub](https://github.com/playtikaresearch/pybandits).
 
