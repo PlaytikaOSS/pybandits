@@ -20,149 +20,381 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import copy
-import random
+from collections import defaultdict
+from typing import Dict, List, Optional, Set, Tuple, Union
+
+from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
+
+from pybandits.base import ActionId, BaseMab, BinaryReward, Float01, Probability
+from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO
+from pybandits.strategy import (
+    BestActionIdentification,
+    ClassicBandit,
+    CostControlBandit,
+    MultiObjectiveBandit,
+)
 
 
-class Smab:
+class BaseSmabBernoulli(BaseMab):
     """
-    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.
+    Base model for a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling
 
     Parameters
     ----------
-    action_ids: List[str]
-        List of possible actions
-    success_priors: Dict[str, int]
-        Dictionary containing the prior number of positive feedback (successes) for each action. keys are
-        action IDs and values are successes counts. If None, each action's prior is set to 1 by default.
-        Success counts must be integers and > 0.
-    failure_priors: Dict[str, int]
-        Dictionary containing the prior number of negative feedback (failures) for each action. keys are
-        action IDs and values are failures counts. If None, each action's prior is set to 1 by default.
-        Failure counts must be integers and > 0.
-    random_seed: int
-        Seed for random state. If specified, the model outputs deterministic results.
+    actions: Dict[ActionId, BaseBeta]
+        The list of possible actions, and their associated Model.
+    strategy: Strategy
+        The strategy used to select actions.
     """
-    def __init__(self, action_ids, success_priors=None, failure_priors=None, random_seed=None):
-        """ Initialization. """
-        if random_seed is not None:
-            random.seed(random_seed)
-        self._actions_ids = action_ids
-        self._success_counters = dict((t, 1) for t in self._actions_ids) if success_priors is None else \
-            copy.deepcopy(success_priors)
-        """ dict: success counters initialized to 1 for each action"""
-        self._failure_counters = dict((t, 1) for t in self._actions_ids) if failure_priors is None else \
-            copy.deepcopy(failure_priors)
-        """dict: failure counters initialized to 1 for each action"""
 
-        # Input sanity checking
-        if ((success_priors is None and failure_priors is not None) or (success_priors is not None and
-                                                                        failure_priors is None)):
-            raise ValueError('Either both or neither success_prior and failure_prior should be specified.')
-        if set(self._success_counters.keys()) != set(action_ids) or \
-                set(self._failure_counters.keys()) != set(action_ids):
-            raise ValueError('Treatment IDs, successes keys and failure keys must be identical.')
-        if len(action_ids) < 1:
-            raise ValueError('There must be at least one action.')
+    actions: Dict[ActionId, BaseBeta]
 
-        # Input type checking
-        if type(self._actions_ids) is not list:
-            raise TypeError('action_ids must be a list of strings.')
-        if type(self._success_counters) is not dict or type(self._failure_counters) is not dict:
-            raise TypeError('success_priors and failure_priors must be dictionaries.')
-        for t in self._actions_ids:
-            if self._success_counters[t] <= 0 or self._failure_counters[t] <= 0:
-                raise ValueError('Success/failure counters must be > 0')
-            if type(self._success_counters[t]) is not int or type(self._failure_counters[t]) is not int:
-                raise TypeError('Success/failure counters must be integers.')
-            if type(t) is not str:
-                raise TypeError('Treatments must be strings.')
-
-    def predict(self, n_samples=1, forbidden_actions=None):
+    @validate_arguments
+    def predict(
+        self,
+        n_samples: PositiveInt = 1,
+        forbidden_actions: Optional[Set[ActionId]] = None,
+    ) -> Tuple[List[ActionId], List[Dict[ActionId, Probability]]]:
         """
-        Predict the best actions by randomly drawing samples from a beta distribution for each possible action.
-        The action with the highest value is recommended to the user as the 'best action' considering current
-        information. The Beta distributions' alpha and beta parameters for each action are its associated counts
-        of success and failure, respectively.
+        Predict actions.
 
         Parameters
         ----------
-        n_samples: int
-            Number of samples to predict (default 1).
-        forbidden_actions: List[str]
-            List of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
+        n_samples : int > 0, default=1
+            Number of samples to predict.
+        forbidden_actions : Optional[Set[ActionId]], default=None
+            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
             consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
         -------
-        best_actions: list
-            The best actions according to the model, i.e. the actions whose distribution gave the greater sample.
-        probs: list
-            The probabilities to get a positive reward for each action.
+        actions: List[ActionId] of shape (n_samples,)
+            The actions selected by the multi-armed bandit model.
+        probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
+            The probabilities of getting a positive reward for each action.
         """
-        if forbidden_actions is None:
-            forbidden_actions = []
+        valid_actions = self._get_valid_actions(forbidden_actions)
 
-        # Input type checking
-        if type(n_samples) is not int:
-            raise TypeError('n_samples must be an integer.')
-        if n_samples < 1:
-            raise ValueError('n_samples must be greater than 0.')
-        if type(forbidden_actions) is not list:
-            raise TypeError('forbidden_actions must be a list of strings.')
-        if not all(a in self._actions_ids for a in forbidden_actions):
-            raise ValueError('forbidden_actions contains invalid action_ids.')
-        if len(forbidden_actions) != len(set(forbidden_actions)):
-            raise ValueError('forbidden_actions cannot contains duplicates.')
-        if set(forbidden_actions) == set(self._actions_ids):
-            raise ValueError('All actions are forbidden. You must allow at least 1 action.')
+        selected_actions: List[ActionId] = []
+        probs: List[Dict[ActionId, Probability]] = []
 
-        best_actions, probs = [], []
         for _ in range(n_samples):
-            p = {t: random.betavariate(self._success_counters[t], self._failure_counters[t]) for t in self._actions_ids
-                 if t not in set(forbidden_actions)}
+            p = {
+                action: model.sample_proba()
+                for action, model in self.actions.items()
+                if action in valid_actions
+            }
+            selected_actions.append(
+                self.strategy.select_action(p=p, actions=self.actions)
+            )
             probs.append(p)
-            best_actions.append(max(p, key=p.get))  # action with the highest probability
 
-        return best_actions, probs
+        return selected_actions, probs
 
-    def update(self, action_id, n_successes, n_failures):
+    @validate_arguments
+    def update(
+        self,
+        actions: List[ActionId],
+        rewards: List[Union[BinaryReward, List[BinaryReward]]],
+    ):
         """
-        This method updates the SMAB with feedbacks for a given action. The action's associated success (resp.
-        failure) counter is incremented by the number of successes (resp. failures) received.
+        Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
+        rewards.
 
         Parameters
         ----------
-        action_id: str
-            The ID of the action to update.
-        n_successes: int
-            The number of successes received for action_id.
-        n_failures: int
-            The number of failures received for action_id.
+        actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
+            The selected action for each sample.
+        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+            The binary reward for each sample.
+                If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
+                    rewards = [1, 0, 1, 1, 1, ...]
+                If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
+                    rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
-        if type(action_id) is not str or type(n_successes) is not int or type(n_failures) is not int:
-            raise TypeError('action_id must be a string and n_successes/failures must be integers.')
-        if (n_successes < 0) or (n_failures < 0):
-            raise ValueError('The number of successes/failures must be >= 0')
-        if action_id not in self._actions_ids:
-            raise ValueError('Treatment', action_id, 'does not exist.')
+        self._check_update_params(actions=actions, rewards=rewards)
 
-        self._success_counters[action_id] += n_successes
-        self._failure_counters[action_id] += n_failures
+        rewards_dict = defaultdict(list)
 
-    def batch_update(self, batch):
-        """
-        This method updates the SMAB for several action IDs at once, iterating over the batch.
+        for a, r in zip(actions, rewards):
+            rewards_dict[a].append(r)
 
-        Parameters
-        ----------
-            batch: List[dict]
-                List of dicts in the form [{'action_id': <str>, 'n_successes': <int>, 'n_failures':<int>}]
-        """
-        assert(type(batch) == list), "batch type must be a list"
-        for elem in batch:
-            assert(type(elem) == dict), "batch must contain dicts only"
-            assert("action_id" in elem and "n_successes" in elem and "n_failures" in elem),\
-                "Batch must be in the form [{'action_id': <str>, 'n_successes': <int>, 'n_failures':<int>}]"
-            self.update(action_id=elem['action_id'], n_successes=elem['n_successes'], n_failures=elem['n_failures'])
+        for a in set(actions):
+            self.actions[a].update(rewards=rewards_dict[a])
+
+
+class SmabBernoulli(BaseSmabBernoulli):
+    """
+    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling
+
+    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, Beta]
+        The list of possible actions, and their associated Model.
+    strategy: ClassicBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, Beta]
+    strategy: ClassicBandit
+
+    def __init__(self, actions: Dict[ActionId, Beta]):
+        super().__init__(actions=actions, strategy=ClassicBandit())
+
+    @validate_arguments
+    def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
+        super().update(actions=actions, rewards=rewards)
+
+
+class SmabBernoulliBAI(BaseSmabBernoulli):
+    """
+    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and best
+    action identification.
+
+    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, Beta]
+        The list of possible actions, and their associated Model.
+    strategy: BestActionIdentification
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, Beta]
+    strategy: BestActionIdentification
+
+    def __init__(
+        self, actions: Dict[ActionId, Beta], exploit_p: Optional[Float01] = None
+    ):
+        strategy = (
+            BestActionIdentification()
+            if exploit_p is None
+            else BestActionIdentification(exploit_p=exploit_p)
+        )
+        super().__init__(actions=actions, strategy=strategy)
+
+    @validate_arguments
+    def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
+        super().update(actions=actions, rewards=rewards)
+
+
+class SmabBernoulliCC(BaseSmabBernoulli):
+    """
+    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
+    Cost Control.
+
+    The sMAB is extended to include a control of the action cost. Each action is associated with a predefined "cost".
+    At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
+    these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
+    actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
+
+    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+               https://arxiv.org/abs/1911.00638
+
+               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+               https://arxiv.org/abs/2011.01488
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BetaCC]
+        The list of possible actions, and their associated Model.
+    strategy: CostControlBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BetaCC]
+    strategy: CostControlBandit
+
+    def __init__(
+        self, actions: Dict[ActionId, Beta], subsidy_factor: Optional[Float01] = None
+    ):
+        strategy = (
+            CostControlBandit()
+            if subsidy_factor is None
+            else CostControlBandit(subsidy_factor=subsidy_factor)
+        )
+        super().__init__(actions=actions, strategy=strategy)
+
+    @validate_arguments
+    def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
+        super().update(actions=actions, rewards=rewards)
+
+
+class SmabBernoulliMO(BaseSmabBernoulli):
+    """
+    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
+    Multi-Objectives.
+
+    The reward pertaining to an action is a multidimensional vector instead of a scalar value. In this setting,
+    different actions are compared according to Pareto order between their expected reward vectors, and those actions
+    whose expected rewards are not inferior to that of any other actions are called Pareto optimal actions, all of which
+    constitute the Pareto front.
+
+    Reference: Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+               https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BetaMO]
+        The list of possible actions, and their associated Model.
+    strategy: MultiObjectiveBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BetaMO]
+    strategy: MultiObjectiveBandit
+
+    def __init__(self, actions: Dict[ActionId, Beta]):
+        super().__init__(actions=actions, strategy=MultiObjectiveBandit())
+
+    @validator("actions", pre=False)
+    @classmethod
+    def all_actions_have_same_number_of_objectives(
+        cls, actions: Dict[ActionId, BetaMO]
+    ):
+        n_objs_per_action = [len(beta.counters) for beta in actions.values()]
+        if len(set(n_objs_per_action)) != 1:
+            raise ValueError("All actions should have the same number of objectives")
+        return actions
+
+    @validate_arguments
+    def update(self, actions: List[ActionId], rewards: List[List[BinaryReward]]):
+        super().update(actions=actions, rewards=rewards)
+
+
+@validate_arguments
+def create_smab_bernoulli_cold_start(action_ids: Set[ActionId]) -> SmabBernoulli:
+    """
+    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling, with
+    default parameters.
+
+    Parameters
+    ----------
+    action_ids: Set[ActionId]
+        The list of possible actions.
+
+    Returns
+    -------
+    smab: SmabBernoulli
+        Stochastic Multi-Armed Bandit with strategy = ClassicBandit
+    """
+    actions = {}
+    for a in set(action_ids):
+        actions[a] = Beta()
+    return SmabBernoulli(actions=actions)
+
+
+@validate_arguments
+def create_smab_bernoulli_bai_cold_start(
+    action_ids: Set[ActionId], exploit_p: Optional[Float01] = None
+) -> SmabBernoulliBAI:
+    """
+    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and best
+    action identification, with default parameters.
+
+    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+
+    Parameters
+    ----------
+    action_ids: Set[ActionId]
+        The list of possible actions.
+    exploit_p: Float_0_1 (default=0.5)
+        Number in [0, 1] which specifies the amount of exploitation.
+        If exploit_p is 1, the bandits always selects the action with highest probability of getting a positive reward,
+            (it behaves as a Greedy strategy).
+        If exploit_p is 0, the bandits always select the action with 2nd highest probability of getting a positive
+            reward.
+
+    Returns
+    -------
+    smab: SmabBernoulliBAI
+        Stochastic Multi-Armed Bandit with strategy = BestActionIdentification
+    """
+    actions = {}
+    for a in set(action_ids):
+        actions[a] = Beta()
+    smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    return smab
+
+
+@validate_arguments
+def create_smab_bernoulli_cc_cold_start(
+    dict_action_ids_cost: Dict[ActionId, NonNegativeFloat],
+    subsidy_factor: Optional[Float01] = None,
+) -> SmabBernoulliCC:
+    """
+    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
+    Cost Control, with default parameters.
+
+    The sMAB is extended to include a control of the action cost. Each action is associated with a predefined "cost".
+    At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
+    these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
+    actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
+
+    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+               https://arxiv.org/abs/1911.00638
+
+               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+               https://arxiv.org/abs/2011.01488
+
+    Parameters
+    ----------
+    actions : Dict[ActionId, NonNegativeFloat]
+        The list of possible actions, and their cost.
+    subsidy_factor: Optional[Float_0_1], default=0.5
+        Number in [0, 1] to define smallest tolerated probability reward, hence the set of feasible actions.
+        If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
+        If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
+            reward (it behaves as a classic Bernoulli bandit).
+
+    Returns
+    -------
+    smab: SmabBernoulliCC
+        Stochastic Multi-Armed Bandit with strategy = CostControlBandit
+    """
+    actions = {}
+    for a, cost in dict_action_ids_cost.items():
+        actions[a] = BetaCC(cost=cost)
+    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    return smab
+
+
+@validate_arguments
+def create_smab_bernoulli_mo_cold_start(
+    action_ids: Set[ActionId], n_objectives: PositiveInt
+) -> SmabBernoulliMO:
+    """
+    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
+    Multi-Objectives, with default parameters.
+
+    The reward pertaining to an action is a multidimensional vector instead of a scalar value. In this setting,
+    different actions are compared according to Pareto order between their expected reward vectors, and those actions
+    whose expected rewards are not inferior to that of any other actions are called Pareto optimal actions, all of which
+    constitute the Pareto front.
+
+    Reference: Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+               https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+
+    Parameters
+    ----------
+    action_ids: Set[ActionId]
+        The list of possible actions.
+    n_objectives: PositiveInt
+        The number of objectives to optimize. The bandit assumes the same number of objectives for all actions.
+
+    Returns
+    -------
+    smab: BaseSmabBernoulli
+        Stochastic Multi-Armed Bandit with strategy = MultiObjectiveBandit
+    """
+    actions = {}
+    for a in set(action_ids):
+        actions[a] = BetaMO(counters=n_objectives * [Beta()])
+    return SmabBernoulliMO(actions=actions)
