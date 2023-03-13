@@ -53,3 +53,15 @@ MANIFEST
 
 # Build and docs folder/files
 *.csv
+
+# VSCode
+.vscode
+
+# hypothesis
+.hypothesis
+
+# Jupyter notebooks
+*checkpoint.ipynb
+
+# poetry
+poetry.lock

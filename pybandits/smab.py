@@ -21,18 +21,12 @@
 # SOFTWARE.
 
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union
-
 from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from pybandits.base import ActionId, BaseMab, BinaryReward, Float01, Probability
 from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO
-from pybandits.strategy import (
-    BestActionIdentification,
-    ClassicBandit,
-    CostControlBandit,
-    MultiObjectiveBandit,
-)
+from pybandits.strategy import BestActionIdentification, ClassicBandit, CostControlBandit, MultiObjectiveBandit
 
 
 class BaseSmabBernoulli(BaseMab):
@@ -80,14 +74,8 @@ class BaseSmabBernoulli(BaseMab):
         probs: List[Dict[ActionId, Probability]] = []
 
         for _ in range(n_samples):
-            p = {
-                action: model.sample_proba()
-                for action, model in self.actions.items()
-                if action in valid_actions
-            }
-            selected_actions.append(
-                self.strategy.select_action(p=p, actions=self.actions)
-            )
+            p = {action: model.sample_proba() for action, model in self.actions.items() if action in valid_actions}
+            selected_actions.append(self.strategy.select_action(p=p, actions=self.actions))
             probs.append(p)
 
         return selected_actions, probs
@@ -169,14 +157,8 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
     actions: Dict[ActionId, Beta]
     strategy: BestActionIdentification
 
-    def __init__(
-        self, actions: Dict[ActionId, Beta], exploit_p: Optional[Float01] = None
-    ):
-        strategy = (
-            BestActionIdentification()
-            if exploit_p is None
-            else BestActionIdentification(exploit_p=exploit_p)
-        )
+    def __init__(self, actions: Dict[ActionId, Beta], exploit_p: Optional[Float01] = None):
+        strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
         super().__init__(actions=actions, strategy=strategy)
 
     @validate_arguments
@@ -211,14 +193,8 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     actions: Dict[ActionId, BetaCC]
     strategy: CostControlBandit
 
-    def __init__(
-        self, actions: Dict[ActionId, Beta], subsidy_factor: Optional[Float01] = None
-    ):
-        strategy = (
-            CostControlBandit()
-            if subsidy_factor is None
-            else CostControlBandit(subsidy_factor=subsidy_factor)
-        )
+    def __init__(self, actions: Dict[ActionId, Beta], subsidy_factor: Optional[Float01] = None):
+        strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
         super().__init__(actions=actions, strategy=strategy)
 
     @validate_arguments
@@ -255,9 +231,7 @@ class SmabBernoulliMO(BaseSmabBernoulli):
 
     @validator("actions", pre=False)
     @classmethod
-    def all_actions_have_same_number_of_objectives(
-        cls, actions: Dict[ActionId, BetaMO]
-    ):
+    def all_actions_have_same_number_of_objectives(cls, actions: Dict[ActionId, BetaMO]):
         n_objs_per_action = [len(beta.counters) for beta in actions.values()]
         if len(set(n_objs_per_action)) != 1:
             raise ValueError("All actions should have the same number of objectives")
@@ -367,9 +341,7 @@ def create_smab_bernoulli_cc_cold_start(
 
 
 @validate_arguments
-def create_smab_bernoulli_mo_cold_start(
-    action_ids: Set[ActionId], n_objectives: PositiveInt
-) -> SmabBernoulliMO:
+def create_smab_bernoulli_mo_cold_start(action_ids: Set[ActionId], n_objectives: PositiveInt) -> SmabBernoulliMO:
     """
     Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
     Multi-Objectives, with default parameters.

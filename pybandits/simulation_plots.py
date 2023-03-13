@@ -20,38 +20,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import setuptools
-
-__version__ = '0.0.2'
-
-with open('requirements.txt') as f:
-    requirements = f.read().splitlines()
-
-with open('requirements-dev.txt') as f:
-    requirements_dev = f.read().splitlines()
-
-with open("README.md", "r") as fh:
-    long_description = fh.read()
+import matplotlib.pyplot as plt
+import pandas as pd
+from plotnine import aes, geom_line, ggplot, ylab
 
 
-setuptools.setup(
-    name="pybandits",
-    version=__version__,
-    description="Python Multi-Armed Bandit Library",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="",
-    author="",
-    author_email="",
-    license="MIT",
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "Operating System :: OS Independent",
-    ],
-    packages=setuptools.find_packages(),
-    install_requires=requirements,
-    extras_require={
-        'develop': requirements_dev,
-    },
-    python_requires='>=3.8',
-)
+def plot_cumulative_proportions(matrix, figsize=None, path="", title=""):
+    """Plot simulation."""
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.plot(matrix)
+    ax.set_title(title)
+    ax.set_xlabel("number of observations")
+    ax.set_ylim(-0.1, 1.1)
+    ax.set_ylabel("Cumulative proportion")
+    ax.legend(matrix.columns)
+    fig.savefig(path + title)
+
+    return fig, ax
+
+
+def plot_regrets(cum_regret):
+    """Plot cumulative regrets."""
+    regrets = pd.Series(cum_regret).reset_index().rename(columns={"index": "number of observations"})
+    return ggplot(regrets, aes(y="cum_regret", x="number of observations")) + geom_line() + ylab("cumulative regret")

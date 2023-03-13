@@ -20,11 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from functools import partial
-from multiprocessing import Pool
-
 import numpy as np
 import pandas as pd
+from functools import partial
+from multiprocessing import Pool
 from pymc3 import Bernoulli, Data, Deterministic, Model, StudentT, fast_sample_posterior_predictive, sample, set_data
 from pymc3.math import sigmoid
 from scipy.stats import t
@@ -43,10 +42,10 @@ def check_context_matrix(context, n_features):
     try:
         context = pd.DataFrame(context).reset_index(drop=True)
     except ValueError as e:
-        print('{}\nCannot convert input arguments to pandas DataFrame'.format(e))
+        print("{}\nCannot convert input arguments to pandas DataFrame".format(e))
         raise
     if context.shape[1] != n_features:
-        raise ValueError('context must have {} columns.'.format(n_features))
+        raise ValueError("context must have {} columns.".format(n_features))
     return context
 
 
@@ -95,51 +94,62 @@ class Cmab:
         Seed for random state. If specified, the model outputs deterministic results.
     """
 
-    def __init__(self, n_features,
-                 actions_ids,
-                 params_sample=None,
-                 n_jobs=1,
-                 mu_alpha=None,
-                 mu_betas=None,
-                 sigma_alpha=None,
-                 sigma_betas=None,
-                 nu_alpha=None,
-                 nu_betas=None,
-                 random_seed=None):
-        """ Initialization. """
+    def __init__(
+        self,
+        n_features,
+        actions_ids,
+        params_sample=None,
+        n_jobs=1,
+        mu_alpha=None,
+        mu_betas=None,
+        sigma_alpha=None,
+        sigma_betas=None,
+        nu_alpha=None,
+        nu_betas=None,
+        random_seed=None,
+    ):
+        """Initialization."""
 
         # set default params_sample if not specified
         if params_sample is None:
-            params_sample = {'tune': 500, 'draws': 1000, 'chains': 2, 'init': 'adapt_diag', 'cores': 1,
-                             'target_accept': 0.95, 'progressbar': False, 'return_inferencedata': False}
+            params_sample = {
+                "tune": 500,
+                "draws": 1000,
+                "chains": 2,
+                "init": "adapt_diag",
+                "cores": 1,
+                "target_accept": 0.95,
+                "progressbar": False,
+                "return_inferencedata": False,
+            }
         # check input
         if type(n_features) is not int or type(n_jobs) is not int:
-            raise TypeError('n_features, n_jobs must be integers.')
+            raise TypeError("n_features, n_jobs must be integers.")
         if n_features <= 0 or n_jobs <= 0:
-            raise ValueError('n_features, n_jobs must be > 0')
+            raise ValueError("n_features, n_jobs must be > 0")
         if type(params_sample) is not dict:
-            raise TypeError('params_sample must be a dictionary.')
-        if n_jobs > 1 and params_sample['cores'] > 1:
-            raise ValueError('n_jobs and cores cannot be both > 1.')
+            raise TypeError("params_sample must be a dictionary.")
+        if n_jobs > 1 and params_sample["cores"] > 1:
+            raise ValueError("n_jobs and cores cannot be both > 1.")
         if type(actions_ids) is not list or not all(isinstance(x, str) for x in actions_ids):
-            raise TypeError('actions_ids must be a list of strings.')
+            raise TypeError("actions_ids must be a list of strings.")
         if len(actions_ids) < 1 or len(actions_ids) != len(set(actions_ids)):
-            raise ValueError('actions_ids must be a non empty list without duplicates.')
+            raise ValueError("actions_ids must be a non empty list without duplicates.")
         if type(random_seed) is not int and random_seed is not None:
-            raise TypeError('random_seed must be an integer')
+            raise TypeError("random_seed must be an integer")
 
         self._models = {}  # dictionary of pymc3 models per each action: keys=actions_ids, values=pymc3.Model()
         self._actions_ids = actions_ids
         self._n_features = n_features
         self._params_sample = params_sample
-        self._params_sample['random_seed'] = random_seed
+        self._params_sample["random_seed"] = random_seed
         self._n_jobs = n_jobs
-        self._mu_alpha = self._init_alpha(mu_alpha, 0.)
-        self._mu_betas = self._init_betas(mu_betas, 0.)
-        self._sigma_alpha = self._init_alpha(sigma_alpha, 10.)
-        self._sigma_betas = self._init_betas(sigma_betas, 10.)
-        self._nu_alpha = self._init_alpha(nu_alpha, 5.)
-        self._nu_betas = self._init_betas(nu_betas, 5.)
+        self._mu_alpha = self._init_alpha(mu_alpha, 0.0)
+        self._mu_betas = self._init_betas(mu_betas, 0.0)
+        self._sigma_alpha = self._init_alpha(sigma_alpha, 10.0)
+        self._sigma_betas = self._init_betas(sigma_betas, 10.0)
+        self._nu_alpha = self._init_alpha(nu_alpha, 5.0)
+        self._nu_betas = self._init_betas(nu_betas, 5.0)
         self._random_seed = random_seed
         self._traces = {a: None for a in actions_ids}
 
@@ -147,26 +157,32 @@ class Cmab:
         # set default prior
         if prior is None:
             prior = {a: default for a in self._actions_ids}
-        if type(prior) is not dict or not all(isinstance(x, str) for x in prior.keys()) or \
-                not all(isinstance(x, float) for x in prior.values()):
-            raise TypeError('prior must be a dict with string as keys and float as values. prior =', prior)
+        if (
+            type(prior) is not dict
+            or not all(isinstance(x, str) for x in prior.keys())
+            or not all(isinstance(x, float) for x in prior.values())
+        ):
+            raise TypeError("prior must be a dict with string as keys and float as values. prior =", prior)
         if set(prior.keys()) != set(self._actions_ids):
-            raise ValueError('prior dict keys must be equal to the actions_ids. prior =', prior)
+            raise ValueError("prior dict keys must be equal to the actions_ids. prior =", prior)
         return prior
 
     def _init_betas(self, prior, default):
         # set default prior
         if prior is None:
             prior = {k: v for (k, v) in zip(self._actions_ids, len(self._actions_ids) * [self._n_features * [default]])}
-        if type(prior) is not dict or not all(isinstance(x, str) for x in prior.keys()) or \
-                not all(isinstance(x, list) for x in prior.values()):
-            raise TypeError('prior must be a dict with string as keys and lists as values. prior =', prior)
+        if (
+            type(prior) is not dict
+            or not all(isinstance(x, str) for x in prior.keys())
+            or not all(isinstance(x, list) for x in prior.values())
+        ):
+            raise TypeError("prior must be a dict with string as keys and lists as values. prior =", prior)
         if not all([item for list in [[isinstance(x, float) for x in v] for v in prior.values()] for item in list]):
-            raise TypeError('prior dict values must be lists of float. prior =', prior)
+            raise TypeError("prior dict values must be lists of float. prior =", prior)
         if set(prior.keys()) != set(self._actions_ids):
-            raise ValueError('prior dict keys must be equal to the actions_ids. prior =', prior)
+            raise ValueError("prior dict keys must be equal to the actions_ids. prior =", prior)
         if not np.all(np.array([len(x) for x in list(prior.values())]) == self._n_features):
-            raise ValueError('prior values must be lists of length = n_features. prior =', prior)
+            raise ValueError("prior values must be lists of length = n_features. prior =", prior)
         return prior
 
     def _update_trace(self, alpha, betas, X, rewards):
@@ -189,15 +205,15 @@ class Cmab:
         trace : pymc3.MultiTrace
             New trace for hyper-parameters
         """
-        X = Data('X', X)
-        rewards = Data('rewards', rewards)
+        X = Data("X", X)
+        rewards = Data("rewards", rewards)
 
         # Likelihood (sampling distribution) of observations
-        linear_combination = Deterministic('linear_combination', alpha + dot(betas, X.T))
-        p = Deterministic('p', sigmoid(linear_combination))
+        linear_combination = Deterministic("linear_combination", alpha + dot(betas, X.T))
+        p = Deterministic("p", sigmoid(linear_combination))
 
         # Bernoulli random vector with probability of success given by sigmoid function and actual data as observed
-        _ = Bernoulli('likelihood', p=p, observed=rewards)
+        _ = Bernoulli("likelihood", p=p, observed=rewards)
 
         trace = sample(**self._params_sample)
         return trace
@@ -225,13 +241,16 @@ class Cmab:
             Trace for the model of the action a
         """
         with Model() as model:
-
             # update intercept (alpha) and coefficients (betas)
             # if model was never updated priors_parameters = default arguments
             # else priors_parameters are calculated from traces of the previous update
-            alpha = StudentT('alpha', mu=self._mu_alpha[a], sigma=self._sigma_alpha[a], nu=self._nu_alpha[a])
-            betas = [StudentT('beta' + str(j), mu=self._mu_betas[a][j], sigma=self._sigma_betas[a][j],
-                              nu=self._nu_betas[a][j]) for j in range(len(X.columns))]
+            alpha = StudentT("alpha", mu=self._mu_alpha[a], sigma=self._sigma_alpha[a], nu=self._nu_alpha[a])
+            betas = [
+                StudentT(
+                    "beta" + str(j), mu=self._mu_betas[a][j], sigma=self._sigma_betas[a][j], nu=self._nu_betas[a][j]
+                )
+                for j in range(len(X.columns))
+            ]
 
             # update traces
             trace = self._update_trace(alpha, betas, X[actions == a], rewards[actions == a])
@@ -258,16 +277,16 @@ class Cmab:
             actions = pd.Series(actions).reset_index(drop=True)
             rewards = pd.Series(rewards).reset_index(drop=True)
         except ValueError as e:
-            print('{}\nCannot convert input arguments to pandas DataFrame/Series'.format(e))
+            print("{}\nCannot convert input arguments to pandas DataFrame/Series".format(e))
             raise
         if not (len(X) == len(actions) == len(rewards)):
-            raise ValueError('X, actions and rewards must have the same number of rows.')
+            raise ValueError("X, actions and rewards must have the same number of rows.")
         if X.shape[1] != self._n_features:
-            raise ValueError('X must have {} columns.'.format(self._n_features))
+            raise ValueError("X must have {} columns.".format(self._n_features))
         if not set(actions).issubset(set(self._actions_ids)):
-            raise ValueError('Invalid actions. Only actions in {} are allowed.'.format(self._actions_ids))
+            raise ValueError("Invalid actions. Only actions in {} are allowed.".format(self._actions_ids))
         if not set(rewards).issubset({0, 1}):
-            raise ValueError('Invalid rewards. Only rewards in {0, 1} are allowed')
+            raise ValueError("Invalid rewards. Only rewards in {0, 1} are allowed")
 
         # if n_jobs = 1 then update the model sequentially, else update model in parallel with multiprocessing
         if self._n_jobs == 1:
@@ -280,16 +299,16 @@ class Cmab:
             new_models = p.map(partial(self._worker_update, X, actions, rewards), set(actions))
 
         for a in set(actions):
-
             # store traces of each actions
-            self._traces[a], self._models[a] = next(((trace, model) for (action, trace, model) in new_models
-                                                     if action == a), None)
+            self._traces[a], self._models[a] = next(
+                ((trace, model) for (action, trace, model) in new_models if action == a), None
+            )
 
             # compute mean and std of the coefficients distributions
-            self._mu_alpha[a] = np.mean(self._traces[a]['alpha'])
-            self._mu_betas[a] = [np.mean(self._traces[a]['beta' + str(j)]) for j in range(len(X.columns))]
-            self._sigma_alpha[a] = np.std(self._traces[a]['alpha'], ddof=1)
-            self._sigma_betas[a] = [np.std(self._traces[a]['beta' + str(j)], ddof=1) for j in range(len(X.columns))]
+            self._mu_alpha[a] = np.mean(self._traces[a]["alpha"])
+            self._mu_betas[a] = [np.mean(self._traces[a]["beta" + str(j)]) for j in range(len(X.columns))]
+            self._sigma_alpha[a] = np.std(self._traces[a]["alpha"], ddof=1)
+            self._sigma_betas[a] = [np.std(self._traces[a]["beta" + str(j)], ddof=1) for j in range(len(X.columns))]
 
     def _worker_predict(self, X, a):
         """
@@ -309,16 +328,16 @@ class Cmab:
             List of probabilities (per each sample) to get a positive rewards given action a.
         """
         with self._models[a]:
-
             # update context information
             set_data({"X": X})
 
             # use the updated values and compute posterior predictive samples
-            pps = fast_sample_posterior_predictive(trace=self._traces[a], random_seed=self._random_seed,
-                                                   var_names=['linear_combination'], samples=1)
+            pps = fast_sample_posterior_predictive(
+                trace=self._traces[a], random_seed=self._random_seed, var_names=["linear_combination"], samples=1
+            )
 
             # compute the linear combination for each sample
-            return pps['linear_combination'][0]
+            return pps["linear_combination"][0]
 
     def _predict_with_sampling(self, X):
         """
@@ -437,12 +456,26 @@ class Cmab:
         weighted_sum = []
 
         for a in self._actions_ids:
-
             # sample coefficients only once per each sample from student-t distributions
-            alpha = t.rvs(df=self._nu_alpha[a], loc=self._mu_alpha[a], scale=self._sigma_alpha[a], size=len(_X),
-                          random_state=self._random_seed)
-            betas = np.array([t.rvs(df=self._nu_betas[a][b], loc=self._mu_betas[a][b], scale=self._sigma_betas[a][b],
-                                    size=len(_X), random_state=self._random_seed) for b in range(self._n_features)])
+            alpha = t.rvs(
+                df=self._nu_alpha[a],
+                loc=self._mu_alpha[a],
+                scale=self._sigma_alpha[a],
+                size=len(_X),
+                random_state=self._random_seed,
+            )
+            betas = np.array(
+                [
+                    t.rvs(
+                        df=self._nu_betas[a][b],
+                        loc=self._mu_betas[a][b],
+                        scale=self._sigma_betas[a][b],
+                        size=len(_X),
+                        random_state=self._random_seed,
+                    )
+                    for b in range(self._n_features)
+                ]
+            )
 
             # create coefficients matrix
             coeff = np.insert(arr=betas, obj=0, values=alpha, axis=0)
