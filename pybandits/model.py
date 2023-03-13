@@ -21,11 +21,10 @@
 # SOFTWARE.
 
 
-from random import betavariate
-from typing import List
-
 from numpy import sqrt
 from pydantic import NonNegativeFloat, PositiveInt, root_validator, validate_arguments
+from random import betavariate
+from typing import List
 
 from pybandits.base import BinaryReward, Model, Probability
 
@@ -51,9 +50,7 @@ class BaseBeta(Model):
         n_successes_defined = "n_successes" in values.keys()
         n_failures_defined = "n_failures" in values.keys()
         if n_successes_defined != n_failures_defined:
-            raise ValueError(
-                "Either both or neither n_successes and n_failures should be specified."
-            )
+            raise ValueError("Either both or neither n_successes and n_failures should be specified.")
         return values
 
     @property
@@ -75,9 +72,7 @@ class BaseBeta(Model):
         """
         The corrected standard deviation (Bessel's correction) of the binary distribution of successes and failures.
         """
-        return sqrt(
-            (self.n_successes * self.n_failures) / (self.count * (self.count - 1))
-        )
+        return sqrt((self.n_successes * self.n_failures) / (self.count * (self.count - 1)))
 
     @validate_arguments
     def update(self, rewards: List[BinaryReward]):

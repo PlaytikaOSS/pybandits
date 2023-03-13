@@ -22,25 +22,13 @@
 
 
 from abc import ABC, abstractmethod
+from pydantic import BaseModel, Extra, NonNegativeInt, confloat, conint, constr, validate_arguments, validator
 from typing import Any, Dict, List, NewType, Optional, Set, Tuple, Union
-
-from pydantic import (
-    BaseModel,
-    Extra,
-    NonNegativeInt,
-    confloat,
-    conint,
-    constr,
-    validate_arguments,
-    validator,
-)
 
 ActionId = NewType("ActionId", constr(min_length=1))
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
 Probability = NewType("Probability", Float01)
-Predictions = NewType(
-    "Predictions", Tuple[List[ActionId], List[Dict[ActionId, Probability]]]
-)
+Predictions = NewType("Predictions", Tuple[List[ActionId], List[Dict[ActionId, Probability]]])
 BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
 
 
@@ -77,9 +65,7 @@ class Strategy(PyBanditsBaseModel, ABC):
     """
 
     @abstractmethod
-    def select_action(
-        self, p: Dict[ActionId, Probability], actions: Optional[Dict[ActionId, Model]]
-    ) -> ActionId:
+    def select_action(self, p: Dict[ActionId, Probability], actions: Optional[Dict[ActionId, Model]]) -> ActionId:
         """
         Select the action.
         """
@@ -107,9 +93,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise AttributeError("At least 2 actions should be defined.")
         return v
 
-    def _get_valid_actions(
-        self, forbidden_actions: Optional[Set[ActionId]]
-    ) -> Set[ActionId]:
+    def _get_valid_actions(self, forbidden_actions: Optional[Set[ActionId]]) -> Set[ActionId]:
         """
         Given a set of forbidden action IDs, return a set of valid action IDs.
 
@@ -130,9 +114,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise ValueError("forbidden_actions contains invalid action IDs.")
         valid_actions = set(self.actions.keys()) - forbidden_actions
         if len(valid_actions) == 0:
-            raise ValueError(
-                "All actions are forbidden. You must allow at least 1 action."
-            )
+            raise ValueError("All actions are forbidden. You must allow at least 1 action.")
 
         return valid_actions
 
@@ -153,13 +135,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
         """
         invalid = set(actions) - set(self.actions.keys())
         if invalid:
-            raise AttributeError(
-                f"The following invalid action(s) were specified: {invalid}."
-            )
+            raise AttributeError(f"The following invalid action(s) were specified: {invalid}.")
         if len(actions) != len(rewards):
-            raise AttributeError(
-                f"Actions and rewards should have the same length {len(actions)}."
-            )
+            raise AttributeError(f"Actions and rewards should have the same length {len(actions)}.")
 
     @abstractmethod
     @validate_arguments

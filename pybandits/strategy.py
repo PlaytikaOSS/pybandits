@@ -20,12 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from random import random
-from typing import Dict, List, Optional
-
 import numpy as np
 from pydantic import validate_arguments
+from random import random
 from scipy.stats import ttest_ind_from_stats
+from typing import Dict, List, Optional
 
 from pybandits.base import ActionId, Float01, Model, Probability, Strategy
 from pybandits.model import Beta, BetaCC
@@ -149,9 +148,7 @@ class BestActionIdentification(Strategy):
         pvalue: float
             p-value result of the statistical test.
         """
-        sorted_actions_mean = sorted(
-            [(counter.mean, a) for a, counter in actions.items()], reverse=True
-        )
+        sorted_actions_mean = sorted([(counter.mean, a) for a, counter in actions.items()], reverse=True)
 
         _, first_best_action = sorted_actions_mean[0]
         _, second_best_action = sorted_actions_mean[1]
@@ -200,9 +197,7 @@ class CostControlBandit(Strategy):
         self.subsidy_factor = subsidy_factor
 
     @validate_arguments
-    def select_action(
-        self, p: Dict[ActionId, Probability], actions: Dict[ActionId, BetaCC]
-    ) -> ActionId:
+    def select_action(self, p: Dict[ActionId, Probability], actions: Dict[ActionId, BetaCC]) -> ActionId:
         """
         Select the action with the minimum cost among the set of feasible actions (the actions whose expected rewards
         are above a certain lower bound defined as [(1-subsidy_factor)*max_p, max_p], where max_p is the highest
@@ -224,14 +219,10 @@ class CostControlBandit(Strategy):
         max_p = max(p.values())
 
         # define the set of feasible actions
-        feasible_actions = [
-            a for a in p.keys() if p[a] >= (1 - self.subsidy_factor) * max_p
-        ]
+        feasible_actions = [a for a in p.keys() if p[a] >= (1 - self.subsidy_factor) * max_p]
 
         # feasible action costs
-        _, cheapest_action = min(
-            (b.cost, a) for a, b in actions.items() if a in feasible_actions
-        )
+        _, cheapest_action = min((b.cost, a) for a, b in actions.items() if a in feasible_actions)
 
         # return cheapest action from the set of feasible actions
         return cheapest_action
@@ -294,9 +285,7 @@ class MultiObjectiveBandit(Strategy):
         pareto_front = []
 
         for this_action in p.keys():
-            is_pareto = (
-                True  # we assume that action is Pareto Optimal until proven otherwise
-            )
+            is_pareto = True  # we assume that action is Pareto Optimal until proven otherwise
             other_actions = [a for a in p.keys() if a != this_action]
 
             for other_action in other_actions:
@@ -306,10 +295,7 @@ class MultiObjectiveBandit(Strategy):
                     # an action cannot be dominated by an identical one
                     (p[this_action] == p[other_action])
                     # otherwise, apply the classical definition
-                    or any(
-                        p[this_action][i] > p[other_action][i]
-                        for i in range(len(p[this_action]))
-                    )
+                    or any(p[this_action][i] > p[other_action][i] for i in range(len(p[this_action])))
                 )
 
                 if is_dominated:
