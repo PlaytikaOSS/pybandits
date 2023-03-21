@@ -198,26 +198,28 @@ def test_select_action_cc(a_list_str, a_list_float):
 
 
 def test_select_action_logic_cc():
-    actions_cost = {"a1": 10, "a2": 30, "a3": 20}
-    p = {"a1": 0.1, "a2": 0.8, "a3": 0.6}
+    actions_cost = {"a1": 10, "a2": 30, "a3": 20, "a4": 10, "a5": 20}
+    p = {"a1": 0.1, "a2": 0.8, "a3": 0.6, "a4": 0.2, "a5": 0.65}
 
     actions = {
         "a1": BetaCC(cost=actions_cost["a1"]),
         "a2": BetaCC(cost=actions_cost["a2"]),
         "a3": BetaCC(cost=actions_cost["a3"]),
+        "a4": BetaCC(cost=actions_cost["a4"]),
+        "a5": BetaCC(cost=actions_cost["a5"]),
     }
 
     c = CostControlBandit(subsidy_factor=1)
-    # if cost factor is 1 => return the action with min cost
-    assert "a1" == c.select_action(p=p, actions=actions)
+    # if cost factor is 1 => return the action with min cost and best proba
+    assert "a4" == c.select_action(p=p, actions=actions)
 
     # if cost factor is 0 => return the action with highest p (classic bandit)
     c.set_subsidy_factor(subsidy_factor=0)
     assert "a2" == c.select_action(p=p, actions=actions)
 
-    # otherwise, return the cheapest action that is still feasible
+    # otherwise, return the cheapest feasible action with best probability
     c.set_subsidy_factor(subsidy_factor=0.7)
-    assert "a3" == c.select_action(p=p, actions=actions)
+    assert "a5" == c.select_action(p=p, actions=actions)
 
 
 @given(
