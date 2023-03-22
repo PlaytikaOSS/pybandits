@@ -210,15 +210,14 @@ def test_select_action_logic_cc():
     }
 
     c = CostControlBandit(subsidy_factor=1)
-    # if cost factor is 1 => return the action with min cost and best proba
+    # if subsidy_factor is 1 => return the action with min cost and the highest sampled probability
     assert "a4" == c.select_action(p=p, actions=actions)
 
-    # if cost factor is 0 => return the action with highest p (classic bandit)
+    # if subsidy_factor is 0 => return the action with highest p (classic bandit)
     c.set_subsidy_factor(subsidy_factor=0)
     assert "a2" == c.select_action(p=p, actions=actions)
 
-    # otherwise, return the cheapest feasible action with best probability
-    c.set_subsidy_factor(subsidy_factor=0.7)
+    # otherwise, return the cheapest feasible action with the highest sampled probability
     assert "a5" == c.select_action(p=p, actions=actions)
 
 
