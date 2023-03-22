@@ -221,11 +221,14 @@ class CostControlBandit(Strategy):
         # define the set of feasible actions
         feasible_actions = [a for a in p.keys() if p[a] >= (1 - self.subsidy_factor) * max_p]
 
-        # feasible action costs
-        _, cheapest_action = min((b.cost, a) for a, b in actions.items() if a in feasible_actions)
+        # feasible actions enriched with their characteristics (cost, 1-probability, action_id)
+        sortable_actions = [(actions[a].cost, 1 - p[a], a) for a in feasible_actions]
+
+        # select the action with the cheapest cost (and the highest probability in case of cost equality)
+        _, _, selected_action = sorted(sortable_actions)[0]
 
         # return cheapest action from the set of feasible actions
-        return cheapest_action
+        return selected_action
 
 
 class MultiObjectiveBandit(Strategy):
