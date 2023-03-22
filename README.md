@@ -36,7 +36,7 @@ $ pip install pybandits
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The command above will automatically install all the dependencies listed in ``requirements.txt``. Please visit the
-[installation](https://playtikaresearch.github.io/pybandits/installation.html)
+[installation](https://playtikaoss.github.io/pybandits/installation.html)
 page for more details.
 
 <br/>
@@ -74,9 +74,9 @@ for a in set(pred_actions):
 Documentation
 -------------
 For more information please read the full
-[documentation](https://playtikaresearch.github.io/pybandits/pybandits.html)
+[documentation](https://playtikaoss.github.io/pybandits/pybandits.html)
 and
-[tutorials](https://playtikaresearch.github.io/pybandits/tutorials.html).
+[tutorials](https://playtikaoss.github.io/pybandits/tutorials.html).
 
 <br/>
 
@@ -85,10 +85,10 @@ Info for developers
 
 PyBandits is supported by the [AI for gaming and entertainment apps](https://www.meetup.com/ai-for-gaming-and-entertainment-apps/) community.
 
-The source code of the project is available on [GitHub](https://github.com/playtikaresearch/pybandits).
+The source code of the project is available on [GitHub](https://github.com/playtikaoss/pybandits).
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-$ git clone https://github.com/playtikaresearch/pybandits.git
+$ git clone https://github.com/playtikaoss/pybandits.git
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 You can install the library and the dependencies with one of the following commands:
