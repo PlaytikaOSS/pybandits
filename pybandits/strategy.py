@@ -224,7 +224,7 @@ class CostControlBandit(Strategy):
         # feasible actions enriched with their characteristics (cost, 1-probability, action_id)
         sortable_actions = [(actions[a].cost, 1 - p[a], a) for a in feasible_actions]
 
-        # best action is the one with cheapest cost (+ higher proba in case of equality)
+        # select the action with the cheapest cost (and the highest probability in case of cost equality)
         _, _, selected_action = sorted(sortable_actions)[0]
 
         # return cheapest action from the set of feasible actions
