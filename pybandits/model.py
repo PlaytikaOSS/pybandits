@@ -21,10 +21,11 @@
 # SOFTWARE.
 
 
-from numpy import sqrt
-from pydantic import NonNegativeFloat, PositiveInt, root_validator, validate_arguments
 from random import betavariate
 from typing import List
+
+from numpy import sqrt
+from pydantic import NonNegativeFloat, PositiveInt, root_validator, validate_arguments
 
 from pybandits.base import BinaryReward, Model, Probability
 
@@ -118,7 +119,7 @@ class BetaCC(BaseBeta):
     cost: NonNegativeFloat
 
 
-class BetaMO(Model):
+class BaseBetaMO(Model):
     """
     Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
@@ -159,3 +160,29 @@ class BetaMO(Model):
 
         for i, counter in enumerate(self.counters):
             counter.update([r[i] for r in rewards])
+
+
+class BetaMO(BaseBetaMO):
+    """
+    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+
+    Parameters
+    ----------
+    counters: List[Beta] of shape (n_objectives,)
+        List of Beta distributions.
+    """
+
+
+class BetaMOCC(BaseBetaMO):
+    """
+    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives and cost control.
+
+    Parameters
+    ----------
+    counters: List[BetaCC] of shape (n_objectives,)
+        List of Beta distributions.
+    cost: NonNegativeFloat
+        Cost associated to the Beta distribution.
+    """
+
+    cost: NonNegativeFloat

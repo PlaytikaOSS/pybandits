@@ -20,14 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import numpy as np
-from pydantic import validate_arguments
 from random import random
-from scipy.stats import ttest_ind_from_stats
 from typing import Dict, List, Optional
 
+import numpy as np
+from pydantic import validate_arguments
+from scipy.stats import ttest_ind_from_stats
+
 from pybandits.base import ActionId, Float01, Model, Probability, Strategy
-from pybandits.model import Beta, BetaCC
+from pybandits.model import Beta, BetaCC, BetaMOCC
 
 
 class ClassicBandit(Strategy):
@@ -224,13 +225,59 @@ class CostControlBandit(Strategy):
         # feasible actions enriched with their characteristics (cost, -probability, action_id)
         # the negative probability ensures that if we order the actions based on their minimum values the one with
         # higher proba will be selected
-        sortable_actions = [(actions[a].cost, - p[a], a) for a in feasible_actions]
+        sortable_actions = [(actions[a].cost, -p[a], a) for a in feasible_actions]
 
         # select the action with the cheapest cost (and the highest probability in case of cost equality)
         _, _, selected_action = sorted(sortable_actions)[0]
 
         # return cheapest action from the set of feasible actions
         return selected_action
+
+
+@validate_arguments
+def get_pareto_front(p: Dict[ActionId, List[Probability]]) -> List[ActionId]:
+    """
+    Create Pareto optimal set of actions (Pareto front) A* identified as actions that are not dominated by any action
+    out of the set A*.
+
+    Parameters:
+    -----------
+    p: Dict[ActionId, Probability]
+        The dictionary or actions and their sampled probability of getting a positive reward for each objective.
+
+    Return
+    ------
+    pareto_front: set
+        The list of Pareto optimal actions
+    """
+    # store non dominated actions
+    pareto_front = []
+
+    for this_action in p.keys():
+        is_pareto = True  # we assume that action is Pareto Optimal until proven otherwise
+        other_actions = [a for a in p.keys() if a != this_action]
+
+        for other_action in other_actions:
+            # check if this_action is not dominated by other_action based on
+            # multiple objectives reward prob vectors
+            is_dominated = not (
+                # an action cannot be dominated by an identical one
+                (p[this_action] == p[other_action])
+                # otherwise, apply the classical definition
+                or any(p[this_action][i] > p[other_action][i] for i in range(len(p[this_action])))
+            )
+
+            if is_dominated:
+                # this_action dominated by at least one other_action,
+                # this_action is not pareto optimal
+                is_pareto = False
+                break
+
+        if is_pareto:
+            # this_action is pareto optimal
+            pareto_front.append(this_action)
+
+    return pareto_front
 
 
 class MultiObjectiveBandit(Strategy):
@@ -253,7 +300,40 @@ class MultiObjectiveBandit(Strategy):
     @validate_arguments
     def select_action(self, p: Dict[ActionId, List[Probability]], **kwargs) -> ActionId:
         """
-        Select an action at random from the Pareto optimal set of action. The Pareto optimal
+        Select an action at random from the Pareto optimal set of action. The Pareto optimal action set (Pareto front)
+        A* is the set of actions not dominated by any other actions not in A*. Dominance relation is established based
+        on the objective reward probabilities vectors.
+
+        Parameters
+        ----------
+        p: Dict[ActionId, List[Probability]]
+             The dictionary of actions and their sampled probability of getting a positive reward for each objective.
+
+        Returns
+        -------
+        selected_action: ActionId
+            The selected action.
+        """
+        return np.random.choice(get_pareto_front(p=p))
+
+
+class MultiObjectiveCostControlBandit(Strategy):
+    """
+    Multi-Objective (MO) with Cost Control (CC) strategy for multi-armed bandits.
+
+    This strategy allows the reward to be a multidimensional vector and include a control of the action cost. It merges
+    the Multi-Objective and Cost Control strategies.
+
+    Parameters
+    ----------
+    n_objectives: int
+        Number of objectives to be solved by the bandit (n_objectives must be >= 1)
+    """
+
+    @validate_arguments
+    def select_action(self, p: Dict[ActionId, List[Probability]], actions: Dict[ActionId, BetaMOCC]) -> ActionId:
+        """
+        Select the action with the minimum cost among the Pareto optimal set of action. The Pareto optimal
         action set (Pareto front) A* is the set of actions not dominated by any other actions not in A*. Dominance
         relation is established based on the objective reward probabilities vectors.
 
@@ -267,50 +347,13 @@ class MultiObjectiveBandit(Strategy):
         selected_action: ActionId
             The selected action.
         """
-        pareto_set = self.get_pareto_front(p=p)
-        return np.random.choice(pareto_set)
+        pareto_set = get_pareto_front(p=p)
 
-    @validate_arguments
-    def get_pareto_front(self, p: Dict[ActionId, List[Probability]]) -> List[ActionId]:
-        """
-        Create Pareto optimal set of actions (Pareto front) A* identified as actions that are not dominated
-        by any action out of the set A*.
+        # feasible actions enriched with their characteristics (cost, np.mean(probabilities), action_id)
+        sortable_actions = [(actions[a].cost, -np.mean(p[a]), a) for a in pareto_set]
 
-        Parameters:
-        -----------
-        p: Dict[ActionId, Probability]
-             The dictionary or actions and their sampled probability of getting a positive reward for each objective.
+        # select the action with the min cost (and the highest mean of probabilities in case of cost equality)
+        _, _, selected_action = sorted(sortable_actions)[0]
 
-        Return
-        ------
-        pareto_front: set
-            the list of Pareto optimal actions
-        """
-        # store non dominated actions
-        pareto_front = []
-
-        for this_action in p.keys():
-            is_pareto = True  # we assume that action is Pareto Optimal until proven otherwise
-            other_actions = [a for a in p.keys() if a != this_action]
-
-            for other_action in other_actions:
-                # check if this_action is not dominated by other_action based on
-                # multiple objectives reward prob vectors
-                is_dominated = not (
-                    # an action cannot be dominated by an identical one
-                    (p[this_action] == p[other_action])
-                    # otherwise, apply the classical definition
-                    or any(p[this_action][i] > p[other_action][i] for i in range(len(p[this_action])))
-                )
-
-                if is_dominated:
-                    # this_action dominated by at least one other_action,
-                    # this_action is not pareto optimal
-                    is_pareto = False
-                    break
-
-            if is_pareto:
-                # this_action is pareto optimal
-                pareto_front.append(this_action)
-
-        return pareto_front
+        # return cheapest action from the set of feasible actions
+        return selected_action

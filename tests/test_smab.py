@@ -29,18 +29,25 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from pybandits.base import BinaryReward
-from pybandits.model import Beta, BetaCC, BetaMO
+from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
 from pybandits.smab import (
     SmabBernoulli,
     SmabBernoulliBAI,
     SmabBernoulliCC,
     SmabBernoulliMO,
+    SmabBernoulliMOCC,
     create_smab_bernoulli_bai_cold_start,
     create_smab_bernoulli_cc_cold_start,
     create_smab_bernoulli_cold_start,
+    create_smab_bernoulli_mo_cc_cold_start,
     create_smab_bernoulli_mo_cold_start,
 )
-from pybandits.strategy import ClassicBandit, CostControlBandit, MultiObjectiveBandit
+from pybandits.strategy import (
+    ClassicBandit,
+    CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+)
 
 ########################################################################################################################
 
@@ -265,14 +272,14 @@ def test_smabbai_with_betacc():
 
 def test_create_smab_bernoulli_cc():
     assert create_smab_bernoulli_cc_cold_start(
-        dict_action_ids_cost={"a1": 10, "a2": 20},
+        action_ids_cost={"a1": 10, "a2": 20},
         subsidy_factor=0.2,
     ) == SmabBernoulliCC(
         actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=20)},
         subsidy_factor=0.2,
     )
 
-    assert create_smab_bernoulli_cc_cold_start(dict_action_ids_cost={"a1": 10, "a2": 20}) == SmabBernoulliCC(
+    assert create_smab_bernoulli_cc_cold_start(action_ids_cost={"a1": 10, "a2": 20}) == SmabBernoulliCC(
         actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=20)},
     )
 
@@ -364,7 +371,7 @@ def test_can_init_smab_mo(a_list):
     assert s.strategy == MultiObjectiveBandit()
 
 
-def test_all_actions_must_have_same_number_of_objectives():
+def test_all_actions_must_have_same_number_of_objectives_smab_mo():
     with pytest.raises(ValueError):
         SmabBernoulliMO(
             actions={
@@ -375,10 +382,96 @@ def test_all_actions_must_have_same_number_of_objectives():
         )
 
 
-def test_init_smab_mo_predict():
-    n_samples = 3
+def test_smab_mo_predict():
+    n_samples = 1000
 
     s = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3)
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1"]
+    predicted_actions, _ = s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    assert "a1" not in predicted_actions
+
+    forbidden = ["a1", "a2"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a2", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+########################################################################################################################
+
+
+# SmabBernoulli with strategy=MultiObjectiveCostControlBandit()
+
+
+@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8))
+def test_can_init_smab_mo_cc(a_list):
+    a, b, c, d, e, f, g, h = a_list
+
+    s = SmabBernoulliMOCC(
+        actions={
+            "a1": BetaMOCC(
+                counters=[
+                    Beta(n_successes=a, n_failures=b),
+                    Beta(n_successes=c, n_failures=d),
+                    Beta(n_successes=e, n_failures=f),
+                ],
+                cost=g,
+            ),
+            "a2": BetaMOCC(
+                counters=[
+                    Beta(n_successes=d, n_failures=a),
+                    Beta(n_successes=e, n_failures=b),
+                    Beta(n_successes=f, n_failures=c),
+                ],
+                cost=h,
+            ),
+        },
+    )
+    assert s.actions["a1"] == BetaMOCC(
+        counters=[
+            Beta(n_successes=a, n_failures=b),
+            Beta(n_successes=c, n_failures=d),
+            Beta(n_successes=e, n_failures=f),
+        ],
+        cost=g,
+    )
+    assert s.actions["a2"] == BetaMOCC(
+        counters=[
+            Beta(n_successes=d, n_failures=a),
+            Beta(n_successes=e, n_failures=b),
+            Beta(n_successes=f, n_failures=c),
+        ],
+        cost=h,
+    )
+    assert s.strategy == MultiObjectiveCostControlBandit()
+
+
+def test_all_actions_must_have_same_number_of_objectives_smab_mo_cc():
+    with pytest.raises(ValueError):
+        SmabBernoulliMOCC(
+            actions={
+                "action 1": BetaMOCC(counters=[Beta(), Beta()], cost=1),
+                "action 2": BetaMOCC(counters=[Beta(), Beta()], cost=1),
+                "action 3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=1),
+            },
+        )
+
+
+def test_smab_mo_cc_predict():
+    n_samples = 1000
+
+    s = create_smab_bernoulli_mo_cc_cold_start(action_ids_cost={"a1": 1, "a2": 2}, n_objectives=2)
 
     forbidden = None
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)
