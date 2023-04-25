@@ -218,6 +218,7 @@ def test_select_action_logic_cc():
     assert "a2" == c.select_action(p=p, actions=actions)
 
     # otherwise, return the cheapest feasible action with the highest sampled probability
+    c.set_subsidy_factor(subsidy_factor=0.5)
     assert "a5" == c.select_action(p=p, actions=actions)
 
 
@@ -234,6 +235,7 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
 
     p = dict(zip(action_ids, a_list_p))
     actions_cost = dict(zip(action_ids, a_list_cost))
+    actions_cost_proba = {a_id: (a_cost, a_proba) for a_id, a_cost, a_proba in zip(action_ids, a_list_cost, a_list_p)}
 
     actions = {
         "a1": BetaCC(cost=actions_cost["a1"]),
@@ -242,18 +244,20 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
     }
 
     c = CostControlBandit(subsidy_factor=1)
-    # if cost factor is 1 => return the action with min cost
-    assert min(actions_cost, key=actions_cost.get) == c.select_action(p=p, actions=actions)
+    # if cost factor is 1 => return the action with min cost and max probability in case
+    # of are multiple actions with the same minimum cost
+    assert min(actions_cost_proba, key=actions_cost.get) == c.select_action(p=p, actions=actions)
 
     # if cost factor is 0:
     c.set_subsidy_factor(subsidy_factor=0)
     # get the keys of the max p.values() (there might be more max_p_values)
     max_p_values = [k for k, v in p.items() if v == max(p.values())]
 
-    # if cost factor is 0 and only 1  max_value  => return the action with highest p (classic bandit)
+    # if cost factor is 0 and only 1 max_value => return the action with highest p (classic bandit)
     # e.g. p={"a1": 0.5, "a2": 0.2} => return always "a1"
     if len(max_p_values) == 1:
         assert max(p, key=p.get) == c.select_action(p=p, actions=actions)
+
     # if cost factor is 0 and only 1+ max_values => return the action with highest p and min cost
     # e.g. p={"a1": 0.5, "a2": 0.5} and cost={"a1": 20, "a2": 10} => return always "a2"
     else:
