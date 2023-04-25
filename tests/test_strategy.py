@@ -230,7 +230,7 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
 
     p = dict(zip(action_ids, a_list_p))
     actions_cost = dict(zip(action_ids, a_list_cost))
-    actions_cost_proba = {a_id: (a_cost, a_proba) for a_id, a_cost, a_proba in zip(action_ids, a_list_cost, a_list_p)}
+    actions_cost_proba = [(a_cost, -a_proba, a_id) for a_id, a_cost, a_proba in zip(action_ids, a_list_cost, a_list_p)]
 
     actions = {
         "a1": BetaCC(cost=actions_cost["a1"]),
@@ -239,9 +239,11 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
     }
 
     c = CostControlBandit(subsidy_factor=1)
-    # if cost factor is 1 => return the action with the min cost (and the highest
-    # probability in case of cost equality)
-    assert min(actions_cost_proba, key=actions_cost.get) == c.select_action(p=p, actions=actions)
+    # if cost factor is 1 return:
+    # - the action with the min cost, or
+    # - the highest probability in case of cost equality, or
+    # - the lowest action id (alphabetically) in case of equal cost and probability
+    assert sorted(actions_cost_proba)[0][-1] == c.select_action(p=p, actions=actions)
 
     # if cost factor is 0:
     c.set_subsidy_factor(subsidy_factor=0)
