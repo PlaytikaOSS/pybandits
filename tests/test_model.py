@@ -26,7 +26,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from pybandits.model import Beta, BetaCC, BetaMO
+from pybandits.model import BaseBetaMO, Beta, BetaCC, BetaMO, BetaMOCC
 
 ########################################################################################################################
 
@@ -61,9 +61,7 @@ def test_both_or_neither_counters_are_defined():
 def test_beta_update(rewards):
     b = Beta(n_successes=1, n_failures=2)
     b.update(rewards=rewards)
-    assert b == Beta(
-        n_successes=1 + sum(rewards), n_failures=2 + (len(rewards) - sum(rewards))
-    )
+    assert b == Beta(n_successes=1 + sum(rewards), n_failures=2 + (len(rewards) - sum(rewards)))
 
 
 @given(st.builds(Beta))
@@ -100,26 +98,26 @@ def test_can_init_betaCC(a_float):
 ########################################################################################################################
 
 
-# BetaMO
+# BaseBetaMO
 
 
-def test_can_init_beta_mo():
+def test_can_init_base_beta_mo():
     # init with default params
-    b = BetaMO(counters=[Beta(), Beta()])
+    b = BaseBetaMO(counters=[Beta(), Beta()])
     assert b.counters[0].n_successes == 1 and b.counters[0].n_failures == 1
     assert b.counters[1].n_successes == 1 and b.counters[1].n_failures == 1
 
     # init with empty dict
-    b = BetaMO(counters=[{}, {}])
+    b = BaseBetaMO(counters=[{}, {}])
     assert b.counters[0] == Beta()
 
     # invalid init with BetaCC instead of Beta
     with pytest.raises(ValidationError):
-        BetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
+        BaseBetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
 def test_calculate_proba_beta_mo():
-    b = BetaMO(counters=[Beta(), Beta()])
+    b = BaseBetaMO(counters=[Beta(), Beta()])
     b.sample_proba()
 
 
@@ -132,27 +130,63 @@ def test_beta_update_mo(rewards1, rewards2):
     rewards1, rewards2 = rewards1[:min_len], rewards2[:min_len]
     rewards = [[a, b] for a, b in zip(rewards1, rewards2)]
 
-    b = BetaMO(
-        counters=[
-            Beta(n_successes=11, n_failures=22),
-            Beta(n_successes=33, n_failures=44),
-        ]
-    )
+    b = BaseBetaMO(counters=[Beta(n_successes=11, n_failures=22), Beta(n_successes=33, n_failures=44)])
 
     b.update(rewards=rewards)
 
-    assert b == BetaMO(
+    assert b == BaseBetaMO(
         counters=[
-            Beta(
-                n_successes=11 + sum(rewards1),
-                n_failures=22 + len(rewards1) - sum(rewards1),
-            ),
-            Beta(
-                n_successes=33 + sum(rewards2),
-                n_failures=44 + len(rewards2) - sum(rewards2),
-            ),
+            Beta(n_successes=11 + sum(rewards1), n_failures=22 + len(rewards1) - sum(rewards1)),
+            Beta(n_successes=33 + sum(rewards2), n_failures=44 + len(rewards2) - sum(rewards2)),
         ]
     )
 
     with pytest.raises(AttributeError):
         b.update(rewards=[[1, 1], [1], [0, 1]])
+
+
+########################################################################################################################
+
+
+# BetaMO
+
+
+def test_can_init_beta_mo():
+    # init with default params
+    b = BetaMO(counters=[Beta(), Beta()])
+    assert b.counters == [Beta(), Beta()]
+
+    # init with empty dict
+    b = BetaMO(counters=[{}, {}])
+    assert b.counters == [Beta(), Beta()]
+
+    # invalid init with BetaCC instead of Beta
+    with pytest.raises(ValidationError):
+        BetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
+
+
+########################################################################################################################
+
+
+# BetaMOCC
+
+
+@given(st.floats())
+def test_can_init_beta_mo_cc(a_float):
+    if a_float < 0 or np.isnan(a_float):
+        with pytest.raises(ValidationError):
+            BetaMOCC(counters=[Beta(), Beta()], cost=a_float)
+    else:
+        # init with default params
+        b = BetaMOCC(counters=[Beta(), Beta()], cost=a_float)
+        assert b.counters == [Beta(), Beta()]
+        assert b.cost == a_float
+
+        # init with empty dict
+        b = BetaMOCC(counters=[{}, {}], cost=a_float)
+        assert b.counters == [Beta(), Beta()]
+        assert b.cost == a_float
+
+        # invalid init with BetaCC instead of Beta
+        with pytest.raises(ValidationError):
+            BetaMOCC(counters=[BetaCC(cost=1), BetaCC(cost=1)], cost=a_float)

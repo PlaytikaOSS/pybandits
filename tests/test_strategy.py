@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 from typing import Dict, List
-from unittest import mock
 
 import numpy as np
 import pytest
@@ -30,12 +29,14 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from pybandits.base import ActionId, Probability
-from pybandits.model import Beta, BetaCC
+from pybandits.model import Beta, BetaCC, BetaMOCC
 from pybandits.strategy import (
     BestActionIdentification,
     ClassicBandit,
     CostControlBandit,
     MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+    get_pareto_front,
 )
 
 ########################################################################################################################
@@ -274,24 +275,19 @@ def test_can_init_multiobjective():
 
 @given(
     st.dictionaries(
-        st.text(min_size=1), st.lists(st.floats(min_value=0, max_value=1), min_size=3, max_size=3), min_size=3
+        st.text(min_size=1, alphabet=st.characters(blacklist_characters=("\x00"))),
+        st.lists(st.floats(min_value=0, max_value=1), min_size=3, max_size=3),
+        min_size=3,
     )
 )
 def test_select_action_mo(p: Dict[ActionId, List[Probability]]):
-    # patch pareto_front method
-    pareto_set = np.random.choice(list(p.keys()), 3, replace=False)
-    pareto_front_mock = mock.Mock(return_value=pareto_set)
-    with mock.patch.object(MultiObjectiveBandit, "get_pareto_front", pareto_front_mock):
-        # verify the result is within pareto_set
-        m = MultiObjectiveBandit()
-        assert m.select_action(p) in pareto_set
+    m = MultiObjectiveBandit()
+    assert m.select_action(p=p) in get_pareto_front(p=p)
 
 
 def test_pareto_front():
-    m = MultiObjectiveBandit()
-
     # works in 2D
-
+    #
     #    +
     # .3 |     X
     #    |
@@ -314,7 +310,7 @@ def test_pareto_front():
         "a7": [0.1, 0.1],
     }
 
-    assert m.get_pareto_front(p2d) == ["a0", "a1", "a4", "a5"]
+    assert get_pareto_front(p2d) == ["a0", "a1", "a4", "a5"]
 
     p2d = {
         "a0": [0.1, 0.1],
@@ -322,7 +318,7 @@ def test_pareto_front():
         "a2": [0.3, 0.3],
     }
 
-    assert m.get_pareto_front(p2d) == ["a1", "a2"]
+    assert get_pareto_front(p2d) == ["a1", "a2"]
 
     # works in 3D
     p3d = {
@@ -336,4 +332,50 @@ def test_pareto_front():
         "a7": [0.1, 0.1, 0.3],
     }
 
-    assert m.get_pareto_front(p3d) == ["a0", "a1", "a4", "a5", "a7"]
+    assert get_pareto_front(p3d) == ["a0", "a1", "a4", "a5", "a7"]
+
+
+########################################################################################################################
+
+
+# MultiObjectiveCostControlBandit
+
+
+def test_can_init_multiobjective_mo_cc():
+    MultiObjectiveCostControlBandit()
+
+
+def test_select_action_mo_cc():
+    m = MultiObjectiveCostControlBandit()
+
+    actions = {
+        "a1": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=8),
+        "a2": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=2),
+        "a3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=5),
+        "a4": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=1),
+        "a5": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=7),
+    }
+    p = {
+        "a1": [0.1, 0.3, 0.5],
+        "a2": [0.1, 0.3, 0.5],
+        "a3": [0.0, 0.4, 0.4],
+        "a4": [0.5, 0.3, 0.7],
+        "a5": [0.6, 0.1, 0.5],
+    }
+    # within the pareto front ("a3", "a4", "a5") select the action with min cost ("a4")
+    assert get_pareto_front(p) == ["a3", "a4", "a5"]
+    assert m.select_action(p=p, actions=actions) == "a4"
+
+    actions = {
+        "a1": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=2),
+        "a2": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=2),
+        "a3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=5),
+    }
+    p = {
+        "a1": [0.6, 0.1, 0.1],
+        "a2": [0.5, 0.8, 0.8],
+        "a3": [0.0, 0.1, 0.9],
+    }
+    # within the actions with the min cost ("a1" or "a2") select the action the highest mean of probabilities ("a2")
+    assert get_pareto_front(p) == ["a1", "a2", "a3"]
+    assert m.select_action(p=p, actions=actions) == "a2"

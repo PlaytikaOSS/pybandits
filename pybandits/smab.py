@@ -21,17 +21,31 @@
 # SOFTWARE.
 
 from collections import defaultdict
-from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from pybandits.base import ActionId, BaseMab, BinaryReward, Float01, Probability
-from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO
-from pybandits.strategy import BestActionIdentification, ClassicBandit, CostControlBandit, MultiObjectiveBandit
+from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
+
+from pybandits.base import (
+    ActionId,
+    BaseMab,
+    BinaryReward,
+    Float01,
+    Probability,
+    Strategy,
+)
+from pybandits.model import BaseBeta, BaseBetaMO, Beta, BetaCC, BetaMO, BetaMOCC
+from pybandits.strategy import (
+    BestActionIdentification,
+    ClassicBandit,
+    CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+)
 
 
 class BaseSmabBernoulli(BaseMab):
     """
-    Base model for a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling
+    Base model for a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.
 
     Parameters
     ----------
@@ -114,7 +128,7 @@ class BaseSmabBernoulli(BaseMab):
 
 class SmabBernoulli(BaseSmabBernoulli):
     """
-    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling
+    Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
     Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
                http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
@@ -140,8 +154,7 @@ class SmabBernoulli(BaseSmabBernoulli):
 
 class SmabBernoulliBAI(BaseSmabBernoulli):
     """
-    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and best
-    action identification.
+    Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action Identification strategy.
 
     Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
                http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
@@ -168,8 +181,7 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
 
 class SmabBernoulliCC(BaseSmabBernoulli):
     """
-    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
-    Cost Control.
+    Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control strategy.
 
     The sMAB is extended to include a control of the action cost. Each action is associated with a predefined "cost".
     At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
@@ -202,10 +214,38 @@ class SmabBernoulliCC(BaseSmabBernoulli):
         super().update(actions=actions, rewards=rewards)
 
 
-class SmabBernoulliMO(BaseSmabBernoulli):
+class BaseSmabBernoulliMO(BaseSmabBernoulli):
     """
-    Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
-    Multi-Objectives.
+    Base model for a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation, and Multi-Objectives
+    strategy.
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BetaMO]
+        The list of possible actions, and their associated Model.
+    strategy: Strategy
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BaseBetaMO]
+    strategy: Strategy
+
+    @validator("actions", pre=False)
+    @classmethod
+    def all_actions_have_same_number_of_objectives(cls, actions: Dict[ActionId, BaseBetaMO]):
+        n_objs_per_action = [len(beta.counters) for beta in actions.values()]
+        if len(set(n_objs_per_action)) != 1:
+            raise ValueError("All actions should have the same number of objectives")
+        return actions
+
+    @validate_arguments
+    def update(self, actions: List[ActionId], rewards: List[List[BinaryReward]]):
+        super().update(actions=actions, rewards=rewards)
+
+
+class SmabBernoulliMO(BaseSmabBernoulliMO):
+    """
+    Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Multi-Objectives strategy.
 
     The reward pertaining to an action is a multidimensional vector instead of a scalar value. In this setting,
     different actions are compared according to Pareto order between their expected reward vectors, and those actions
@@ -229,24 +269,35 @@ class SmabBernoulliMO(BaseSmabBernoulli):
     def __init__(self, actions: Dict[ActionId, Beta]):
         super().__init__(actions=actions, strategy=MultiObjectiveBandit())
 
-    @validator("actions", pre=False)
-    @classmethod
-    def all_actions_have_same_number_of_objectives(cls, actions: Dict[ActionId, BetaMO]):
-        n_objs_per_action = [len(beta.counters) for beta in actions.values()]
-        if len(set(n_objs_per_action)) != 1:
-            raise ValueError("All actions should have the same number of objectives")
-        return actions
 
-    @validate_arguments
-    def update(self, actions: List[ActionId], rewards: List[List[BinaryReward]]):
-        super().update(actions=actions, rewards=rewards)
+class SmabBernoulliMOCC(BaseSmabBernoulliMO):
+    """
+    Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation for Multi-Objective (MO) with Cost
+    Control (CC) strategy.
+
+    This Bandit allows the reward to be a multidimensional vector and include a control of the action cost. It merges
+    the Multi-Objective and Cost Control strategies.
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BetaMOCC]
+        The list of possible actions, and their associated Model.
+    strategy: MultiObjectiveCostControlBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BetaMOCC]
+    strategy: MultiObjectiveCostControlBandit
+
+    def __init__(self, actions: Dict[ActionId, Beta]):
+        super().__init__(actions=actions, strategy=MultiObjectiveCostControlBandit())
 
 
 @validate_arguments
 def create_smab_bernoulli_cold_start(action_ids: Set[ActionId]) -> SmabBernoulli:
     """
-    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling, with
-    default parameters.
+    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, with default
+    parameters.
 
     Parameters
     ----------
@@ -269,8 +320,8 @@ def create_smab_bernoulli_bai_cold_start(
     action_ids: Set[ActionId], exploit_p: Optional[Float01] = None
 ) -> SmabBernoulliBAI:
     """
-    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and best
-    action identification, with default parameters.
+    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action
+    Identification strategy, with default parameters.
 
     Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
                http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
@@ -294,18 +345,17 @@ def create_smab_bernoulli_bai_cold_start(
     actions = {}
     for a in set(action_ids):
         actions[a] = Beta()
-    smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
-    return smab
+    return SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
 
 
 @validate_arguments
 def create_smab_bernoulli_cc_cold_start(
-    dict_action_ids_cost: Dict[ActionId, NonNegativeFloat],
+    action_ids_cost: Dict[ActionId, NonNegativeFloat],
     subsidy_factor: Optional[Float01] = None,
 ) -> SmabBernoulliCC:
     """
-    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
-    Cost Control, with default parameters.
+    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control
+    strategy, with default parameters.
 
     The sMAB is extended to include a control of the action cost. Each action is associated with a predefined "cost".
     At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
@@ -320,7 +370,7 @@ def create_smab_bernoulli_cc_cold_start(
 
     Parameters
     ----------
-    actions : Dict[ActionId, NonNegativeFloat]
+    action_ids_cost: Dict[ActionId, NonNegativeFloat]
         The list of possible actions, and their cost.
     subsidy_factor: Optional[Float_0_1], default=0.5
         Number in [0, 1] to define smallest tolerated probability reward, hence the set of feasible actions.
@@ -334,17 +384,16 @@ def create_smab_bernoulli_cc_cold_start(
         Stochastic Multi-Armed Bandit with strategy = CostControlBandit
     """
     actions = {}
-    for a, cost in dict_action_ids_cost.items():
+    for a, cost in action_ids_cost.items():
         actions[a] = BetaCC(cost=cost)
-    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
-    return smab
+    return SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
 
 
 @validate_arguments
 def create_smab_bernoulli_mo_cold_start(action_ids: Set[ActionId], n_objectives: PositiveInt) -> SmabBernoulliMO:
     """
-    Utility function to create a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling and
-    Multi-Objectives, with default parameters.
+    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Multi-Objectives
+    strategy, with default parameters.
 
     The reward pertaining to an action is a multidimensional vector instead of a scalar value. In this setting,
     different actions are compared according to Pareto order between their expected reward vectors, and those actions
@@ -363,10 +412,39 @@ def create_smab_bernoulli_mo_cold_start(action_ids: Set[ActionId], n_objectives:
 
     Returns
     -------
-    smab: BaseSmabBernoulli
+    smab: SmabBernoulliMO
         Stochastic Multi-Armed Bandit with strategy = MultiObjectiveBandit
     """
     actions = {}
     for a in set(action_ids):
         actions[a] = BetaMO(counters=n_objectives * [Beta()])
     return SmabBernoulliMO(actions=actions)
+
+
+@validate_arguments
+def create_smab_bernoulli_mo_cc_cold_start(
+    action_ids_cost: Dict[ActionId, NonNegativeFloat], n_objectives: PositiveInt
+) -> SmabBernoulliMOCC:
+    """
+    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation for
+    Multi-Objective (MO) with Cost Control (CC) strategy, with default parameters.
+
+    This Bandit allows the reward to be a multidimensional vector and include a control of the action cost. It merges
+    the Multi-Objective and Cost Control strategies.
+
+    Parameters
+    ----------
+    action_ids_cost: Dict[ActionId, NonNegativeFloat]
+        The list of possible actions, and their cost.
+    n_objectives: PositiveInt
+        The number of objectives to optimize. The bandit assumes the same number of objectives for all actions.
+
+    Returns
+    -------
+    smab: SmabBernoulliMO
+        Stochastic Multi-Armed Bandit with strategy = MultiObjectiveBandit
+    """
+    actions = {}
+    for a, cost in action_ids_cost.items():
+        actions[a] = BetaMOCC(counters=n_objectives * [Beta()], cost=cost)
+    return SmabBernoulliMOCC(actions=actions)
