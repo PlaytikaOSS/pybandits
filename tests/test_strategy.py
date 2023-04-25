@@ -58,11 +58,6 @@ def test_select_action_classic_bandit(a_list_str, a_list_float):
     assert max(p, key=p.get) == c.select_action(p=p)
 
 
-# def test_is_compatible():
-#     assert ClassicBandit().is_compatible_with_model(Beta())
-# assert not ClassicBandit().is_compatible_with_model(BetaCC(cost=1))
-
-
 ########################################################################################################################
 
 
@@ -244,8 +239,8 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
     }
 
     c = CostControlBandit(subsidy_factor=1)
-    # if cost factor is 1 => return the action with min cost and max probability in case
-    # of are multiple actions with the same minimum cost
+    # if cost factor is 1 => return the action with the min cost (and the highest
+    # probability in case of cost equality)
     assert min(actions_cost_proba, key=actions_cost.get) == c.select_action(p=p, actions=actions)
 
     # if cost factor is 0:
@@ -263,11 +258,6 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
     else:
         actions_cost_max = {k: actions_cost[k] for k in max_p_values}
         min(actions_cost_max, key=actions_cost_max.get) == c.select_action(p=p, actions=actions)
-
-
-# def test_cc_is_compatible():
-#     assert not CostControlBandit().is_compatible_with_model(Beta())
-#     assert CostControlBandit().is_compatible_with_model(BetaCC(cost=1))
 
 
 ########################################################################################################################
