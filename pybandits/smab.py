@@ -45,7 +45,7 @@ from pybandits.strategy import (
 
 class BaseSmabBernoulli(BaseMab):
     """
-    Base model for a Stochastic Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.
+    Base model for a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
     Parameters
     ----------

@@ -18,6 +18,8 @@ loguru = "^0.6.0"
 numpy = "^1.24.2"
 pydantic = "^1.10.6"
 scipy = "^1.10.1"
+pymc = "^5.3.0"
+scikit-learn = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"
