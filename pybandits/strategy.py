@@ -45,7 +45,7 @@ class ClassicBandit(Strategy):
     @validate_arguments
     def select_action(
         self,
-        p: Dict[ActionId, Probability],
+        p: Dict[ActionId, float],
         actions: Optional[Dict[ActionId, Model]] = None,
     ) -> ActionId:
         """

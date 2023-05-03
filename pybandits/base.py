@@ -22,8 +22,18 @@
 
 
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, Extra, NonNegativeInt, confloat, conint, constr, validate_arguments, validator
 from typing import Any, Dict, List, NewType, Optional, Set, Tuple, Union
+
+from pydantic import (
+    BaseModel,
+    Extra,
+    NonNegativeInt,
+    confloat,
+    conint,
+    constr,
+    validate_arguments,
+    validator,
+)
 
 ActionId = NewType("ActionId", constr(min_length=1))
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
@@ -137,7 +147,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         if invalid:
             raise AttributeError(f"The following invalid action(s) were specified: {invalid}.")
         if len(actions) != len(rewards):
-            raise AttributeError(f"Actions and rewards should have the same length {len(actions)}.")
+            raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
 
     @abstractmethod
     @validate_arguments
