@@ -35,6 +35,8 @@ pytest-cov = "^4.0.0"
 pyzmq = "25.0.0"
 rich = "^13.3.2"
 tox = "^4.4.7"
+commitizen = "^3.2.0"
+python-semantic-release = "^7.33.3"
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
