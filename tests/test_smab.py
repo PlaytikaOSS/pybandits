@@ -207,13 +207,14 @@ def test_smab_accepts_only_valid_actions(s):
 
 
 def test_create_smab_bernoulli_bai():
+    # default exploit_p
+    assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"]) == SmabBernoulliBAI(
+        actions={"a1": Beta(), "a2": Beta()},
+    )
+    # set exploit_p
     assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], exploit_p=0.2) == SmabBernoulliBAI(
         actions={"a1": Beta(), "a2": Beta()},
         exploit_p=0.2,
-    )
-
-    assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"]) == SmabBernoulliBAI(
-        actions={"a1": Beta(), "a2": Beta()},
     )
 
 
@@ -406,6 +407,11 @@ def test_smab_mo_predict():
     forbidden = ["a1", "a3"]
     with pytest.raises(ValueError):
         s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+def test_smab_mo_update():
+    mab = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3)
+    mab.update(actions=["a1", "a1"], rewards=[[1, 0, 1], [1, 1, 0]])
 
 
 ########################################################################################################################
