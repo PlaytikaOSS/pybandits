@@ -30,11 +30,13 @@ from pydantic import ValidationError
 from pybandits.model import (
     BaseBetaMO,
     BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
     Beta,
     BetaCC,
     BetaMO,
     BetaMOCC,
     StudentT,
+    create_bayesian_logistic_regression_cc_cold_start,
     create_bayesian_logistic_regression_cold_start,
 )
 
@@ -271,19 +273,19 @@ def test_check_context_matrix(n_samples, n_features):
     blr.check_context_matrix(context=context)
 
     # raise an error if len(context) != len(self.betas)
-    with pytest.raises(ValueError):
+    with pytest.raises(AttributeError):
         blr.check_context_matrix(context=context.loc[:, 1:])
 
     blr = create_bayesian_logistic_regression_cold_start(n_betas=2)
 
-    with pytest.raises(ValueError):
-        blr.check_context_matrix(context=[[1], [2, 3]])  # ValueError: inhomogeneous shape
-    with pytest.raises(ValueError):
-        blr.check_context_matrix(context=1.0)  # IndexError
-    with pytest.raises(ValueError):
-        blr.check_context_matrix(context="a")  # IndexError
-    with pytest.raises(ValueError):
-        blr.check_context_matrix(context=[1.0])  # IndexError
+    with pytest.raises(AttributeError):
+        blr.check_context_matrix(context=[[1], [2, 3]])  # context has shape mismatch
+    with pytest.raises(AttributeError):
+        blr.check_context_matrix(context=1.0)  # context is a number
+    with pytest.raises(AttributeError):
+        blr.check_context_matrix(context="a")  # context is a string
+    with pytest.raises(AttributeError):
+        blr.check_context_matrix(context=[1.0])  # context is a 1-dim list
 
 
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
@@ -353,3 +355,33 @@ def test_blr_update(n_samples=100, n_features=3):
     with pytest.raises(ValueError):
         blr = create_bayesian_logistic_regression_cold_start(n_betas=n_features)
         blr.update(context=context, rewards=rewards[1:])
+
+
+########################################################################################################################
+
+
+# BayesianLogisticRegressionCC
+
+
+@given(st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
+def test_can_init_bayesian_logistic_regression_cc(n_betas, cost):
+    # at least one beta must be specified
+    if n_betas <= 0 or cost < 0:
+        with pytest.raises(ValidationError):
+            BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
+    else:
+        blr = BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
+        assert (blr.alpha, blr.betas) == (StudentT(), [StudentT() for _ in range(n_betas)])
+
+
+@given(st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
+def test_create_default_instance_bayesian_logistic_regression_cc(n_betas, cost):
+    # at least one beta must be specified
+    if n_betas <= 0 or cost < 0:
+        with pytest.raises(ValidationError):
+            create_bayesian_logistic_regression_cc_cold_start(n_betas=n_betas, cost=cost)
+    else:
+        blr = create_bayesian_logistic_regression_cc_cold_start(n_betas=n_betas, cost=cost)
+        assert blr == BayesianLogisticRegressionCC(
+            alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost
+        )

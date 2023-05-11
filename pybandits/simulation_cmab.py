@@ -20,10 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import numpy as np
-import pandas as pd
 import random
 from json import dump
+
+import numpy as np
+import pandas as pd
 
 from pybandits.core.cmab import Cmab, check_context_matrix
 

@@ -1,0 +1,8 @@
+FROM docker-release.artifactory.playticorp.com/com.playtika.containers/playtika_docker_multipython:1.0.0
+
+RUN pip3 install poetry
+
+COPY / /app
+WORKDIR /app
+ENTRYPOINT 'tox'
+CMD ['.']

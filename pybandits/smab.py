@@ -205,7 +205,7 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     actions: Dict[ActionId, BetaCC]
     strategy: CostControlBandit
 
-    def __init__(self, actions: Dict[ActionId, Beta], subsidy_factor: Optional[Float01] = None):
+    def __init__(self, actions: Dict[ActionId, BetaCC], subsidy_factor: Optional[Float01] = None):
         strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
         super().__init__(actions=actions, strategy=strategy)
 

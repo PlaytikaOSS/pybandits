@@ -28,7 +28,7 @@ from pydantic import validate_arguments
 from scipy.stats import ttest_ind_from_stats
 
 from pybandits.base import ActionId, Float01, Model, Probability, Strategy
-from pybandits.model import Beta, BetaCC, BetaMOCC
+from pybandits.model import Beta, BetaMOCC
 
 
 class ClassicBandit(Strategy):
@@ -103,7 +103,7 @@ class BestActionIdentification(Strategy):
     @validate_arguments
     def select_action(
         self,
-        p: Dict[ActionId, Probability],
+        p: Dict[ActionId, float],
         actions: Optional[Dict[ActionId, Model]] = None,
     ) -> ActionId:
         """
@@ -136,6 +136,7 @@ class BestActionIdentification(Strategy):
 
         return selected_action
 
+    # TODO: WIP this is valid only for SmabBernoulli
     def compare_best_actions(self, actions: Dict[ActionId, Beta]) -> float:
         """
         Compare the 2 best actions, hence the 2 actions with the highest expected means of getting a positive reward.
@@ -198,7 +199,7 @@ class CostControlBandit(Strategy):
         self.subsidy_factor = subsidy_factor
 
     @validate_arguments
-    def select_action(self, p: Dict[ActionId, Probability], actions: Dict[ActionId, BetaCC]) -> ActionId:
+    def select_action(self, p: Dict[ActionId, Probability], actions: Dict[ActionId, Model]) -> ActionId:
         """
         Select the action with the minimum cost among the set of feasible actions (the actions whose expected rewards
         are above a certain lower bound defined as [(1-subsidy_factor)*max_p, max_p], where max_p is the highest

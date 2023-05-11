@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "0.1.0"
+version = "0.1.5-rc0"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -20,6 +20,7 @@ pydantic = "^1.10.6"
 scipy = "^1.10.1"
 pymc = "^5.3.0"
 scikit-learn = "^1.2.2"
+filelock = ">=3.12.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"
@@ -72,4 +73,14 @@ plugins = "pydantic.mypy"
 [tool.flake8]
 # exclude = [".git", "__pycache__", ".tox"]
 max-line-length = 120
-extend-ignore = "E203"
+extend-ignore = "E203, E721"
+
+[[tool.poetry.source]]
+default = true
+name = "default"
+url = "https://artifactory.playticorp.com/artifactory/api/pypi/pypi.org/simple"
+
+[[tool.poetry.source]]
+name = "private"
+secondary = true
+url = "https://artifactory.playticorp.com/artifactory/api/pypi/pip/simple"
