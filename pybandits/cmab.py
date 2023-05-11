@@ -20,476 +20,391 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import numpy as np
-import pandas as pd
-from functools import partial
-from multiprocessing import Pool
-from pymc3 import Bernoulli, Data, Deterministic, Model, StudentT, fast_sample_posterior_predictive, sample, set_data
-from pymc3.math import sigmoid
-from scipy.stats import t
-from theano.tensor import dot
+from typing import Dict, List, Optional, Set, Tuple, Union
+
+from numpy import array
+from numpy.random import choice
+from numpy.typing import ArrayLike
+from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
+
+from pybandits.base import ActionId, BaseMab, BinaryReward, Float01, Probability
+from pybandits.model import (
+    BaseBayesianLogisticRegression,
+    BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
+    create_bayesian_logistic_regression_cc_cold_start,
+    create_bayesian_logistic_regression_cold_start,
+)
+from pybandits.strategy import (
+    BestActionIdentification,
+    ClassicBandit,
+    CostControlBandit,
+)
 
 
-def check_context_matrix(context, n_features):
+class BaseCmabBernoulli(BaseMab):
     """
-    Check context matrix
+    Base model for a Contextual Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.
 
     Parameters
     ----------
-    X: array_like of shape (n_samples, n_features)
-        Matrix with contextual features.
-    """
-    try:
-        context = pd.DataFrame(context).reset_index(drop=True)
-    except ValueError as e:
-        print("{}\nCannot convert input arguments to pandas DataFrame".format(e))
-        raise
-    if context.shape[1] != n_features:
-        raise ValueError("context must have {} columns.".format(n_features))
-    return context
-
-
-class Cmab:
-    """
-    Contextual Multi-Armed Bandit with binary rewards. It is based on Thompson Sampling with bayesian logistic
-    regression. It assumes a prior distribution over the parameters and it computes the posterior reward
-    distributions applying Bayes'theorem via Markov Chain Monte Carlo simulation (MCMC).
-
-    Parameters
-    ----------
-    n_features: int
-        The number of contextual features.
-    actions_ids : list of strings with length = n_actions
-        List of actions names.
-    params_sample: dict
-        Sampling parameters for pm.sample function from pymc3.
-    n_jobs: int
-        The number of jobs to run in parallel. If n_jobs > 1, both the update() and predict() functions will be run with
-        parallelization via the multiprocessing package.
-    mu_alpha: dict
-        Mu (location) parameters for alpha prior Student's t distribution. By default all mu=0.
-        The keys of the dict must be the actions_ids, and the values are floats.
-        e.g. mu={'action1': 0., 'action2': 0.} with n_actions=2.
-    mu_betas: dict
-        Mu (location) parameters for betas prior Student's t distributions. By default all mu=0.
-        The keys of the dict must be the actions_ids, and the values are lists of floats with length=n_features.
-        e.g. mu={'action1': [0., 0., 0.], 'action2': [0., 0., 0.]} with n_actions=2 and n_features=3.
-    sigma_alpha: dict
-        Sigma (scale) parameters for alpha prior Student's t distribution. By default all sigma=10.
-        The keys of the dict must be the actions_ids, and the values are floats.
-        e.g. sigma={'action1': 10., 'action2': 10.} with n_actions=2.
-    sigma_betas: dict
-        Sigma (scale) parameters for betas prior Student's t distributions. By default all sigma=10.
-        The keys of the dict must be the actions_ids, and the values are lists of floats with length=n_features.
-        e.g. sigma={'action1': [10., 10., 10.], 'action2': [10., 10., 10.]} with n_actions=2 and n_features=3.
-    nu_alpha: dict
-        Nu (normality) parameters for alpha prior Student's t distribution. By default all nu=5.
-        The keys of the dict must be the actions_ids, and the values are floats.
-        e.g. nu={'action1': 5., 'action2': 5.} with n_actions=2.
-    nu_betas: dict
-        Nu (normality) parameters for betas prior Student's t distributions. By default all nu=5.
-        The keys of the dict must be the actions_ids, and the values are lists of floats with length=n_features.
-        e.g. nu={'action1': [5., 5., 5.], 'action2': [5., 5., 5.]} with n_actions=2 and n_features=3.
-    random_seed: int
-        Seed for random state. If specified, the model outputs deterministic results.
+    actions: Dict[ActionId, BaseBayesianLogisticRegression]
+        The list of possible actions, and their associated Model.
+    strategy: Strategy
+        The strategy used to select actions.
+    predict_with_proba: bool
+        If True predict with sampled probabilities, else predict with weighted sums.
+    predict_actions_randomly: bool
+        If True predict actions randomly (where each action has equal probability to be selected), else predict with the
+        bandit strategy.
     """
 
-    def __init__(
+    actions: Dict[ActionId, BaseBayesianLogisticRegression]
+    predict_with_proba: bool
+    predict_actions_randomly: bool
+
+    @validator("actions")
+    def check_bayesian_logistic_regression_models_len(cls, v):
+        blr_betas_len = [len(b.betas) for b in v.values()]
+        if not all(blr_betas_len[0] == x for x in blr_betas_len):
+            raise AttributeError(
+                f"All bayesian logistic regression models must have the same n_betas. Models betas_len={blr_betas_len}."
+            )
+        return v
+
+    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    def predict(
         self,
-        n_features,
-        actions_ids,
-        params_sample=None,
-        n_jobs=1,
-        mu_alpha=None,
-        mu_betas=None,
-        sigma_alpha=None,
-        sigma_betas=None,
-        nu_alpha=None,
-        nu_betas=None,
-        random_seed=None,
-    ):
-        """Initialization."""
-
-        # set default params_sample if not specified
-        if params_sample is None:
-            params_sample = {
-                "tune": 500,
-                "draws": 1000,
-                "chains": 2,
-                "init": "adapt_diag",
-                "cores": 1,
-                "target_accept": 0.95,
-                "progressbar": False,
-                "return_inferencedata": False,
-            }
-        # check input
-        if type(n_features) is not int or type(n_jobs) is not int:
-            raise TypeError("n_features, n_jobs must be integers.")
-        if n_features <= 0 or n_jobs <= 0:
-            raise ValueError("n_features, n_jobs must be > 0")
-        if type(params_sample) is not dict:
-            raise TypeError("params_sample must be a dictionary.")
-        if n_jobs > 1 and params_sample["cores"] > 1:
-            raise ValueError("n_jobs and cores cannot be both > 1.")
-        if type(actions_ids) is not list or not all(isinstance(x, str) for x in actions_ids):
-            raise TypeError("actions_ids must be a list of strings.")
-        if len(actions_ids) < 1 or len(actions_ids) != len(set(actions_ids)):
-            raise ValueError("actions_ids must be a non empty list without duplicates.")
-        if type(random_seed) is not int and random_seed is not None:
-            raise TypeError("random_seed must be an integer")
-
-        self._models = {}  # dictionary of pymc3 models per each action: keys=actions_ids, values=pymc3.Model()
-        self._actions_ids = actions_ids
-        self._n_features = n_features
-        self._params_sample = params_sample
-        self._params_sample["random_seed"] = random_seed
-        self._n_jobs = n_jobs
-        self._mu_alpha = self._init_alpha(mu_alpha, 0.0)
-        self._mu_betas = self._init_betas(mu_betas, 0.0)
-        self._sigma_alpha = self._init_alpha(sigma_alpha, 10.0)
-        self._sigma_betas = self._init_betas(sigma_betas, 10.0)
-        self._nu_alpha = self._init_alpha(nu_alpha, 5.0)
-        self._nu_betas = self._init_betas(nu_betas, 5.0)
-        self._random_seed = random_seed
-        self._traces = {a: None for a in actions_ids}
-
-    def _init_alpha(self, prior, default):
-        # set default prior
-        if prior is None:
-            prior = {a: default for a in self._actions_ids}
-        if (
-            type(prior) is not dict
-            or not all(isinstance(x, str) for x in prior.keys())
-            or not all(isinstance(x, float) for x in prior.values())
-        ):
-            raise TypeError("prior must be a dict with string as keys and float as values. prior =", prior)
-        if set(prior.keys()) != set(self._actions_ids):
-            raise ValueError("prior dict keys must be equal to the actions_ids. prior =", prior)
-        return prior
-
-    def _init_betas(self, prior, default):
-        # set default prior
-        if prior is None:
-            prior = {k: v for (k, v) in zip(self._actions_ids, len(self._actions_ids) * [self._n_features * [default]])}
-        if (
-            type(prior) is not dict
-            or not all(isinstance(x, str) for x in prior.keys())
-            or not all(isinstance(x, list) for x in prior.values())
-        ):
-            raise TypeError("prior must be a dict with string as keys and lists as values. prior =", prior)
-        if not all([item for list in [[isinstance(x, float) for x in v] for v in prior.values()] for item in list]):
-            raise TypeError("prior dict values must be lists of float. prior =", prior)
-        if set(prior.keys()) != set(self._actions_ids):
-            raise ValueError("prior dict keys must be equal to the actions_ids. prior =", prior)
-        if not np.all(np.array([len(x) for x in list(prior.values())]) == self._n_features):
-            raise ValueError("prior values must be lists of length = n_features. prior =", prior)
-        return prior
-
-    def _update_trace(self, alpha, betas, X, rewards):
+        context: ArrayLike,
+        forbidden_actions: Optional[Set[ActionId]] = None,
+    ) -> Tuple[List[ActionId], List[Dict[ActionId, Probability]]]:
         """
-        Compute the likelihood based on a logistic regression and update the trace.
+        Predict actions.
 
         Parameters
         ----------
-        alpha: TensorVariable
-            intercept
-        betas: TensorVariable
-            coefficients
-        X: pandas DataFrame of shape (n_samples, n_features)
-            Matrix with contextual features.
-        rewards: pandas Series of shape (n_samples,)
-            Array of boolean rewards (0 or 1) per each sample.
+        context: ArrayLike of shape (n_samples, n_features)
+            Matrix of contextual features.
+        forbidden_actions : Optional[Set[ActionId]], default=None
+            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
+            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
+            Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
         -------
-        trace : pymc3.MultiTrace
-            New trace for hyper-parameters
+        actions: List[ActionId] of shape (n_samples,)
+            The actions selected by the multi-armed bandit model.
+        probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
+            The probabilities of getting a positive reward for each action.
         """
-        X = Data("X", X)
-        rewards = Data("rewards", rewards)
+        valid_actions = self._get_valid_actions(forbidden_actions)
 
-        # Likelihood (sampling distribution) of observations
-        linear_combination = Deterministic("linear_combination", alpha + dot(betas, X.T))
-        p = Deterministic("p", sigmoid(linear_combination))
+        # cast inputs to numpy arrays to facilitate their manipulation
+        context = array(context)
 
-        # Bernoulli random vector with probability of success given by sigmoid function and actual data as observed
-        _ = Bernoulli("likelihood", p=p, observed=rewards)
+        if len(context) < 1:
+            raise AttributeError("Context must have at least one row")
 
-        trace = sample(**self._params_sample)
-        return trace
+        if self.predict_actions_randomly:
+            # check that context has the expected number of columns
+            if context.shape[1] != len(list(self.actions.values())[0].betas):
+                raise AttributeError("Context must have {n_betas} columns")
 
-    def _worker_update(self, X, actions, rewards, a):
-        """
-        Update core function to run in parallel. Given (X, actions, rewards), it updates the model of each action a.
-
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
-        actions : array_like of shape (n_samples,)
-            Array of recommended actions per each sample.
-        rewards: array_like of shape (n_samples,)
-            Array of boolean rewards (0 or 1) per each sample.
-        a: string
-            Action to consider for the update
-
-        Returns
-        -------
-        a: string
-            Action to consider for the update
-        trace : pymc3.MultiTrace
-            Trace for the model of the action a
-        """
-        with Model() as model:
-            # update intercept (alpha) and coefficients (betas)
-            # if model was never updated priors_parameters = default arguments
-            # else priors_parameters are calculated from traces of the previous update
-            alpha = StudentT("alpha", mu=self._mu_alpha[a], sigma=self._sigma_alpha[a], nu=self._nu_alpha[a])
-            betas = [
-                StudentT(
-                    "beta" + str(j), mu=self._mu_betas[a][j], sigma=self._sigma_betas[a][j], nu=self._nu_betas[a][j]
-                )
-                for j in range(len(X.columns))
-            ]
-
-            # update traces
-            trace = self._update_trace(alpha, betas, X[actions == a], rewards[actions == a])
-
-            return a, trace, model
-
-    def update(self, X, actions, rewards):
-        """
-        Update internal state of the models. Compute posterior distributions using new data set (actions, rewards and
-        context). If n_jobs > 1, the models of each actions will be updated in parallel.
-
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
-        actions : array_like of shape (n_samples,)
-            Array of recommended actions per each sample.
-        rewards: array_like of shape (n_samples,)
-            Array of boolean rewards (0 or 1) per each sample.
-        """
-        # check input
-        try:
-            X = pd.DataFrame(X).reset_index(drop=True)
-            actions = pd.Series(actions).reset_index(drop=True)
-            rewards = pd.Series(rewards).reset_index(drop=True)
-        except ValueError as e:
-            print("{}\nCannot convert input arguments to pandas DataFrame/Series".format(e))
-            raise
-        if not (len(X) == len(actions) == len(rewards)):
-            raise ValueError("X, actions and rewards must have the same number of rows.")
-        if X.shape[1] != self._n_features:
-            raise ValueError("X must have {} columns.".format(self._n_features))
-        if not set(actions).issubset(set(self._actions_ids)):
-            raise ValueError("Invalid actions. Only actions in {} are allowed.".format(self._actions_ids))
-        if not set(rewards).issubset({0, 1}):
-            raise ValueError("Invalid rewards. Only rewards in {0, 1} are allowed")
-
-        # if n_jobs = 1 then update the model sequentially, else update model in parallel with multiprocessing
-        if self._n_jobs == 1:
-            new_models = [self._worker_update(X, actions, rewards, a) for a in set(actions)]
+            selected_actions = choice(list(valid_actions), size=len(context)).tolist()  # predict actions randomly
+            probs = len(context) * [{k: 0.5 for k in valid_actions}]  # all probs are set to 0.5
+            weighted_sums = len(context) * [{k: 0 for k in valid_actions}]  # all weighted sum are set to 1
         else:
-            # create a pool object
-            p = Pool(processes=self._n_jobs)
+            selected_actions: List[ActionId] = []
+            probs: List[Dict[ActionId, Probability]] = []
+            weighted_sums: List[Dict[ActionId, float]] = []
 
-            # update pymc3 models
-            new_models = p.map(partial(self._worker_update, X, actions, rewards), set(actions))
+            # sample_proba() and select_action() each row of the context
+            for i in range(len(context)):
+                # p is a dict of the sampled probability "prob" and weighted_sum "ws", e.g.
+                #
+                # p = {'a1': ([0.5], [200]), 'a2': ([0.4], [100]), ...}
+                #               |      |              |      |
+                #              prob    ws            prob    ws
+                p = {
+                    action: model.sample_proba(context=context[i].reshape(1, -1))  # reshape row i-th to (1, n_features)
+                    for action, model in self.actions.items()
+                    if action in valid_actions
+                }
+
+                prob = {a: x[0][0] for a, x in p.items()}  # e.g. prob = {'a1': 0.5, 'a2': 0.4, ...}
+                ws = {a: x[1][0] for a, x in p.items()}  # e.g. ws = {'a1': 200, 'a2': 100, ...}
+
+                # select either "prob" or "ws" to use as input argument in select_actions()
+                p_to_select_action = prob if self.predict_with_proba else ws
+
+                # predict actions, probs, weighted_sums
+                selected_actions.append(self.strategy.select_action(p=p_to_select_action, actions=self.actions))
+                probs.append(prob)
+                weighted_sums.append(ws)
+
+        return selected_actions, probs, weighted_sums
+
+    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    def update(
+        self,
+        context: ArrayLike,
+        actions: List[ActionId],
+        rewards: List[Union[BinaryReward, List[BinaryReward]]],
+    ):
+        """
+        Update the contextual Bernoulli bandit given the list of selected actions and their corresponding binary
+        rewards.
+
+        Parameters
+        ----------
+        context: ArrayLike of shape (n_samples, n_features)
+            Matrix of contextual features.
+        actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
+            The selected action for each sample.
+        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+            The binary reward for each sample.
+                If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
+                    rewards = [1, 0, 1, 1, 1, ...]
+                If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
+                    rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        """
+        self._check_update_params(actions=actions, rewards=rewards)
+        if len(context) != len(rewards):
+            raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
+
+        # cast inputs to numpy arrays to facilitate their manipulation
+        context, actions, rewards = array(context), array(actions), array(rewards)
 
         for a in set(actions):
-            # store traces of each actions
-            self._traces[a], self._models[a] = next(
-                ((trace, model) for (action, trace, model) in new_models if action == a), None
-            )
+            # get context and rewards of the samples associated to action a
+            context_of_a = context[actions == a]
+            rewards_of_a = rewards[actions == a].tolist()
 
-            # compute mean and std of the coefficients distributions
-            self._mu_alpha[a] = np.mean(self._traces[a]["alpha"])
-            self._mu_betas[a] = [np.mean(self._traces[a]["beta" + str(j)]) for j in range(len(X.columns))]
-            self._sigma_alpha[a] = np.std(self._traces[a]["alpha"], ddof=1)
-            self._sigma_betas[a] = [np.std(self._traces[a]["beta" + str(j)], ddof=1) for j in range(len(X.columns))]
+            # update model associated to action a
+            self.actions[a].update(context=context_of_a, rewards=rewards_of_a)
 
-    def _worker_predict(self, X, a):
-        """
-        Predict core function to run in parallel. For each sample in X, it computes the probability to get a positive
-        reward if action a is recommended.
+        # always set predict_actions_randomly after update
+        self.predict_actions_randomly = False
 
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
-        a: string
-            Action to consider for the prediction
 
-        Returns
-        -------
-        list of len (n_samples)
-            List of probabilities (per each sample) to get a positive rewards given action a.
-        """
-        with self._models[a]:
-            # update context information
-            set_data({"X": X})
+class CmabBernoulli(BaseCmabBernoulli):
+    """
+    Contextual  Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
-            # use the updated values and compute posterior predictive samples
-            pps = fast_sample_posterior_predictive(
-                trace=self._traces[a], random_seed=self._random_seed, var_names=["linear_combination"], samples=1
-            )
+    Reference: Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
+               https://arxiv.org/pdf/1209.3352.pdf
 
-            # compute the linear combination for each sample
-            return pps["linear_combination"][0]
+    Parameters
+    ----------
+    actions: Dict[ActionId, BayesianLogisticRegression]
+        The list of possible actions, and their associated Model.
+    strategy: ClassicBandit
+        The strategy used to select actions.
+    predict_with_proba: bool
+        If True predict with sampled probabilities, else predict with weighted sums
+    predict_actions_randomly: bool
+        If True predict actions randomly (where each action has equal probability to be selected), else predict with the
+        bandit strategy.
+    """
 
-    def _predict_with_sampling(self, X):
-        """
-        Predict via sampling. It can be run only after the first update.
+    actions: Dict[ActionId, BayesianLogisticRegression]
+    strategy: ClassicBandit
+    predict_with_proba: bool = False
+    predict_actions_randomly: bool = False
 
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
+    def __init__(self, actions: Dict[ActionId, BaseBayesianLogisticRegression]):
+        super().__init__(actions=actions, strategy=ClassicBandit())
 
-        Returns
-        -------
-        best_actions: list of len (n_samples)
-            Best action per each sample, i.e. action with the highest probability to get a positive reward.
-        probs: array_like of shape (n_actions, n_samples)
-            Probability to get a positive reward per each action-sample
-        """
-        # create a pool object
-        p = Pool(processes=self._n_jobs)
+    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
+        super().update(context=context, actions=actions, rewards=rewards)
 
-        # map list to target function
-        z = p.map(partial(self._worker_predict, X), self._actions_ids)
 
-        # find index of the best actions
-        idx_max_prob = np.argmax(z, axis=0)
+class CmabBernoulliBAI(BaseCmabBernoulli):
+    """
+    Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action Identification strategy.
 
-        # compute the best action per each sample
-        best_actions = [self._actions_ids[i] for i in idx_max_prob]
+    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
 
-        # compute the probability to get a positive reward as sigmoid function
-        probs = 1.0 / (1.0 + np.exp(-np.array(z)))
+    Parameters
+    ----------
+    actions: Dict[ActionId, BayesianLogisticRegression]
+        The list of possible actions, and their associated Model.
+    strategy: BestActionIdentification
+        The strategy used to select actions.
+    predict_with_proba: bool
+        If True predict with sampled probabilities, else predict with weighted sums
+    predict_actions_randomly: bool
+        If True predict actions randomly (where each action has equal probability to be selected), else predict with the
+        bandit strategy.
+    """
 
-        return best_actions, probs
+    actions: Dict[ActionId, BayesianLogisticRegression]
+    strategy: BestActionIdentification
+    predict_with_proba: bool = False
+    predict_actions_randomly: bool = False
 
-    def _predict_random_actions(self, X):
-        """
-        Random recommendation of actions
+    def __init__(self, actions: Dict[ActionId, BayesianLogisticRegression], exploit_p: Optional[Float01] = None):
+        strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
+        super().__init__(actions=actions, strategy=strategy)
 
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
+    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
+        super().update(context=context, actions=actions, rewards=rewards)
 
-        Returns
-        -------
-        best_actions: list of len (n_samples)
-            Best action per each sample, i.e. action with the highest probability to get a positive reward.
-        probs: array_like of shape (n_actions, n_samples)
-            Probability to get a positive reward per each action-sample
-        """
-        rng = np.random.default_rng(self._random_seed)
-        return rng.choice(self._actions_ids, size=len(X)), np.full((len(self._actions_ids), len(X)), 0.5)
 
-    def predict(self, X):
-        """
-        Generate posterior predictive probability from a model given the trace and the context X. It returns the action
-        with the highest probability. If n_jobs > 1, the prediction for each model action will be run in parallel.
+# TODO: add tests
+class CmabBernoulliCC(BaseCmabBernoulli):
+    """
+    Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control strategy.
 
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
+    The Cmab is extended to include a control of the action cost. Each action is associated with a predefined "cost".
+    At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
+    these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
+    actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
 
-        Returns
-        -------
-        best_actions: list of len (n_samples)
-            Best action per each sample, i.e. action with the highest probability to get a positive reward.
-        probs: array_like of shape (n_actions, n_samples)
-            Reward probability for each action-sample pair
-        """
-        # check input
-        _X = check_context_matrix(X, self._n_features)
+    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+               https://arxiv.org/abs/1911.00638
 
-        # recommended actions at random if the model was never updated
-        if not any(self._traces.values()):
-            return self._predict_random_actions(_X)
+               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+               https://arxiv.org/abs/2011.01488
 
-        # if X has only 1 row add a dummy row with zeros
-        # (due to known pymc3 bug in fast_sample_posterior_predictive)
-        if len(X) == 1:
-            _X.loc[len(_X)] = 0
-            best_actions, probs = self._predict_with_sampling(_X)
-            return best_actions[:-1], [p[:-1] for p in probs]  # discard dummy row
-        return self._predict_with_sampling(_X)
+    Parameters
+    ----------
+    actions: Dict[ActionId, BayesianLogisticRegressionCC]
+        The list of possible actions, and their associated Model.
+    strategy: CostControlBandit
+        The strategy used to select actions.
+    predict_with_proba: bool
+        If True predict with sampled probabilities, else predict with weighted sums
+    predict_actions_randomly: bool
+        If True predict actions randomly (where each action has equal probability to be selected), else predict with the
+        bandit strategy.
+    """
 
-    def fast_predict(self, X):
-        """
-        Compute the posterior reward probability for all actions sampling coefficients from student-t distribution
-        as a real time faster alternative to fast_sample_posterior_predictive. It returns the action with the highest
-        probability.
+    actions: Dict[ActionId, BayesianLogisticRegressionCC]
+    strategy: CostControlBandit
+    predict_with_proba: bool = True
+    predict_actions_randomly: bool = False
 
-        Parameters
-        ----------
-        X: array_like of shape (n_samples, n_features)
-            Matrix with contextual features.
+    def __init__(self, actions: Dict[ActionId, BayesianLogisticRegressionCC], subsidy_factor: Optional[Float01] = None):
+        strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
+        super().__init__(actions=actions, strategy=strategy)
 
-        Returns
-        -------
-        best_actions: list of len (n_samples)
-            Best action per each sample, i.e. action with the highest probability to get a positive reward.
-        probs: array_like of shape (n_actions, n_samples)
-            Reward probability for each action-sample pair
-        """
-        # check input
-        _X = check_context_matrix(X, self._n_features)
+    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
+        super().update(context=context, actions=actions, rewards=rewards)
 
-        # recommended actions at random if the model was never updated
-        if not any(self._traces.values()):
-            return self._predict_random_actions(_X)
 
-        # add column of ones for the dot product with the intercept
-        _X = np.c_[np.ones((_X.shape[0], 1)), _X]
+@validate_arguments
+def create_cmab_bernoulli_cold_start(action_ids: Set[ActionId], n_features: PositiveInt) -> CmabBernoulli:
+    """
+    Utility function to create a Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, with default
+    parameters. Until the very first update the model will predict actions randomly, where each action has equal
+    probability to be selected.
 
-        # compute probabilities via logistic regression
-        probs = []
-        weighted_sum = []
+    Parameters
+    ----------
+    action_ids: Set[ActionId]
+        The list of possible actions.
+    n_features: PositiveInt
+        The number of features expected after in the context matrix. This is also the number of betas of the
+        Bayesian Logistic Regression model.
+    Returns
+    -------
+    cmab: CmabBernoulli
+        Contextual Multi-Armed Bandit with strategy = ClassicBandit
+    """
+    actions = {}
+    for a in set(action_ids):
+        actions[a] = create_bayesian_logistic_regression_cold_start(n_betas=n_features)
+    mab = CmabBernoulli(actions=actions)
+    mab.predict_actions_randomly = True
+    return mab
 
-        for a in self._actions_ids:
-            # sample coefficients only once per each sample from student-t distributions
-            alpha = t.rvs(
-                df=self._nu_alpha[a],
-                loc=self._mu_alpha[a],
-                scale=self._sigma_alpha[a],
-                size=len(_X),
-                random_state=self._random_seed,
-            )
-            betas = np.array(
-                [
-                    t.rvs(
-                        df=self._nu_betas[a][b],
-                        loc=self._mu_betas[a][b],
-                        scale=self._sigma_betas[a][b],
-                        size=len(_X),
-                        random_state=self._random_seed,
-                    )
-                    for b in range(self._n_features)
-                ]
-            )
 
-            # create coefficients matrix
-            coeff = np.insert(arr=betas, obj=0, values=alpha, axis=0)
+@validate_arguments
+def create_cmab_bernoulli_bai_cold_start(
+    action_ids: Set[ActionId], n_features: PositiveInt, exploit_p: Optional[Float01] = None
+) -> CmabBernoulliBAI:
+    """
+    Utility function to create a Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action
+    Identification strategy, with default parameters. Until the very first update the model will predict actions
+    randomly, where each action has equal probability to be selected.
 
-            # extract the weighted sum between X and coefficients
-            ws = np.multiply(_X, coeff.T).sum(axis=1)
-            weighted_sum.append(ws)
+    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
 
-            # compute the probability with the sigmoid function
-            probs.append(1.0 / (1.0 + np.exp(-ws)))
+    Parameters
+    ----------
+    action_ids: Set[ActionId]
+        The list of possible actions.
+    n_features: PositiveInt
+        The number of features expected after in the context matrix. This is also the number of betas of the
+        Bayesian Logistic Regression model.
+    exploit_p: Float_0_1 (default=0.5)
+        Number in [0, 1] which specifies the amount of exploitation.
+        If exploit_p is 1, the bandits always selects the action with highest probability of getting a positive reward,
+            (it behaves as a Greedy strategy).
+        If exploit_p is 0, the bandits always select the action with 2nd highest probability of getting a positive
+            reward.
 
-        # the max is computed on the weighted sum instead of sigmoid transformation because of 0 and 1 boundary values
-        # whatever z above or below a given threshold.
-        idx_max_prob = np.argmax(weighted_sum, axis=0)
-        best_actions = [self._actions_ids[i] for i in idx_max_prob]
+    Returns
+    -------
+    cmab: CmabBernoulliBAI
+        Contextual Multi-Armed Bandit with strategy = BestActionIdentification
+    """
+    actions = {}
+    for a in set(action_ids):
+        actions[a] = create_bayesian_logistic_regression_cold_start(n_betas=n_features)
+    mab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    mab.predict_actions_randomly = True
+    return mab
 
-        return best_actions, probs
+
+@validate_arguments
+def create_cmab_bernoulli_cc_cold_start(
+    action_ids_cost: Dict[ActionId, NonNegativeFloat],
+    n_features: PositiveInt,
+    subsidy_factor: Optional[Float01] = None,
+) -> CmabBernoulliCC:
+    """
+    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control
+    strategy, with default parameters.
+
+    The sMAB is extended to include a control of the action cost. Each action is associated with a predefined "cost".
+    At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
+    these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
+    actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
+
+    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+               https://arxiv.org/abs/1911.00638
+
+               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+               https://arxiv.org/abs/2011.01488
+
+    Parameters
+    ----------
+    action_ids_cost: Dict[ActionId, NonNegativeFloat]
+        The list of possible actions, and their cost.
+    n_features: PositiveInt
+        The number of features expected after in the context matrix. This is also the number of betas of the
+        Bayesian Logistic Regression model.
+    subsidy_factor: Optional[Float_0_1], default=0.5
+        Number in [0, 1] to define smallest tolerated probability reward, hence the set of feasible actions.
+        If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
+        If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
+            reward (it behaves as a classic Bernoulli bandit).
+
+    Returns
+    -------
+    cmab: CmabBernoulliCC
+        Contextual Multi-Armed Bandit with strategy = CostControl
+    """
+    actions = {}
+    for a, cost in action_ids_cost.items():
+        actions[a] = create_bayesian_logistic_regression_cc_cold_start(n_betas=n_features, cost=cost)
+    mab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    mab.predict_actions_randomly = True
+    return mab

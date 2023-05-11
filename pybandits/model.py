@@ -404,6 +404,31 @@ class BayesianLogisticRegression(BaseBayesianLogisticRegression):
     """
 
 
+class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
+    """
+    Bayesian Logistic Regression model with cost control.
+
+    It is modeled as:
+
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    Parameters
+    ----------
+    alpha: StudentT
+        Student's t-distribution of the alpha coefficient.
+    betas: StudentT
+        Student's t-distributions of the betas coefficients.
+    params_sample: Dict
+        Parameters for the function pymc.sample()
+    cost: NonNegativeFloat
+        Cost associated to the Bayesian Logistic Regression model.
+    """
+
+    cost: NonNegativeFloat
+
+
 def create_bayesian_logistic_regression_cold_start(n_betas: PositiveInt) -> BayesianLogisticRegression:
     """
     Utility function to create a Bayesian Logistic Regression model, with default parameters.
@@ -426,3 +451,31 @@ def create_bayesian_logistic_regression_cold_start(n_betas: PositiveInt) -> Baye
         The Bayesian Logistic Regression model.
     """
     return BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)])
+
+
+def create_bayesian_logistic_regression_cc_cold_start(
+    n_betas: PositiveInt, cost: NonNegativeFloat
+) -> BayesianLogisticRegressionCC:
+    """
+    Utility function to create a Bayesian Logistic Regression model with cost control, with default parameters.
+
+    It is modeled as:
+
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    Parameters
+    ----------
+    n_betas : PositiveInt
+        The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
+        after in the context matrix.
+    cost: NonNegativeFloat
+        Cost associated to the Bayesian Logistic Regression model.
+
+    Returns
+    -------
+    blr: BayesianLogisticRegressionCC
+        The Bayesian Logistic Regression model.
+    """
+    return BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
