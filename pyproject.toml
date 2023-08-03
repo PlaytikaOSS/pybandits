@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "0.1.5-rc0"
+version = "0.1.5"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
