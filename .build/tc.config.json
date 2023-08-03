@@ -1,0 +1,6 @@
+{
+  "module_dir": ".",
+  "builder": {
+    "image": "docker-release.artifactory.playticorp.com/com.playtika.containers.automation/python-library-template:0.0.6"
+  }
+}

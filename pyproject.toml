@@ -1,0 +1,86 @@
+[tool.poetry]
+name = "pybandits"
+version = "0.1.5-rc0"
+description = "Python Multi-Armed Bandit Library"
+authors = [
+    "Dario d'Andrea <dariod@playtika.com>",
+    "Jerome Carayol <jeromec@playtika.com>",
+    "Stefano Piazza <stefanop@playtika.com>",
+    "Raphael Steinmann <raphaels@playtika.com>",
+    "Armand Valsesia <armandv@playtika.com>",
+    ]
+license = "MIT License"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.8.1,<3.12"
+loguru = "^0.6.0"
+numpy = "^1.24.2"
+pydantic = "^1.10.6"
+scipy = "^1.10.1"
+pymc = "^5.3.0"
+scikit-learn = "^1.2.2"
+filelock = ">=3.12.2"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.1.0"
+flake8 = "^6.0.0"
+hypothesis = "^6.68.2"
+pylint = "^2.17.0"
+pytest = "^7.2.2"
+tox = "^4.4.7"
+pandas = "^1.5.3"
+pre-commit = "^3.1.1"
+nbdev = "^2.3.12"
+rich = "^13.3.2"
+pyzmq = "25.0.0"
+ipykernel = "^6.21.3"
+jupyterlab = "^3.6.1"
+flake8-pyproject = "^1.2.2"
+pytest-cov = "^4.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 120
+
+[tool.pylint]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.master]
+extension-pkg-whitelist = "pydantic"
+# disable check for:
+# C0114: Missing module docstring
+# C0115: Missing class docstring
+# C0116: Missing function or method docstring
+# R0903: Too few public methods
+# R0913: Too many arguments
+disable = ["C0114", "C0115", "C0116", "R0903", "R0913"]
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "r", "ex", "_", "a", "p", "v"]
+
+[tool.mypy]
+plugins = "pydantic.mypy"
+
+[tool.flake8]
+# exclude = [".git", "__pycache__", ".tox"]
+max-line-length = 120
+extend-ignore = "E203, E721"
+
+[[tool.poetry.source]]
+default = true
+name = "default"
+url = "https://artifactory.playticorp.com/artifactory/api/pypi/pypi.org/simple"
+
+[[tool.poetry.source]]
+name = "private"
+secondary = true
+url = "https://artifactory.playticorp.com/artifactory/api/pypi/pip/simple"

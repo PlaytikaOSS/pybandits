@@ -58,33 +58,44 @@ class SimulationSmab:
         Enable verbose output. If True, detailed logging information about the simulation are provided.
     """
 
-    def __init__(self, smab, n_updates=10, batch_size=100, probs_reward=None, save=False, path='',
-                 random_seed=None, verbose=False):
-
+    def __init__(
+        self,
+        smab,
+        n_updates=10,
+        batch_size=100,
+        probs_reward=None,
+        save=False,
+        path="",
+        random_seed=None,
+        verbose=False,
+    ):
         if type(smab) is not Smab:
-            raise TypeError('smab must be of type pybandits.core.smab.Smab')
+            raise TypeError("smab must be of type pybandits.core.smab.Smab")
         if type(n_updates) is not int and n_updates <= 0:
-            raise ValueError('n_updates must be an integer > 0')
+            raise ValueError("n_updates must be an integer > 0")
         if type(batch_size) is not int and batch_size <= 0:
-            raise ValueError('batch_size must be an integer > 0')
+            raise ValueError("batch_size must be an integer > 0")
         if type(save) is not bool:
-            raise TypeError('save must be boolean (True/False)')
+            raise TypeError("save must be boolean (True/False)")
         if type(path) is not str:
-            raise TypeError('path must be a string')
+            raise TypeError("path must be a string")
         if type(random_seed) is not int and random_seed is not None:
-            raise TypeError('random_seed must be an integer')
+            raise TypeError("random_seed must be an integer")
         if type(verbose) is not bool:
-            raise TypeError('verbose must be boolean (True/False)')
+            raise TypeError("verbose must be boolean (True/False)")
 
         if probs_reward is None:
             probs_reward = {k: v for (k, v) in zip(smab._actions_ids, len(smab._actions_ids) * [0.5])}
-        if type(probs_reward) is not dict or not all(isinstance(x, str) for x in probs_reward.keys()) or \
-                not all(isinstance(x, float) for x in probs_reward.values()):
-            raise TypeError('probs_reward must be a dict with string as keys and float as values.')
+        if (
+            type(probs_reward) is not dict
+            or not all(isinstance(x, str) for x in probs_reward.keys())
+            or not all(isinstance(x, float) for x in probs_reward.values())
+        ):
+            raise TypeError("probs_reward must be a dict with string as keys and float as values.")
         if set(probs_reward.keys()) != set(smab._actions_ids):
-            raise ValueError('probs_reward dict keys must match smab actions_ids.')
+            raise ValueError("probs_reward dict keys must match smab actions_ids.")
         if all(v > 1 for v in probs_reward.values()) or all(v < 0 for v in probs_reward.values()):
-            raise ValueError('probs_reward values must be in the interval [0, 1].')
+            raise ValueError("probs_reward values must be in the interval [0, 1].")
 
         self._smab = smab
         self._n_updates = n_updates
@@ -96,7 +107,7 @@ class SimulationSmab:
         self._verbose = verbose
 
         # created DataFrame for simulation results
-        self.results = pd.DataFrame(np.nan, columns=['action', 'reward'], index=range(batch_size*n_updates))
+        self.results = pd.DataFrame(np.nan, columns=["action", "reward"], index=range(batch_size * n_updates))
 
     def run(self):
         """
@@ -109,7 +120,6 @@ class SimulationSmab:
                 Prior parameters are updated based on recommended actions and returned rewards
         """
         for i in range(self._n_updates):
-
             # select actions for batch #i
             actions, _ = self._smab.predict(n_samples=self._batch_size)
 
@@ -118,10 +128,9 @@ class SimulationSmab:
             idx_batch_max = (i + 1) * self._batch_size - 1
 
             # write the selected actions for batch #i in the results matrix
-            self.results.loc[idx_batch_min:idx_batch_max, 'action'] = actions
+            self.results.loc[idx_batch_min:idx_batch_max, "action"] = actions
 
             for a in self._smab._actions_ids:
-
                 # simulate the rewards
                 random.seed(self._random_seed)
                 rewards = [1 if random.random() < self._probs_reward[a] else 0 for i in range(actions.count(a))]
@@ -130,7 +139,7 @@ class SimulationSmab:
                 idx = [i for i in range(len(actions)) if actions[i] == a]
 
                 # write rewards for batch #i and action 'a' in the result matrix
-                self.results.loc[[idx_batch_min + i for i in idx], 'reward'] = rewards
+                self.results.loc[[idx_batch_min + i for i in idx], "reward"] = rewards
 
                 # update the stochastic multi-armed bandit model
                 self._smab.update(action_id=a, n_successes=rewards.count(1), n_failures=rewards.count(0))
@@ -142,7 +151,7 @@ class SimulationSmab:
         # store results
         if self._save:
             if self._verbose:
-                print('Saving results at {}'.format(self._path))
+                print("Saving results at {}".format(self._path))
             self._save_results()
 
     def get_count_selected_actions(self):
@@ -181,24 +190,24 @@ class SimulationSmab:
             Dictionary with keys=(actions, reward) and
             values=(cumulative action proportions, cumulative reward proportions per action)
         """
-        actions = pd.get_dummies(self.results['action']).reset_index(drop=True)
+        actions = pd.get_dummies(self.results["action"]).reset_index(drop=True)
         actions_plot = actions.cumsum().div(actions.index.values + 1, axis=0)
 
-        rewards = pd.get_dummies(self.results['action'])
-        rewards.loc[self.results['reward'] == 0] = 0
+        rewards = pd.get_dummies(self.results["action"])
+        rewards.loc[self.results["reward"] == 0] = 0
         rewards.reset_index(inplace=True, drop=True)
         rewards_plot = rewards.cumsum().div(actions.cumsum())
 
-        return {'action': actions_plot, 'reward': rewards_plot}
+        return {"action": actions_plot, "reward": rewards_plot}
 
     def _print_results(self):
-        """ Private function to print results. """
-        print('Simulation results (first 10 observations):\n', self.results.head(10), '\n')
-        print('Count of actions selected by the bandit: \n', self.get_count_selected_actions(), '\n')
-        print('Observed proportion of positive rewards for each action:\n', self.get_proportion_positive_reward(), '\n')
+        """Private function to print results."""
+        print("Simulation results (first 10 observations):\n", self.results.head(10), "\n")
+        print("Count of actions selected by the bandit: \n", self.get_count_selected_actions(), "\n")
+        print("Observed proportion of positive rewards for each action:\n", self.get_proportion_positive_reward(), "\n")
 
     def _save_results(self):
-        """ Private function to save results. """
-        self.results.to_csv('simulation_results.csv', index=False)
-        with open(self._path + 'summary.txt', 'w') as f:
-            f.write(str(self.get_count_selected_actions()) + '\n' + str(self.get_proportion_positive_reward()))
+        """Private function to save results."""
+        self.results.to_csv("simulation_results.csv", index=False)
+        with open(self._path + "summary.txt", "w") as f:
+            f.write(str(self.get_count_selected_actions()) + "\n" + str(self.get_proportion_positive_reward()))

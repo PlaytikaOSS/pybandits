@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2022 Playtika Ltd.
+# Copyright (c) 2023 Playtika Ltd.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,241 +20,481 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import random
+from copy import deepcopy
+from typing import List
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+from pydantic import ValidationError
 
-from pybandits.core.smab import Smab
+from pybandits.base import BinaryReward
+from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
+from pybandits.smab import (
+    SmabBernoulli,
+    SmabBernoulliBAI,
+    SmabBernoulliCC,
+    SmabBernoulliMO,
+    SmabBernoulliMOCC,
+    create_smab_bernoulli_bai_cold_start,
+    create_smab_bernoulli_cc_cold_start,
+    create_smab_bernoulli_cold_start,
+    create_smab_bernoulli_mo_cc_cold_start,
+    create_smab_bernoulli_mo_cold_start,
+)
+from pybandits.strategy import (
+    ClassicBandit,
+    CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+)
 
-
-def test_init_model():
-    """
-    Initialize several models with different parameters and make sure the internals of the model (actions,
-    successes and failures) are properly initialized.
-    """
-    ts = ['1', '2', '3']
-    rs = {'1': 234, '2': 32, '3': 90}
-    ps = {'1': 24, '2': 3, '3': 32}
-    parameters = [
-        {'action_ids': ts, 'success_priors': None, 'failure_priors': None},
-        {'action_ids': ts, 'success_priors': rs, 'failure_priors': ps},
-        {'action_ids': ts}
-    ]
-
-    for params in parameters:
-        smab = Smab(**params)
-        assert (smab._actions_ids == ts), 'Treatments are not initialized correctly.'
-        if 'success_priors' in params and params['success_priors'] is not None:
-            assert (smab._success_counters == rs and smab._failure_counters == ps)
-        for t in ts:
-            assert (t in smab._success_counters and t in smab._failure_counters)
-            if 'success_priors' in params and params['success_priors'] is not None:
-                assert (smab._success_counters[t] == rs[t] and smab._failure_counters[t] == ps[t]), \
-                    'unmatching prior successes and failures.'
-            else:
-                assert (smab._success_counters[t] == 1 and smab._failure_counters[t] == 1), \
-                    'default successes and failures must be 1.'
+########################################################################################################################
 
 
-def test_success_not_specified():
-    """
-    Either both successes and failures should be specified, or neither. Expecting IOError.
-    """
-    params1 = {'action_ids': ['1', '2', '3'],
-               'success_priors': None,
-               'failure_priors': {'1': 12, '2': 14, '3': 15}}
-    with pytest.raises(ValueError):
-        _ = Smab(**params1)
+# SmabBernoulli with strategy=ClassicBandit()
 
 
-def test_bad_success_key():
-    """
-    Bad input: wrong key in successes. Expecting IOError
-    """
-    params2 = {'action_ids': ['1', '2', '3'],
-               'success_priors': {'1': 12, '2': 14, 'wrong_key': 15},
-               'failure_priors': {'1': 12, '2': 14, '3': 15}}
-    with pytest.raises(ValueError):
-        _ = Smab(**params2)
+def test_create_smab_bernoulli_cold_start():
+    assert create_smab_bernoulli_cold_start(action_ids=["a1", "a2"]) == SmabBernoulli(
+        actions={"a1": Beta(), "a2": Beta()},
+    )
 
 
-def test_bad_prior_parameters():
-    """
-    Prior parameters should be > 0. Expecting IOError
-    """
-    params3 = {'action_ids': ['1', '2', '3'],
-               'success_priors': {'1': 12, '2': -1, '3': 14},
-               'failure_priors': {'1': 12, '2': 14, '3': 0}}
-    with pytest.raises(ValueError):
-        _ = Smab(**params3)
+@given(st.integers(min_value=0, max_value=1), st.integers(min_value=0, max_value=1))
+def test_base_smab_update_ok(r1, r2):
+    mab = SmabBernoulli(actions={"a1": Beta(), "a2": Beta()})
+    mab.update(actions=["a1", "a2"], rewards=[r1, r2])
+    mab.update(actions=["a1", "a1"], rewards=[r1, r2])
 
 
-def test_model_prediction_in_actions():
-    """
-    Make sure the prediction is one of the model's actions
-    """
-    params = {'action_ids': ['1', '2', '3']}
-    n_samples = 100
-    smab = Smab(**params)
-    best_actions, probs = smab.predict(n_samples=n_samples)
-    assert (all(action in params['action_ids'] for action in best_actions)), \
-        'predicted value must be one of the actions.'
-    assert (type(best_actions) is list and all(isinstance(x, str) for x in best_actions)), \
-        'Predicted action must be a string'
-    assert (type(probs) is list and all(isinstance(x, dict) for x in probs)), 'Predicted probs must be dict'
-    assert (len(best_actions) == len(probs) == n_samples)
-
-
-def test_model_feedback_with_priors():
-    """
-    Create a smab with prior parameters and update it many times. Make sure that the internal counters of the model are
-    updated as they should.
-    """
-    actions = ['1', '2', '3', '4', '5']
-    params = {'action_ids': actions,
-              'success_priors': dict((t, random.randint(1, 100)) for t in actions),
-              'failure_priors': dict((t, random.randint(1, 100)) for t in actions)}
-
-    smab = Smab(**params)
-    counters = {}
-    for t in actions:
-        counters[t] = [params['success_priors'][t], params['failure_priors'][t]]
-    for i in range(1000):
-        t = random.choice(actions)
-        n_successes = random.randint(1, 500)
-        n_failures = random.randint(1, 500)
-        counters[t][0] += n_successes
-        counters[t][1] += n_failures
-        smab.update(action_id=t, n_successes=n_successes, n_failures=n_failures)
-        for action in actions:
-            assert (counters[action] == [smab._success_counters[action], smab._failure_counters[action]])
-
-
-def test_model_feedback_without_priors():
-    """
-    Create a smab with no prior parameters and update it many times. Make sure that the internal counters of the
-    model are updated as they should.
-    """
-    actions = ['1', '2', '3', '4', '5']
-    params = {'action_ids': actions}
-
-    smab = Smab(**params)
-    counters = {}
-    for t in actions:
-        counters[t] = [1, 1]
-    for i in range(1000):
-        t = random.choice(actions)
-        n_successes = random.randint(1, 500)
-        n_failures = random.randint(1, 500)
-        counters[t][0] += n_successes
-        counters[t][1] += n_failures
-        smab.update(action_id=t, n_successes=n_successes, n_failures=n_failures)
-        for action in actions:
-            assert (counters[action] == [smab._success_counters[action], smab._failure_counters[action]])
-
-
-def test_random_seed():
-    """
-    Make sure that when a random seed is specified, the outputs of the ML model are deterministic.
-    Create a reference model with fixed seed, than iteratively create 100 similar models with the same seed. Apply
-    the same combination of updates and predictions to the test models and ensure that their predictions are always
-    the same as the reference model's predictions.
-    """
-    actions = ['1', '2', '3', '4', '5']
-    params = {'action_ids': actions,
-              'random_seed': 42}
-
-    reference_model = Smab(**params)
-    reference_preds = []
-    for t in actions:
-        reference_model.update(t, 2, 3)
-        reference_preds = reference_preds + [reference_model.predict(n_samples=10)[0]]
-
-    for i in range(100):
-        smab = Smab(**params)
-        preds = []
-        for t in actions:
-            smab.update(t, 2, 3)
-            preds = preds + [smab.predict(n_samples=10)[0]]
-        assert (preds == reference_preds)
-
-
-def test_update_bad_input():
-    actions = ['1', '2', '3', '4', '5']
-    params = {'action_ids': actions,
-              'success_priors': dict((t, random.randint(1, 100)) for t in actions),
-              'failure_priors': dict((t, random.randint(1, 100)) for t in actions)}
-    smab = Smab(**params)
-
-    with pytest.raises(ValueError):
-        smab.update(random.choice(actions), -1, 6)
-    with pytest.raises(ValueError):
-        smab.update(random.choice(actions), 4, -1)
+def test_can_instantiate_smab():
     with pytest.raises(TypeError):
-        smab.update(random.choice(actions), 1.5, 2)
-    with pytest.raises(TypeError):
-        smab.update(random.choice(actions), 2, 1.5)
+        SmabBernoulli()
+    with pytest.raises(AttributeError):
+        SmabBernoulli(actions={})
+    with pytest.raises(AttributeError):
+        SmabBernoulli(actions={"action1": Beta()})
+    with pytest.raises(TypeError):  # strategy is not an argument of init
+        SmabBernoulli(
+            actions={
+                "action1": Beta(),
+                "action2": Beta(),
+            },
+            strategy=ClassicBandit(),
+        )
+    with pytest.raises(ValidationError):
+        SmabBernoulli(
+            actions={
+                "action1": None,
+                "action2": None,
+            },
+        )
+    smab = SmabBernoulli(
+        actions={
+            "action1": Beta(),
+            "action2": Beta(),
+        },
+    )
+
+    assert smab.actions["action1"] == Beta()
+    assert smab.actions["action2"] == Beta()
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+)
+def test_can_instantiate_smab_with_params(a, b):
+    s = SmabBernoulli(
+        actions={
+            "action1": Beta(n_successes=a, n_failures=b),
+            "action2": Beta(n_successes=a, n_failures=b),
+        },
+    )
+    assert (s.actions["action1"].n_successes == a) and (s.actions["action1"].n_failures == b)
+    assert s.actions["action1"] == s.actions["action2"]
+
+
+@given(st.integers(max_value=0))
+def test_smab_predict_raise_when_samples_low(n_samples):
+    s = SmabBernoulli(actions={"a1": Beta(), "a2": Beta()})
+    with pytest.raises(ValidationError):
+        s.predict(n_samples=n_samples)
+
+
+def test_smab_predict_raise_when_all_actions_forbidden():
+    s = SmabBernoulli(actions={"a1": Beta(), "a2": Beta()})
     with pytest.raises(ValueError):
-        smab.update('wrong action', 1, 1)
-    with pytest.raises(TypeError):
-        smab.update(1, 1, 1)
+        s.predict(n_samples=10, forbidden_actions=["a1", "a2"])
 
 
-def test_batch_update():
-    batch = [
-        {'action_id': '1', 'n_successes': 1, 'n_failures': 2},
-        {'action_id': '2', 'n_successes': 3, 'n_failures': 4},
-        {'action_id': '3', 'n_successes': 5, 'n_failures': 6},
-        {'action_id': '1', 'n_successes': 7, 'n_failures': 8},
-    ]
-    smab = Smab(action_ids=['1', '2', '3'])
-    smab.batch_update(batch)
+def test_smab_predict():
+    s = SmabBernoulli(
+        actions={
+            "a0": Beta(),
+            "a1": Beta(n_successes=5, n_failures=5),
+            "forb_1": Beta(n_successes=10, n_failures=1),
+            "best": Beta(n_successes=10, n_failures=5),
+            "forb_2": Beta(n_successes=100, n_failures=4),
+            "a5": Beta(),
+        },
+    )
+    forbidden_actions = set(["forb_1", "forb_2"])
 
-    assert(smab._success_counters['1'] == 9 and smab._failure_counters['1'] == 11)
-    assert (smab._success_counters['2'] == 4 and smab._failure_counters['2'] == 5)
-    assert (smab._success_counters['3'] == 6 and smab._failure_counters['3'] == 7)
+    best_actions, probs = s.predict(n_samples=1000, forbidden_actions=forbidden_actions)
+    assert ["forb1" not in p.keys() for p in probs], "forbidden actions weren't removed from the output"
 
+    valid_actions = set(s.actions.keys()) - forbidden_actions
+    for probas, best_action in zip(probs, best_actions):
+        assert set(probas.keys()) == valid_actions, "restituted actions don't match valid actions"
 
-def test_forbidden_actions():
-    """
-    Test predict function with forbidden actions.
-    """
-    actions = ['1', '2', '3', '4', '5']
-    params = {'action_ids': actions,
-              'success_priors': dict((t, 1) for t in actions),
-              'failure_priors': dict((t, 1) for t in actions)}
-    smab = Smab(**params)
-
-    assert set(smab.predict(n_samples=1000, forbidden_actions=['2', '3', '4', '5'])[0]) == {'1'}
-    assert set(smab.predict(n_samples=1000, forbidden_actions=['1', '3'])[0]) == {'2', '4', '5'}
-    assert set(smab.predict(n_samples=1000, forbidden_actions=['1'])[0]) == {'2', '3', '4', '5'}
-    assert set(smab.predict(n_samples=1000, forbidden_actions=[])[0]) == {'1', '2', '3', '4', '5'}
-
-    with pytest.raises(TypeError):  # not a list
-        assert set(smab.predict(n_samples=1000, forbidden_actions=1)[0])
-    with pytest.raises(ValueError):  # invalid action_ids
-        assert set(smab.predict(n_samples=1000, forbidden_actions=['1', '100', 'a', 5])[0])
-    with pytest.raises(ValueError):  # duplicates
-        assert set(smab.predict(n_samples=1000, forbidden_actions=['1', '1', '2'])[0])
-    with pytest.raises(ValueError):  # all actions forbidden
-        assert set(smab.predict(n_samples=1000, forbidden_actions=['1', '2', '3', '4', '5'])[0])
-    with pytest.raises(ValueError):  # all actions forbidden (unordered)
-        assert set(smab.predict(n_samples=1000, forbidden_actions=['5', '4', '2', '3', '1'])[0])
+        best_proba = probas[best_action]
+        assert best_proba == max(probas.values()), "best action hasn't the best probability"
 
 
-def test_return_probs():
-    """
-    Test predict function with forbidden actions.
-    """
-    actions = ['action A', 'action B', 'action C', 'action D', 'action E']
-    params = {'action_ids': actions, 'random_seed': 42}
-    smab = Smab(**params)
+@given(
+    st.lists(st.integers(min_value=0, max_value=1), min_size=1),
+    st.lists(st.integers(min_value=0, max_value=1), min_size=1),
+)
+def test_smab_update(rewards: List[BinaryReward], rewards_1: List[BinaryReward]):
+    updated = SmabBernoulli(
+        actions={
+            "a0": Beta(),
+            "a1": Beta(),
+        },
+    )
+    batch_updated = deepcopy(updated)
 
-    best_action, probs = smab.predict()
+    # update the model sequentially
+    [updated.update(actions=["a0"], rewards=[reward]) for reward in rewards]
+    [updated.update(actions=["a1"], rewards=[reward]) for reward in rewards_1]
 
-    assert(best_action[0] == 'action A'), 'The best action returned do not match the expected value'
-    assert(probs[0] == {'action A': 0.9757708986968694,
-                        'action B': 0.5601155051094101,
-                        'action C': 0.5415020530650179,
-                        'action D': 0.9607666225987184,
-                        'action E': 0.9476908718028403}), 'The dict of probs returned do not match the expected value'
+    # update the model in batch
+    batch_updated.update(actions=["a0"] * len(rewards) + ["a1"] * len(rewards_1), rewards=rewards + rewards_1)
+
+    assert updated == batch_updated, "update() has different result when each item is applied separately"
+
+    sum_failures = sum([1 - x for x in rewards])
+    assert updated.actions["a0"] == Beta(
+        n_successes=1 + sum(rewards), n_failures=1 + sum_failures
+    ), "Unexpected results in counter"
+
+    sum_failures_1 = sum([1 - x for x in rewards_1])
+    assert updated.actions["a1"] == Beta(
+        n_successes=1 + sum(rewards_1), n_failures=1 + sum_failures_1
+    ), "Unexpected results in counter"
+
+
+@given(st.text())
+def test_smab_accepts_only_valid_actions(s):
+    if s == "":
+        with pytest.raises(ValidationError):
+            SmabBernoulli(
+                actions={
+                    s: Beta(),
+                    s + "_": Beta(),
+                }
+            )
+    else:
+        SmabBernoulli(actions={s: Beta(), s + "_": Beta()})
+
+
+########################################################################################################################
+
+
+# SmabBernoulli with strategy=BestActionIdentification()
+
+
+def test_create_smab_bernoulli_bai():
+    # default exploit_p
+    assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"]) == SmabBernoulliBAI(
+        actions={"a1": Beta(), "a2": Beta()},
+    )
+    # set exploit_p
+    assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], exploit_p=0.2) == SmabBernoulliBAI(
+        actions={"a1": Beta(), "a2": Beta()},
+        exploit_p=0.2,
+    )
+
+
+def test_can_init_smabbai():
+    # init default params
+    s = SmabBernoulliBAI(
+        actions={
+            "a1": Beta(),
+            "a2": Beta(),
+        },
+    )
+
+    assert s.actions["a1"] == Beta()
+    assert s.actions["a2"] == Beta()
+    assert s.strategy.exploit_p == 0.5
+
+    # init input params
+    s = SmabBernoulliBAI(
+        actions={
+            "a1": Beta(n_successes=1, n_failures=2),
+            "a2": Beta(n_successes=3, n_failures=4),
+        },
+        exploit_p=0.3,
+    )
+    assert s.actions["a1"] == Beta(n_successes=1, n_failures=2)
+    assert s.actions["a2"] == Beta(n_successes=3, n_failures=4)
+    assert s.strategy.exploit_p == 0.3
+
+
+def test_smabbai_predict():
+    s = SmabBernoulliBAI(actions={"a1": Beta(), "a2": Beta()})
+    _, _ = s.predict(n_samples=1000)
+
+
+def test_smabbai_update():
+    s = SmabBernoulliBAI(actions={"a1": Beta(), "a2": Beta()})
+    s.update(actions=["a1", "a1"], rewards=[1, 0])
+
+
+def test_smabbai_with_betacc():
+    # Fails because smab bernoulli with BAI shouldn't support BetaCC
+    with pytest.raises(ValidationError):
+        SmabBernoulliBAI(
+            actions={
+                "a1": BetaCC(cost=10),
+                "a2": BetaCC(cost=20),
+            },
+        )
+
+
+########################################################################################################################
+
+
+# SmabBernoulli with strategy=CostControlBandit()
+
+
+def test_create_smab_bernoulli_cc():
+    assert create_smab_bernoulli_cc_cold_start(
+        action_ids_cost={"a1": 10, "a2": 20},
+        subsidy_factor=0.2,
+    ) == SmabBernoulliCC(
+        actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=20)},
+        subsidy_factor=0.2,
+    )
+
+    assert create_smab_bernoulli_cc_cold_start(action_ids_cost={"a1": 10, "a2": 20}) == SmabBernoulliCC(
+        actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=20)},
+    )
+
+
+def test_can_init_smabcc():
+    # init default arguments
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(cost=10),
+            "a2": BetaCC(cost=20),
+        },
+    )
+    assert s.actions["a1"] == BetaCC(cost=10)
+    assert s.actions["a2"] == BetaCC(cost=20)
+    assert s.strategy.subsidy_factor == 0.5
+
+    # init with input args
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
+            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
+        },
+        subsidy_factor=0.7,
+    )
+    assert s.actions["a1"] == BetaCC(n_successes=1, n_failures=2, cost=10)
+    assert s.actions["a2"] == BetaCC(n_successes=3, n_failures=4, cost=20)
+    assert s.strategy == CostControlBandit(subsidy_factor=0.7)
+    assert s.strategy.subsidy_factor == 0.7
+
+
+def test_smabcc_predict():
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
+            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
+        },
+        subsidy_factor=0.7,
+    )
+    _, _ = s.predict(n_samples=1000)
+
+
+def test_smabcc_update():
+    s = SmabBernoulliCC(actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=10)})
+    s.update(actions=["a1", "a1"], rewards=[1, 0])
+
+
+########################################################################################################################
+
+
+# SmabBernoulli with strategy=MultiObjectiveBandit()
+
+
+@given(st.lists(st.integers(min_value=1), min_size=6, max_size=6))
+def test_can_init_smab_mo(a_list):
+    a, b, c, d, e, f = a_list
+
+    s = SmabBernoulliMO(
+        actions={
+            "a1": BetaMO(
+                counters=[
+                    Beta(n_successes=a, n_failures=b),
+                    Beta(n_successes=c, n_failures=d),
+                    Beta(n_successes=e, n_failures=f),
+                ]
+            ),
+            "a2": BetaMO(
+                counters=[
+                    Beta(n_successes=d, n_failures=a),
+                    Beta(n_successes=e, n_failures=b),
+                    Beta(n_successes=f, n_failures=c),
+                ]
+            ),
+        },
+    )
+    assert s.actions["a1"] == BetaMO(
+        counters=[
+            Beta(n_successes=a, n_failures=b),
+            Beta(n_successes=c, n_failures=d),
+            Beta(n_successes=e, n_failures=f),
+        ]
+    )
+    assert s.actions["a2"] == BetaMO(
+        counters=[
+            Beta(n_successes=d, n_failures=a),
+            Beta(n_successes=e, n_failures=b),
+            Beta(n_successes=f, n_failures=c),
+        ]
+    )
+    assert s.strategy == MultiObjectiveBandit()
+
+
+def test_all_actions_must_have_same_number_of_objectives_smab_mo():
+    with pytest.raises(ValueError):
+        SmabBernoulliMO(
+            actions={
+                "action 1": BetaMO(counters=[Beta(), Beta()]),
+                "action 2": BetaMO(counters=[Beta(), Beta()]),
+                "action 3": BetaMO(counters=[Beta(), Beta(), Beta()]),
+            },
+        )
+
+
+def test_smab_mo_predict():
+    n_samples = 1000
+
+    s = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3)
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1"]
+    predicted_actions, _ = s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    assert "a1" not in predicted_actions
+
+    forbidden = ["a1", "a2"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a2", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+def test_smab_mo_update():
+    mab = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3)
+    mab.update(actions=["a1", "a1"], rewards=[[1, 0, 1], [1, 1, 0]])
+
+
+########################################################################################################################
+
+
+# SmabBernoulli with strategy=MultiObjectiveCostControlBandit()
+
+
+@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8))
+def test_can_init_smab_mo_cc(a_list):
+    a, b, c, d, e, f, g, h = a_list
+
+    s = SmabBernoulliMOCC(
+        actions={
+            "a1": BetaMOCC(
+                counters=[
+                    Beta(n_successes=a, n_failures=b),
+                    Beta(n_successes=c, n_failures=d),
+                    Beta(n_successes=e, n_failures=f),
+                ],
+                cost=g,
+            ),
+            "a2": BetaMOCC(
+                counters=[
+                    Beta(n_successes=d, n_failures=a),
+                    Beta(n_successes=e, n_failures=b),
+                    Beta(n_successes=f, n_failures=c),
+                ],
+                cost=h,
+            ),
+        },
+    )
+    assert s.actions["a1"] == BetaMOCC(
+        counters=[
+            Beta(n_successes=a, n_failures=b),
+            Beta(n_successes=c, n_failures=d),
+            Beta(n_successes=e, n_failures=f),
+        ],
+        cost=g,
+    )
+    assert s.actions["a2"] == BetaMOCC(
+        counters=[
+            Beta(n_successes=d, n_failures=a),
+            Beta(n_successes=e, n_failures=b),
+            Beta(n_successes=f, n_failures=c),
+        ],
+        cost=h,
+    )
+    assert s.strategy == MultiObjectiveCostControlBandit()
+
+
+def test_all_actions_must_have_same_number_of_objectives_smab_mo_cc():
+    with pytest.raises(ValueError):
+        SmabBernoulliMOCC(
+            actions={
+                "action 1": BetaMOCC(counters=[Beta(), Beta()], cost=1),
+                "action 2": BetaMOCC(counters=[Beta(), Beta()], cost=1),
+                "action 3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=1),
+            },
+        )
+
+
+def test_smab_mo_cc_predict():
+    n_samples = 1000
+
+    s = create_smab_bernoulli_mo_cc_cold_start(action_ids_cost={"a1": 1, "a2": 2}, n_objectives=2)
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1"]
+    predicted_actions, _ = s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    assert "a1" not in predicted_actions
+
+    forbidden = ["a1", "a2"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a2", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(n_samples=n_samples, forbidden_actions=forbidden)
