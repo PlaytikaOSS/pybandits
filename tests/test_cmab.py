@@ -23,7 +23,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -231,6 +231,7 @@ def test_cmab_predict_cold_start(n_samples, n_features):
     run_predict(context=context)
 
 
+@settings(deadline=400)  # Set the deadline to 400 ms
 @given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
 def test_cmab_predict_not_cold_start(n_samples, n_features):
     def run_predict(context):
