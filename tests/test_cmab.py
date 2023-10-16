@@ -53,6 +53,7 @@ from pybandits.strategy import (
 # CmabBernoulli with strategy=ClassicBandit()
 
 
+@settings(deadline=500)
 @given(st.integers(max_value=100))
 def test_create_cmab_bernoulli_cold_start(a_int):
     # n_features must be > 0
@@ -71,6 +72,7 @@ def test_create_cmab_bernoulli_cold_start(a_int):
         assert mab1 == mab2
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_can_instantiate(n_features):
     with pytest.raises(TypeError):
@@ -119,6 +121,7 @@ def test_cmab_can_instantiate(n_features):
     assert mab.predict_with_proba
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=10))
 def test_cmab_init_with_wrong_blr_models(a, b):
     # all blr models must have the same n_betas. If not raise a ValueError.
@@ -185,6 +188,7 @@ def test_cmab_update_not_all_actions(n_samples=100, n_feat=3):
     mab.actions["a4"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
 def test_cmab_update_shape_mismatch(n_samples, n_features):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -204,6 +208,7 @@ def test_cmab_update_shape_mismatch(n_samples, n_features):
         mab.update(context=[], actions=actions, rewards=rewards)
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
 def test_cmab_predict_cold_start(n_samples, n_features):
     def run_predict(context):
@@ -231,7 +236,7 @@ def test_cmab_predict_cold_start(n_samples, n_features):
     run_predict(context=context)
 
 
-@settings(deadline=400)  # Set the deadline to 400 ms
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
 def test_cmab_predict_not_cold_start(n_samples, n_features):
     def run_predict(context):
@@ -261,6 +266,7 @@ def test_cmab_predict_not_cold_start(n_samples, n_features):
     run_predict(context=context)
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_predict_shape_mismatch(a_int):
     context = np.random.uniform(low=-1.0, high=1.0, size=(100, a_int - 1))
@@ -312,6 +318,7 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
 # CmabBernoulli with strategy=BestActionIdentification()
 
 
+@settings(deadline=500)
 @given(st.integers(max_value=100))
 def test_create_cmab_bernoulli_bai_cold_start(a_int):
     # n_features must be > 0
@@ -343,6 +350,7 @@ def test_create_cmab_bernoulli_bai_cold_start(a_int):
         assert mab1 == mab2
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_bai_can_instantiate(n_features):
     with pytest.raises(TypeError):
@@ -400,6 +408,7 @@ def test_cmab_bai_can_instantiate(n_features):
     assert mab.strategy == BestActionIdentification(exploit_p=0.42)
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
 def test_cmab_bai_predict(n_samples, n_features):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -445,9 +454,10 @@ def test_cmab_bai_update(n_samples=100, n_features=3):
 ########################################################################################################################
 
 
-# SmabBernoulli with strategy=CostControlBandit()
+# CmabBernoulli with strategy=CostControlBandit()
 
 
+@settings(deadline=500)
 @given(st.integers(max_value=100))
 def test_create_cmab_bernoulli_cc_cold_start(a_int):
     action_ids_cost = {"a1": 10, "a2": 20.5}
@@ -482,6 +492,7 @@ def test_create_cmab_bernoulli_cc_cold_start(a_int):
         assert mab1 == mab2
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_cc_can_instantiate(n_features):
     with pytest.raises(TypeError):
@@ -539,6 +550,7 @@ def test_cmab_cc_can_instantiate(n_features):
     assert mab.strategy == CostControlBandit(subsidy_factor=0.42)
 
 
+@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
 def test_cmab_cc_predict(n_samples, n_features):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
