@@ -72,9 +72,7 @@ def test_base_mab_check_update_params():
         dummy_mab._check_update_params(actions=["a1", "a2"], rewards=[1])
 
 
-@given(
-    r1=st.integers(min_value=0, max_value=1), r2=st.integers(min_value=0, max_value=1)
-)
+@given(r1=st.integers(min_value=0, max_value=1), r2=st.integers(min_value=0, max_value=1))
 def test_base_mab_update_ok(r1, r2):
     dummy_mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit())
     dummy_mab.update(actions=["a1", "a2"], rewards=[r1, r2])

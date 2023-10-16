@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import random
+
 import numpy as np
 import pandas as pd
-import random
 
 from pybandits.core.smab import Smab
 
