@@ -21,14 +21,14 @@
 # SOFTWARE.
 
 from copy import deepcopy
-from typing import List
+from typing import List, Optional, Tuple
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from pybandits.base import BinaryReward
+from pybandits.base import BinaryReward, Float01
 from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
 from pybandits.smab import (
     SmabBernoulli,
@@ -48,6 +48,8 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
+from tests.test_utils import is_serializable
+
 
 ########################################################################################################################
 
@@ -200,6 +202,26 @@ def test_smab_accepts_only_valid_actions(s):
         SmabBernoulli(actions={s: Beta(), s + "_": Beta()})
 
 
+@pytest.mark.parametrize("action_dict, action_ids", [
+    ({"a0": Beta(), "a1": Beta(), "a2": Beta()}, None),
+    ({"a0": Beta(), "a1": Beta(n_successes=5, n_failures=5), "a2": Beta(n_successes=10, n_failures=1),
+      "a3": Beta(n_successes=10, n_failures=5), "a4": Beta(n_successes=100, n_failures=4), "a5": Beta()}, None),
+    (None, {"a0", "a1", "a2"})])
+def test_smab_get_state(action_dict: Optional[dict], action_ids: Optional[set]):
+    if action_dict:
+        smab = SmabBernoulli(actions=action_dict)
+        expected_state = {"actions": action_dict, "strategy": {}}
+    else:
+        smab = create_smab_bernoulli_cold_start(action_ids=action_ids)
+        expected_state = {"actions": {action_id: Beta() for action_id in action_ids}, "strategy": {}}
+
+    smab_state = smab.get_state()
+    assert smab_state[0] == "SmabBernoulli"
+    assert smab_state[1] == expected_state
+
+    assert is_serializable(smab_state[1]), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -265,6 +287,27 @@ def test_smabbai_with_betacc():
         )
 
 
+@pytest.mark.parametrize("action_dict, action_ids, exploit_p", [
+    ({"a0": Beta(), "a1": Beta(), "a2": Beta()}, None, 0.3),
+    ({"a0": Beta(), "a1": Beta(n_successes=5, n_failures=5), "a2": Beta(n_successes=10, n_failures=1),
+      "a3": Beta(n_successes=10, n_failures=5), "a4": Beta(n_successes=100, n_failures=4), "a5": Beta()}, None, 0.8),
+    (None, {"a0", "a1", "a2"}, 0.5)])
+def test_smab_bai_get_state(action_dict: Optional[dict], action_ids: Optional[set], exploit_p: Float01):
+    if action_dict:
+        smab = SmabBernoulliBAI(actions=action_dict, exploit_p=exploit_p)
+        expected_state = {"actions": action_dict, "strategy": {"exploit_p": exploit_p}}
+    else:
+        smab = create_smab_bernoulli_bai_cold_start(action_ids=action_ids, exploit_p=exploit_p)
+        expected_state = {"actions": {action_id: Beta() for action_id in action_ids},
+                          "strategy": {"exploit_p": exploit_p}}
+
+    smab_state = smab.get_state()
+    assert smab_state[0] == "SmabBernoulliBAI"
+    assert smab_state[1] == expected_state
+
+    assert is_serializable(smab_state[1]), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -325,6 +368,28 @@ def test_smabcc_predict():
 def test_smabcc_update():
     s = SmabBernoulliCC(actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=10)})
     s.update(actions=["a1", "a1"], rewards=[1, 0])
+
+
+@pytest.mark.parametrize("action_dict, action_ids_cost, subsidy_factor", [
+    ({"a0": BetaCC(cost=0.1), "a1": BetaCC(cost=0.2), "a2": BetaCC(cost=0.3)}, None, 0.3),
+    ({"a0": BetaCC(cost=0.1), "a1": BetaCC(n_successes=5, n_failures=5, cost=0.2), "a2":
+        BetaCC(n_successes=10, n_failures=1, cost=0.3), "a3": BetaCC(n_successes=10, n_failures=5, cost=0.4),
+      "a4": BetaCC(n_successes=100, n_failures=4, cost=0.5), "a5": BetaCC(cost=0.6)}, None, 0.8),
+    (None, {"a0": 0.1, "a1": 0.2, "a2": 0.3}, 0.5)])
+def test_smab_cc_get_state(action_dict: Optional[dict], action_ids_cost: Optional[dict], subsidy_factor: Float01):
+    if action_dict:
+        smab = SmabBernoulliCC(actions=action_dict, subsidy_factor=subsidy_factor)
+        expected_state = {"actions": action_dict, "strategy": {"subsidy_factor": subsidy_factor}}
+    else:
+        smab = create_smab_bernoulli_cc_cold_start(action_ids_cost=action_ids_cost, subsidy_factor=subsidy_factor)
+        expected_state = {"actions": {k: BetaCC(cost=v) for k, v in action_ids_cost.items()},
+                          "strategy": {"subsidy_factor": subsidy_factor}}
+
+    smab_state = smab.get_state()
+    assert smab_state[0] == "SmabBernoulliCC"
+    assert smab_state[1] == expected_state
+
+    assert is_serializable(smab_state[1]), "Internal state is not serializable"
 
 
 ########################################################################################################################
@@ -414,6 +479,31 @@ def test_smab_mo_update():
     mab.update(actions=["a1", "a1"], rewards=[[1, 0, 1], [1, 1, 0]])
 
 
+@pytest.mark.parametrize("action_dict, action_ids_with_obj", [
+    ({"a0": BetaMO(counters=[Beta(), Beta()]), "a1": BetaMO(counters=[Beta(), Beta()]),
+      "a2": BetaMO(counters=[Beta(), Beta()])}, None),
+    ({"a0": BetaMO(counters=[Beta(), Beta()]),
+      "a1": BetaMO(counters=[Beta(n_successes=2, n_failures=3), Beta(n_successes=4, n_failures=5)]),
+      "a2": BetaMO(counters=[Beta(n_successes=6, n_failures=7), Beta(n_successes=8, n_failures=9)])}, None),
+    (None, ({"a0", "a1", "a2"}, 2))
+])
+def test_smab_mo_get_state(action_dict: Optional[dict], action_ids_with_obj: Optional[Tuple[set, int]]):
+    if action_dict:
+        smab = SmabBernoulliMO(actions=action_dict)
+        expected_state = {"actions": action_dict, "strategy": {}}
+    else:
+        smab = create_smab_bernoulli_mo_cold_start(action_ids=action_ids_with_obj[0],
+                                                   n_objectives=action_ids_with_obj[1])
+        expected_state = {"actions": {action_id: BetaMO(counters=[Beta()] * action_ids_with_obj[1]) for action_id in
+                                      action_ids_with_obj[0]}, "strategy": {}}
+
+    smab_state = smab.get_state()
+    assert smab_state[0] == "SmabBernoulliMO"
+    assert smab_state[1] == expected_state
+
+    assert is_serializable(smab_state[1]), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -498,3 +588,30 @@ def test_smab_mo_cc_predict():
     forbidden = ["a1", "a3"]
     with pytest.raises(ValueError):
         s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+@pytest.mark.parametrize("action_dict, action_ids_cost_with_obj", [
+    ({"a0": BetaMOCC(counters=[Beta(), Beta()], cost=0.1), "a1": BetaMOCC(counters=[Beta(), Beta()], cost=0.2),
+      "a2": BetaMOCC(counters=[Beta(), Beta()], cost=0.3)}, None),
+    ({"a0": BetaMOCC(counters=[Beta(), Beta()], cost=0.1),
+      "a1": BetaMOCC(counters=[Beta(n_successes=2, n_failures=3), Beta(n_successes=4, n_failures=5)], cost=0.2),
+      "a2": BetaMOCC(counters=[Beta(n_successes=6, n_failures=7), Beta(n_successes=8, n_failures=9)], cost=0.3)}, None),
+    (None, ({"a0": 0.1, "a1": 0.2, "a2": 0.3}, 2))
+])
+def test_smab_mo_cc_get_state(action_dict: Optional[dict],
+                              action_ids_cost_with_obj: Optional[Tuple[dict, int]]):
+    if action_dict:
+        smab = SmabBernoulliMOCC(actions=action_dict)
+        expected_state = {"actions": action_dict, "strategy": {}}
+    else:
+        smab = create_smab_bernoulli_mo_cc_cold_start(action_ids_cost=action_ids_cost_with_obj[0],
+                                                      n_objectives=action_ids_cost_with_obj[1])
+        expected_state = {"actions": {action_id: BetaMOCC(counters=[Beta()] * action_ids_cost_with_obj[1],
+                                                          cost=action_ids_cost_with_obj[0][action_id]) for action_id in
+                                      action_ids_cost_with_obj[0]}, "strategy": {}}
+
+    smab_state = smab.get_state()
+    assert smab_state[0] == "SmabBernoulliMOCC"
+    assert smab_state[1] == expected_state
+
+    assert is_serializable(smab_state[1]), "Internal state is not serializable"

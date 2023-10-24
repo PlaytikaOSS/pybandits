@@ -20,6 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import json
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -27,6 +30,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from pybandits.base import Float01
 from pybandits.cmab import (
     CmabBernoulli,
     CmabBernoulliBAI,
@@ -39,13 +43,15 @@ from pybandits.model import (
     BayesianLogisticRegression,
     StudentT,
     create_bayesian_logistic_regression_cc_cold_start,
-    create_bayesian_logistic_regression_cold_start,
+    create_bayesian_logistic_regression_cold_start, BayesianLogisticRegressionCC,
 )
 from pybandits.strategy import (
     BestActionIdentification,
     ClassicBandit,
     CostControlBandit,
 )
+from tests.test_utils import is_serializable
+
 
 ########################################################################################################################
 
@@ -305,6 +311,34 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
     run_predict(mab=mab)
 
 
+@pytest.mark.parametrize("action_dict, action_ids", [
+    ({"a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(), StudentT(), StudentT()]),
+      "a2": create_bayesian_logistic_regression_cold_start(n_betas=3)}, None),
+    (None, {"a0", "a1", "a2"})])
+def test_cmab_get_state(action_dict: Optional[dict], action_ids: Optional[set]):
+    if action_dict:
+        cmab = CmabBernoulli(actions=action_dict)
+        expected_state = json.loads(json.dumps({
+            "actions": action_dict,
+            "strategy": {},
+            'predict_with_proba': False,
+            'predict_actions_randomly': False}, default=dict))
+    else:
+        cmab = create_cmab_bernoulli_cold_start(action_ids=action_ids, n_features=3)
+        expected_state = json.loads(json.dumps({
+            "actions": {action_id: create_bayesian_logistic_regression_cold_start(n_betas=3)
+                        for action_id in action_ids},
+            "strategy": {},
+            'predict_with_proba': False,
+            'predict_actions_randomly': True}, default=dict))
+
+    cmab_state = cmab.get_state()
+    assert cmab_state[0] == "CmabBernoulli"
+    assert cmab_state[1] == expected_state
+
+    assert is_serializable(cmab_state[1]), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -439,6 +473,34 @@ def test_cmab_bai_update(n_samples=100, n_features=3):
         [mab.actions[a] != create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
     )
     assert not mab.predict_actions_randomly
+
+
+@pytest.mark.parametrize("action_dict, action_ids, exploit_p", [
+    ({"a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(), StudentT(), StudentT()]),
+      "a2": create_bayesian_logistic_regression_cold_start(n_betas=3)}, None, 0.5),
+    (None, {"a0", "a1", "a2"}, 0.8)])
+def test_cmab_bai_get_state(action_dict: Optional[dict], action_ids: Optional[set], exploit_p: Float01):
+    if action_dict:
+        cmab = CmabBernoulliBAI(actions=action_dict, exploit_p=exploit_p)
+        expected_state = json.loads(json.dumps({
+            "actions": action_dict,
+            "strategy": {"exploit_p": exploit_p},
+            'predict_with_proba': False,
+            'predict_actions_randomly': False}, default=dict))
+    else:
+        cmab = create_cmab_bernoulli_bai_cold_start(action_ids=action_ids, n_features=3, exploit_p=exploit_p)
+        expected_state = json.loads(json.dumps({
+            "actions": {action_id: create_bayesian_logistic_regression_cold_start(n_betas=3)
+                        for action_id in action_ids},
+            "strategy": {"exploit_p": exploit_p},
+            'predict_with_proba': False,
+            'predict_actions_randomly': True}, default=dict))
+
+    cmab_state = cmab.get_state()
+    assert cmab_state[0] == "CmabBernoulliBAI"
+    assert cmab_state[1] == expected_state
+
+    assert is_serializable(cmab_state[1]), "Internal state is not serializable"
 
 
 ########################################################################################################################
@@ -584,3 +646,32 @@ def test_cmab_cc_update(n_samples=100, n_features=3):
         ]
     )
     assert not mab.predict_actions_randomly
+
+
+@pytest.mark.parametrize("action_dict, action_ids_cost, subsidy_factor", [
+    ({"a1": BayesianLogisticRegressionCC(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(), StudentT()], cost=0.1),
+      "a2": create_bayesian_logistic_regression_cc_cold_start(n_betas=2, cost=0.2)}, None, 0.3),
+    (None, {"a0": 0.1, "a1": 0.2, "a2": 0.3}, 0.5)])
+def test_cmab_cc_get_state(action_dict: Optional[dict], action_ids_cost: Optional[dict], subsidy_factor: Float01):
+    if action_dict:
+        cmab = CmabBernoulliCC(actions=action_dict, subsidy_factor=subsidy_factor)
+        expected_state = json.loads(json.dumps({
+            "actions": action_dict,
+            "strategy": {"subsidy_factor": subsidy_factor},
+            'predict_with_proba': True,
+            'predict_actions_randomly': False}, default=dict))
+    else:
+        cmab = create_cmab_bernoulli_cc_cold_start(action_ids_cost=action_ids_cost, n_features=2,
+                                                   subsidy_factor=subsidy_factor)
+        expected_state = json.loads(json.dumps({
+            "actions": {action_id: create_bayesian_logistic_regression_cc_cold_start(n_betas=2, cost=action_cost)
+                        for action_id, action_cost in action_ids_cost.items()},
+            "strategy": {"subsidy_factor": subsidy_factor},
+            'predict_with_proba': True,
+            'predict_actions_randomly': True}, default=dict))
+
+    cmab_state = cmab.get_state()
+    assert cmab_state[0] == "CmabBernoulliCC"
+    assert cmab_state[1] == expected_state
+
+    assert is_serializable(cmab_state[1]), "Internal state is not serializable"
