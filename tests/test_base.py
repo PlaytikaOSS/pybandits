@@ -44,6 +44,11 @@ class DummyMab(BaseMab):
     def predict():
         pass
 
+    def get_state(self) -> (str, dict):
+        model_name = self.__class__.__name__
+        state: dict = {"actions": self.actions}
+        return model_name, state
+
 
 def test_base_mab_raise_on_less_than_2_actions():
     with pytest.raises(ValidationError):

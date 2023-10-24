@@ -26,9 +26,9 @@ from typing import List
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from pydantic import ValidationError
+from pydantic import NonNegativeFloat, ValidationError
 
-from pybandits.base import BinaryReward
+from pybandits.base import BinaryReward, Float01
 from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
 from pybandits.smab import (
     SmabBernoulli,
@@ -48,6 +48,7 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
+from tests.test_utils import is_serializable
 
 ########################################################################################################################
 
@@ -200,6 +201,19 @@ def test_smab_accepts_only_valid_actions(s):
         SmabBernoulli(actions={s: Beta(), s + "_": Beta()})
 
 
+@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=1))
+def test_smab_get_state(a, b, c, d):
+    actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
+    smab = SmabBernoulli(actions=actions)
+
+    expected_state = {"actions": actions, "strategy": {}}
+    smab_state = smab.get_state()
+
+    class_name, smab_state = smab.get_state()
+    assert class_name == "SmabBernoulli"
+    assert smab_state == expected_state
+
+
 ########################################################################################################################
 
 
@@ -265,6 +279,25 @@ def test_smabbai_with_betacc():
         )
 
 
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.floats(min_value=0, max_value=1),
+)
+def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
+    actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
+    smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    expected_state = {"actions": actions, "strategy": {"exploit_p": exploit_p}}
+
+    class_name, smab_state = smab.get_state()
+    assert class_name == "SmabBernoulliBAI"
+    assert smab_state == expected_state
+
+    assert is_serializable(smab_state), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -325,6 +358,30 @@ def test_smabcc_predict():
 def test_smabcc_update():
     s = SmabBernoulliCC(actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=10)})
     s.update(actions=["a1", "a1"], rewards=[1, 0])
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.floats(min_value=0),
+    st.floats(min_value=0),
+    st.floats(min_value=0, max_value=1),
+)
+def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor: Float01):
+    actions = {
+        "action1": BetaCC(n_successes=a, n_failures=b, cost=cost1),
+        "action2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
+    }
+    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    expected_state = {"actions": actions, "strategy": {"subsidy_factor": subsidy_factor}}
+
+    class_name, smab_state = smab.get_state()
+    assert class_name == "SmabBernoulliCC"
+    assert smab_state == expected_state
+
+    assert is_serializable(smab_state), "Internal state is not serializable"
 
 
 ########################################################################################################################
@@ -414,6 +471,36 @@ def test_smab_mo_update():
     mab.update(actions=["a1", "a1"], rewards=[[1, 0, 1], [1, 1, 0]])
 
 
+@given(st.lists(st.integers(min_value=1), min_size=6, max_size=6))
+def test_smab_mo_get_state(a_list):
+    a, b, c, d, e, f = a_list
+
+    actions = {
+        "a1": BetaMO(
+            counters=[
+                Beta(n_successes=a, n_failures=b),
+                Beta(n_successes=c, n_failures=d),
+                Beta(n_successes=e, n_failures=f),
+            ]
+        ),
+        "a2": BetaMO(
+            counters=[
+                Beta(n_successes=d, n_failures=a),
+                Beta(n_successes=e, n_failures=b),
+                Beta(n_successes=f, n_failures=c),
+            ]
+        ),
+    }
+    smab = SmabBernoulliMO(actions=actions)
+    expected_state = {"actions": actions, "strategy": {}}
+
+    class_name, smab_state = smab.get_state()
+    assert class_name == "SmabBernoulliMO"
+    assert smab_state == expected_state
+
+    assert is_serializable(smab_state), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -498,3 +585,35 @@ def test_smab_mo_cc_predict():
     forbidden = ["a1", "a3"]
     with pytest.raises(ValueError):
         s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8))
+def test_smab_mocc_get_state(a_list):
+    a, b, c, d, e, f, g, h = a_list
+
+    actions = {
+        "a1": BetaMOCC(
+            counters=[
+                Beta(n_successes=a, n_failures=b),
+                Beta(n_successes=c, n_failures=d),
+                Beta(n_successes=e, n_failures=f),
+            ],
+            cost=g,
+        ),
+        "a2": BetaMOCC(
+            counters=[
+                Beta(n_successes=d, n_failures=a),
+                Beta(n_successes=e, n_failures=b),
+                Beta(n_successes=f, n_failures=c),
+            ],
+            cost=h,
+        ),
+    }
+    smab = SmabBernoulliMOCC(actions=actions)
+    expected_state = {"actions": actions, "strategy": {}}
+
+    class_name, smab_state = smab.get_state()
+    assert class_name == "SmabBernoulliMOCC"
+    assert smab_state == expected_state
+
+    assert is_serializable(smab_state), "Internal state is not serializable"
