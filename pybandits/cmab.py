@@ -215,6 +215,10 @@ class CmabBernoulli(BaseCmabBernoulli):
     def __init__(self, actions: Dict[ActionId, BaseBayesianLogisticRegression]):
         super().__init__(actions=actions, strategy=ClassicBandit())
 
+    @classmethod
+    def from_state(cls, state: dict) -> "CmabBernoulli":
+        return cls(actions=state["actions"])
+
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(context=context, actions=actions, rewards=rewards)
@@ -248,6 +252,10 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
     def __init__(self, actions: Dict[ActionId, BayesianLogisticRegression], exploit_p: Optional[Float01] = None):
         strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
         super().__init__(actions=actions, strategy=strategy)
+
+    @classmethod
+    def from_state(cls, state: dict) -> "CmabBernoulliBAI":
+        return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
 
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -291,6 +299,10 @@ class CmabBernoulliCC(BaseCmabBernoulli):
     def __init__(self, actions: Dict[ActionId, BayesianLogisticRegressionCC], subsidy_factor: Optional[Float01] = None):
         strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
         super().__init__(actions=actions, strategy=strategy)
+
+    @classmethod
+    def from_state(cls, state: dict) -> "CmabBernoulliCC":
+        return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
 
     @validate_arguments(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
