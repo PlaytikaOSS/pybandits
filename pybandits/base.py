@@ -187,3 +187,17 @@ class BaseMab(PyBanditsBaseModel, ABC):
         probs: List[Dict[ActionId, float]] of shape (n_samples,)
             The probabilities of getting a positive reward for each action.
         """
+
+    def get_state(self) -> (str, dict):
+        """
+        Access the complete model internal state, enough to create an exact copy of the same model from it.
+        Returns
+        -------
+        model_class_name: str
+            The name of the class of the model.
+        model_state: dict
+            The internal state of the model (actions, scores, etc.).
+        """
+        model_name = self.__class__.__name__
+        state: dict = self.dict()
+        return model_name, state

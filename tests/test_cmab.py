@@ -20,13 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import ValidationError
+from pydantic import NonNegativeFloat, ValidationError
 
+from pybandits.base import Float01
 from pybandits.cmab import (
     CmabBernoulli,
     CmabBernoulliBAI,
@@ -37,6 +40,7 @@ from pybandits.cmab import (
 )
 from pybandits.model import (
     BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
     StudentT,
     create_bayesian_logistic_regression_cc_cold_start,
     create_bayesian_logistic_regression_cold_start,
@@ -46,6 +50,7 @@ from pybandits.strategy import (
     ClassicBandit,
     CostControlBandit,
 )
+from tests.test_utils import is_serializable
 
 ########################################################################################################################
 
@@ -312,6 +317,29 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
     run_predict(mab=mab)
 
 
+@settings(deadline=500)
+@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=2, max_value=100))
+def test_cmab_get_state(mu, sigma, n_features):
+    actions: dict = {
+        "a1": BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()]),
+        "a2": create_bayesian_logistic_regression_cold_start(n_betas=n_features),
+    }
+
+    cmab = CmabBernoulli(actions=actions)
+    expected_state = json.loads(
+        json.dumps(
+            {"actions": actions, "strategy": {}, "predict_with_proba": False, "predict_actions_randomly": False},
+            default=dict,
+        )
+    )
+
+    class_name, cmab_state = cmab.get_state()
+    assert class_name == "CmabBernoulli"
+    assert cmab_state == expected_state
+
+    assert is_serializable(cmab_state), "Internal state is not serializable"
+
+
 ########################################################################################################################
 
 
@@ -449,6 +477,39 @@ def test_cmab_bai_update(n_samples=100, n_features=3):
         [mab.actions[a] != create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
     )
     assert not mab.predict_actions_randomly
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=2, max_value=100),
+    st.floats(min_value=0, max_value=1),
+)
+def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
+    actions: dict = {
+        "a1": BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()]),
+        "a2": create_bayesian_logistic_regression_cold_start(n_betas=n_features),
+    }
+
+    cmab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    expected_state = json.loads(
+        json.dumps(
+            {
+                "actions": actions,
+                "strategy": {"exploit_p": exploit_p},
+                "predict_with_proba": False,
+                "predict_actions_randomly": False,
+            },
+            default=dict,
+        )
+    )
+
+    class_name, cmab_state = cmab.get_state()
+    assert class_name == "CmabBernoulliBAI"
+    assert cmab_state == expected_state
+
+    assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
 ########################################################################################################################
@@ -597,3 +658,42 @@ def test_cmab_cc_update(n_samples=100, n_features=3):
         ]
     )
     assert not mab.predict_actions_randomly
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=2, max_value=100),
+    st.floats(min_value=0),
+    st.floats(min_value=0),
+    st.floats(min_value=0, max_value=1),
+)
+def test_cmab_cc_get_state(
+    mu, sigma, n_features, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
+):
+    actions: dict = {
+        "a1": BayesianLogisticRegressionCC(
+            alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()], cost=cost_1
+        ),
+        "a2": create_bayesian_logistic_regression_cc_cold_start(n_betas=n_features, cost=cost_2),
+    }
+
+    cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    expected_state = json.loads(
+        json.dumps(
+            {
+                "actions": actions,
+                "strategy": {"subsidy_factor": subsidy_factor},
+                "predict_with_proba": True,
+                "predict_actions_randomly": False,
+            },
+            default=dict,
+        )
+    )
+
+    class_name, cmab_state = cmab.get_state()
+    assert class_name == "CmabBernoulliCC"
+    assert cmab_state == expected_state
+
+    assert is_serializable(cmab_state), "Internal state is not serializable"
