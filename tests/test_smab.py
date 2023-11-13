@@ -19,7 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+import json
 from copy import deepcopy
 from typing import List
 
@@ -207,11 +207,40 @@ def test_smab_get_state(a, b, c, d):
     smab = SmabBernoulli(actions=actions)
 
     expected_state = {"actions": actions, "strategy": {}}
-    smab_state = smab.get_state()
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulli"
     assert smab_state == expected_state
+
+
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "n_successes": st.integers(min_value=1, max_value=100),
+                        "n_failures": st.integers(min_value=1, max_value=100),
+                    },
+                ),
+                min_size=2,
+            ),
+            "strategy": st.fixed_dictionaries({}),
+        }
+    )
+)
+def test_smab_from_state(state):
+    smab = SmabBernoulli.from_state(state)
+    assert isinstance(smab, SmabBernoulli)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+
+    # Ensure get_state and from_state compatibility
+    new_smab = globals()[smab.get_state()[0]].from_state(state=smab.get_state()[1])
+    assert new_smab == smab
 
 
 ########################################################################################################################
@@ -298,6 +327,45 @@ def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
     assert is_serializable(smab_state), "Internal state is not serializable"
 
 
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "n_successes": st.integers(min_value=1, max_value=100),
+                        "n_failures": st.integers(min_value=1, max_value=100),
+                    },
+                ),
+                min_size=2,
+            ),
+            "strategy": st.one_of(
+                st.just({}),
+                st.just({"exploit_p": None}),
+                st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
+            ),
+        }
+    )
+)
+def test_smab_bai_from_state(state):
+    smab = SmabBernoulliBAI.from_state(state)
+    assert isinstance(smab, SmabBernoulliBAI)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+    expected_exploit_p = (
+        state["strategy"].get("exploit_p", 0.5) if state["strategy"].get("exploit_p") is not None else 0.5
+    )  # Covers both not existing and existing + None
+    actual_exploit_p = smab.strategy.exploit_p
+    assert expected_exploit_p == actual_exploit_p
+
+    # Ensure get_state and from_state compatibility
+    new_smab = globals()[smab.get_state()[0]].from_state(state=smab.get_state()[1])
+    assert new_smab == smab
+
+
 ########################################################################################################################
 
 
@@ -382,6 +450,46 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
     assert smab_state == expected_state
 
     assert is_serializable(smab_state), "Internal state is not serializable"
+
+
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "n_successes": st.integers(min_value=1, max_value=100),
+                        "n_failures": st.integers(min_value=1, max_value=100),
+                        "cost": st.floats(min_value=0),
+                    },
+                ),
+                min_size=2,
+            ),
+            "strategy": st.one_of(
+                st.just({}),
+                st.just({"subsidy_factor": None}),
+                st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
+            ),
+        }
+    )
+)
+def test_smab_cc_from_state(state):
+    smab = SmabBernoulliCC.from_state(state)
+    assert isinstance(smab, SmabBernoulliCC)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+    expected_subsidy_factor = (
+        state["strategy"].get("subsidy_factor", 0.5) if state["strategy"].get("subsidy_factor") is not None else 0.5
+    )  # Covers both not existing and existing + None
+    actual_subsidy_factor = smab.strategy.subsidy_factor
+    assert expected_subsidy_factor == actual_subsidy_factor
+
+    # Ensure get_state and from_state compatibility
+    new_smab = globals()[smab.get_state()[0]].from_state(state=smab.get_state()[1])
+    assert new_smab == smab
 
 
 ########################################################################################################################
@@ -501,6 +609,44 @@ def test_smab_mo_get_state(a_list):
     assert is_serializable(smab_state), "Internal state is not serializable"
 
 
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "counters": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "n_successes": st.integers(min_value=1, max_value=100),
+                                    "n_failures": st.integers(min_value=1, max_value=100),
+                                },
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        )
+                    }
+                ),
+                min_size=2,
+            ),
+            "strategy": st.fixed_dictionaries({}),
+        }
+    )
+)
+def test_smab_mo_from_state(state):
+    smab = SmabBernoulliMO.from_state(state)
+    assert isinstance(smab, SmabBernoulliMO)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+
+    # Ensure get_state and from_state compatibility
+    new_smab = globals()[smab.get_state()[0]].from_state(state=smab.get_state()[1])
+    assert new_smab == smab
+
+
 ########################################################################################################################
 
 
@@ -617,3 +763,42 @@ def test_smab_mocc_get_state(a_list):
     assert smab_state == expected_state
 
     assert is_serializable(smab_state), "Internal state is not serializable"
+
+
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "counters": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "n_successes": st.integers(min_value=1, max_value=100),
+                                    "n_failures": st.integers(min_value=1, max_value=100),
+                                },
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        ),
+                        "cost": st.floats(min_value=0),
+                    }
+                ),
+                min_size=2,
+            ),
+            "strategy": st.fixed_dictionaries({}),
+        }
+    )
+)
+def test_smab_mo_cc_from_state(state):
+    smab = SmabBernoulliMOCC.from_state(state)
+    assert isinstance(smab, SmabBernoulliMOCC)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+
+    # Ensure get_state and from_state compatibility
+    new_smab = globals()[smab.get_state()[0]].from_state(state=smab.get_state()[1])
+    assert new_smab == smab

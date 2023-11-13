@@ -147,6 +147,10 @@ class SmabBernoulli(BaseSmabBernoulli):
     def __init__(self, actions: Dict[ActionId, Beta]):
         super().__init__(actions=actions, strategy=ClassicBandit())
 
+    @classmethod
+    def from_state(cls, state: dict) -> "SmabBernoulli":
+        return cls(actions=state["actions"])
+
     @validate_arguments
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(actions=actions, rewards=rewards)
@@ -173,6 +177,10 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
     def __init__(self, actions: Dict[ActionId, Beta], exploit_p: Optional[Float01] = None):
         strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
         super().__init__(actions=actions, strategy=strategy)
+
+    @classmethod
+    def from_state(cls, state: dict) -> "SmabBernoulliBAI":
+        return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
 
     @validate_arguments
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -208,6 +216,10 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     def __init__(self, actions: Dict[ActionId, BetaCC], subsidy_factor: Optional[Float01] = None):
         strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
         super().__init__(actions=actions, strategy=strategy)
+
+    @classmethod
+    def from_state(cls, state: dict) -> "SmabBernoulliCC":
+        return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
 
     @validate_arguments
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -269,6 +281,10 @@ class SmabBernoulliMO(BaseSmabBernoulliMO):
     def __init__(self, actions: Dict[ActionId, Beta]):
         super().__init__(actions=actions, strategy=MultiObjectiveBandit())
 
+    @classmethod
+    def from_state(cls, state: dict) -> "SmabBernoulliMO":
+        return cls(actions=state["actions"])
+
 
 class SmabBernoulliMOCC(BaseSmabBernoulliMO):
     """
@@ -291,6 +307,10 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
 
     def __init__(self, actions: Dict[ActionId, Beta]):
         super().__init__(actions=actions, strategy=MultiObjectiveCostControlBandit())
+
+    @classmethod
+    def from_state(cls, state: dict) -> "SmabBernoulliMOCC":
+        return cls(actions=state["actions"])
 
 
 @validate_arguments

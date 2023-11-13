@@ -340,6 +340,53 @@ def test_cmab_get_state(mu, sigma, n_features):
     assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
+@settings(deadline=500)
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "alpha": st.fixed_dictionaries(
+                            {
+                                "mu": st.floats(min_value=-100, max_value=100),
+                                "nu": st.floats(min_value=0, max_value=100),
+                                "sigma": st.floats(min_value=0, max_value=100),
+                            }
+                        ),
+                        "betas": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "mu": st.floats(min_value=-100, max_value=100),
+                                    "nu": st.floats(min_value=0, max_value=100),
+                                    "sigma": st.floats(min_value=0, max_value=100),
+                                }
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        ),
+                    },
+                ),
+                min_size=2,
+            ),
+            "strategy": st.fixed_dictionaries({}),
+        }
+    )
+)
+def test_cmab_from_state(state):
+    cmab = CmabBernoulli.from_state(state)
+    assert isinstance(cmab, CmabBernoulli)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(cmab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+
+    # Ensure get_state and from_state compatibility
+    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
+    assert new_cmab == cmab
+
+
 ########################################################################################################################
 
 
@@ -510,6 +557,62 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
     assert cmab_state == expected_state
 
     assert is_serializable(cmab_state), "Internal state is not serializable"
+
+
+@settings(deadline=500)
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "alpha": st.fixed_dictionaries(
+                            {
+                                "mu": st.floats(min_value=-100, max_value=100),
+                                "nu": st.floats(min_value=0, max_value=100),
+                                "sigma": st.floats(min_value=0, max_value=100),
+                            }
+                        ),
+                        "betas": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "mu": st.floats(min_value=-100, max_value=100),
+                                    "nu": st.floats(min_value=0, max_value=100),
+                                    "sigma": st.floats(min_value=0, max_value=100),
+                                }
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        ),
+                    },
+                ),
+                min_size=2,
+            ),
+            "strategy": st.one_of(
+                st.just({}),
+                st.just({"exploit_p": None}),
+                st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
+            ),
+        }
+    )
+)
+def test_cmab_bai_from_state(state):
+    cmab = CmabBernoulliBAI.from_state(state)
+    assert isinstance(cmab, CmabBernoulliBAI)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(cmab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+    expected_exploit_p = (
+        state["strategy"].get("exploit_p", 0.5) if state["strategy"].get("exploit_p") is not None else 0.5
+    )  # Covers both not existing and existing + None
+    actual_exploit_p = cmab.strategy.exploit_p
+    assert expected_exploit_p == actual_exploit_p
+
+    # Ensure get_state and from_state compatibility
+    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
+    assert new_cmab == cmab
 
 
 ########################################################################################################################
@@ -697,3 +800,60 @@ def test_cmab_cc_get_state(
     assert cmab_state == expected_state
 
     assert is_serializable(cmab_state), "Internal state is not serializable"
+
+
+@settings(deadline=500)
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "alpha": st.fixed_dictionaries(
+                            {
+                                "mu": st.floats(min_value=-100, max_value=100),
+                                "nu": st.floats(min_value=0, max_value=100),
+                                "sigma": st.floats(min_value=0, max_value=100),
+                            }
+                        ),
+                        "betas": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "mu": st.floats(min_value=-100, max_value=100),
+                                    "nu": st.floats(min_value=0, max_value=100),
+                                    "sigma": st.floats(min_value=0, max_value=100),
+                                }
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        ),
+                        "cost": st.floats(min_value=0),
+                    },
+                ),
+                min_size=2,
+            ),
+            "strategy": st.one_of(
+                st.just({}),
+                st.just({"subsidy_factor": None}),
+                st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
+            ),
+        }
+    )
+)
+def test_cmab_cc_from_state(state):
+    cmab = CmabBernoulliCC.from_state(state)
+    assert isinstance(cmab, CmabBernoulliCC)
+
+    expected_actions = state["actions"]
+    actual_actions = json.loads(json.dumps(cmab.actions, default=dict))  # Normalize the dict
+    assert expected_actions == actual_actions
+    expected_subsidy_factor = (
+        state["strategy"].get("subsidy_factor", 0.5) if state["strategy"].get("subsidy_factor") is not None else 0.5
+    )  # Covers both not existing and existing + None
+    actual_subsidy_factor = cmab.strategy.subsidy_factor
+    assert expected_subsidy_factor == actual_subsidy_factor
+
+    # Ensure get_state and from_state compatibility
+    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
+    assert new_cmab == cmab
