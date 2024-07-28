@@ -131,6 +131,7 @@ def test_smab_predict_raise_when_all_actions_forbidden():
 
 
 def test_smab_predict():
+    n_samples = 1000
     s = SmabBernoulli(
         actions={
             "a0": Beta(),
@@ -143,7 +144,7 @@ def test_smab_predict():
     )
     forbidden_actions = set(["forb_1", "forb_2"])
 
-    best_actions, probs = s.predict(n_samples=1000, forbidden_actions=forbidden_actions)
+    best_actions, probs = s.predict(n_samples=n_samples, forbidden_actions=forbidden_actions)
     assert ["forb1" not in p.keys() for p in probs], "forbidden actions weren't removed from the output"
 
     valid_actions = set(s.actions.keys()) - forbidden_actions
@@ -206,7 +207,12 @@ def test_smab_get_state(a, b, c, d):
     actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
     smab = SmabBernoulli(actions=actions)
 
-    expected_state = {"actions": actions, "strategy": {}}
+    expected_state = {
+        "actions": actions,
+        "strategy": {},
+        "epsilon": None,
+        "default_action": None,
+    }
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulli"
@@ -288,8 +294,9 @@ def test_can_init_smabbai():
 
 
 def test_smabbai_predict():
+    n_samples = 1000
     s = SmabBernoulliBAI(actions={"a1": Beta(), "a2": Beta()})
-    _, _ = s.predict(n_samples=1000)
+    _, _ = s.predict(n_samples=n_samples)
 
 
 def test_smabbai_update():
@@ -318,7 +325,12 @@ def test_smabbai_with_betacc():
 def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
     actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
     smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
-    expected_state = {"actions": actions, "strategy": {"exploit_p": exploit_p}}
+    expected_state = {
+        "actions": actions,
+        "strategy": {"exploit_p": exploit_p},
+        "epsilon": None,
+        "default_action": None,
+    }
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliBAI"
@@ -413,6 +425,7 @@ def test_can_init_smabcc():
 
 
 def test_smabcc_predict():
+    n_samples = 1000
     s = SmabBernoulliCC(
         actions={
             "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
@@ -420,7 +433,7 @@ def test_smabcc_predict():
         },
         subsidy_factor=0.7,
     )
-    _, _ = s.predict(n_samples=1000)
+    _, _ = s.predict(n_samples=n_samples)
 
 
 def test_smabcc_update():
@@ -443,7 +456,14 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
         "action2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
     }
     smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
-    expected_state = {"actions": actions, "strategy": {"subsidy_factor": subsidy_factor}}
+    expected_state = {
+        "actions": actions,
+        "strategy": {
+            "subsidy_factor": subsidy_factor,
+        },
+        "epsilon": None,
+        "default_action": None,
+    }
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliCC"
@@ -600,7 +620,12 @@ def test_smab_mo_get_state(a_list):
         ),
     }
     smab = SmabBernoulliMO(actions=actions)
-    expected_state = {"actions": actions, "strategy": {}}
+    expected_state = {
+        "actions": actions,
+        "strategy": {},
+        "epsilon": None,
+        "default_action": None,
+    }
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliMO"
@@ -756,7 +781,12 @@ def test_smab_mocc_get_state(a_list):
         ),
     }
     smab = SmabBernoulliMOCC(actions=actions)
-    expected_state = {"actions": actions, "strategy": {}}
+    expected_state = {
+        "actions": actions,
+        "strategy": {},
+        "epsilon": None,
+        "default_action": None,
+    }
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliMOCC"
@@ -802,3 +832,86 @@ def test_smab_mo_cc_from_state(state):
     # Ensure get_state and from_state compatibility
     new_smab = globals()[smab.get_state()[0]].from_state(state=smab.get_state()[1])
     assert new_smab == smab
+
+
+########################################################################################################################
+
+
+# Smab with epsilon-greedy super strategy
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+)
+def test_can_instantiate_epsilon_greddy_smab_with_params(a, b):
+    s = SmabBernoulli(
+        actions={
+            "action1": Beta(n_successes=a, n_failures=b),
+            "action2": Beta(n_successes=a, n_failures=b),
+        },
+        epsilon=0.1,
+        default_action="action1",
+    )
+    assert (s.actions["action1"].n_successes == a) and (s.actions["action1"].n_failures == b)
+    assert s.actions["action1"] == s.actions["action2"]
+
+
+def test_epsilon_greedy_smab_predict():
+    n_samples = 1000
+
+    s = SmabBernoulli(
+        actions={
+            "a0": Beta(),
+            "a1": Beta(n_successes=5, n_failures=5),
+            "forb_1": Beta(n_successes=10, n_failures=1),
+            "best": Beta(n_successes=10, n_failures=5),
+            "forb_2": Beta(n_successes=100, n_failures=4),
+            "a5": Beta(),
+        },
+        epsilon=0.1,
+        default_action="a1",
+    )
+    forbidden_actions = set(["forb_1", "forb_2"])
+
+    _, _ = s.predict(n_samples=n_samples, forbidden_actions=forbidden_actions)
+
+
+def test_epsilon_greddy_smabbai_predict():
+    n_samples = 1000
+    s = SmabBernoulliBAI(actions={"a1": Beta(), "a2": Beta()}, epsilon=0.1, default_action="a1")
+    _, _ = s.predict(n_samples=n_samples)
+
+
+def test_epsilon_greddy_smabcc_predict():
+    n_samples = 1000
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
+            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
+        },
+        subsidy_factor=0.7,
+        epsilon=0.1,
+        default_action="a1",
+    )
+    _, _ = s.predict(n_samples=n_samples)
+
+
+def test_epsilon_greddy_smab_mo_predict():
+    n_samples = 1000
+
+    s = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3, epsilon=0.1, default_action="a1")
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+def test_epsilon_greddy_smab_mo_cc_predict():
+    n_samples = 1000
+
+    s = create_smab_bernoulli_mo_cc_cold_start(
+        action_ids_cost={"a1": 1, "a2": 2}, n_objectives=2, epsilon=0.1, default_action="a1"
+    )
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)

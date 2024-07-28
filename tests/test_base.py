@@ -20,14 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List
+from typing import Dict, List, Optional, Set
 
 import hypothesis.strategies as st
+import numpy as np
 import pytest
 from hypothesis import given
 from pydantic import NonNegativeInt, ValidationError
+from pytest_mock import MockerFixture
 
-from pybandits.base import ActionId, BaseMab
+from pybandits.base import ActionId, BaseMab, Probability
 from pybandits.model import Beta
 from pybandits.strategy import ClassicBandit
 
@@ -41,8 +43,12 @@ class DummyMab(BaseMab):
         super().update(actions=actions, rewards=rewards)
         pass
 
-    def predict():
-        pass
+    def predict(
+        self,
+        forbidden_actions: Optional[Set[ActionId]] = None,
+    ):
+        valid_actions = self._get_valid_actions(forbidden_actions)
+        return np.random.choice(valid_actions)
 
     def get_state(self) -> (str, dict):
         model_name = self.__class__.__name__
@@ -82,3 +88,54 @@ def test_base_mab_update_ok(r1, r2):
     dummy_mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit())
     dummy_mab.update(actions=["a1", "a2"], rewards=[r1, r2])
     dummy_mab.update(actions=["a1", "a1"], rewards=[r1, r2])
+
+
+########################################################################################################################
+
+
+# Epsilon-greedy functionality tests
+
+
+@pytest.fixture
+def p() -> Dict[ActionId, Probability]:
+    return {"a1": 0.5, "a2": 0.5}
+
+
+def test_valid_epsilon_value(mocker: MockerFixture, p: Dict[ActionId, Probability]):
+    mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
+    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.1, default_action="a1")
+    selected_action = mab._select_epsilon_greedy_action(p)
+    assert selected_action in p.keys()
+
+
+def test_epsilon_boundary_values(mocker: MockerFixture, p: Dict[ActionId, Probability]):
+    mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
+
+    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.0)
+    selected_action = mab._select_epsilon_greedy_action(p)
+    assert selected_action == "a2"
+
+    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=1.0, default_action="a1")
+    selected_action = mab._select_epsilon_greedy_action(p)
+    assert selected_action == "a1"
+
+
+def test_default_action_not_in_actions(p: Dict[ActionId, Probability]):
+    with pytest.raises(AttributeError):
+        DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=1.0, default_action="a3")
+
+
+def test_select_action_raises_exception(mocker: MockerFixture, p: Dict[ActionId, Probability]):
+    mocker.patch.object(ClassicBandit, "select_action", side_effect=Exception("Test Exception"))
+    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.1, default_action="a1")
+
+    with pytest.raises(Exception) as excinfo:
+        mab._select_epsilon_greedy_action(p)
+
+    assert str(excinfo.value) == "Test Exception"
+
+
+def test_default_action_in_forbidden_actions():
+    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.1, default_action="a1")
+    with pytest.raises(ValueError):
+        mab.predict(forbidden_actions={"a1"})

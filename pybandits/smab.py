@@ -89,7 +89,7 @@ class BaseSmabBernoulli(BaseMab):
 
         for _ in range(n_samples):
             p = {action: model.sample_proba() for action, model in self.actions.items() if action in valid_actions}
-            selected_actions.append(self.strategy.select_action(p=p, actions=self.actions))
+            selected_actions.append(self._select_epsilon_greedy_action(p=p, actions=self.actions))
             probs.append(p)
 
         return selected_actions, probs
@@ -144,8 +144,13 @@ class SmabBernoulli(BaseSmabBernoulli):
     actions: Dict[ActionId, Beta]
     strategy: ClassicBandit
 
-    def __init__(self, actions: Dict[ActionId, Beta]):
-        super().__init__(actions=actions, strategy=ClassicBandit())
+    def __init__(
+        self,
+        actions: Dict[ActionId, Beta],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+    ):
+        super().__init__(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action=default_action)
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulli":
@@ -174,9 +179,15 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
     actions: Dict[ActionId, Beta]
     strategy: BestActionIdentification
 
-    def __init__(self, actions: Dict[ActionId, Beta], exploit_p: Optional[Float01] = None):
+    def __init__(
+        self,
+        actions: Dict[ActionId, Beta],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+        exploit_p: Optional[Float01] = None,
+    ):
         strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
-        super().__init__(actions=actions, strategy=strategy)
+        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliBAI":
@@ -213,9 +224,15 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     actions: Dict[ActionId, BetaCC]
     strategy: CostControlBandit
 
-    def __init__(self, actions: Dict[ActionId, BetaCC], subsidy_factor: Optional[Float01] = None):
+    def __init__(
+        self,
+        actions: Dict[ActionId, BetaCC],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+        subsidy_factor: Optional[Float01] = None,
+    ):
         strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
-        super().__init__(actions=actions, strategy=strategy)
+        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliCC":
@@ -278,8 +295,15 @@ class SmabBernoulliMO(BaseSmabBernoulliMO):
     actions: Dict[ActionId, BetaMO]
     strategy: MultiObjectiveBandit
 
-    def __init__(self, actions: Dict[ActionId, Beta]):
-        super().__init__(actions=actions, strategy=MultiObjectiveBandit())
+    def __init__(
+        self,
+        actions: Dict[ActionId, Beta],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+    ):
+        super().__init__(
+            actions=actions, strategy=MultiObjectiveBandit(), epsilon=epsilon, default_action=default_action
+        )
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliMO":
@@ -305,8 +329,15 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
     actions: Dict[ActionId, BetaMOCC]
     strategy: MultiObjectiveCostControlBandit
 
-    def __init__(self, actions: Dict[ActionId, Beta]):
-        super().__init__(actions=actions, strategy=MultiObjectiveCostControlBandit())
+    def __init__(
+        self,
+        actions: Dict[ActionId, Beta],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+    ):
+        super().__init__(
+            actions=actions, strategy=MultiObjectiveCostControlBandit(), epsilon=epsilon, default_action=default_action
+        )
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliMOCC":
@@ -314,7 +345,9 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
 
 
 @validate_arguments
-def create_smab_bernoulli_cold_start(action_ids: Set[ActionId]) -> SmabBernoulli:
+def create_smab_bernoulli_cold_start(
+    action_ids: Set[ActionId], epsilon: Optional[Float01] = None, default_action: Optional[ActionId] = None
+) -> SmabBernoulli:
     """
     Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, with default
     parameters.
@@ -323,6 +356,10 @@ def create_smab_bernoulli_cold_start(action_ids: Set[ActionId]) -> SmabBernoulli
     ----------
     action_ids: Set[ActionId]
         The list of possible actions.
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
 
     Returns
     -------
@@ -332,12 +369,15 @@ def create_smab_bernoulli_cold_start(action_ids: Set[ActionId]) -> SmabBernoulli
     actions = {}
     for a in set(action_ids):
         actions[a] = Beta()
-    return SmabBernoulli(actions=actions)
+    return SmabBernoulli(actions=actions, epsilon=epsilon, default_action=default_action)
 
 
 @validate_arguments
 def create_smab_bernoulli_bai_cold_start(
-    action_ids: Set[ActionId], exploit_p: Optional[Float01] = None
+    action_ids: Set[ActionId],
+    exploit_p: Optional[Float01] = None,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
 ) -> SmabBernoulliBAI:
     """
     Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action
@@ -356,6 +396,10 @@ def create_smab_bernoulli_bai_cold_start(
             (it behaves as a Greedy strategy).
         If exploit_p is 0, the bandits always select the action with 2nd highest probability of getting a positive
             reward.
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
 
     Returns
     -------
@@ -365,13 +409,15 @@ def create_smab_bernoulli_bai_cold_start(
     actions = {}
     for a in set(action_ids):
         actions[a] = Beta()
-    return SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    return SmabBernoulliBAI(actions=actions, epsilon=epsilon, default_action=default_action, exploit_p=exploit_p)
 
 
 @validate_arguments
 def create_smab_bernoulli_cc_cold_start(
     action_ids_cost: Dict[ActionId, NonNegativeFloat],
     subsidy_factor: Optional[Float01] = None,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
 ) -> SmabBernoulliCC:
     """
     Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control
@@ -397,6 +443,10 @@ def create_smab_bernoulli_cc_cold_start(
         If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
         If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
             reward (it behaves as a classic Bernoulli bandit).
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
 
     Returns
     -------
@@ -406,11 +456,18 @@ def create_smab_bernoulli_cc_cold_start(
     actions = {}
     for a, cost in action_ids_cost.items():
         actions[a] = BetaCC(cost=cost)
-    return SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    return SmabBernoulliCC(
+        actions=actions, epsilon=epsilon, default_action=default_action, subsidy_factor=subsidy_factor
+    )
 
 
 @validate_arguments
-def create_smab_bernoulli_mo_cold_start(action_ids: Set[ActionId], n_objectives: PositiveInt) -> SmabBernoulliMO:
+def create_smab_bernoulli_mo_cold_start(
+    action_ids: Set[ActionId],
+    n_objectives: PositiveInt,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
+) -> SmabBernoulliMO:
     """
     Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Multi-Objectives
     strategy, with default parameters.
@@ -429,6 +486,10 @@ def create_smab_bernoulli_mo_cold_start(action_ids: Set[ActionId], n_objectives:
         The list of possible actions.
     n_objectives: PositiveInt
         The number of objectives to optimize. The bandit assumes the same number of objectives for all actions.
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
 
     Returns
     -------
@@ -438,12 +499,15 @@ def create_smab_bernoulli_mo_cold_start(action_ids: Set[ActionId], n_objectives:
     actions = {}
     for a in set(action_ids):
         actions[a] = BetaMO(counters=n_objectives * [Beta()])
-    return SmabBernoulliMO(actions=actions)
+    return SmabBernoulliMO(actions=actions, epsilon=epsilon, default_action=default_action)
 
 
 @validate_arguments
 def create_smab_bernoulli_mo_cc_cold_start(
-    action_ids_cost: Dict[ActionId, NonNegativeFloat], n_objectives: PositiveInt
+    action_ids_cost: Dict[ActionId, NonNegativeFloat],
+    n_objectives: PositiveInt,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
 ) -> SmabBernoulliMOCC:
     """
     Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation for
@@ -458,6 +522,11 @@ def create_smab_bernoulli_mo_cc_cold_start(
         The list of possible actions, and their cost.
     n_objectives: PositiveInt
         The number of objectives to optimize. The bandit assumes the same number of objectives for all actions.
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
+
 
     Returns
     -------
@@ -467,4 +536,4 @@ def create_smab_bernoulli_mo_cc_cold_start(
     actions = {}
     for a, cost in action_ids_cost.items():
         actions[a] = BetaMOCC(counters=n_objectives * [Beta()], cost=cost)
-    return SmabBernoulliMOCC(actions=actions)
+    return SmabBernoulliMOCC(actions=actions, epsilon=epsilon, default_action=default_action)

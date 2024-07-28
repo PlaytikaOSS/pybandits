@@ -292,6 +292,7 @@ class MultiObjectiveBandit(Strategy):
 
     Reference: Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
                https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+
     Parameters
     ----------
     n_objectives: int

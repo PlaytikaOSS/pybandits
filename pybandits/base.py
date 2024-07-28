@@ -24,6 +24,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, NewType, Optional, Set, Tuple, Union
 
+import numpy as np
 from pydantic import (
     BaseModel,
     Extra,
@@ -31,6 +32,7 @@ from pydantic import (
     confloat,
     conint,
     constr,
+    root_validator,
     validate_arguments,
     validator,
 )
@@ -91,10 +93,14 @@ class BaseMab(PyBanditsBaseModel, ABC):
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
+    epsilon: Optional[Float01], defaults to None
+        The probability of selecting a random action.
     """
 
     actions: Dict[ActionId, Model]
     strategy: Strategy
+    epsilon: Optional[Float01]
+    default_action: Optional[ActionId]
 
     @validator("actions", pre=True)
     @classmethod
@@ -102,6 +108,14 @@ class BaseMab(PyBanditsBaseModel, ABC):
         if len(v) < 2:
             raise AttributeError("At least 2 actions should be defined.")
         return v
+
+    @root_validator
+    def check_default_action(cls, values):
+        if not values["epsilon"] and values["default_action"]:
+            raise AttributeError("A default action should only be defined when epsilon is defined.")
+        if values["default_action"] and values["default_action"] not in values["actions"]:
+            raise AttributeError("The default action should be defined in the actions.")
+        return values
 
     def _get_valid_actions(self, forbidden_actions: Optional[Set[ActionId]]) -> Set[ActionId]:
         """
@@ -125,6 +139,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
         valid_actions = set(self.actions.keys()) - forbidden_actions
         if len(valid_actions) == 0:
             raise ValueError("All actions are forbidden. You must allow at least 1 action.")
+        if self.default_action and self.default_action not in valid_actions:
+            raise ValueError("The default action is forbidden.")
 
         return valid_actions
 
@@ -201,3 +217,48 @@ class BaseMab(PyBanditsBaseModel, ABC):
         model_name = self.__class__.__name__
         state: dict = self.dict()
         return model_name, state
+
+    @validate_arguments
+    def _select_epsilon_greedy_action(
+        self,
+        p: Union[Dict[ActionId, float], Dict[ActionId, Probability], Dict[ActionId, List[Probability]]],
+        actions: Optional[Dict[ActionId, Model]] = None,
+    ) -> ActionId:
+        """
+        Wraps self.strategy.select_action function with epsilon-greedy strategy,
+        such that with probability epsilon a default_action is selected,
+        and with probability 1-epsilon the select_action function is triggered to choose action.
+        If no default_action is provided, a random action is selected.
+
+        Reference: Reinforcement Learning: An Introduction, Ch. 2 (Sutton and Burto, 2018)
+               https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf&ved=2ahUKEwjMy8WV9N2HAxVe0gIHHVjjG5sQFnoECEMQAQ&usg=AOvVaw3bKK-Y_1kf6XQVwR-UYrBY
+
+        Parameters
+        ----------
+        p: Union[Dict[ActionId, float], Dict[ActionId, Probability], Dict[ActionId, List[Probability]]]
+            The dictionary or actions and their sampled probability of getting a positive reward.
+            For MO strategy, the sampled probability is a list with elements corresponding to the objectives.
+        actions: Optional[Dict[ActionId, Model]]
+            The dictionary of actions and their associated Model.
+
+        Returns
+        -------
+        selected_action: ActionId
+            The selected action.
+
+        Raises
+        ------
+        KeyError
+            If self.default_action is not present as a key in the probabilities dictionary.
+        """
+
+        if self.epsilon:
+            if self.default_action and self.default_action not in p.keys():
+                raise KeyError(f"Default action {self.default_action} not in actions.")
+            if np.random.binomial(1, self.epsilon):
+                selected_action = self.default_action if self.default_action else np.random.choice(list(p.keys()))
+            else:
+                selected_action = self.strategy.select_action(p=p, actions=actions)
+        else:
+            selected_action = self.strategy.select_action(p=p, actions=actions)
+        return selected_action
