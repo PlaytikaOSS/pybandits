@@ -138,7 +138,7 @@ class BaseCmabBernoulli(BaseMab):
                 p_to_select_action = prob if self.predict_with_proba else ws
 
                 # predict actions, probs, weighted_sums
-                selected_actions.append(self.strategy.select_action(p=p_to_select_action, actions=self.actions))
+                selected_actions.append(self._select_epsilon_greedy_action(p=p_to_select_action, actions=self.actions))
                 probs.append(prob)
                 weighted_sums.append(ws)
 
@@ -212,8 +212,13 @@ class CmabBernoulli(BaseCmabBernoulli):
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
 
-    def __init__(self, actions: Dict[ActionId, BaseBayesianLogisticRegression]):
-        super().__init__(actions=actions, strategy=ClassicBandit())
+    def __init__(
+        self,
+        actions: Dict[ActionId, BaseBayesianLogisticRegression],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+    ):
+        super().__init__(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action=default_action)
 
     @classmethod
     def from_state(cls, state: dict) -> "CmabBernoulli":
@@ -249,9 +254,15 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
 
-    def __init__(self, actions: Dict[ActionId, BayesianLogisticRegression], exploit_p: Optional[Float01] = None):
+    def __init__(
+        self,
+        actions: Dict[ActionId, BayesianLogisticRegression],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+        exploit_p: Optional[Float01] = None,
+    ):
         strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
-        super().__init__(actions=actions, strategy=strategy)
+        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
 
     @classmethod
     def from_state(cls, state: dict) -> "CmabBernoulliBAI":
@@ -296,9 +307,15 @@ class CmabBernoulliCC(BaseCmabBernoulli):
     predict_with_proba: bool = True
     predict_actions_randomly: bool = False
 
-    def __init__(self, actions: Dict[ActionId, BayesianLogisticRegressionCC], subsidy_factor: Optional[Float01] = None):
+    def __init__(
+        self,
+        actions: Dict[ActionId, BayesianLogisticRegressionCC],
+        epsilon: Optional[Float01] = None,
+        default_action: Optional[ActionId] = None,
+        subsidy_factor: Optional[Float01] = None,
+    ):
         strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
-        super().__init__(actions=actions, strategy=strategy)
+        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
 
     @classmethod
     def from_state(cls, state: dict) -> "CmabBernoulliCC":
@@ -310,7 +327,12 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
 
 @validate_arguments
-def create_cmab_bernoulli_cold_start(action_ids: Set[ActionId], n_features: PositiveInt) -> CmabBernoulli:
+def create_cmab_bernoulli_cold_start(
+    action_ids: Set[ActionId],
+    n_features: PositiveInt,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
+) -> CmabBernoulli:
     """
     Utility function to create a Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, with default
     parameters. Until the very first update the model will predict actions randomly, where each action has equal
@@ -323,6 +345,10 @@ def create_cmab_bernoulli_cold_start(action_ids: Set[ActionId], n_features: Posi
     n_features: PositiveInt
         The number of features expected after in the context matrix. This is also the number of betas of the
         Bayesian Logistic Regression model.
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
     Returns
     -------
     cmab: CmabBernoulli
@@ -331,14 +357,18 @@ def create_cmab_bernoulli_cold_start(action_ids: Set[ActionId], n_features: Posi
     actions = {}
     for a in set(action_ids):
         actions[a] = create_bayesian_logistic_regression_cold_start(n_betas=n_features)
-    mab = CmabBernoulli(actions=actions)
+    mab = CmabBernoulli(actions=actions, epsilon=epsilon, default_action=default_action)
     mab.predict_actions_randomly = True
     return mab
 
 
 @validate_arguments
 def create_cmab_bernoulli_bai_cold_start(
-    action_ids: Set[ActionId], n_features: PositiveInt, exploit_p: Optional[Float01] = None
+    action_ids: Set[ActionId],
+    n_features: PositiveInt,
+    exploit_p: Optional[Float01] = None,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
 ) -> CmabBernoulliBAI:
     """
     Utility function to create a Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action
@@ -361,6 +391,10 @@ def create_cmab_bernoulli_bai_cold_start(
             (it behaves as a Greedy strategy).
         If exploit_p is 0, the bandits always select the action with 2nd highest probability of getting a positive
             reward.
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
 
     Returns
     -------
@@ -370,7 +404,7 @@ def create_cmab_bernoulli_bai_cold_start(
     actions = {}
     for a in set(action_ids):
         actions[a] = create_bayesian_logistic_regression_cold_start(n_betas=n_features)
-    mab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    mab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p, epsilon=epsilon, default_action=default_action)
     mab.predict_actions_randomly = True
     return mab
 
@@ -380,6 +414,8 @@ def create_cmab_bernoulli_cc_cold_start(
     action_ids_cost: Dict[ActionId, NonNegativeFloat],
     n_features: PositiveInt,
     subsidy_factor: Optional[Float01] = None,
+    epsilon: Optional[Float01] = None,
+    default_action: Optional[ActionId] = None,
 ) -> CmabBernoulliCC:
     """
     Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control
@@ -408,6 +444,10 @@ def create_cmab_bernoulli_cc_cold_start(
         If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
         If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
             reward (it behaves as a classic Bernoulli bandit).
+    epsilon: Optional[Float01]
+        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
+    default_action: Optional[ActionId]
+        Default action to select if the epsilon-greedy approach is used. None for random selection.
 
     Returns
     -------
@@ -417,6 +457,8 @@ def create_cmab_bernoulli_cc_cold_start(
     actions = {}
     for a, cost in action_ids_cost.items():
         actions[a] = create_bayesian_logistic_regression_cc_cold_start(n_betas=n_features, cost=cost)
-    mab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    mab = CmabBernoulliCC(
+        actions=actions, subsidy_factor=subsidy_factor, epsilon=epsilon, default_action=default_action
+    )
     mab.predict_actions_randomly = True
     return mab

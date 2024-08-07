@@ -297,7 +297,8 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
         with pytest.raises(ValueError):  # all actions forbidden
             assert set(mab.predict(context=context, forbidden_actions=["a1", "a2", "a3", "a4", "a5"])[0])
         with pytest.raises(ValueError):  # all actions forbidden (unordered)
-            assert set(mab.predict(n_samples=1000, forbidden_actions=["a5", "a4", "a2", "a3", "a1"])[0])
+            n_samples = 1000
+            assert set(mab.predict(n_samples=n_samples, forbidden_actions=["a5", "a4", "a2", "a3", "a1"])[0])
 
     # cold start mab
     mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2", "a3", "a4", "a5"], n_features=n_features)
@@ -328,7 +329,14 @@ def test_cmab_get_state(mu, sigma, n_features):
     cmab = CmabBernoulli(actions=actions)
     expected_state = json.loads(
         json.dumps(
-            {"actions": actions, "strategy": {}, "predict_with_proba": False, "predict_actions_randomly": False},
+            {
+                "actions": actions,
+                "strategy": {},
+                "predict_with_proba": False,
+                "predict_actions_randomly": False,
+                "epsilon": None,
+                "default_action": None,
+            },
             default=dict,
         )
     )
@@ -547,6 +555,8 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
                 "strategy": {"exploit_p": exploit_p},
                 "predict_with_proba": False,
                 "predict_actions_randomly": False,
+                "epsilon": None,
+                "default_action": None,
             },
             default=dict,
         )
@@ -790,6 +800,8 @@ def test_cmab_cc_get_state(
                 "strategy": {"subsidy_factor": subsidy_factor},
                 "predict_with_proba": True,
                 "predict_actions_randomly": False,
+                "epsilon": None,
+                "default_action": None,
             },
             default=dict,
         )
@@ -857,3 +869,58 @@ def test_cmab_cc_from_state(state):
     # Ensure get_state and from_state compatibility
     new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
     assert new_cmab == cmab
+
+
+########################################################################################################################
+
+
+# Cmab with epsilon-greedy super strategy
+
+
+@settings(deadline=500)
+@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
+def test_epsilon_greedy_cmab_predict_cold_start(n_samples, n_features):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    mab = create_cmab_bernoulli_cold_start(
+        action_ids=["a1", "a2"], n_features=n_features, epsilon=0.1, default_action="a1"
+    )
+    selected_actions, probs, weighted_sums = mab.predict(context=context)
+    assert mab.predict_actions_randomly
+    assert all([a in ["a1", "a2"] for a in selected_actions])
+    assert len(selected_actions) == n_samples
+    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
+    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+@settings(deadline=500)
+@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
+def test_epsilon_greedy_cmab_bai_predict(n_samples, n_features):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    mab = create_cmab_bernoulli_bai_cold_start(
+        action_ids=["a1", "a2"], n_features=n_features, epsilon=0.1, default_action="a1"
+    )
+    selected_actions, probs, weighted_sums = mab.predict(context=context)
+    assert mab.predict_actions_randomly
+    assert all([a in ["a1", "a2"] for a in selected_actions])
+    assert len(selected_actions) == n_samples
+    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
+    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+@settings(deadline=500)
+@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
+def test_epsilon_greedy_cmab_cc_predict(n_samples, n_features):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    # cold start
+    mab = create_cmab_bernoulli_cc_cold_start(
+        action_ids_cost={"a1": 10, "a2": 20.5}, n_features=n_features, epsilon=0.1, default_action="a1"
+    )
+    selected_actions, probs, weighted_sums = mab.predict(context=context)
+    assert mab.predict_actions_randomly
+    assert all([a in ["a1", "a2"] for a in selected_actions])
+    assert len(selected_actions) == n_samples
+    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
+    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
