@@ -31,8 +31,8 @@ from pydantic import (
     NonNegativeFloat,
     PositiveInt,
     confloat,
-    root_validator,
-    validate_arguments,
+    model_validator,
+    validate_call,
 )
 from pymc import Bernoulli, Data, Deterministic
 from pymc import Model as PymcModel
@@ -60,12 +60,10 @@ class BaseBeta(Model):
     n_successes: PositiveInt = 1
     n_failures: PositiveInt = 1
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
     @classmethod
     def both_or_neither_counters_are_defined(cls, values):
-        n_successes_defined = "n_successes" in values.keys()
-        n_failures_defined = "n_failures" in values.keys()
-        if n_successes_defined != n_failures_defined:
+        if hasattr(values, "n_successes") != hasattr(values, "n_failures"):
             raise ValueError("Either both or neither n_successes and n_failures should be specified.")
         return values
 
@@ -90,7 +88,7 @@ class BaseBeta(Model):
         """
         return sqrt((self.n_successes * self.n_failures) / (self.count * (self.count - 1)))
 
-    @validate_arguments
+    @validate_call
     def update(self, rewards: List[BinaryReward]):
         """
         Update n_successes and and n_failures.
@@ -146,7 +144,7 @@ class BaseBetaMO(Model):
 
     counters: List[Beta]
 
-    @validate_arguments
+    @validate_call
     def sample_proba(self) -> List[Probability]:
         """
         Sample the probability of getting a positive reward.
@@ -158,7 +156,7 @@ class BaseBetaMO(Model):
         """
         return [x.sample_proba() for x in self.counters]
 
-    @validate_arguments
+    @validate_call
     def update(self, rewards: List[List[BinaryReward]]):
         """
         Update the Beta model using the provided rewards.
@@ -245,7 +243,7 @@ class BaseBayesianLogisticRegression(Model):
     alpha: StudentT
     betas: List[StudentT] = Field(..., min_items=1)
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def check_context_matrix(self, context: ArrayLike):
         """
         Check and cast context matrix.
@@ -267,7 +265,7 @@ class BaseBayesianLogisticRegression(Model):
         if n_cols_context != len(self.betas):
             raise AttributeError(f"Shape mismatch: context must have {len(self.betas)} columns.")
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         """
         Compute the probability of getting a positive reward from the sampled regression coefficients and the context.
@@ -311,7 +309,7 @@ class BaseBayesianLogisticRegression(Model):
 
         return prob, weighted_sum
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(
         self,
         context: ArrayLike,

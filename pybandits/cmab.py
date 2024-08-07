@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 from numpy import array
 from numpy.random import choice
 from numpy.typing import ArrayLike
-from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
+from pydantic import NonNegativeFloat, PositiveInt, field_validator, validate_call
 
 from pybandits.base import ActionId, BaseMab, BinaryReward, Float01, Probability
 from pybandits.model import (
@@ -63,7 +63,7 @@ class BaseCmabBernoulli(BaseMab):
     predict_with_proba: bool
     predict_actions_randomly: bool
 
-    @validator("actions")
+    @field_validator("actions")
     def check_bayesian_logistic_regression_models_len(cls, v):
         blr_betas_len = [len(b.betas) for b in v.values()]
         if not all(blr_betas_len[0] == x for x in blr_betas_len):
@@ -72,7 +72,7 @@ class BaseCmabBernoulli(BaseMab):
             )
         return v
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def predict(
         self,
         context: ArrayLike,
@@ -144,12 +144,9 @@ class BaseCmabBernoulli(BaseMab):
 
         return selected_actions, probs, weighted_sums
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(
-        self,
-        context: ArrayLike,
-        actions: List[ActionId],
-        rewards: List[Union[BinaryReward, List[BinaryReward]]],
+        self, context: ArrayLike, actions: List[ActionId], rewards: List[Union[BinaryReward, List[BinaryReward]]]
     ):
         """
         Update the contextual Bernoulli bandit given the list of selected actions and their corresponding binary
@@ -224,7 +221,7 @@ class CmabBernoulli(BaseCmabBernoulli):
     def from_state(cls, state: dict) -> "CmabBernoulli":
         return cls(actions=state["actions"])
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(context=context, actions=actions, rewards=rewards)
 
@@ -268,7 +265,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
     def from_state(cls, state: dict) -> "CmabBernoulliBAI":
         return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(context=context, actions=actions, rewards=rewards)
 
@@ -321,12 +318,12 @@ class CmabBernoulliCC(BaseCmabBernoulli):
     def from_state(cls, state: dict) -> "CmabBernoulliCC":
         return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
 
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(context=context, actions=actions, rewards=rewards)
 
 
-@validate_arguments
+@validate_call
 def create_cmab_bernoulli_cold_start(
     action_ids: Set[ActionId],
     n_features: PositiveInt,
@@ -348,7 +345,9 @@ def create_cmab_bernoulli_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
+
     Returns
     -------
     cmab: CmabBernoulli
@@ -362,7 +361,7 @@ def create_cmab_bernoulli_cold_start(
     return mab
 
 
-@validate_arguments
+@validate_call
 def create_cmab_bernoulli_bai_cold_start(
     action_ids: Set[ActionId],
     n_features: PositiveInt,
@@ -394,7 +393,8 @@ def create_cmab_bernoulli_bai_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
     Returns
     -------
@@ -409,7 +409,7 @@ def create_cmab_bernoulli_bai_cold_start(
     return mab
 
 
-@validate_arguments
+@validate_call
 def create_cmab_bernoulli_cc_cold_start(
     action_ids_cost: Dict[ActionId, NonNegativeFloat],
     n_features: PositiveInt,
@@ -447,7 +447,8 @@ def create_cmab_bernoulli_cc_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
     Returns
     -------

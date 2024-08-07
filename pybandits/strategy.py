@@ -24,7 +24,7 @@ from random import random
 from typing import Dict, List, Optional
 
 import numpy as np
-from pydantic import validate_arguments
+from pydantic import validate_call
 from scipy.stats import ttest_ind_from_stats
 
 from pybandits.base import ActionId, Float01, Model, Probability, Strategy
@@ -42,7 +42,7 @@ class ClassicBandit(Strategy):
                https://arxiv.org/pdf/1209.3352.pdf
     """
 
-    @validate_arguments
+    @validate_call
     def select_action(
         self,
         p: Dict[ActionId, float],
@@ -84,7 +84,7 @@ class BestActionIdentification(Strategy):
 
     exploit_p: Float01 = 0.5
 
-    @validate_arguments
+    @validate_call
     def set_exploit_p(self, exploit_p: Float01):
         """
         Set exploit_p.
@@ -100,7 +100,7 @@ class BestActionIdentification(Strategy):
         """
         self.exploit_p = exploit_p
 
-    @validate_arguments
+    @validate_call
     def select_action(
         self,
         p: Dict[ActionId, float],
@@ -194,11 +194,11 @@ class CostControlBandit(Strategy):
 
     subsidy_factor: Float01 = 0.5
 
-    @validate_arguments
+    @validate_call
     def set_subsidy_factor(self, subsidy_factor: Float01):
         self.subsidy_factor = subsidy_factor
 
-    @validate_arguments
+    @validate_call
     def select_action(self, p: Dict[ActionId, Probability], actions: Dict[ActionId, Model]) -> ActionId:
         """
         Select the action with the minimum cost among the set of feasible actions (the actions whose expected rewards
@@ -235,7 +235,7 @@ class CostControlBandit(Strategy):
         return selected_action
 
 
-@validate_arguments
+@validate_call
 def get_pareto_front(p: Dict[ActionId, List[Probability]]) -> List[ActionId]:
     """
     Create Pareto optimal set of actions (Pareto front) A* identified as actions that are not dominated by any action
@@ -299,7 +299,7 @@ class MultiObjectiveBandit(Strategy):
         Number of objectives to be solved by the bandit (n_objectives must be >= 1).
     """
 
-    @validate_arguments
+    @validate_call
     def select_action(self, p: Dict[ActionId, List[Probability]], **kwargs) -> ActionId:
         """
         Select an action at random from the Pareto optimal set of action. The Pareto optimal action set (Pareto front)
@@ -332,7 +332,7 @@ class MultiObjectiveCostControlBandit(Strategy):
         Number of objectives to be solved by the bandit (n_objectives must be >= 1)
     """
 
-    @validate_arguments
+    @validate_call
     def select_action(self, p: Dict[ActionId, List[Probability]], actions: Dict[ActionId, BetaMOCC]) -> ActionId:
         """
         Select the action with the minimum cost among the Pareto optimal set of action. The Pareto optimal

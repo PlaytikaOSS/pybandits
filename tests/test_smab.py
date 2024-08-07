@@ -48,6 +48,7 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
+from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
 
 ########################################################################################################################
@@ -57,7 +58,7 @@ from tests.test_utils import is_serializable
 
 
 def test_create_smab_bernoulli_cold_start():
-    assert create_smab_bernoulli_cold_start(action_ids=["a1", "a2"]) == SmabBernoulli(
+    assert create_smab_bernoulli_cold_start(action_ids={"a1", "a2"}) == SmabBernoulli(
         actions={"a1": Beta(), "a2": Beta()},
     )
 
@@ -207,12 +208,14 @@ def test_smab_get_state(a, b, c, d):
     actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
     smab = SmabBernoulli(actions=actions)
 
-    expected_state = {
-        "actions": actions,
-        "strategy": {},
-        "epsilon": None,
-        "default_action": None,
-    }
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {},
+            "epsilon": None,
+            "default_action": None,
+        }
+    )
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulli"
@@ -257,11 +260,11 @@ def test_smab_from_state(state):
 
 def test_create_smab_bernoulli_bai():
     # default exploit_p
-    assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"]) == SmabBernoulliBAI(
+    assert create_smab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}) == SmabBernoulliBAI(
         actions={"a1": Beta(), "a2": Beta()},
     )
     # set exploit_p
-    assert create_smab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], exploit_p=0.2) == SmabBernoulliBAI(
+    assert create_smab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, exploit_p=0.2) == SmabBernoulliBAI(
         actions={"a1": Beta(), "a2": Beta()},
         exploit_p=0.2,
     )
@@ -325,12 +328,14 @@ def test_smabbai_with_betacc():
 def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
     actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
     smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
-    expected_state = {
-        "actions": actions,
-        "strategy": {"exploit_p": exploit_p},
-        "epsilon": None,
-        "default_action": None,
-    }
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {"exploit_p": exploit_p},
+            "epsilon": None,
+            "default_action": None,
+        }
+    )
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliBAI"
@@ -456,14 +461,16 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
         "action2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
     }
     smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
-    expected_state = {
-        "actions": actions,
-        "strategy": {
-            "subsidy_factor": subsidy_factor,
-        },
-        "epsilon": None,
-        "default_action": None,
-    }
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {
+                "subsidy_factor": subsidy_factor,
+            },
+            "epsilon": None,
+            "default_action": None,
+        }
+    )
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliCC"
@@ -571,7 +578,7 @@ def test_all_actions_must_have_same_number_of_objectives_smab_mo():
 def test_smab_mo_predict():
     n_samples = 1000
 
-    s = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3)
+    s = create_smab_bernoulli_mo_cold_start(action_ids={"a1", "a2"}, n_objectives=3)
 
     forbidden = None
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)
@@ -595,7 +602,7 @@ def test_smab_mo_predict():
 
 
 def test_smab_mo_update():
-    mab = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3)
+    mab = create_smab_bernoulli_mo_cold_start(action_ids={"a1", "a2"}, n_objectives=3)
     mab.update(actions=["a1", "a1"], rewards=[[1, 0, 1], [1, 1, 0]])
 
 
@@ -620,12 +627,14 @@ def test_smab_mo_get_state(a_list):
         ),
     }
     smab = SmabBernoulliMO(actions=actions)
-    expected_state = {
-        "actions": actions,
-        "strategy": {},
-        "epsilon": None,
-        "default_action": None,
-    }
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {},
+            "epsilon": None,
+            "default_action": None,
+        }
+    )
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliMO"
@@ -781,12 +790,14 @@ def test_smab_mocc_get_state(a_list):
         ),
     }
     smab = SmabBernoulliMOCC(actions=actions)
-    expected_state = {
-        "actions": actions,
-        "strategy": {},
-        "epsilon": None,
-        "default_action": None,
-    }
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {},
+            "epsilon": None,
+            "default_action": None,
+        }
+    )
 
     class_name, smab_state = smab.get_state()
     assert class_name == "SmabBernoulliMOCC"
@@ -900,7 +911,7 @@ def test_epsilon_greddy_smabcc_predict():
 def test_epsilon_greddy_smab_mo_predict():
     n_samples = 1000
 
-    s = create_smab_bernoulli_mo_cold_start(action_ids=["a1", "a2"], n_objectives=3, epsilon=0.1, default_action="a1")
+    s = create_smab_bernoulli_mo_cold_start(action_ids={"a1", "a2"}, n_objectives=3, epsilon=0.1, default_action="a1")
 
     forbidden = None
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)

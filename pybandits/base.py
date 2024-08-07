@@ -27,14 +27,13 @@ from typing import Any, Dict, List, NewType, Optional, Set, Tuple, Union
 import numpy as np
 from pydantic import (
     BaseModel,
-    Extra,
     NonNegativeInt,
     confloat,
     conint,
     constr,
-    root_validator,
-    validate_arguments,
-    validator,
+    field_validator,
+    model_validator,
+    validate_call,
 )
 
 ActionId = NewType("ActionId", constr(min_length=1))
@@ -44,13 +43,10 @@ Predictions = NewType("Predictions", Tuple[List[ActionId], List[Dict[ActionId, P
 BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
 
 
-class PyBanditsBaseModel(BaseModel):
+class PyBanditsBaseModel(BaseModel, extra="forbid"):
     """
     BaseModel of the PyBandits library.
     """
-
-    class Config:
-        extra = Extra.forbid
 
 
 class Model(PyBanditsBaseModel, ABC):
@@ -93,8 +89,11 @@ class BaseMab(PyBanditsBaseModel, ABC):
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
-    epsilon: Optional[Float01], defaults to None
+    epsilon: Optional[Float01]
         The probability of selecting a random action.
+    default_action: Optional[ActionId]
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
     """
 
     actions: Dict[ActionId, Model]
@@ -102,20 +101,20 @@ class BaseMab(PyBanditsBaseModel, ABC):
     epsilon: Optional[Float01]
     default_action: Optional[ActionId]
 
-    @validator("actions", pre=True)
+    @field_validator("actions", mode="before")
     @classmethod
     def at_least_2_actions_are_defined(cls, v):
         if len(v) < 2:
             raise AttributeError("At least 2 actions should be defined.")
         return v
 
-    @root_validator
-    def check_default_action(cls, values):
-        if not values["epsilon"] and values["default_action"]:
+    @model_validator(mode="after")
+    def check_default_action(self):
+        if not self.epsilon and self.default_action:
             raise AttributeError("A default action should only be defined when epsilon is defined.")
-        if values["default_action"] and values["default_action"] not in values["actions"]:
+        if self.default_action and self.default_action not in self.actions:
             raise AttributeError("The default action should be defined in the actions.")
-        return values
+        return self
 
     def _get_valid_actions(self, forbidden_actions: Optional[Set[ActionId]]) -> Set[ActionId]:
         """
@@ -144,11 +143,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         return valid_actions
 
-    def _check_update_params(
-        self,
-        actions: List[ActionId],
-        rewards: List[Union[NonNegativeInt, List[NonNegativeInt]]],
-    ):
+    def _check_update_params(self, actions: List[ActionId], rewards: List[Union[NonNegativeInt, List[NonNegativeInt]]]):
         """
         Verify that the given list of action IDs is a subset of the currently defined actions.
 
@@ -166,14 +161,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
 
     @abstractmethod
-    @validate_arguments
-    def update(
-        self,
-        actions: List[ActionId],
-        rewards: List[Union[BinaryReward, List[BinaryReward]]],
-        *args,
-        **kwargs,
-    ):
+    @validate_call
+    def update(self, actions: List[ActionId], rewards: List[Union[BinaryReward, List[BinaryReward]]], *args, **kwargs):
         """
         Update the stochastic multi-armed bandit model.
 
@@ -184,7 +173,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         """
 
     @abstractmethod
-    @validate_arguments
+    @validate_call
     def predict(self, forbidden_actions: Optional[Set[ActionId]] = None):
         """
         Predict actions.
@@ -218,7 +207,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         state: dict = self.dict()
         return model_name, state
 
-    @validate_arguments
+    @validate_call
     def _select_epsilon_greedy_action(
         self,
         p: Union[Dict[ActionId, float], Dict[ActionId, Probability], Dict[ActionId, List[Probability]]],
