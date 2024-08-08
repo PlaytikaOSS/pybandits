@@ -259,17 +259,17 @@ def test_check_context_matrix(n_samples, n_features):
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) == np.ndarray
+    assert type(context) is np.ndarray
     blr.check_context_matrix(context=context)
 
     # context is python list
     context = context.tolist()
-    assert type(context) == list
+    assert type(context) is list
     blr.check_context_matrix(context=context)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
-    assert type(context) == pd.DataFrame
+    assert type(context) is pd.DataFrame
     blr.check_context_matrix(context=context)
 
     # raise an error if len(context) != len(self.betas)
@@ -293,7 +293,7 @@ def test_blr_sample_proba(n_samples, n_features):
     def sample_proba(context):
         prob, weighted_sum = blr.sample_proba(context=context)
 
-        assert type(prob) == type(weighted_sum) == np.ndarray  # type of the returns must be np.ndarray
+        assert type(prob) is type(weighted_sum) is np.ndarray  # type of the returns must be np.ndarray
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled proba and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
@@ -301,17 +301,17 @@ def test_blr_sample_proba(n_samples, n_features):
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) == np.ndarray
+    assert type(context) is np.ndarray
     sample_proba(context=context)
 
     # context is python list
     context = context.tolist()
-    assert type(context) == list
+    assert type(context) is list
     sample_proba(context=context)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
-    assert type(context) == pd.DataFrame
+    assert type(context) is pd.DataFrame
     sample_proba(context=context)
 
 
@@ -338,17 +338,17 @@ def test_blr_update(n_samples=100, n_features=3):
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) == np.ndarray
+    assert type(context) is np.ndarray
     update(context=context, rewards=rewards)
 
     # context is python list
     context = context.tolist()
-    assert type(context) == list
+    assert type(context) is list
     update(context=context, rewards=rewards)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
-    assert type(context) == pd.DataFrame
+    assert type(context) is pd.DataFrame
     update(context=context, rewards=rewards)
 
     # raise an error if len(context) != len(rewards)

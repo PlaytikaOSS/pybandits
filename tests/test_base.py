@@ -126,7 +126,7 @@ def test_default_action_not_in_actions(p: Dict[ActionId, Probability]):
 
 def test_select_action_raises_exception(mocker: MockerFixture, p: Dict[ActionId, Probability]):
     mocker.patch.object(ClassicBandit, "select_action", side_effect=Exception("Test Exception"))
-    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.1, default_action="a1")
+    mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.0, default_action=None)
 
     with pytest.raises(Exception) as excinfo:
         mab._select_epsilon_greedy_action(p)

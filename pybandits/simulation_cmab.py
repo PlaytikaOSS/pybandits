@@ -257,8 +257,7 @@ class SimulationCmab:
             Matrix of the proportion of positive rewards per group/action.
         """
         return {
-            "group "
-            + str(i): (
+            "group " + str(i): (
                 self.results["action"].loc[(self.results["group"] == i) & (self.results["reward"] == 1)].value_counts()
                 / self.results["action"].loc[(self.results["group"] == i)].value_counts()
             ).to_dict()
