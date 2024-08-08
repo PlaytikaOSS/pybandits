@@ -23,7 +23,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from pydantic import NonNegativeFloat, PositiveInt, validate_arguments, validator
+from pydantic import NonNegativeFloat, PositiveInt, field_validator, validate_call
 
 from pybandits.base import (
     ActionId,
@@ -57,7 +57,7 @@ class BaseSmabBernoulli(BaseMab):
 
     actions: Dict[ActionId, BaseBeta]
 
-    @validate_arguments
+    @validate_call
     def predict(
         self,
         n_samples: PositiveInt = 1,
@@ -94,12 +94,8 @@ class BaseSmabBernoulli(BaseMab):
 
         return selected_actions, probs
 
-    @validate_arguments
-    def update(
-        self,
-        actions: List[ActionId],
-        rewards: List[Union[BinaryReward, List[BinaryReward]]],
-    ):
+    @validate_call
+    def update(self, actions: List[ActionId], rewards: List[Union[BinaryReward, List[BinaryReward]]]):
         """
         Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
         rewards.
@@ -156,7 +152,7 @@ class SmabBernoulli(BaseSmabBernoulli):
     def from_state(cls, state: dict) -> "SmabBernoulli":
         return cls(actions=state["actions"])
 
-    @validate_arguments
+    @validate_call
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(actions=actions, rewards=rewards)
 
@@ -193,7 +189,7 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
     def from_state(cls, state: dict) -> "SmabBernoulliBAI":
         return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
 
-    @validate_arguments
+    @validate_call
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(actions=actions, rewards=rewards)
 
@@ -238,7 +234,7 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     def from_state(cls, state: dict) -> "SmabBernoulliCC":
         return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
 
-    @validate_arguments
+    @validate_call
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
         super().update(actions=actions, rewards=rewards)
 
@@ -259,7 +255,7 @@ class BaseSmabBernoulliMO(BaseSmabBernoulli):
     actions: Dict[ActionId, BaseBetaMO]
     strategy: Strategy
 
-    @validator("actions", pre=False)
+    @field_validator("actions", mode="after")
     @classmethod
     def all_actions_have_same_number_of_objectives(cls, actions: Dict[ActionId, BaseBetaMO]):
         n_objs_per_action = [len(beta.counters) for beta in actions.values()]
@@ -267,7 +263,7 @@ class BaseSmabBernoulliMO(BaseSmabBernoulli):
             raise ValueError("All actions should have the same number of objectives")
         return actions
 
-    @validate_arguments
+    @validate_call
     def update(self, actions: List[ActionId], rewards: List[List[BinaryReward]]):
         super().update(actions=actions, rewards=rewards)
 
@@ -344,7 +340,7 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
         return cls(actions=state["actions"])
 
 
-@validate_arguments
+@validate_call
 def create_smab_bernoulli_cold_start(
     action_ids: Set[ActionId], epsilon: Optional[Float01] = None, default_action: Optional[ActionId] = None
 ) -> SmabBernoulli:
@@ -359,7 +355,8 @@ def create_smab_bernoulli_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
     Returns
     -------
@@ -372,7 +369,7 @@ def create_smab_bernoulli_cold_start(
     return SmabBernoulli(actions=actions, epsilon=epsilon, default_action=default_action)
 
 
-@validate_arguments
+@validate_call
 def create_smab_bernoulli_bai_cold_start(
     action_ids: Set[ActionId],
     exploit_p: Optional[Float01] = None,
@@ -399,7 +396,8 @@ def create_smab_bernoulli_bai_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
     Returns
     -------
@@ -412,7 +410,7 @@ def create_smab_bernoulli_bai_cold_start(
     return SmabBernoulliBAI(actions=actions, epsilon=epsilon, default_action=default_action, exploit_p=exploit_p)
 
 
-@validate_arguments
+@validate_call
 def create_smab_bernoulli_cc_cold_start(
     action_ids_cost: Dict[ActionId, NonNegativeFloat],
     subsidy_factor: Optional[Float01] = None,
@@ -446,7 +444,8 @@ def create_smab_bernoulli_cc_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
     Returns
     -------
@@ -461,7 +460,7 @@ def create_smab_bernoulli_cc_cold_start(
     )
 
 
-@validate_arguments
+@validate_call
 def create_smab_bernoulli_mo_cold_start(
     action_ids: Set[ActionId],
     n_objectives: PositiveInt,
@@ -489,7 +488,8 @@ def create_smab_bernoulli_mo_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
     Returns
     -------
@@ -502,7 +502,7 @@ def create_smab_bernoulli_mo_cold_start(
     return SmabBernoulliMO(actions=actions, epsilon=epsilon, default_action=default_action)
 
 
-@validate_arguments
+@validate_call
 def create_smab_bernoulli_mo_cc_cold_start(
     action_ids_cost: Dict[ActionId, NonNegativeFloat],
     n_objectives: PositiveInt,
@@ -525,7 +525,8 @@ def create_smab_bernoulli_mo_cc_cold_start(
     epsilon: Optional[Float01]
         epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
     default_action: Optional[ActionId]
-        Default action to select if the epsilon-greedy approach is used. None for random selection.
+        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
+        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
 
 
     Returns

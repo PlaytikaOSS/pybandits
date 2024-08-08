@@ -20,8 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import json
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -50,6 +48,7 @@ from pybandits.strategy import (
     ClassicBandit,
     CostControlBandit,
 )
+from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
 
 ########################################################################################################################
@@ -64,9 +63,9 @@ def test_create_cmab_bernoulli_cold_start(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            create_cmab_bernoulli_cold_start(action_ids=["a1", "a2"], n_features=a_int)
+            create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=a_int)
     else:
-        mab1 = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2"], n_features=a_int)
+        mab1 = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=a_int)
         mab2 = CmabBernoulli(
             actions={
                 "a1": create_bayesian_logistic_regression_cold_start(n_betas=a_int),
@@ -154,7 +153,7 @@ def test_cmab_update(n_samples=100, n_features=3):
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
     def run_update(context):
-        mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2"], n_features=n_features)
+        mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
         assert all(
             [mab.actions[a] == create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
         )
@@ -184,13 +183,13 @@ def test_cmab_update_not_all_actions(n_samples=100, n_feat=3):
     actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_feat))
-    mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2", "a3", "a4"], n_features=n_feat)
+    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2", "a3", "a4"}, n_features=n_feat)
 
     mab.update(context=context, actions=actions, rewards=rewards)
-    mab.actions["a1"] == create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
-    mab.actions["a2"] == create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
-    mab.actions["a3"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
-    mab.actions["a4"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
+    assert mab.actions["a1"] == create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
+    assert mab.actions["a2"] == create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
+    assert mab.actions["a3"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
+    assert mab.actions["a4"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
 
 
 @settings(deadline=500)
@@ -199,7 +198,7 @@ def test_cmab_update_shape_mismatch(n_samples, n_features):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2"], n_features=n_features)
+    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
 
     with pytest.raises(AttributeError):  # actions shape mismatch
         mab.update(context=context, actions=actions[1:], rewards=rewards)
@@ -217,7 +216,7 @@ def test_cmab_update_shape_mismatch(n_samples, n_features):
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
 def test_cmab_predict_cold_start(n_samples, n_features):
     def run_predict(context):
-        mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2"], n_features=n_features)
+        mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
         selected_actions, probs, weighted_sums = mab.predict(context=context)
         assert mab.predict_actions_randomly
         assert all([a in ["a1", "a2"] for a in selected_actions])
@@ -275,7 +274,7 @@ def test_cmab_predict_not_cold_start(n_samples, n_features):
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_predict_shape_mismatch(a_int):
     context = np.random.uniform(low=-1.0, high=1.0, size=(100, a_int - 1))
-    mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2"], n_features=a_int)
+    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=a_int)
     with pytest.raises(AttributeError):
         mab.predict(context=context)
     with pytest.raises(AttributeError):
@@ -285,23 +284,22 @@ def test_cmab_predict_shape_mismatch(a_int):
 def test_cmab_predict_with_forbidden_actions(n_features=3):
     def run_predict(mab):
         context = np.random.uniform(low=-1.0, high=1.0, size=(1000, n_features))
-        assert set(mab.predict(context=context, forbidden_actions=["a2", "a3", "a4", "a5"])[0]) == {"a1"}
-        assert set(mab.predict(context=context, forbidden_actions=["a1", "a3"])[0]) == {"a2", "a4", "a5"}
-        assert set(mab.predict(context=context, forbidden_actions=["a1"])[0]) == {"a2", "a3", "a4", "a5"}
-        assert set(mab.predict(context=context, forbidden_actions=[])[0]) == {"a1", "a2", "a3", "a4", "a5"}
+        assert set(mab.predict(context=context, forbidden_actions={"a2", "a3", "a4", "a5"})[0]) == {"a1"}
+        assert set(mab.predict(context=context, forbidden_actions={"a1", "a3"})[0]) == {"a2", "a4", "a5"}
+        assert set(mab.predict(context=context, forbidden_actions={"a1"})[0]) == {"a2", "a3", "a4", "a5"}
+        assert set(mab.predict(context=context, forbidden_actions=set())[0]) == {"a1", "a2", "a3", "a4", "a5"}
 
         with pytest.raises(ValidationError):  # not a list
-            assert set(mab.predict(context=context, forbidden_actions=1)[0])
+            assert set(mab.predict(context=context, forbidden_actions={1})[0])
         with pytest.raises(ValueError):  # invalid action_ids
-            assert set(mab.predict(context=context, forbidden_actions=["a1", "a9999", "a", 5])[0])
+            assert set(mab.predict(context=context, forbidden_actions={"a1", "a9999", "a", 5})[0])
         with pytest.raises(ValueError):  # all actions forbidden
-            assert set(mab.predict(context=context, forbidden_actions=["a1", "a2", "a3", "a4", "a5"])[0])
+            assert set(mab.predict(context=context, forbidden_actions={"a1", "a2", "a3", "a4", "a5"})[0])
         with pytest.raises(ValueError):  # all actions forbidden (unordered)
-            n_samples = 1000
-            assert set(mab.predict(n_samples=n_samples, forbidden_actions=["a5", "a4", "a2", "a3", "a1"])[0])
+            assert set(mab.predict(n_samples=1000, forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
 
     # cold start mab
-    mab = create_cmab_bernoulli_cold_start(action_ids=["a1", "a2", "a3", "a4", "a5"], n_features=n_features)
+    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, n_features=n_features)
     run_predict(mab=mab)
 
     # not cold start mab
@@ -314,7 +312,7 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
             "a5": create_bayesian_logistic_regression_cold_start(n_betas=n_features),
         },
     )
-    assert mab != create_cmab_bernoulli_cold_start(action_ids=["a1", "a2", "a3", "a4", "a5"], n_features=n_features)
+    assert mab != create_cmab_bernoulli_cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, n_features=n_features)
     run_predict(mab=mab)
 
 
@@ -327,18 +325,15 @@ def test_cmab_get_state(mu, sigma, n_features):
     }
 
     cmab = CmabBernoulli(actions=actions)
-    expected_state = json.loads(
-        json.dumps(
-            {
-                "actions": actions,
-                "strategy": {},
-                "predict_with_proba": False,
-                "predict_actions_randomly": False,
-                "epsilon": None,
-                "default_action": None,
-            },
-            default=dict,
-        )
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {},
+            "predict_with_proba": False,
+            "predict_actions_randomly": False,
+            "epsilon": None,
+            "default_action": None,
+        }
     )
 
     class_name, cmab_state = cmab.get_state()
@@ -387,7 +382,7 @@ def test_cmab_from_state(state):
     assert isinstance(cmab, CmabBernoulli)
 
     expected_actions = state["actions"]
-    actual_actions = json.loads(json.dumps(cmab.actions, default=dict))  # Normalize the dict
+    actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
     assert expected_actions == actual_actions
 
     # Ensure get_state and from_state compatibility
@@ -407,10 +402,10 @@ def test_create_cmab_bernoulli_bai_cold_start(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            create_cmab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], n_features=a_int)
+            create_cmab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, n_features=a_int)
     else:
         # default exploit_p
-        mab1 = create_cmab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], n_features=a_int)
+        mab1 = create_cmab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, n_features=a_int)
         mab2 = CmabBernoulliBAI(
             actions={
                 "a1": create_bayesian_logistic_regression_cold_start(n_betas=a_int),
@@ -421,7 +416,7 @@ def test_create_cmab_bernoulli_bai_cold_start(a_int):
         assert mab1 == mab2
 
         # set exploit_p
-        mab1 = create_cmab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], n_features=a_int, exploit_p=0.42)
+        mab1 = create_cmab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, n_features=a_int, exploit_p=0.42)
         mab2 = CmabBernoulliBAI(
             actions={
                 "a1": create_bayesian_logistic_regression_cold_start(n_betas=a_int),
@@ -497,7 +492,7 @@ def test_cmab_bai_predict(n_samples, n_features):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     # cold start
-    mab = create_cmab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], n_features=n_features)
+    mab = create_cmab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
     selected_actions, probs, weighted_sums = mab.predict(context=context)
     assert mab.predict_actions_randomly
     assert all([a in ["a1", "a2"] for a in selected_actions])
@@ -522,7 +517,7 @@ def test_cmab_bai_update(n_samples=100, n_features=3):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = create_cmab_bernoulli_bai_cold_start(action_ids=["a1", "a2"], n_features=n_features)
+    mab = create_cmab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
     assert mab.predict_actions_randomly
     assert all(
         [mab.actions[a] == create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
@@ -548,18 +543,15 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
     }
 
     cmab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
-    expected_state = json.loads(
-        json.dumps(
-            {
-                "actions": actions,
-                "strategy": {"exploit_p": exploit_p},
-                "predict_with_proba": False,
-                "predict_actions_randomly": False,
-                "epsilon": None,
-                "default_action": None,
-            },
-            default=dict,
-        )
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {"exploit_p": exploit_p},
+            "predict_with_proba": False,
+            "predict_actions_randomly": False,
+            "epsilon": None,
+            "default_action": None,
+        }
     )
 
     class_name, cmab_state = cmab.get_state()
@@ -612,7 +604,7 @@ def test_cmab_bai_from_state(state):
     assert isinstance(cmab, CmabBernoulliBAI)
 
     expected_actions = state["actions"]
-    actual_actions = json.loads(json.dumps(cmab.actions, default=dict))  # Normalize the dict
+    actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
     assert expected_actions == actual_actions
     expected_exploit_p = (
         state["strategy"].get("exploit_p", 0.5) if state["strategy"].get("exploit_p") is not None else 0.5
@@ -793,18 +785,15 @@ def test_cmab_cc_get_state(
     }
 
     cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
-    expected_state = json.loads(
-        json.dumps(
-            {
-                "actions": actions,
-                "strategy": {"subsidy_factor": subsidy_factor},
-                "predict_with_proba": True,
-                "predict_actions_randomly": False,
-                "epsilon": None,
-                "default_action": None,
-            },
-            default=dict,
-        )
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {"subsidy_factor": subsidy_factor},
+            "predict_with_proba": True,
+            "predict_actions_randomly": False,
+            "epsilon": None,
+            "default_action": None,
+        }
     )
 
     class_name, cmab_state = cmab.get_state()
@@ -858,7 +847,7 @@ def test_cmab_cc_from_state(state):
     assert isinstance(cmab, CmabBernoulliCC)
 
     expected_actions = state["actions"]
-    actual_actions = json.loads(json.dumps(cmab.actions, default=dict))  # Normalize the dict
+    actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
     assert expected_actions == actual_actions
     expected_subsidy_factor = (
         state["strategy"].get("subsidy_factor", 0.5) if state["strategy"].get("subsidy_factor") is not None else 0.5
@@ -883,7 +872,7 @@ def test_epsilon_greedy_cmab_predict_cold_start(n_samples, n_features):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     mab = create_cmab_bernoulli_cold_start(
-        action_ids=["a1", "a2"], n_features=n_features, epsilon=0.1, default_action="a1"
+        action_ids={"a1", "a2"}, n_features=n_features, epsilon=0.1, default_action="a1"
     )
     selected_actions, probs, weighted_sums = mab.predict(context=context)
     assert mab.predict_actions_randomly
@@ -899,7 +888,7 @@ def test_epsilon_greedy_cmab_bai_predict(n_samples, n_features):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     mab = create_cmab_bernoulli_bai_cold_start(
-        action_ids=["a1", "a2"], n_features=n_features, epsilon=0.1, default_action="a1"
+        action_ids={"a1", "a2"}, n_features=n_features, epsilon=0.1, default_action="a1"
     )
     selected_actions, probs, weighted_sums = mab.predict(context=context)
     assert mab.predict_actions_randomly

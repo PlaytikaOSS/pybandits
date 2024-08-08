@@ -275,7 +275,7 @@ def test_can_init_multiobjective():
 
 @given(
     st.dictionaries(
-        st.text(min_size=1, alphabet=st.characters(blacklist_characters=("\x00"))),
+        st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cc", "Cs"))),
         st.lists(st.floats(min_value=0, max_value=1), min_size=3, max_size=3),
         min_size=3,
     )

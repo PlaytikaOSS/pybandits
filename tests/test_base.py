@@ -29,17 +29,16 @@ from hypothesis import given
 from pydantic import NonNegativeInt, ValidationError
 from pytest_mock import MockerFixture
 
-from pybandits.base import ActionId, BaseMab, Probability
+from pybandits.base import ActionId, BaseMab, Float01, Probability
 from pybandits.model import Beta
 from pybandits.strategy import ClassicBandit
 
 
 class DummyMab(BaseMab):
-    def update(
-        self,
-        actions: List[ActionId],
-        rewards: List[NonNegativeInt],
-    ):
+    epsilon: Optional[Float01] = None
+    default_action: Optional[ActionId] = None
+
+    def update(self, actions: List[ActionId], rewards: List[NonNegativeInt]):
         super().update(actions=actions, rewards=rewards)
         pass
 
