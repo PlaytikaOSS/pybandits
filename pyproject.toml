@@ -8,7 +8,7 @@ authors = [
     "Stefano Piazza <stefanop@playtika.com>",
     "Raphael Steinmann <raphaels@playtika.com>",
     "Armand Valsesia <armandv@playtika.com>",
-    ]
+]
 license = "MIT License"
 readme = "README.md"
 
@@ -22,10 +22,7 @@ pymc = "^5.3.0"
 scikit-learn = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.1.0"
-flake8 = "^6.0.0"
 hypothesis = "^6.68.2"
-pylint = "^2.17.0"
 pytest = "^7.2.2"
 tox = "^4.4.7"
 pandas = "^1.5.3"
@@ -35,42 +32,36 @@ rich = "^13.3.2"
 pyzmq = "25.0.0"
 ipykernel = "^6.21.3"
 jupyterlab = "^3.6.1"
-flake8-pyproject = "^1.2.2"
 pytest-cov = "^4.0.0"
 pytest_mock = "^3.14.0"
+ruff = "^0.5.6"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.isort]
-profile = "black"
-
-[tool.black]
-line-length = 120
-
-[tool.pylint]
-
-[tool.pylint.format]
-max-line-length = 120
-
-[tool.pylint.master]
-extension-pkg-whitelist = "pydantic"
-# disable check for:
-# C0114: Missing module docstring
-# C0115: Missing class docstring
-# C0116: Missing function or method docstring
-# R0903: Too few public methods
-# R0913: Too many arguments
-disable = ["C0114", "C0115", "C0116", "R0903", "R0913"]
-
-[tool.pylint.basic]
-good-names = ["i", "j", "k", "r", "ex", "_", "a", "p", "v"]
-
 [tool.mypy]
 plugins = "pydantic.mypy"
 
-[tool.flake8]
-# exclude = [".git", "__pycache__", ".tox"]
-max-line-length = 120
-extend-ignore = "E203"
+[tool.ruff]
+line-length = 120
+extend-include = ["*.ipynb"]
+extend-ignore = ["E203"]
+
+# pylint configuration incorporated in Ruff
+[tool.ruff.lint]
+# Enable the isort rules.
+extend-select = ["I"]
+
+[tool.ruff.per-file-ignores]
+# disable check for:
+# D100: Missing docstring in public module (equivalent to C0114)
+# D101: Missing docstring in public class (equivalent to C0115)
+# D102: Missing docstring in public method (equivalent to C0116)
+# D103: Missing docstring in public function (equivalent to C0116)
+# D104: Missing docstring in public package (equivalent to C0114)
+# D105: Missing docstring in magic method (equivalent to C0116)
+# D106: Missing docstring in public nested class (equivalent to C0115)
+# Missing : Too few public methods (equivalent to R0903)
+# PLR0913: Too many arguments (equivalent to R0913)
+"*.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "PLR0913"]

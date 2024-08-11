@@ -34,10 +34,9 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from pymc import Bernoulli, Data, Deterministic
+from pymc import Bernoulli, Data, Deterministic, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
-from pymc import sample
 from pymc.math import sigmoid
 from pytensor.tensor import dot
 from scipy.stats import t

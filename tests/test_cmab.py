@@ -165,17 +165,17 @@ def test_cmab_update(n_samples=100, n_features=3):
 
     # context is numpy array
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    assert type(context) == np.ndarray
+    assert type(context) is np.ndarray
     run_update(context=context)
 
     # context is python list
     context = context.tolist()
-    assert type(context) == list
+    assert type(context) is list
     run_update(context=context)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
-    assert type(context) == pd.DataFrame
+    assert type(context) is pd.DataFrame
     run_update(context=context)
 
 
@@ -226,17 +226,17 @@ def test_cmab_predict_cold_start(n_samples, n_features):
 
     # context is numpy array
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    assert type(context) == np.ndarray
+    assert type(context) is np.ndarray
     run_predict(context=context)
 
     # context is python list
     context = context.tolist()
-    assert type(context) == list
+    assert type(context) is list
     run_predict(context=context)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
-    assert type(context) == pd.DataFrame
+    assert type(context) is pd.DataFrame
     run_predict(context=context)
 
 
@@ -256,17 +256,17 @@ def test_cmab_predict_not_cold_start(n_samples, n_features):
 
     # context is numpy array
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    assert type(context) == np.ndarray
+    assert type(context) is np.ndarray
     run_predict(context=context)
 
     # context is python list
     context = context.tolist()
-    assert type(context) == list
+    assert type(context) is list
     run_predict(context=context)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
-    assert type(context) == pd.DataFrame
+    assert type(context) is pd.DataFrame
     run_predict(context=context)
 
 
