@@ -50,7 +50,7 @@ To create the file ``pybandits.whl`` for the installation with ``pip`` run the f
 
 .. code:: console
 
-   $ python setup.py sdist bdist_wheel
+   $ poetry publish --build
 
 To create the HTML documentation run the following commands:
 
