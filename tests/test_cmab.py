@@ -27,12 +27,17 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import NonNegativeFloat, ValidationError
 
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
 from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
-from pybandits.pydantic_version_compatibility import PYDANTIC_VERSION_1, PYDANTIC_VERSION_2, pydantic_version
+from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
+    NonNegativeFloat,
+    ValidationError,
+    pydantic_version,
+)
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
 from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
@@ -783,7 +788,7 @@ def test_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_cc_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()

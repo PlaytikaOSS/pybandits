@@ -36,7 +36,12 @@ from pybandits.pydantic_version_compatibility import (
 ActionId = NewType("ActionId", constr(min_length=1))
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
 Probability = NewType("Probability", Float01)
+# SmabPredictions is a tuple of two lists: the first list contains the selected action ids,
+# and the second list contains their associated probabilities
 SmabPredictions = NewType("SmabPredictions", Tuple[List[ActionId], List[Dict[ActionId, Probability]]])
+# CmabPredictions is a tuple of three lists: the first list contains the selected action ids,
+# the second list contains their associated probabilities,
+# and the third list contains their associated weighted sums
 CmabPredictions = NewType(
     "CmabPredictions", Tuple[List[ActionId], List[Dict[ActionId, Probability]], List[Dict[ActionId, float]]]
 )
@@ -58,6 +63,16 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
     """
     BaseModel of the PyBandits library.
     """
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+
+        def __init__(self, **data):
+            super().__init__(**data)
+
+            self.model_post_init(None)
+
+        def model_post_init(self, __context: Any) -> None:
+            pass
 
     def _apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
         """
