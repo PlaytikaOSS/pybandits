@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "1.0.2"
+version = "1.1.0"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -16,10 +16,11 @@ readme = "README.md"
 python = ">=3.8.1,<3.12"
 loguru = "^0.6"
 numpy = "^1.23"
-pydantic = ">=1.10"
+pydantic = "1.10.*"
 scipy = "^1.9"
 pymc = "^5.3"
 scikit-learn = "^1.1"
+bokeh = "^3.1"
 
 [tool.poetry.group.dev.dependencies]
 hypothesis = "^6.68.2"
@@ -46,14 +47,13 @@ plugins = "pydantic.mypy"
 [tool.ruff]
 line-length = 120
 extend-include = ["*.ipynb"]
-extend-ignore = ["E203"]
+
 
 # pylint configuration incorporated in Ruff
 [tool.ruff.lint]
 # Enable the isort rules.
 extend-select = ["I"]
-
-[tool.ruff.per-file-ignores]
+extend-ignore = ["E203"]
 # disable check for:
 # D100: Missing docstring in public module (equivalent to C0114)
 # D101: Missing docstring in public class (equivalent to C0115)
@@ -64,4 +64,4 @@ extend-select = ["I"]
 # D106: Missing docstring in public nested class (equivalent to C0115)
 # Missing : Too few public methods (equivalent to R0903)
 # PLR0913: Too many arguments (equivalent to R0913)
-"*.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "PLR0913"]
+per-file-ignores = { "*.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "PLR0913"] }
