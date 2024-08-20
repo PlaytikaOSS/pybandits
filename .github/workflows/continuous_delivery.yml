@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -63,6 +63,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Python 3.8 # required for poetry
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
 
       - name: Build and publish to pypi
         uses: JRubics/poetry-publish@v2.0
