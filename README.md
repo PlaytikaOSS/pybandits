@@ -15,13 +15,19 @@ Installation
 ------------
 
 This library is distributed on [PyPI](https://pypi.org/project/pybandits/) and can be installed with ``pip``.
-The latest release is version ``0.0.2``. ``pybandits`` requires a Python version ``>= 3.8``.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
 pip install pybandits
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The command above will automatically install all the dependencies listed in ``requirements.txt``. Please visit the
+Based on the guidelines of ``pymc3`` authors, it is highly recommended to install the library in a conda environment via the following.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
+conda install -c conda-forge pymc3
+pip install pybandits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The command above will automatically install all the dependencies listed in ``pyproject.toml``. Please visit the
 [installation](https://playtikaoss.github.io/pybandits/installation.html)
 page for more details.
 
@@ -32,24 +38,26 @@ A short example, illustrating it use. Use the sMAB model to predict actions and 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~python
 import numpy as np
-import random
-from pybandits.core.smab import Smab
+from pybandits.model import Beta
+from pybandits.smab import SmabBernoulli
+
+n_samples=100
+
+# define action model
+actions = {
+    "a1": Beta(),
+    "a2": Beta(),
+}
 
 # init stochastic Multi-Armed Bandit model
-smab = Smab(action_ids=['Action A', 'Action B', 'Action C'])
+smab = SmabBernoulli(actions=actions)
 
 # predict actions
-pred_actions, _ = smab.predict(n_samples=100)
+pred_actions, _ = smab.predict(n_samples=n_samples)
+simulated_rewards = np.random.randint(2, size=n_samples)
 
-n_successes, n_failures = {}, {}
-for a in set(pred_actions):
-
-    # simulate rewards from environment
-    n_successes[a] = random.randint(0, pred_actions.count(a))
-    n_failures[a] = pred_actions.count(a) - n_successes[a]
-
-    # update model
-    smab.update(action_id=a, n_successes=n_successes[a], n_failures=n_failures[a])
+# update model
+smab.update(actions=pred_actions, rewards=simulated_rewards)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Documentation
@@ -63,41 +71,23 @@ and
 Info for developers
 -------------------
 
-PyBandits is supported by the [AI for gaming and entertainment apps](https://www.meetup.com/ai-for-gaming-and-entertainment-apps/) community.
-
 The source code of the project is available on [GitHub](https://github.com/playtikaoss/pybandits).
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
 git clone https://github.com/playtikaoss/pybandits.git
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can install the library and the dependencies with one of the following commands:
+You can install the library and the dependencies from the source code with one of the following commands:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
-pip install .                        # install library + dependencies
-pip install .[develop]               # install library + dependencies + developer-dependencies
-pip install -r requirements.txt      # install dependencies
-pip install -r requirements-dev.txt  # install developer-dependencies
+poetry install                # install library + dependencies
+poetry install --without dev     # install library + dependencies, excluding developer-dependencies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-As suggested by the authors of ``pymc3`` and ``pandoc``, we highly recommend to install these dependencies with
-``conda``:
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
-conda install -c conda-forge pandoc
-conda install -c conda-forge pymc3
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-To create the file ``pybandits.whl`` for the installation with ``pip`` run the following command:
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
-python setup.py sdist bdist_wheel
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To create the HTML documentation run the following commands:
 
 ~~~~~~~~~~~bash
-cd docs
+cd docs/src
 make html
 ~~~~~~~~~~~
 
