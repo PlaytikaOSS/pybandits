@@ -1,0 +1,75 @@
+name: Publish and Tag
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  check_version:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ 3.8, 3.9 ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.poetry/bin:$PATH"
+
+      - name: Install project dependencies with Poetry
+        run: |
+          poetry install
+
+      - name: Style check
+        run: |
+          # run pre-commit hooks
+          poetry run pre-commit run --all-files
+
+      - name: Run tests
+        run: |
+          poetry run pytest -vv -k 'not time and not update_parallel'
+
+      - name: Extract version from pyproject.toml
+        id: extract_version
+        run: |
+          VERSION=$(poetry version -s)
+          echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Verify if version has changed
+        id: version_check
+        run: |
+          if [ $(git tag -l "v${{ env.PACKAGE_VERSION }}") ]; then
+            echo "Version ${{ env.PACKAGE_VERSION }} already exists."
+            exit 0
+          fi
+
+  publish_and_tag:
+    needs: check_version
+    runs-on: ubuntu-latest
+    if: steps.version_check.outcome != 'failure'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and publish to pypi
+        uses: JRubics/poetry-publish@v2.0
+        with:
+          pypi_token: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Create a Git tag
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "GitHub Actions"
+          git tag "v${{ env.PACKAGE_VERSION }}"
+          git push origin "v${{ env.PACKAGE_VERSION }}"
