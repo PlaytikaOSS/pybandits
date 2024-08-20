@@ -1,4 +1,4 @@
-name: Publish and Tag
+name: CD
 
 on:
   push:
@@ -57,7 +57,7 @@ jobs:
   publish_and_tag:
     needs: check_version
     runs-on: ubuntu-latest
-    if: steps.version_check.outcome != 'failure'
+    if: ${{ steps.version_check.outcome != 'failure' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
