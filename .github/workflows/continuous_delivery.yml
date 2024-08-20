@@ -53,11 +53,13 @@ jobs:
             echo "Version ${{ env.PACKAGE_VERSION }} already exists."
             exit 0
           fi
+      - name: Generate output
+        run: echo "sVersionCheck=${{ steps.version_check.outcome }}" >> $GITHUB_OUTPUT
 
   publish_and_tag:
     needs: check_version
     runs-on: ubuntu-latest
-    if: ${{ steps.version_check.outcome != 'failure' }}
+    if: needs.check_version.outputs.sVersionCheck != 'failure'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
