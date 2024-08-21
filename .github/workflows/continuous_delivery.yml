@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  check_version:
+  check_version_and_publish:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -26,26 +26,21 @@ jobs:
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
           export PATH="$HOME/.poetry/bin:$PATH"
-
       - name: Install project dependencies with Poetry
         run: |
           poetry install
-
       - name: Style check
         run: |
           # run pre-commit hooks
           poetry run pre-commit run --all-files
-
       - name: Run tests
         run: |
           poetry run pytest -vv -k 'not time and not update_parallel'
-
       - name: Extract version from pyproject.toml
         id: extract_version
         run: |
           VERSION=$(poetry version -s)
           echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_ENV
-
       - name: Verify if version has changed
         id: version_check
         run: |
@@ -53,24 +48,13 @@ jobs:
             echo "Version ${{ env.PACKAGE_VERSION }} already exists."
             exit 0
           fi
-      - name: Generate output
-        run: echo "sVersionCheck=${{ steps.version_check.outcome }}" >> $GITHUB_OUTPUT
-
-  publish_and_tag:
-    needs: check_version
-    runs-on: ubuntu-latest
-    if: needs.check_version.outputs.sVersionCheck != 'failure'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Build and publish to pypi
-        uses: JRubics/poetry-publish@v2.0
-        with:
-          python_version: "3.8.1"
-          pypi_token: ${{ secrets.PYPI_TOKEN }}
-
+        if: ${{ success() && matrix.python-version == 3.8 }}
+        run: |
+          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+          poetry publish --build
       - name: Create a Git tag
+        if: ${{ success() && matrix.python-version == 3.8 }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions"
