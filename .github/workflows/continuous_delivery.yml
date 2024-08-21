@@ -64,14 +64,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.8 # required for poetry
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.8
-
       - name: Build and publish to pypi
         uses: JRubics/poetry-publish@v2.0
         with:
+          python_version: "3.8.1"
           pypi_token: ${{ secrets.PYPI_TOKEN }}
 
       - name: Create a Git tag
