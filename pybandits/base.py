@@ -104,8 +104,16 @@ class BaseMab(PyBanditsBaseModel, ABC):
     @field_validator("actions", mode="before")
     @classmethod
     def at_least_2_actions_are_defined(cls, v):
+        # validate that at least 2 actions are defined
         if len(v) < 2:
             raise AttributeError("At least 2 actions should be defined.")
+        # validate that all actions are of the same configuration
+        action_models = list(v.values())
+        first_action = action_models[0]
+        first_action_type = type(first_action)
+        if any(not isinstance(action, first_action_type) for action in action_models[1:]):
+            raise AttributeError("All actions should follow the same type.")
+
         return v
 
     @model_validator(mode="after")

@@ -30,7 +30,7 @@ from pydantic import NonNegativeInt, ValidationError
 from pytest_mock import MockerFixture
 
 from pybandits.base import ActionId, BaseMab, Float01, Probability
-from pybandits.model import Beta
+from pybandits.model import Beta, BetaCC
 from pybandits.strategy import ClassicBandit
 
 
@@ -55,7 +55,7 @@ class DummyMab(BaseMab):
         return model_name, state
 
 
-def test_base_mab_raise_on_less_than_2_actions():
+def test_base_mab_raise_on_less_than_2_actions(cost=0):
     with pytest.raises(ValidationError):
         DummyMab(actions={"a1": Beta(), "a2": Beta()})
     with pytest.raises(ValidationError):
@@ -68,6 +68,8 @@ def test_base_mab_raise_on_less_than_2_actions():
         DummyMab(actions={"a1": None, "a2": None}, strategy=ClassicBandit())
     with pytest.raises(AttributeError):
         DummyMab(actions={"a1": Beta()}, strategy=ClassicBandit())
+    with pytest.raises(AttributeError):
+        DummyMab(actions={"a1": Beta(), "a2": BetaCC(cost=cost)}, strategy=ClassicBandit())
 
 
 def test_base_mab_check_update_params():
