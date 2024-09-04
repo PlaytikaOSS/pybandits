@@ -79,8 +79,8 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 release_id: draftRelease.id,
-                tag_name: version,
-                name: version,
+                tag_name: package-version,
+                name: package-version,
                 draft: false
               });
             } else {
