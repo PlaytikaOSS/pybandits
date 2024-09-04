@@ -1,0 +1,24 @@
+name: Pull Request Style Check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
+      - edited
+    branches:
+      - develop
+
+
+jobs:
+  check_cc_labels:
+    name: check conventional commits labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: danielchabr/pr-labels-checker@v3.3
+        with:
+          hasSome: bug, documentation, enhancement
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
