@@ -44,7 +44,7 @@ jobs:
       - name: Verify if version has changed
         id: version_check
         run: |
-          if [ $(git tag -l ${{ env.PACKAGE_VERSION }}") ]; then
+          if [ $(git tag -l "${{ env.PACKAGE_VERSION }}") ]; then
             echo "Version ${{ env.PACKAGE_VERSION }} already exists."
             exit 0
           fi
