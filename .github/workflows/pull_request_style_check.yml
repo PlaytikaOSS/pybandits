@@ -20,5 +20,5 @@ jobs:
     steps:
       - uses: danielchabr/pr-labels-checker@v3.3
         with:
-          hasSome: bug, documentation, enhancement
+          hasSome: bug, documentation, enhancement, skip-changelog
           githubToken: ${{ secrets.GITHUB_TOKEN }}
