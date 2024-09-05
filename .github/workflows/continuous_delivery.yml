@@ -46,28 +46,24 @@ jobs:
         run: |
           if [ $(git tag -l "${{ env.PACKAGE_VERSION }}") ]; then
             echo "Version ${{ env.PACKAGE_VERSION }} already exists."
-            exit 0
+            echo "VERSION_CHANGED=false" >> $GITHUB_ENV
+          else
+            echo "VERSION_CHANGED=true" >> $GITHUB_ENV
           fi
-      - name: Build and publish to pypi
-        if: ${{ success() && matrix.python-version == 3.8 }}
-        run: |
-          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
-          poetry publish --build
       - name: Create a Git tag
-        if: ${{ success() && matrix.python-version == 3.8 }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions"
           git tag "${{ env.PACKAGE_VERSION }}"
           git push origin "${{ env.PACKAGE_VERSION }}"
       - name: Publish Draft Release
-        if: ${{ success() && matrix.python-version == 3.8 }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          package-version: ${{ env.PACKAGE_VERSION }}
           script: |
-            const { data: releases } = await github.repos.listReleases({
+            const { data: releases } = await github.rest.repos.listReleases({
               owner: context.repo.owner,
               repo: context.repo.repo,
             });
@@ -75,14 +71,19 @@ jobs:
             const draftRelease = releases.find(r => r.draft && r.name === 'Draft');
 
             if (draftRelease) {
-              await github.repos.updateRelease({
+              await github.rest.repos.updateRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 release_id: draftRelease.id,
-                tag_name: package-version,
-                name: package-version,
+                tag_name: process.env.PACKAGE_VERSION,
+                name: process.env.PACKAGE_VERSION,
                 draft: false
               });
             } else {
               core.setFailed(`Draft release named "Draft" not found.`);
             };
+      - name: Build and publish to pypi
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' }}
+        run: |
+          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+          poetry publish --build
