@@ -20,7 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import inspect
 import json
+from abc import ABC
+from types import ModuleType
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from bokeh.io import curdoc, output_file, output_notebook, save, show
@@ -68,6 +71,18 @@ def extract_argument_names_from_function(function_handle: Callable, is_class_met
     start_index = int(is_class_method)
     argument_names = function_handle.__code__.co_varnames[start_index : function_handle.__code__.co_argcount]
     return argument_names
+
+
+@validate_call(config=dict(arbitrary_types_allowed=True))
+def get_non_abstract_classes(module: ModuleType) -> List[type]:
+    non_abc_classes = []
+    for name, obj in inspect.getmembers(module, inspect.isclass):
+        # Ensure the class is defined in the module and not imported
+        if obj.__module__ == module.__name__:
+            # Check if the class is not an abstract class (i.e., doesn't inherit from abc.ABC)
+            if not inspect.isabstract(obj) and ABC not in obj.__bases__:
+                non_abc_classes.append(obj)
+    return non_abc_classes
 
 
 def in_jupyter_notebook() -> bool:

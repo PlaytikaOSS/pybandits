@@ -35,12 +35,6 @@ class DummyActionsManager(ActionsManager):
             self.actions[a].update(rewards=rewards_dict[a])
 
 
-@pytest.fixture(scope="module")
-def monkeymodule():
-    with pytest.MonkeyPatch.context() as mp:
-        yield mp
-
-
 @given(
     data_len=st.integers(min_value=1, max_value=100),
 )

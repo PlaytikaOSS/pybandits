@@ -56,12 +56,33 @@
     :members:
     :undoc-members:
     :show-inheritance:
+
 ```
 
 ## pybandits.cmab_simulator
 
 ```{eval-rst}
 .. automodule:: pybandits.cmab_simulator
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+```
+
+## pybandits.offline_policy_evaluator
+
+```{eval-rst}
+.. automodule:: pybandits.cmab_simulator
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+```
+
+## pybandits.offline_policy_estimator
+
+```{eval-rst}
+.. automodule:: pybandits.offline_policy_estimator
     :members:
     :undoc-members:
     :show-inheritance:

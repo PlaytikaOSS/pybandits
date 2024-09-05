@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "3.0.0"
+version = "3.1.0"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -17,13 +17,15 @@ readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 homepage = "https://github.com/PlaytikaOSS/pybandits"
 repository = "https://github.com/PlaytikaOSS/pybandits"
 keywords = ["multi-armed bandit", "reinforcement-learning", "optimization"]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
+python = ">=3.8.1,<3.13"
 loguru = "^0.6"
 numpy = [
     { version = ">=1.25", python = ">=3.9,<3.12" },
@@ -34,7 +36,10 @@ scipy = [
     { version = ">=1.9,<1.13", python = ">=3.8,<3.12" },
     { version = ">=1.11,<1.13", python = "3.12.*" },
 ]
-pymc = "^5.10"
+pymc = [
+    { version = "^5.3", python = "3.8.*" },
+    { version = "^5.10", python = ">=3.9" },
+]
 scikit-learn = "^1.1"
 optuna = "^3.6"
 bokeh = "^3.1"

@@ -30,8 +30,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
+import pybandits
 from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
+from tests.test_utils import FakeApproximation
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=[0, 1]):
@@ -52,8 +54,18 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=[0, 1]):
 
 
 def test_cmab_e2e_simulation_with_default_arguments(
-    action_ids=["a1", "a2"], n_features=3, n_updates=2, batch_size=10, num_groups=2
+    monkeymodule, action_ids=["a1", "a2"], n_features=3, n_updates=2, batch_size=10, num_groups=2
 ):
+    monkeymodule.setattr(
+        pybandits.model,
+        "fit",
+        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+    )
+    monkeymodule.setattr(
+        pybandits.model,
+        "sample",
+        FakeApproximation(n_features=n_features).sample,
+    )
     mab = CmabBernoulli.cold_start(action_ids=action_ids, n_features=n_features)
     base_groups = list(range(num_groups))
     group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
@@ -82,16 +94,16 @@ def test_cmab_e2e_simulation_with_default_arguments(
 
 @settings(deadline=None)
 @given(
-    st.just(["a1", "a2"]),
-    st.just(3),
-    st.integers(min_value=1, max_value=3),
-    st.integers(min_value=1, max_value=10),
-    st.booleans(),
-    st.sampled_from([None, 0, 42]),
-    st.booleans(),
-    st.booleans(),
-    st.sampled_from(["", "unit_test"]),
-    st.integers(min_value=1, max_value=3),
+    action_ids=st.just(["a1", "a2"]),
+    n_features=st.just(3),
+    n_updates=st.integers(min_value=1, max_value=3),
+    batch_size=st.integers(min_value=1, max_value=10),
+    save=st.booleans(),
+    random_seed=st.sampled_from([None, 0, 42]),
+    verbose=st.booleans(),
+    visualize=st.booleans(),
+    file_prefix=st.sampled_from(["", "unit_test"]),
+    num_groups=st.integers(min_value=1, max_value=3),
 )
 def test_cmab_e2e_simulation_with_non_default_args(
     action_ids,
@@ -104,7 +116,18 @@ def test_cmab_e2e_simulation_with_non_default_args(
     visualize,
     file_prefix,
     num_groups,
+    monkeymodule,
 ):
+    monkeymodule.setattr(
+        pybandits.model,
+        "fit",
+        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+    )
+    monkeymodule.setattr(
+        pybandits.model,
+        "sample",
+        FakeApproximation(n_features=n_features).sample,
+    )
     base_groups = list(range(num_groups))
     group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
     effective_base_groups = sorted(set(group))
