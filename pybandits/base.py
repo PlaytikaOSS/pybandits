@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from typing import Dict, List, NewType, Tuple, Union
+from typing import Any, Dict, List, NewType, Tuple, Union
 
 from pydantic import BaseModel, confloat, conint, constr
 
@@ -45,3 +45,7 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
     """
     BaseModel of the PyBandits library.
     """
+
+    @classmethod
+    def _get_value_with_default(cls, key: str, values: Dict[str, Any]) -> Any:
+        return values.get(key, cls.model_fields[key].default)
