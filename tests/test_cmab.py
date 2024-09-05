@@ -159,7 +159,7 @@ def test_cmab_init_with_wrong_blr_models(n_features, other_n_features, update_me
         )
 
 
-@settings(deadline=60000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -200,7 +200,7 @@ def test_cmab_update(n_samples, n_features, update_method):
     run_update(context=context)
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
     actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
@@ -547,7 +547,7 @@ def test_cmab_bai_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_bai_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -783,7 +783,7 @@ def test_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_cc_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()

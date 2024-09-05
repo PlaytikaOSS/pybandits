@@ -27,7 +27,19 @@ This snippet is a compatibility layer for pydantic v1 and v2.
 from typing import Any, Callable, Dict, Literal, Optional, Union
 from warnings import warn
 
-from pydantic import BaseModel, Field, NonNegativeFloat, PositiveInt, ValidationError, confloat, conint, constr
+from pydantic import (
+    BaseModel,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    PrivateAttr,
+    ValidationError,
+    confloat,
+    conint,
+    constr,
+)
 from pydantic.version import VERSION as _VERSION
 
 # Define the pydantic versions
@@ -258,6 +270,8 @@ __all__ = [
     "model_validator",
     "validate_call",
     "NonNegativeFloat",
+    "NonNegativeInt",
+    "PositiveFloat",
     "PositiveInt",
     "BaseModel",
     "ValidationError",
@@ -265,4 +279,5 @@ __all__ = [
     "conint",
     "constr",
     "Field",
+    "PrivateAttr",
 ]

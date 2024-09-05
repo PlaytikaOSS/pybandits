@@ -19,14 +19,18 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
 from abc import ABC, abstractmethod
 from random import random
+from sys import version_info
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 from scipy.stats import ttest_ind_from_stats
-from typing_extensions import Self
+
+if version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, Probability, PyBanditsBaseModel
 from pybandits.model import Beta, BetaMOCC, Model
