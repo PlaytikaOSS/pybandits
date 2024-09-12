@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Set, Union
 
 from numpy import array
 from numpy.random import choice
@@ -76,22 +76,20 @@ class BaseCmabBernoulli(BaseMab):
         return v
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def predict(
+    def _predict(
         self,
         context: ArrayLike,
-        forbidden_actions: Optional[Set[ActionId]] = None,
+        valid_actions: Set[ActionId],
     ) -> CmabPredictions:
         """
         Predict actions.
 
         Parameters
         ----------
-        context: ArrayLike of shape (n_samples, n_features)
+        context : ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
-        forbidden_actions : Optional[Set[ActionId]], default=None
-            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
-            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
-            Note that: actions = allowed_actions U forbidden_actions.
+        valid_actions : Set[ActionId]
+            The set of valid actions to consider.
 
         Returns
         -------
@@ -102,7 +100,6 @@ class BaseCmabBernoulli(BaseMab):
         ws : List[Dict[ActionId, float]]
             The weighted sum of logistic regression logits.
         """
-        valid_actions = self._get_valid_actions(forbidden_actions)
 
         # cast inputs to numpy arrays to facilitate their manipulation
         context = array(context)
@@ -149,7 +146,7 @@ class BaseCmabBernoulli(BaseMab):
         return selected_actions, probs, weighted_sums
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(
+    def _update(
         self, context: ArrayLike, actions: List[ActionId], rewards: List[Union[BinaryReward, List[BinaryReward]]]
     ):
         """

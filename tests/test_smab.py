@@ -380,60 +380,34 @@ def test_smab_bai_from_state(state):
 # SmabBernoulli with strategy=CostControlBandit()
 
 
-def test_create_smab_bernoulli_cc():
+@given(
+    st.floats(min_value=0),
+    st.floats(min_value=0),
+    st.one_of(
+        st.none(),
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta,
+            n_successes=st.integers(min_value=1, max_value=10),
+            n_failures=st.integers(min_value=1, max_value=10),
+        ),
+    ),
+    st.floats(min_value=0, max_value=1),
+)
+def test_create_smab_bernoulli_cc(cost1, cost2, subsidy_factor, loss_factor):
     assert SmabBernoulliCC.cold_start(
-        action_ids_cost={"a1": 10, "a2": 20},
-        subsidy_factor=0.2,
+        action_ids_cost={"a1": cost1, "a2": cost2},
+        subsidy_factor=subsidy_factor,
+        loss_factor=loss_factor,
     ) == SmabBernoulliCC(
-        actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=20)},
-        subsidy_factor=0.2,
+        actions={"a1": BetaCC(cost=cost1), "a2": BetaCC(cost=cost2)},
+        subsidy_factor=subsidy_factor,
+        loss_factor=loss_factor,
     )
 
-    assert SmabBernoulliCC.cold_start(action_ids_cost={"a1": 10, "a2": 20}) == SmabBernoulliCC(
-        actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=20)},
+    assert SmabBernoulliCC.cold_start(action_ids_cost={"a1": cost1, "a2": cost2}) == SmabBernoulliCC(
+        actions={"a1": BetaCC(cost=cost1), "a2": BetaCC(cost=cost2)},
     )
-
-
-def test_can_init_smabcc():
-    # init default arguments
-    s = SmabBernoulliCC(
-        actions={
-            "a1": BetaCC(cost=10),
-            "a2": BetaCC(cost=20),
-        },
-    )
-    assert s.actions["a1"] == BetaCC(cost=10)
-    assert s.actions["a2"] == BetaCC(cost=20)
-    assert s.strategy.subsidy_factor == 0.5
-
-    # init with input args
-    s = SmabBernoulliCC(
-        actions={
-            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
-            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
-        },
-        subsidy_factor=0.7,
-    )
-    assert s.actions["a1"] == BetaCC(n_successes=1, n_failures=2, cost=10)
-    assert s.actions["a2"] == BetaCC(n_successes=3, n_failures=4, cost=20)
-    assert s.strategy == CostControlBandit(subsidy_factor=0.7)
-    assert s.strategy.subsidy_factor == 0.7
-
-
-def test_smabcc_predict(n_samples: int):
-    s = SmabBernoulliCC(
-        actions={
-            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
-            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
-        },
-        subsidy_factor=0.7,
-    )
-    _, _ = s.predict(n_samples=n_samples)
-
-
-def test_smabcc_update():
-    s = SmabBernoulliCC(actions={"a1": BetaCC(cost=10), "a2": BetaCC(cost=10)})
-    s.update(actions=["a1", "a1"], rewards=[1, 0])
 
 
 @given(
@@ -443,19 +417,136 @@ def test_smabcc_update():
     st.integers(min_value=1),
     st.floats(min_value=0),
     st.floats(min_value=0),
+    st.one_of(
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta,
+            n_successes=st.integers(min_value=1, max_value=10),
+            n_failures=st.integers(min_value=1, max_value=10),
+        ),
+    ),
     st.floats(min_value=0, max_value=1),
 )
-def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor: Float01):
+def test_can_init_smabcc(a, b, c, d, cost1, cost2, subsidy_factor, loss_factor):
+    # init default arguments
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(cost=cost1),
+            "a2": BetaCC(cost=cost2),
+        },
+        subsidy_factor=subsidy_factor,
+        loss_factor=loss_factor,
+    )
+    assert s.actions["a1"] == BetaCC(cost=cost1)
+    assert s.actions["a2"] == BetaCC(cost=cost2)
+    assert s.strategy.subsidy_factor == subsidy_factor
+    assert s.strategy.loss_factor == loss_factor
+
+    # init with input args
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(n_successes=a, n_failures=b, cost=cost1),
+            "a2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
+        },
+        subsidy_factor=subsidy_factor,
+        loss_factor=loss_factor,
+    )
+    assert s.actions["a1"] == BetaCC(n_successes=a, n_failures=b, cost=cost1)
+    assert s.actions["a2"] == BetaCC(n_successes=c, n_failures=d, cost=cost2)
+    assert s.strategy == CostControlBandit(subsidy_factor=subsidy_factor, loss_factor=loss_factor)
+    assert s.strategy.subsidy_factor == subsidy_factor
+    assert s.strategy.loss_factor == loss_factor
+
+
+@given(
+    st.just(100),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.floats(min_value=0),
+    st.floats(min_value=0),
+    st.one_of(
+        st.none(),
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta,
+            n_successes=st.integers(min_value=1, max_value=10),
+            n_failures=st.integers(min_value=1, max_value=10),
+        ),
+    ),
+    st.floats(min_value=0, max_value=1),
+)
+def test_smabcc_predict(
+    n_samples, a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor, loss_factor
+):
+    actions = {
+        "a1": BetaCC(n_successes=a, n_failures=b, cost=cost1),
+        "a2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
+    }
+    s = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor, loss_factor=loss_factor)
+    s.predict(n_samples=n_samples)
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.floats(min_value=0),
+    st.floats(min_value=0),
+    st.one_of(
+        st.none(),
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta,
+            n_successes=st.integers(min_value=1, max_value=10),
+            n_failures=st.integers(min_value=1, max_value=10),
+        ),
+    ),
+    st.floats(min_value=0, max_value=1),
+    st.lists(st.integers(min_value=0, max_value=1), min_size=2, max_size=2),
+)
+def test_smabcc_update(
+    a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor, loss_factor, rewards
+):
+    actions = {
+        "a1": BetaCC(n_successes=a, n_failures=b, cost=cost1),
+        "a2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
+    }
+    s = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor, loss_factor=loss_factor)
+    s.update(actions=["a1"] * len(rewards), rewards=rewards)
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.floats(min_value=0),
+    st.floats(min_value=0),
+    st.one_of(
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta,
+            n_successes=st.integers(min_value=1, max_value=10),
+            n_failures=st.integers(min_value=1, max_value=10),
+        ),
+    ),
+    st.floats(min_value=0, max_value=1),
+)
+def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor, loss_factor):
     actions = {
         "action1": BetaCC(n_successes=a, n_failures=b, cost=cost1),
         "action2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
     }
-    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor, loss_factor=loss_factor)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {
                 "subsidy_factor": subsidy_factor,
+                "loss_factor": loss_factor,
             },
             "epsilon": None,
             "default_action": None,
@@ -485,8 +576,21 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
             ),
             "strategy": st.one_of(
                 st.just({}),
-                st.just({"subsidy_factor": None}),
-                st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
+                st.fixed_dictionaries(
+                    {
+                        "subsidy_factor": st.one_of(
+                            st.none(),
+                            st.floats(min_value=0, max_value=1),
+                            st.fixed_dictionaries(
+                                {
+                                    "n_successes": st.integers(min_value=1, max_value=100),
+                                    "n_failures": st.integers(min_value=1, max_value=100),
+                                },
+                            ),
+                        ),
+                        "loss_factor": st.floats(min_value=0, max_value=1),
+                    }
+                ),
             ),
         }
     )
@@ -496,10 +600,14 @@ def test_smab_cc_from_state(state):
     assert isinstance(smab, SmabBernoulliCC)
 
     expected_actions = state["actions"]
-    actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
+    actual_actions = to_serializable_dict(smab.actions)
     assert expected_actions == actual_actions
     expected_subsidy_factor = smab.strategy.get_expected_value_from_state(state, "subsidy_factor")
-    actual_subsidy_factor = smab.strategy.subsidy_factor
+    actual_subsidy_factor = (
+        smab.strategy.subsidy_factor.model_dump()
+        if isinstance(smab.strategy.subsidy_factor, Beta)
+        else smab.strategy.subsidy_factor
+    )
     assert expected_subsidy_factor == actual_subsidy_factor
 
     # Ensure get_state and from_state compatibility
@@ -677,47 +785,46 @@ def test_smab_mo_from_state(state):
 # SmabBernoulli with strategy=MultiObjectiveCostControlBandit()
 
 
-@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8))
-def test_can_init_smab_mo_cc(a_list):
-    a, b, c, d, e, f, g, h = a_list
-
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(st.integers(min_value=1), min_size=6, max_size=6),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.none(), st.floats(min_value=0, max_value=1), st.lists(st.builds(Beta), min_size=3, max_size=3)),
+)
+def test_can_init_smab_mo_cc(action_ids, a_list, action_ids_cost, loss_factor, subsidy_factor):
+    a, b, c, d, e, f = a_list
+    action_ids_cost = dict(zip(action_ids, action_ids_cost))
     s = SmabBernoulliMOCC(
         actions={
-            "a1": BetaMOCC(
+            action_id: BetaMOCC(
                 counters=[
                     Beta(n_successes=a, n_failures=b),
                     Beta(n_successes=c, n_failures=d),
                     Beta(n_successes=e, n_failures=f),
                 ],
-                cost=g,
-            ),
-            "a2": BetaMOCC(
-                counters=[
-                    Beta(n_successes=d, n_failures=a),
-                    Beta(n_successes=e, n_failures=b),
-                    Beta(n_successes=f, n_failures=c),
-                ],
-                cost=h,
-            ),
+                cost=cost,
+            )
+            for action_id, cost in action_ids_cost.items()
         },
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
     )
-    assert s.actions["a1"] == BetaMOCC(
-        counters=[
-            Beta(n_successes=a, n_failures=b),
-            Beta(n_successes=c, n_failures=d),
-            Beta(n_successes=e, n_failures=f),
-        ],
-        cost=g,
+
+    assert all(
+        s.actions[action_id]
+        == BetaMOCC(
+            counters=[
+                Beta(n_successes=a, n_failures=b),
+                Beta(n_successes=c, n_failures=d),
+                Beta(n_successes=e, n_failures=f),
+            ],
+            cost=cost,
+        )
+        for action_id, cost in action_ids_cost.items()
     )
-    assert s.actions["a2"] == BetaMOCC(
-        counters=[
-            Beta(n_successes=d, n_failures=a),
-            Beta(n_successes=e, n_failures=b),
-            Beta(n_successes=f, n_failures=c),
-        ],
-        cost=h,
-    )
-    assert s.strategy == MultiObjectiveCostControlBandit()
+
+    assert s.strategy == MultiObjectiveCostControlBandit(loss_factor=loss_factor, subsidy_factor=subsidy_factor)
 
 
 def test_all_actions_must_have_same_number_of_objectives_smab_mo_cc():
@@ -731,10 +838,22 @@ def test_all_actions_must_have_same_number_of_objectives_smab_mo_cc():
         )
 
 
-def test_smab_mo_cc_predict(n_samples: int):
-    n_samples = 1000
-
-    s = SmabBernoulliMOCC.cold_start(action_ids_cost={"a1": 1, "a2": 2}, n_objectives=2)
+@given(
+    st.just(100),
+    st.just(2),
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.none(), st.floats(min_value=0, max_value=1), st.lists(st.builds(Beta), min_size=3, max_size=3)),
+)
+def test_smab_mo_cc_predict(n_samples, n_objectives, action_ids, costs, loss_factor, subsidy_factor):
+    action_ids_cost = dict(zip(action_ids, costs))
+    s = SmabBernoulliMOCC.cold_start(
+        action_ids_cost=action_ids_cost,
+        n_objectives=n_objectives,
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
+    )
 
     forbidden = None
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)
@@ -757,9 +876,21 @@ def test_smab_mo_cc_predict(n_samples: int):
         s.predict(n_samples=n_samples, forbidden_actions=forbidden)
 
 
-def test_smab_mo_cc_update(n_objectives=3):
-    action_ids_cost = {"a1": 1, "a2": 2}
-    mab = SmabBernoulliMOCC.cold_start(action_ids_cost=action_ids_cost, n_objectives=n_objectives)
+@given(
+    st.just(3),
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.none(), st.floats(min_value=0, max_value=1), st.lists(st.builds(Beta), min_size=3, max_size=3)),
+)
+def test_smab_mo_cc_update(n_objectives, action_ids, costs, loss_factor, subsidy_factor):
+    action_ids_cost = dict(zip(action_ids, costs))
+    mab = SmabBernoulliMOCC.cold_start(
+        action_ids_cost=action_ids_cost,
+        n_objectives=n_objectives,
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
+    )
     assert all(
         [
             mab.actions[a] == BetaMOCC.cold_start(n_objectives=n_objectives, cost=action_ids_cost[a])
@@ -770,39 +901,46 @@ def test_smab_mo_cc_update(n_objectives=3):
     mab.update(actions=["a1", "a2"], rewards=[[1, 0, 1], [1, 1, 0]])
     assert all(
         [
-            mab.actions[a] != BetaMOCC.cold_start(n_objectives=n_objectives, cost=action_ids_cost[a])
+            mab.actions[a]
+            != BetaMOCC.cold_start(
+                n_objectives=n_objectives,
+                cost=action_ids_cost[a],
+            )
             for a in action_ids_cost.keys()
         ]
     )
 
 
-@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8))
-def test_smab_mo_cc_get_state(a_list):
-    a, b, c, d, e, f, g, h = a_list
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(st.integers(min_value=1), min_size=6, max_size=6),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.floats(min_value=0, max_value=1), st.lists(st.builds(Beta), min_size=3, max_size=3)),
+)
+def test_smab_mo_cc_get_state(action_ids, a_list, costs, loss_factor, subsidy_factor):
+    a, b, c, d, e, f = a_list
 
     actions = {
-        "a1": BetaMOCC(
+        action_id: BetaMOCC(
             counters=[
                 Beta(n_successes=a, n_failures=b),
                 Beta(n_successes=c, n_failures=d),
                 Beta(n_successes=e, n_failures=f),
             ],
-            cost=g,
-        ),
-        "a2": BetaMOCC(
-            counters=[
-                Beta(n_successes=d, n_failures=a),
-                Beta(n_successes=e, n_failures=b),
-                Beta(n_successes=f, n_failures=c),
-            ],
-            cost=h,
-        ),
+            cost=cost,
+        )
+        for action_id, cost in zip(action_ids, costs)
     }
-    smab = SmabBernoulliMOCC(actions=actions)
+
+    smab = SmabBernoulliMOCC(actions=actions, loss_factor=loss_factor, subsidy_factor=subsidy_factor)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
-            "strategy": {},
+            "strategy": {
+                "loss_factor": loss_factor,
+                "subsidy_factor": subsidy_factor,
+            },
             "epsilon": None,
             "default_action": None,
         }
@@ -837,7 +975,27 @@ def test_smab_mo_cc_get_state(a_list):
                 ),
                 min_size=2,
             ),
-            "strategy": st.fixed_dictionaries({}),
+            "strategy": st.one_of(
+                st.fixed_dictionaries({}),
+                st.fixed_dictionaries(
+                    {
+                        "subsidy_factor": st.one_of(
+                            st.floats(min_value=0, max_value=1),
+                            st.lists(
+                                st.fixed_dictionaries(
+                                    {
+                                        "n_successes": st.integers(min_value=1, max_value=100),
+                                        "n_failures": st.integers(min_value=1, max_value=100),
+                                    },
+                                ),
+                                min_size=3,
+                                max_size=3,
+                            ),
+                        ),
+                        "loss_factor": st.floats(min_value=0, max_value=1),
+                    }
+                ),
+            ),
         }
     )
 )
@@ -903,16 +1061,30 @@ def test_epsilon_greddy_smabbai_predict(n_samples: int):
     _, _ = s.predict(n_samples=n_samples)
 
 
-def test_epsilon_greddy_smabcc_predict(n_samples: int):
-    n_samples = 1000
+@given(
+    st.just(100),
+    st.just({"a1": 1, "a2": 2}),
+    st.just(0.1),
+    st.just("a1"),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.none(), st.floats(min_value=0, max_value=1), st.builds(Beta)),
+    st.lists(st.integers(min_value=1, max_value=4), min_size=2, max_size=2),
+    st.lists(st.integers(min_value=1, max_value=4), min_size=2, max_size=2),
+)
+def test_epsilon_greddy_smabcc_predict(
+    n_samples, action_ids_cost, epsilon, default_action, loss_factor, subsidy_factor, n_successes_all, n_failures_all
+):
     s = SmabBernoulliCC(
         actions={
-            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
-            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
+            action_id: BetaCC(n_successes=n_successes, n_failures=n_failures, cost=cost)
+            for (action_id, cost), n_successes, n_failures in zip(
+                action_ids_cost.items(), n_successes_all, n_failures_all
+            )
         },
-        subsidy_factor=0.7,
-        epsilon=0.1,
-        default_action="a1",
+        subsidy_factor=subsidy_factor,
+        epsilon=epsilon,
+        default_action=default_action,
+        loss_factor=loss_factor,
     )
     _, _ = s.predict(n_samples=n_samples)
 
@@ -926,11 +1098,25 @@ def test_epsilon_greddy_smab_mo_predict(n_samples: int):
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)
 
 
-def test_epsilon_greddy_smab_mo_cc_predict(n_samples: int):
-    n_samples = 1000
-
+@given(
+    st.just(100),
+    st.just({"a1": 1, "a2": 2}),
+    st.just(2),
+    st.just(0.1),
+    st.just("a1"),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.none(), st.floats(min_value=0, max_value=1), st.lists(st.builds(Beta), min_size=2, max_size=2)),
+)
+def test_epsilon_greddy_smab_mo_cc_predict(
+    n_samples, action_ids_cost, n_objectives, epsilon, default_action, loss_factor, subsidy_factor
+):
     s = SmabBernoulliMOCC.cold_start(
-        action_ids_cost={"a1": 1, "a2": 2}, n_objectives=2, epsilon=0.1, default_action="a1"
+        action_ids_cost=action_ids_cost,
+        n_objectives=n_objectives,
+        epsilon=epsilon,
+        default_action=default_action,
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
     )
 
     forbidden = None
