@@ -192,7 +192,7 @@ class CostControlBandit(Strategy):
             reward (it behaves as a classic Bernoulli bandit).
     """
 
-    subsidy_factor: Float01 = 0.5
+    subsidy_factor: Float01 = None
 
     @validate_call
     def set_subsidy_factor(self, subsidy_factor: Float01):
@@ -220,8 +220,59 @@ class CostControlBandit(Strategy):
         # get the highest expected reward sampled value
         max_p = max(p.values())
 
-        # define the set of feasible actions
-        feasible_actions = [a for a in p.keys() if p[a] >= (1 - self.subsidy_factor) * max_p]
+        if self.subsidy_factor is None:
+            # find action whose value is max_p and has the lowest cost
+            max_p_actions = [a for a in p.keys() if p[a] == max_p]
+            max_p_selected_action = min(max_p_actions, key=lambda a: actions[a].cost)
+            # Focus on actions with cost lower or equal to the cost of the max_p action,
+            # and select the one with the minimum loss
+            relevant_actions_p = {a: p[a] for a in p.keys() if actions[a].cost <= actions[max_p_selected_action].cost}
+            best_loss = float("inf")
+            selected_action = max_p_selected_action
+            sorted_actions, sorted_probabilities = zip(*sorted(relevant_actions_p.items(), key=lambda item: item[1]))
+            subsidy_factors = 1 - np.array(sorted_probabilities) / max_p
+            for subsidy_factor in subsidy_factors:
+                temp_selected_action = self._get_selected_action(
+                    p=p, actions=actions, max_p=max_p, subsidy_factor=subsidy_factor
+                )
+                quality_loss = (1 - subsidy_factor) * max_p - relevant_actions_p[temp_selected_action]
+                cost_loss = actions[temp_selected_action].cost - actions[max_p_selected_action].cost
+                loss = quality_loss + cost_loss
+                if loss < best_loss:
+                    best_loss = loss
+                    selected_action = temp_selected_action
+        else:
+            subsidy_factor = self.subsidy_factor
+            selected_action = self._get_selected_action(
+                p=p, actions=actions, max_p=max_p, subsidy_factor=subsidy_factor
+            )
+        return selected_action
+
+    def _get_selected_action(
+        self, p: Dict[ActionId, Probability], actions: Dict[ActionId, Model], max_p: Float01, subsidy_factor: Float01
+    ) -> ActionId:
+        """
+        Select the action with the minimum cost among the set of feasible actions.
+        Feasible actions are the ones whose expected rewards are above (1-subsidy_factor)*max_p.
+
+        Parameters
+        ----------
+        p : Dict[ActionId, Probability]
+            The dictionary or actions and their sampled probability of getting a positive reward.
+        actions : Dict[ActionId, Model]
+            The dictionary of actions and their characteristics.
+        max_p : Float01
+            The highest expected reward sampled value.
+        subsidy_factor : Float01
+            smallest tolerated probability reward.
+
+
+        Returns
+        -------
+        selected_action : ActionId
+            The selected action.
+        """
+        feasible_actions = [a for a in p.keys() if p[a] >= (1 - subsidy_factor) * max_p]
 
         # feasible actions enriched with their characteristics (cost, -probability, action_id)
         # the negative probability ensures that if we order the actions based on their minimum values the one with
