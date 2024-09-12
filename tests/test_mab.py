@@ -39,14 +39,13 @@ class DummyMab(BaseMab):
     epsilon: Optional[Float01] = None
     default_action: Optional[ActionId] = None
 
-    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
-        self._validate_update_params(actions=actions, rewards=rewards)
+    def _update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
+        pass
 
-    def predict(
+    def _predict(
         self,
-        forbidden_actions: Optional[Set[ActionId]] = None,
+        valid_actions: Set[ActionId],
     ):
-        valid_actions = self._get_valid_actions(forbidden_actions)
         return np.random.choice(valid_actions)
 
     def get_state(self) -> (str, dict):

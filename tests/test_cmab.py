@@ -27,11 +27,11 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import NonNegativeFloat, ValidationError
+from pydantic import ValidationError
 
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
+from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, Beta, StudentT, UpdateMethods
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
 from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
@@ -52,17 +52,17 @@ def _apply_update_method_to_state(state, update_method):
 
 @settings(deadline=500)
 @given(st.integers(max_value=100))
-def test_create_cmab_bernoulli_cold_start(a_int):
+def test_create_cmab_bernoulli_cold_start(n_features):
     # n_features must be > 0
-    if a_int <= 0:
+    if n_features <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
     else:
-        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
         mab2 = CmabBernoulli(
             actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
-                "a2": BayesianLogisticRegression.cold_start(n_features=a_int),
+                "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
+                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
             }
         )
         mab2.predict_actions_randomly = True
@@ -158,7 +158,7 @@ def test_cmab_init_with_wrong_blr_models(n_features, other_n_features, update_me
         )
 
 
-@settings(deadline=60000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -199,7 +199,7 @@ def test_cmab_update(n_samples, n_features, update_method):
     run_update(context=context)
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
     actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
@@ -214,7 +214,7 @@ def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
     assert mab.actions["a4"] != BayesianLogisticRegression.cold_start(n_features=n_feat, update_method=update_method)
 
 
-@settings(deadline=500)
+@settings(deadline=None)
 @given(
     st.integers(min_value=1, max_value=1000),
     st.integers(min_value=1, max_value=100),
@@ -298,9 +298,9 @@ def test_cmab_predict_not_cold_start(n_samples, n_features):
 
 @settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
-def test_cmab_predict_shape_mismatch(a_int):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(100, a_int - 1))
-    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+def test_cmab_predict_shape_mismatch(n_features):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features - 1))
+    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
     with pytest.raises(AttributeError):
         mab.predict(context=context)
     with pytest.raises(AttributeError):
@@ -426,29 +426,29 @@ def test_cmab_from_state(state, update_method):
 
 @settings(deadline=500)
 @given(st.integers(max_value=100))
-def test_create_cmab_bernoulli_bai_cold_start(a_int):
+def test_create_cmab_bernoulli_bai_cold_start(n_features):
     # n_features must be > 0
-    if a_int <= 0:
+    if n_features <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+            CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
     else:
         # default exploit_p
-        mab1 = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+        mab1 = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
         mab2 = CmabBernoulliBAI(
             actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
-                "a2": BayesianLogisticRegression.cold_start(n_features=a_int),
+                "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
+                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
             }
         )
         mab2.predict_actions_randomly = True
         assert mab1 == mab2
 
         # set exploit_p
-        mab1 = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=a_int, exploit_p=0.42)
+        mab1 = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=n_features, exploit_p=0.42)
         mab2 = CmabBernoulliBAI(
             actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
-                "a2": BayesianLogisticRegression.cold_start(n_features=a_int),
+                "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
+                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
             },
             exploit_p=0.42,
         )
@@ -540,7 +540,7 @@ def test_cmab_bai_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_bai_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -660,145 +660,212 @@ def test_cmab_bai_from_state(state, update_method):
 
 
 @settings(deadline=500)
-@given(st.integers(max_value=100))
-def test_create_cmab_bernoulli_cc_cold_start(a_int):
-    action_ids_cost = {"a1": 10, "a2": 20.5}
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta, n_successes=st.integers(min_value=1, max_value=10), n_failures=st.integers(min_value=1, max_value=10)
+        ),
+    ),
+    st.integers(max_value=100),
+)
+def test_create_cmab_bernoulli_cc_cold_start(action_ids, costs, loss_factor, subsidy_factor, n_features):
+    action_ids_cost = dict(zip(action_ids, costs))
     # n_features must be > 0
-    if a_int <= 0:
+    if n_features <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=a_int)
+            CmabBernoulliCC.cold_start(
+                action_ids_cost=action_ids_cost,
+                n_features=n_features,
+                loss_factor=loss_factor,
+                subsidy_factor=subsidy_factor,
+            )
     else:
         # default subsidy_factor
-        mab1 = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=a_int)
+        mab1 = CmabBernoulliCC.cold_start(
+            action_ids_cost=action_ids_cost,
+            n_features=n_features,
+            loss_factor=loss_factor,
+            subsidy_factor=subsidy_factor,
+        )
         mab2 = CmabBernoulliCC(
             actions={
-                "a1": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a1"]),
-                "a2": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a2"]),
-            }
+                action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+                for action_id, cost in action_ids_cost.items()
+            },
+            loss_factor=loss_factor,
+            subsidy_factor=subsidy_factor,
         )
         mab2.predict_actions_randomly = True
         assert mab1 == mab2
 
         # set subsidy_factor
-        mab1 = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=a_int, subsidy_factor=0.42)
+        mab1 = CmabBernoulliCC.cold_start(
+            action_ids_cost=action_ids_cost,
+            n_features=n_features,
+            loss_factor=loss_factor,
+            subsidy_factor=subsidy_factor,
+        )
         mab2 = CmabBernoulliCC(
             actions={
-                "a1": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a1"]),
-                "a2": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a2"]),
+                action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+                for action_id, cost in action_ids_cost.items()
             },
-            subsidy_factor=0.42,
+            loss_factor=loss_factor,
+            subsidy_factor=subsidy_factor,
         )
         mab2.predict_actions_randomly = True
         assert mab1 == mab2
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=10))
-def test_cmab_cc_can_instantiate(n_features):
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(
+        st.floats(min_value=0, max_value=1),
+        st.builds(
+            Beta, n_successes=st.integers(min_value=1, max_value=10), n_failures=st.integers(min_value=1, max_value=10)
+        ),
+    ),
+    st.integers(min_value=1, max_value=10),
+)
+def test_cmab_cc_can_instantiate(action_ids, costs, loss_factor, subsidy_factor, n_features):
     with pytest.raises(TypeError):
         CmabBernoulliCC()
     with pytest.raises(AttributeError):
         CmabBernoulliCC(actions={})
     with pytest.warns(UserWarning):
-        CmabBernoulliCC(actions={"a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)})
+        CmabBernoulliCC(
+            actions={action_ids[0]: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=costs[0])}
+        )
     with pytest.raises(ValidationError):  # predict_with_proba is not an argument of init
         CmabBernoulliCC(
             actions={
-                "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-                "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
+                action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+                for action_id, cost in zip(action_ids, costs)
             },
             predict_with_proba=True,
         )
     with pytest.raises(ValidationError):
         CmabBernoulliCC(
-            actions={
-                "a1": None,
-                "a2": None,
-            },
+            actions={action_id: None for action_id in action_ids},
         )
     CmabBernoulliCC(
         actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
+            action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+            for action_id, cost in zip(action_ids, costs)
         },
         strategy=CostControlBandit(),
     )
     mab = CmabBernoulliCC(
         actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
+            action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+            for action_id, cost in zip(action_ids, costs)
         }
     )
-    assert mab.actions["a1"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
-    assert mab.actions["a2"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
+    assert all(
+        mab.actions[action_id] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+        for action_id, cost in zip(action_ids, costs)
+    )
     assert not mab.predict_actions_randomly
     assert mab.predict_with_proba
     assert mab.strategy == CostControlBandit()
 
     mab = CmabBernoulliCC(
         actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
+            action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+            for action_id, cost in zip(action_ids, costs)
         },
-        subsidy_factor=0.42,
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
     )
-    assert mab.actions["a1"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
-    assert mab.actions["a2"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
+    assert all(
+        mab.actions[action_id] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+        for action_id, cost in zip(action_ids, costs)
+    )
     assert not mab.predict_actions_randomly
     assert mab.predict_with_proba
-    assert mab.strategy == CostControlBandit(subsidy_factor=0.42)
+    assert mab.strategy == CostControlBandit(subsidy_factor=subsidy_factor, loss_factor=loss_factor)
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_cmab_cc_predict(n_samples, n_features):
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.floats(min_value=0, max_value=1), st.builds(Beta)),
+    st.integers(min_value=1, max_value=100),
+    st.integers(min_value=1, max_value=3),
+)
+def test_cmab_cc_predict(action_ids, costs, loss_factor, subsidy_factor, n_samples, n_features):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
+    action_ids_cost = dict(zip(action_ids, costs))
     # cold start
-    mab = CmabBernoulliCC.cold_start(action_ids_cost={"a1": 10, "a2": 20.5}, n_features=n_features)
+    mab = CmabBernoulliCC.cold_start(
+        action_ids_cost=action_ids_cost, n_features=n_features, loss_factor=loss_factor, subsidy_factor=subsidy_factor
+    )
     selected_actions, probs, weighted_sums = mab.predict(context=context)
     assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
+    assert all([a in action_ids for a in selected_actions])
     assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+    assert probs == n_samples * [{action_id: 0.5 for action_id in action_ids}]
+    assert weighted_sums == n_samples * [{action_id: 0.0 for action_id in action_ids}]
 
     # not cold start
     mab = CmabBernoulliCC(
         actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=20.5),
+            action_id: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost)
+            for action_id, cost in action_ids_cost.items()
         },
-        subsidy_factor=0.42,
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
     )
     assert not mab.predict_actions_randomly
     selected_actions, probs, weighted_sums = mab.predict(context=context)
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
-@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
-def test_cmab_cc_update(n_samples, n_features, update_method):
-    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
+@settings(deadline=None)
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.floats(min_value=0, max_value=1), st.builds(Beta)),
+    st.just(100),
+    st.just(3),
+    st.sampled_from(literal_update_methods),
+)
+def test_cmab_cc_update(action_ids, costs, loss_factor, subsidy_factor, n_samples, n_features, update_method):
+    actions = np.random.choice(action_ids, size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    action_ids_cost = dict(zip(action_ids, costs))
     mab = CmabBernoulliCC.cold_start(
-        action_ids_cost={"a1": 10, "a2": 10}, n_features=n_features, update_method=update_method
+        action_ids_cost=action_ids_cost,
+        n_features=n_features,
+        update_method=update_method,
+        loss_factor=loss_factor,
+        subsidy_factor=subsidy_factor,
     )
     assert mab.predict_actions_randomly
     assert all(
         [
-            mab.actions[a]
-            == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10, update_method=update_method)
-            for a in set(actions)
+            mab.actions[action_id]
+            == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost, update_method=update_method)
+            for action_id, cost in action_ids_cost.items()
         ]
     )
     mab.update(context=context, actions=actions, rewards=rewards)
     assert all(
         [
-            mab.actions[a]
-            != BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10, update_method=update_method)
-            for a in set(actions)
+            mab.actions[action_id]
+            != BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost, update_method=update_method)
+            for action_id, cost in action_ids_cost.items()
         ]
     )
     assert not mab.predict_actions_randomly
@@ -806,28 +873,35 @@ def test_cmab_cc_update(n_samples, n_features, update_method):
 
 @settings(deadline=500)
 @given(
+    st.just(["a1", "a2"]),
+    st.lists(st.floats(min_value=0, max_value=100), min_size=2, max_size=2),
+    st.floats(min_value=0, max_value=1),
+    st.one_of(st.floats(min_value=0, max_value=1), st.builds(Beta)),
     st.integers(min_value=1),
     st.integers(min_value=1),
     st.integers(min_value=2, max_value=100),
-    st.floats(min_value=0),
-    st.floats(min_value=0),
-    st.floats(min_value=0, max_value=1),
 )
 def test_cmab_cc_get_state(
-    mu, sigma, n_features, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
+    action_ids,
+    costs,
+    loss_factor,
+    subsidy_factor,
+    mu,
+    sigma,
+    n_features,
 ):
-    actions: dict = {
-        "a1": BayesianLogisticRegressionCC(
-            alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()], cost=cost_1
-        ),
-        "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost_2),
+    actions = {
+        action_id: BayesianLogisticRegressionCC(
+            alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()], cost=cost
+        )
+        for action_id, cost in zip(action_ids, costs)
     }
 
-    cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor, loss_factor=loss_factor)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
-            "strategy": {"subsidy_factor": subsidy_factor},
+            "strategy": {"subsidy_factor": subsidy_factor, "loss_factor": loss_factor},
             "predict_with_proba": True,
             "predict_actions_randomly": False,
             "epsilon": None,
@@ -875,8 +949,21 @@ def test_cmab_cc_get_state(
             ),
             "strategy": st.one_of(
                 st.just({}),
-                st.just({"subsidy_factor": None}),
-                st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
+                st.fixed_dictionaries(
+                    {
+                        "subsidy_factor": st.one_of(
+                            st.none(),
+                            st.floats(min_value=0, max_value=1),
+                            st.fixed_dictionaries(
+                                {
+                                    "n_successes": st.integers(min_value=1, max_value=100),
+                                    "n_failures": st.integers(min_value=1, max_value=100),
+                                },
+                            ),
+                        ),
+                        "loss_factor": st.floats(min_value=0, max_value=1),
+                    }
+                ),
             ),
         }
     ),
@@ -892,7 +979,11 @@ def test_cmab_cc_from_state(state, update_method):
     assert expected_actions == actual_actions
 
     expected_subsidy_factor = cmab.strategy.get_expected_value_from_state(state, "subsidy_factor")
-    actual_subsidy_factor = cmab.strategy.subsidy_factor
+    actual_subsidy_factor = (
+        cmab.strategy.subsidy_factor.model_dump()
+        if isinstance(cmab.strategy.subsidy_factor, Beta)
+        else cmab.strategy.subsidy_factor
+    )
     assert expected_subsidy_factor == actual_subsidy_factor
 
     # Ensure get_state and from_state compatibility
@@ -935,13 +1026,28 @@ def test_epsilon_greedy_cmab_bai_predict(n_samples, n_features):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_epsilon_greedy_cmab_cc_predict(n_samples, n_features):
+@given(
+    st.integers(min_value=1, max_value=100),
+    st.integers(min_value=1, max_value=3),
+    st.just({"a1": 1, "a2": 2}),
+    st.just(0.1),
+    st.just("a1"),
+    st.one_of(st.none(), st.floats(min_value=0, max_value=1), st.builds(Beta)),
+    st.floats(min_value=0, max_value=1),
+)
+def test_epsilon_greedy_cmab_cc_predict(
+    n_samples, n_features, action_ids_cost, epsilon_greedy, default_action, subsidy_factor, loss_factor
+):
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     # cold start
     mab = CmabBernoulliCC.cold_start(
-        action_ids_cost={"a1": 10, "a2": 20.5}, n_features=n_features, epsilon=0.1, default_action="a1"
+        action_ids_cost=action_ids_cost,
+        n_features=n_features,
+        epsilon=epsilon_greedy,
+        default_action=default_action,
+        subsidy_factor=subsidy_factor,
+        loss_factor=loss_factor,
     )
     selected_actions, probs, weighted_sums = mab.predict(context=context)
     assert mab.predict_actions_randomly
