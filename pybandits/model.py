@@ -22,9 +22,11 @@
 
 
 from random import betavariate
-from typing import List, Tuple
+from typing import List, Literal, Optional, Tuple, Union
 
-from numpy import array, c_, exp, insert, mean, multiply, ones, sqrt, std
+import numpy as np
+import pymc.math as pmath
+from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
 from numpy.typing import ArrayLike
 from pydantic import (
     Field,
@@ -34,14 +36,15 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from pymc import Bernoulli, Data, Deterministic, sample
+from pymc import Bernoulli, Data, Deterministic, fit, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
-from pymc.math import sigmoid
-from pytensor.tensor import dot
+from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Model, Probability, PyBanditsBaseModel
+
+UpdateMethods = Literal["MCMC", "VI"]
 
 
 class BaseBeta(Model):
@@ -231,16 +234,66 @@ class BaseBayesianLogisticRegression(Model):
 
     Parameters
     ----------
-    alpha: StudentT
+    alpha : StudentT
         Student's t-distribution of the alpha coefficient.
-    betas: StudentT
+    betas : StudentT
         Student's t-distributions of the betas coefficients.
-    params_sample: Dict
-        Parameters for the function pymc.sample()
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
     """
 
     alpha: StudentT
     betas: List[StudentT] = Field(..., min_items=1)
+    update_method: UpdateMethods = "MCMC"
+    update_kwargs: Optional[dict] = None
+    _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
+    _default_mcmc_kwargs = dict(
+        tune=500,
+        draws=1000,
+        chains=2,
+        init="adapt_diag",
+        cores=1,
+        target_accept=0.95,
+        progressbar=False,
+        return_inferencedata=False,
+    )
+    _default_variational_inference_kwargs = dict(method="advi")
+
+    @model_validator(mode="after")
+    def arrange_update_kwargs(self):
+        if self.update_kwargs is None:
+            self.update_kwargs = self._default_update_kwargs
+        if self.update_method == "VI":
+            self.update_kwargs = {**self._default_variational_inference_kwargs, **self.update_kwargs}
+        elif self.update_method == "MCMC":
+            self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
+        else:
+            raise ValueError("Invalid update method.")
+        return self
+
+    @classmethod
+    def _stable_sigmoid(cls, x: Union[np.ndarray, TensorVariable]) -> Union[np.ndarray, TensorVariable]:
+        """
+        Vectorized sigmoid function that avoids overflow and underflow.
+        Compatible with both numpy and PyMC3 tensors.
+
+        Parameters
+        ----------
+        x : Union[np.ndarray, TensorVariable]
+            Input values.
+
+        Returns
+        -------
+        prob : Union[np.ndarray, TensorVariable]
+            Sigmoid function applied to the input values.
+        """
+        backend = np if isinstance(x, np.ndarray) else pmath
+        prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
+        return prob
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def check_context_matrix(self, context: ArrayLike):
@@ -249,12 +302,12 @@ class BaseBayesianLogisticRegression(Model):
 
         Parameters
         ----------
-        context: ArrayLike of shape (n_samples, n_features)
+        context : ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
 
         Returns
         -------
-        context: pandas DataFrame of shape (n_samples, n_features)
+        context : pandas DataFrame of shape (n_samples, n_features)
             Matrix of contextual features.
         """
         try:
@@ -304,25 +357,12 @@ class BaseBayesianLogisticRegression(Model):
         weighted_sum = multiply(context_ext, coeff.T).sum(axis=1)
 
         # compute the probability with the sigmoid function
-        prob = 1.0 / (1.0 + exp(-weighted_sum))
+        prob = self._stable_sigmoid(weighted_sum)
 
         return prob, weighted_sum
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(
-        self,
-        context: ArrayLike,
-        rewards: List[BinaryReward],
-        tune=500,
-        draws=1000,
-        chains=2,
-        init="adapt_diag",
-        cores=2,
-        target_accept=0.95,
-        progressbar=False,
-        return_inferencedata=False,
-        **kwargs,
-    ):
+    def update(self, context: ArrayLike, rewards: List[BinaryReward]):
         """
         Update the model parameters.
 
@@ -344,40 +384,41 @@ class BaseBayesianLogisticRegression(Model):
             # if model was never updated priors_parameters = default arguments
             # else priors_parameters are calculated from traces of the previous update
             alpha = PymcStudentT("alpha", mu=self.alpha.mu, sigma=self.alpha.sigma, nu=self.alpha.nu)
-            betas = [
-                PymcStudentT("beta" + str(i), mu=self.betas[i].mu, sigma=self.betas[i].sigma, nu=self.betas[i].nu)
-                for i in range(len(self.betas))
-            ]
+            beta_mu = [b.mu for b in self.betas]
+            beta_sigma = [b.sigma for b in self.betas]
+            beta_nu = [b.nu for b in self.betas]
+            betas = PymcStudentT("betas", mu=beta_mu, sigma=beta_sigma, nu=beta_nu, shape=len(self.betas))
 
-            context = Data("context", context)
-            rewards = Data("rewards", rewards)
+            context = Data("context", context, mutable=False)
+            rewards = Data("rewards", rewards, mutable=False)
 
             # Likelihood (sampling distribution) of observations
             weighted_sum = Deterministic("weighted_sum", alpha + dot(betas, context.T))
-            p = Deterministic("p", sigmoid(weighted_sum))
+            p = Deterministic("p", self._stable_sigmoid(weighted_sum))
 
             # Bernoulli random vector with probability of success given by sigmoid function and actual data as observed
             _ = Bernoulli("likelihood", p=p, observed=rewards)
 
             # update traces object by sampling from posterior distribution
-            trace = sample(
-                tune=tune,
-                draws=draws,
-                chains=chains,
-                init=init,
-                cores=cores,
-                target_accept=target_accept,
-                progressbar=progressbar,
-                return_inferencedata=return_inferencedata,
-                **kwargs,
-            )
+            if self.update_method == "VI":
+                # variational inference
+                update_kwargs = self.update_kwargs.copy()
+                approx = fit(method=update_kwargs.pop("method"))
+                trace = approx.sample(**update_kwargs)
+            elif self.update_method == "MCMC":
+                # MCMC
+                trace = sample(**self.update_kwargs)
+            else:
+                raise ValueError("Invalid update method.")
 
             # compute mean and std of the coefficients distributions
             self.alpha.mu = mean(trace["alpha"])
             self.alpha.sigma = std(trace["alpha"], ddof=1)
-            for i in range(len(self.betas)):
-                self.betas[i].mu = mean(trace["beta" + str(i)])
-                self.betas[i].sigma = std(trace["beta" + str(i)], ddof=1)
+            betas_mu = mean(trace["betas"], axis=0)
+            betas_std = std(trace["betas"], axis=0, ddof=1)
+            self.betas = [
+                StudentT(mu=mu, sigma=sigma, nu=beta.nu) for mu, sigma, beta in zip(betas_mu, betas_std, self.betas)
+            ]
 
 
 class BayesianLogisticRegression(BaseBayesianLogisticRegression):
@@ -392,12 +433,16 @@ class BayesianLogisticRegression(BaseBayesianLogisticRegression):
 
     Parameters
     ----------
-    alpha: StudentT
+    alpha : StudentT
         Student's t-distribution of the alpha coefficient.
-    betas: StudentT
+    betas : StudentT
         Student's t-distributions of the betas coefficients.
-    params_sample: Dict
-        Parameters for the function pymc.sample()
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs: Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
     """
 
 
@@ -417,8 +462,12 @@ class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
         Student's t-distribution of the alpha coefficient.
     betas: StudentT
         Student's t-distributions of the betas coefficients.
-    params_sample: Dict
-        Parameters for the function pymc.sample()
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
     cost: NonNegativeFloat
         Cost associated to the Bayesian Logistic Regression model.
     """
@@ -426,7 +475,9 @@ class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
     cost: NonNegativeFloat
 
 
-def create_bayesian_logistic_regression_cold_start(n_betas: PositiveInt) -> BayesianLogisticRegression:
+def create_bayesian_logistic_regression_cold_start(
+    n_betas: PositiveInt, update_method: UpdateMethods = "MCMC", update_kwargs: Optional[dict] = None
+) -> BayesianLogisticRegression:
     """
     Utility function to create a Bayesian Logistic Regression model, with default parameters.
 
@@ -441,17 +492,31 @@ def create_bayesian_logistic_regression_cold_start(n_betas: PositiveInt) -> Baye
     n_betas : PositiveInt
         The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
         after in the context matrix.
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
 
     Returns
     -------
     blr: BayesianLogisticRegression
         The Bayesian Logistic Regression model.
     """
-    return BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)])
+    return BayesianLogisticRegression(
+        alpha=StudentT(),
+        betas=[StudentT() for _ in range(n_betas)],
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+    )
 
 
 def create_bayesian_logistic_regression_cc_cold_start(
-    n_betas: PositiveInt, cost: NonNegativeFloat
+    n_betas: PositiveInt,
+    cost: NonNegativeFloat,
+    update_method: UpdateMethods = "MCMC",
+    update_kwargs: Optional[dict] = None,
 ) -> BayesianLogisticRegressionCC:
     """
     Utility function to create a Bayesian Logistic Regression model with cost control, with default parameters.
@@ -469,10 +534,22 @@ def create_bayesian_logistic_regression_cc_cold_start(
         after in the context matrix.
     cost: NonNegativeFloat
         Cost associated to the Bayesian Logistic Regression model.
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
 
     Returns
     -------
     blr: BayesianLogisticRegressionCC
         The Bayesian Logistic Regression model.
     """
-    return BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
+    return BayesianLogisticRegressionCC(
+        alpha=StudentT(),
+        betas=[StudentT() for _ in range(n_betas)],
+        cost=cost,
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+    )

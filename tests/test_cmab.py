@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from typing import get_args
 
 import numpy as np
 import pandas as pd
@@ -40,6 +41,7 @@ from pybandits.model import (
     BayesianLogisticRegression,
     BayesianLogisticRegressionCC,
     StudentT,
+    UpdateMethods,
     create_bayesian_logistic_regression_cc_cold_start,
     create_bayesian_logistic_regression_cold_start,
 )
@@ -50,6 +52,14 @@ from pybandits.strategy import (
 )
 from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
+
+literal_update_methods = get_args(UpdateMethods)
+
+
+def _apply_update_method_to_state(state, update_method):
+    for action in state["actions"]:
+        state["actions"][action]["update_method"] = update_method
+
 
 ########################################################################################################################
 
@@ -126,40 +136,78 @@ def test_cmab_can_instantiate(n_features):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=10))
-def test_cmab_init_with_wrong_blr_models(a, b):
-    # all blr models must have the same n_betas. If not raise a ValueError.
-    if a != b:
-        with pytest.raises(AttributeError):
-            CmabBernoulli(
-                actions={
-                    "a1": create_bayesian_logistic_regression_cold_start(n_betas=a),
-                    "a2": create_bayesian_logistic_regression_cold_start(n_betas=a),
-                    "a3": create_bayesian_logistic_regression_cold_start(n_betas=b),
-                }
-            )
-    else:
+@given(
+    st.integers(min_value=1, max_value=5),
+    st.integers(min_value=6, max_value=10),
+    st.integers(min_value=0, max_value=1),
+    st.just("draws"),
+    st.just(2),
+)
+def test_cmab_init_with_wrong_blr_models(
+    first_n_betas, second_n_betas, first_update_method_index, kwarg_to_alter, factor
+):
+    with pytest.raises(AttributeError):
         CmabBernoulli(
             actions={
-                "a1": create_bayesian_logistic_regression_cold_start(n_betas=a),
-                "a2": create_bayesian_logistic_regression_cold_start(n_betas=b),
-                "a3": create_bayesian_logistic_regression_cold_start(n_betas=b),
+                "a1": create_bayesian_logistic_regression_cold_start(n_betas=first_n_betas),
+                "a2": create_bayesian_logistic_regression_cold_start(n_betas=first_n_betas),
+                "a3": create_bayesian_logistic_regression_cold_start(n_betas=second_n_betas),
+            }
+        )
+    first_update_method = literal_update_methods[first_update_method_index]
+    second_update_method = literal_update_methods[1 - first_update_method_index]
+    with pytest.raises(AttributeError):
+        CmabBernoulli(
+            actions={
+                "a1": create_bayesian_logistic_regression_cold_start(
+                    n_betas=first_n_betas, update_method=first_update_method
+                ),
+                "a2": create_bayesian_logistic_regression_cold_start(
+                    n_betas=first_n_betas, update_method=second_update_method
+                ),
+            }
+        )
+    first_model = create_bayesian_logistic_regression_cold_start(
+        n_betas=first_n_betas, update_method=first_update_method
+    )
+    altered_kwarg = first_model.update_kwargs[kwarg_to_alter] // factor
+    with pytest.raises(AttributeError):
+        CmabBernoulli(
+            actions={
+                "a1": first_model,
+                "a2": create_bayesian_logistic_regression_cold_start(
+                    n_betas=first_n_betas,
+                    update_method=first_update_method,
+                    update_kwargs={kwarg_to_alter: altered_kwarg},
+                ),
             }
         )
 
 
-def test_cmab_update(n_samples=100, n_features=3):
+@settings(deadline=60000)
+@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
+def test_cmab_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
     def run_update(context):
-        mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
+        mab = create_cmab_bernoulli_cold_start(
+            action_ids={"a1", "a2"}, n_features=n_features, update_method=update_method
+        )
         assert all(
-            [mab.actions[a] == create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
+            [
+                mab.actions[a]
+                == create_bayesian_logistic_regression_cold_start(n_betas=n_features, update_method=update_method)
+                for a in set(actions)
+            ]
         )
         mab.update(context=context, actions=actions, rewards=rewards)
         assert all(
-            [mab.actions[a] != create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
+            [
+                mab.actions[a]
+                != create_bayesian_logistic_regression_cold_start(n_betas=n_features, update_method=update_method)
+                for a in set(actions)
+            ]
         )
         assert not mab.predict_actions_randomly
 
@@ -179,26 +227,42 @@ def test_cmab_update(n_samples=100, n_features=3):
     run_update(context=context)
 
 
-def test_cmab_update_not_all_actions(n_samples=100, n_feat=3):
+@settings(deadline=10000)
+@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
+def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
     actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_feat))
-    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2", "a3", "a4"}, n_features=n_feat)
+    mab = create_cmab_bernoulli_cold_start(
+        action_ids={"a1", "a2", "a3", "a4"}, n_features=n_feat, update_method=update_method
+    )
 
     mab.update(context=context, actions=actions, rewards=rewards)
-    assert mab.actions["a1"] == create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
-    assert mab.actions["a2"] == create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
-    assert mab.actions["a3"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
-    assert mab.actions["a4"] != create_bayesian_logistic_regression_cold_start(n_betas=n_feat)
+    assert mab.actions["a1"] == create_bayesian_logistic_regression_cold_start(
+        n_betas=n_feat, update_method=update_method
+    )
+    assert mab.actions["a2"] == create_bayesian_logistic_regression_cold_start(
+        n_betas=n_feat, update_method=update_method
+    )
+    assert mab.actions["a3"] != create_bayesian_logistic_regression_cold_start(
+        n_betas=n_feat, update_method=update_method
+    )
+    assert mab.actions["a4"] != create_bayesian_logistic_regression_cold_start(
+        n_betas=n_feat, update_method=update_method
+    )
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_cmab_update_shape_mismatch(n_samples, n_features):
+@given(
+    st.integers(min_value=1, max_value=1000),
+    st.integers(min_value=1, max_value=100),
+    st.sampled_from(literal_update_methods),
+)
+def test_cmab_update_shape_mismatch(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
+    mab = create_cmab_bernoulli_cold_start(action_ids={"a1", "a2"}, n_features=n_features, update_method=update_method)
 
     with pytest.raises(AttributeError):  # actions shape mismatch
         mab.update(context=context, actions=actions[1:], rewards=rewards)
@@ -375,14 +439,16 @@ def test_cmab_get_state(mu, sigma, n_features):
             ),
             "strategy": st.fixed_dictionaries({}),
         }
-    )
+    ),
+    update_method=st.sampled_from(literal_update_methods),
 )
-def test_cmab_from_state(state):
+def test_cmab_from_state(state, update_method):
+    _apply_update_method_to_state(state, update_method)
     cmab = CmabBernoulli.from_state(state)
     assert isinstance(cmab, CmabBernoulli)
 
-    expected_actions = state["actions"]
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
+    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
     assert expected_actions == actual_actions
 
     # Ensure get_state and from_state compatibility
@@ -513,18 +579,30 @@ def test_cmab_bai_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-def test_cmab_bai_update(n_samples=100, n_features=3):
+@settings(deadline=10000)
+@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
+def test_cmab_bai_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = create_cmab_bernoulli_bai_cold_start(action_ids={"a1", "a2"}, n_features=n_features)
+    mab = create_cmab_bernoulli_bai_cold_start(
+        action_ids={"a1", "a2"}, n_features=n_features, update_method=update_method
+    )
     assert mab.predict_actions_randomly
     assert all(
-        [mab.actions[a] == create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
+        [
+            mab.actions[a]
+            == create_bayesian_logistic_regression_cold_start(n_betas=n_features, update_method=update_method)
+            for a in set(actions)
+        ]
     )
     mab.update(context=context, actions=actions, rewards=rewards)
     assert all(
-        [mab.actions[a] != create_bayesian_logistic_regression_cold_start(n_betas=n_features) for a in set(actions)]
+        [
+            mab.actions[a]
+            != create_bayesian_logistic_regression_cold_start(n_betas=n_features, update_method=update_method)
+            for a in set(actions)
+        ]
     )
     assert not mab.predict_actions_randomly
 
@@ -597,15 +675,18 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
                 st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
             ),
         }
-    )
+    ),
+    update_method=st.sampled_from(literal_update_methods),
 )
-def test_cmab_bai_from_state(state):
+def test_cmab_bai_from_state(state, update_method):
+    _apply_update_method_to_state(state, update_method)
     cmab = CmabBernoulliBAI.from_state(state)
     assert isinstance(cmab, CmabBernoulliBAI)
 
-    expected_actions = state["actions"]
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
+    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
     assert expected_actions == actual_actions
+
     expected_exploit_p = (
         state["strategy"].get("exploit_p", 0.5) if state["strategy"].get("exploit_p") is not None else 0.5
     )  # Covers both not existing and existing + None
@@ -743,22 +824,32 @@ def test_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-def test_cmab_cc_update(n_samples=100, n_features=3):
+@settings(deadline=10000)
+@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
+def test_cmab_cc_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = create_cmab_bernoulli_cc_cold_start(action_ids_cost={"a1": 10, "a2": 10}, n_features=n_features)
+    mab = create_cmab_bernoulli_cc_cold_start(
+        action_ids_cost={"a1": 10, "a2": 10}, n_features=n_features, update_method=update_method
+    )
     assert mab.predict_actions_randomly
     assert all(
         [
-            mab.actions[a] == create_bayesian_logistic_regression_cc_cold_start(n_betas=n_features, cost=10)
+            mab.actions[a]
+            == create_bayesian_logistic_regression_cc_cold_start(
+                n_betas=n_features, cost=10, update_method=update_method
+            )
             for a in set(actions)
         ]
     )
     mab.update(context=context, actions=actions, rewards=rewards)
     assert all(
         [
-            mab.actions[a] != create_bayesian_logistic_regression_cc_cold_start(n_betas=n_features, cost=10)
+            mab.actions[a]
+            != create_bayesian_logistic_regression_cc_cold_start(
+                n_betas=n_features, cost=10, update_method=update_method
+            )
             for a in set(actions)
         ]
     )
@@ -840,15 +931,18 @@ def test_cmab_cc_get_state(
                 st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
             ),
         }
-    )
+    ),
+    update_method=st.sampled_from(literal_update_methods),
 )
-def test_cmab_cc_from_state(state):
+def test_cmab_cc_from_state(state, update_method):
+    _apply_update_method_to_state(state, update_method)
     cmab = CmabBernoulliCC.from_state(state)
     assert isinstance(cmab, CmabBernoulliCC)
 
-    expected_actions = state["actions"]
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
+    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
     assert expected_actions == actual_actions
+
     expected_subsidy_factor = (
         state["strategy"].get("subsidy_factor", 0.5) if state["strategy"].get("subsidy_factor") is not None else 0.5
     )  # Covers both not existing and existing + None
