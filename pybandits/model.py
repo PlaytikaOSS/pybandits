@@ -317,7 +317,7 @@ class BaseBayesianLogisticRegression(Model):
         draws=1000,
         chains=2,
         init="adapt_diag",
-        cores=2,
+        cores=1,
         target_accept=0.95,
         progressbar=False,
         return_inferencedata=False,
