@@ -20,24 +20,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Union
 
 from numpy import array
 from numpy.random import choice
 from numpy.typing import ArrayLike
-from pydantic import NonNegativeFloat, PositiveInt, field_validator, validate_call
+from pydantic import field_validator, validate_call
 
-from pybandits.base import ActionId, BaseMab, BinaryReward, Float01, Probability
-from pybandits.model import (
-    BaseBayesianLogisticRegression,
-    BayesianLogisticRegression,
-    BayesianLogisticRegressionCC,
-    UpdateMethods,
-    create_bayesian_logistic_regression_cc_cold_start,
-    create_bayesian_logistic_regression_cold_start,
-)
+from pybandits.base import ActionId, BinaryReward, CmabPredictions
+from pybandits.mab import BaseMab
+from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
 from pybandits.strategy import (
-    BestActionIdentification,
+    BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
 )
@@ -49,7 +43,7 @@ class BaseCmabBernoulli(BaseMab):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BaseBayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianLogisticRegression]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
@@ -60,7 +54,7 @@ class BaseCmabBernoulli(BaseMab):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BaseBayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianLogisticRegression]
     predict_with_proba: bool
     predict_actions_randomly: bool
 
@@ -86,7 +80,7 @@ class BaseCmabBernoulli(BaseMab):
         self,
         context: ArrayLike,
         forbidden_actions: Optional[Set[ActionId]] = None,
-    ) -> Tuple[List[ActionId], List[Dict[ActionId, Probability]]]:
+    ) -> CmabPredictions:
         """
         Predict actions.
 
@@ -105,6 +99,8 @@ class BaseCmabBernoulli(BaseMab):
             The actions selected by the multi-armed bandit model.
         probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
             The probabilities of getting a positive reward for each action.
+        ws : List[Dict[ActionId, float]]
+            The weighted sum of logistic regression logits.
         """
         valid_actions = self._get_valid_actions(forbidden_actions)
 
@@ -173,7 +169,7 @@ class BaseCmabBernoulli(BaseMab):
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
-        self._check_update_params(actions=actions, rewards=rewards)
+        self._validate_update_params(actions=actions, rewards=rewards)
         if len(context) != len(rewards):
             raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
 
@@ -217,22 +213,6 @@ class CmabBernoulli(BaseCmabBernoulli):
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
 
-    def __init__(
-        self,
-        actions: Dict[ActionId, BaseBayesianLogisticRegression],
-        epsilon: Optional[Float01] = None,
-        default_action: Optional[ActionId] = None,
-    ):
-        super().__init__(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action=default_action)
-
-    @classmethod
-    def from_state(cls, state: dict) -> "CmabBernoulli":
-        return cls(actions=state["actions"])
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
-        super().update(context=context, actions=actions, rewards=rewards)
-
 
 class CmabBernoulliBAI(BaseCmabBernoulli):
     """
@@ -245,7 +225,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
     ----------
     actions: Dict[ActionId, BayesianLogisticRegression]
         The list of possible actions, and their associated Model.
-    strategy: BestActionIdentification
+    strategy: BestActionIdentificationBandit
         The strategy used to select actions.
     predict_with_proba: bool
         If True predict with sampled probabilities, else predict with weighted sums
@@ -255,30 +235,11 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
     """
 
     actions: Dict[ActionId, BayesianLogisticRegression]
-    strategy: BestActionIdentification
+    strategy: BestActionIdentificationBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
 
-    def __init__(
-        self,
-        actions: Dict[ActionId, BayesianLogisticRegression],
-        epsilon: Optional[Float01] = None,
-        default_action: Optional[ActionId] = None,
-        exploit_p: Optional[Float01] = None,
-    ):
-        strategy = BestActionIdentification() if exploit_p is None else BestActionIdentification(exploit_p=exploit_p)
-        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
 
-    @classmethod
-    def from_state(cls, state: dict) -> "CmabBernoulliBAI":
-        return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
-        super().update(context=context, actions=actions, rewards=rewards)
-
-
-# TODO: add tests
 class CmabBernoulliCC(BaseCmabBernoulli):
     """
     Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control strategy.
@@ -311,195 +272,3 @@ class CmabBernoulliCC(BaseCmabBernoulli):
     strategy: CostControlBandit
     predict_with_proba: bool = True
     predict_actions_randomly: bool = False
-
-    def __init__(
-        self,
-        actions: Dict[ActionId, BayesianLogisticRegressionCC],
-        epsilon: Optional[Float01] = None,
-        default_action: Optional[ActionId] = None,
-        subsidy_factor: Optional[Float01] = None,
-    ):
-        strategy = CostControlBandit() if subsidy_factor is None else CostControlBandit(subsidy_factor=subsidy_factor)
-        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
-
-    @classmethod
-    def from_state(cls, state: dict) -> "CmabBernoulliCC":
-        return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
-        super().update(context=context, actions=actions, rewards=rewards)
-
-
-@validate_call
-def create_cmab_bernoulli_cold_start(
-    action_ids: Set[ActionId],
-    n_features: PositiveInt,
-    epsilon: Optional[Float01] = None,
-    default_action: Optional[ActionId] = None,
-    update_method: UpdateMethods = "MCMC",
-    update_kwargs: Optional[dict] = None,
-) -> CmabBernoulli:
-    """
-    Utility function to create a Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, with default
-    parameters. Until the very first update the model will predict actions randomly, where each action has equal
-    probability to be selected.
-
-    Parameters
-    ----------
-    action_ids: Set[ActionId]
-        The list of possible actions.
-    n_features: PositiveInt
-        The number of features expected after in the context matrix. This is also the number of betas of the
-        Bayesian Logistic Regression model.
-    epsilon: Optional[Float01]
-        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
-    default_action: Optional[ActionId]
-        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
-        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-    update_method: UpdateMethods, defaults to MCMC
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method of each of the action models.
-
-    Returns
-    -------
-    cmab: CmabBernoulli
-        Contextual Multi-Armed Bandit with strategy = ClassicBandit
-    """
-    actions = {}
-    for action_id in set(action_ids):
-        actions[action_id] = create_bayesian_logistic_regression_cold_start(
-            n_betas=n_features, update_method=update_method, update_kwargs=update_kwargs
-        )
-    mab = CmabBernoulli(actions=actions, epsilon=epsilon, default_action=default_action)
-    mab.predict_actions_randomly = True
-    return mab
-
-
-@validate_call
-def create_cmab_bernoulli_bai_cold_start(
-    action_ids: Set[ActionId],
-    n_features: PositiveInt,
-    exploit_p: Optional[Float01] = None,
-    epsilon: Optional[Float01] = None,
-    default_action: Optional[ActionId] = None,
-    update_method: UpdateMethods = "MCMC",
-    update_kwargs: Optional[dict] = None,
-) -> CmabBernoulliBAI:
-    """
-    Utility function to create a Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action
-    Identification strategy, with default parameters. Until the very first update the model will predict actions
-    randomly, where each action has equal probability to be selected.
-
-    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
-               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
-
-    Parameters
-    ----------
-    action_ids: Set[ActionId]
-        The list of possible actions.
-    n_features: PositiveInt
-        The number of features expected after in the context matrix. This is also the number of betas of the
-        Bayesian Logistic Regression model.
-    exploit_p: Float_0_1 (default=0.5)
-        Number in [0, 1] which specifies the amount of exploitation.
-        If exploit_p is 1, the bandits always selects the action with highest probability of getting a positive reward,
-            (it behaves as a Greedy strategy).
-        If exploit_p is 0, the bandits always select the action with 2nd highest probability of getting a positive
-            reward.
-    epsilon: Optional[Float01]
-        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
-    default_action: Optional[ActionId]
-        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
-        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-    update_method: UpdateMethods, defaults to MCMC
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method of each of the action models.
-
-    Returns
-    -------
-    cmab: CmabBernoulliBAI
-        Contextual Multi-Armed Bandit with strategy = BestActionIdentification
-    """
-    actions = {}
-    for a in set(action_ids):
-        actions[a] = create_bayesian_logistic_regression_cold_start(
-            n_betas=n_features,
-            update_method=update_method,
-            update_kwargs=update_kwargs,
-        )
-    mab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p, epsilon=epsilon, default_action=default_action)
-    mab.predict_actions_randomly = True
-    return mab
-
-
-@validate_call
-def create_cmab_bernoulli_cc_cold_start(
-    action_ids_cost: Dict[ActionId, NonNegativeFloat],
-    n_features: PositiveInt,
-    subsidy_factor: Optional[Float01] = None,
-    epsilon: Optional[Float01] = None,
-    default_action: Optional[ActionId] = None,
-    update_method: UpdateMethods = "MCMC",
-    update_kwargs: Optional[dict] = None,
-) -> CmabBernoulliCC:
-    """
-    Utility function to create a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Cost Control
-    strategy, with default parameters.
-
-    The sMAB is extended to include a control of the action cost. Each action is associated with a predefined "cost".
-    At prediction time, the model considers the actions whose expected rewards is above a pre-defined lower bound. Among
-    these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
-    actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
-
-    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
-               https://arxiv.org/abs/1911.00638
-
-               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
-               https://arxiv.org/abs/2011.01488
-
-    Parameters
-    ----------
-    action_ids_cost: Dict[ActionId, NonNegativeFloat]
-        The list of possible actions, and their cost.
-    n_features: PositiveInt
-        The number of features expected after in the context matrix. This is also the number of betas of the
-        Bayesian Logistic Regression model.
-    subsidy_factor: Optional[Float_0_1], default=0.5
-        Number in [0, 1] to define smallest tolerated probability reward, hence the set of feasible actions.
-        If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
-        If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
-            reward (it behaves as a classic Bernoulli bandit).
-    epsilon: Optional[Float01]
-        epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
-    default_action: Optional[ActionId]
-        The default action to select with a probability of epsilon when using the epsilon-greedy approach.
-        If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-    update_method: UpdateMethods, defaults to MCMC
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-
-    Returns
-    -------
-    cmab: CmabBernoulliCC
-        Contextual Multi-Armed Bandit with strategy = CostControl
-    """
-    actions = {}
-    for a, cost in action_ids_cost.items():
-        actions[a] = create_bayesian_logistic_regression_cc_cold_start(
-            n_betas=n_features, cost=cost, update_method=update_method, update_kwargs=update_kwargs
-        )
-    mab = CmabBernoulliCC(
-        actions=actions, subsidy_factor=subsidy_factor, epsilon=epsilon, default_action=default_action
-    )
-    mab.predict_actions_randomly = True
-    return mab

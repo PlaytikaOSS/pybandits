@@ -19,10 +19,10 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-
+import warnings
+from abc import ABC, abstractmethod
 from random import betavariate
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pymc.math as pmath
@@ -42,9 +42,27 @@ from pymc import StudentT as PymcStudentT
 from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
-from pybandits.base import BinaryReward, Model, Probability, PyBanditsBaseModel
+from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
 
 UpdateMethods = Literal["MCMC", "VI"]
+
+
+class Model(PyBanditsBaseModel, ABC):
+    """
+    Class to model the prior distributions.
+    """
+
+    @abstractmethod
+    def sample_proba(self) -> Probability:
+        """
+        Sample the probability of getting a positive reward.
+        """
+
+    @abstractmethod
+    def update(self, rewards: List[Any]):
+        """
+        Update the model parameters.
+        """
 
 
 class BaseBeta(Model):
@@ -134,7 +152,7 @@ class BetaCC(BaseBeta):
     cost: NonNegativeFloat
 
 
-class BaseBetaMO(Model):
+class BetaMO(Model):
     """
     Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
@@ -176,19 +194,37 @@ class BaseBetaMO(Model):
         for i, counter in enumerate(self.counters):
             counter.update([r[i] for r in rewards])
 
+    @classmethod
+    def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
+        """
+        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        with default parameters.
 
-class BetaMO(BaseBetaMO):
-    """
-    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+        It is modeled as:
 
-    Parameters
-    ----------
-    counters: List[Beta] of shape (n_objectives,)
-        List of Beta distributions.
-    """
+            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+        where the alpha and betas coefficients are Student's t-distributions.
+
+        Parameters
+        ----------
+        n_betas : PositiveInt
+            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
+            after in the context matrix.
+        kwargs: Dict[str, Any]
+            Additional arguments for the Bayesian Logistic Regression child model.
+
+        Returns
+        -------
+        blr: BayesianLogisticRegrssion
+            The Bayesian Logistic Regression model.
+        """
+        counters = n_objectives * [Beta()]
+        blr = cls(counters=counters, **kwargs)
+        return blr
 
 
-class BetaMOCC(BaseBetaMO):
+class BetaMOCC(BetaMO):
     """
     Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives and cost control.
 
@@ -222,7 +258,7 @@ class StudentT(PyBanditsBaseModel):
     nu: confloat(allow_inf_nan=False) = 5.0
 
 
-class BaseBayesianLogisticRegression(Model):
+class BayesianLogisticRegression(Model):
     """
     Base Bayesian Logistic Regression model.
 
@@ -247,7 +283,7 @@ class BaseBayesianLogisticRegression(Model):
     """
 
     alpha: StudentT
-    betas: List[StudentT] = Field(..., min_items=1)
+    betas: List[StudentT] = Field(..., min_length=1)
     update_method: UpdateMethods = "MCMC"
     update_kwargs: Optional[dict] = None
     _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
@@ -292,7 +328,9 @@ class BaseBayesianLogisticRegression(Model):
             Sigmoid function applied to the input values.
         """
         backend = np if isinstance(x, np.ndarray) else pmath
-        prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
         return prob
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -420,33 +458,53 @@ class BaseBayesianLogisticRegression(Model):
                 StudentT(mu=mu, sigma=sigma, nu=beta.nu) for mu, sigma, beta in zip(betas_mu, betas_std, self.betas)
             ]
 
+    @classmethod
+    def cold_start(
+        cls,
+        n_features: PositiveInt,
+        update_method: UpdateMethods = "MCMC",
+        update_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> "BayesianLogisticRegression":
+        """
+        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        with default parameters.
 
-class BayesianLogisticRegression(BaseBayesianLogisticRegression):
-    """
-    Bayesian Logistic Regression model.
+        It is modeled as:
 
-    It is modeled as:
+            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
 
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+        where the alpha and betas coefficients are Student's t-distributions.
 
-    where the alpha and betas coefficients are Student's t-distributions.
+        Parameters
+        ----------
+        n_features : PositiveInt
+            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
+            after in the context matrix.
+        update_method : UpdateMethods, defaults to "MCMC"
+            The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+            chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+            full list.
+        update_kwargs : Optional[dict], uses default values if not specified
+            Additional arguments to pass to the update method.
+        kwargs: Dict[str, Any]
+            Additional arguments for the Bayesian Logistic Regression child model.
 
-    Parameters
-    ----------
-    alpha : StudentT
-        Student's t-distribution of the alpha coefficient.
-    betas : StudentT
-        Student's t-distributions of the betas coefficients.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs: Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-    """
+        Returns
+        -------
+        blr: BayesianLogisticRegrssion
+            The Bayesian Logistic Regression model.
+        """
+        return cls(
+            alpha=StudentT(),
+            betas=[StudentT() for _ in range(n_features)],
+            update_method=update_method,
+            update_kwargs=update_kwargs,
+            **kwargs,
+        )
 
 
-class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
+class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     """
     Bayesian Logistic Regression model with cost control.
 
@@ -473,83 +531,3 @@ class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
     """
 
     cost: NonNegativeFloat
-
-
-def create_bayesian_logistic_regression_cold_start(
-    n_betas: PositiveInt, update_method: UpdateMethods = "MCMC", update_kwargs: Optional[dict] = None
-) -> BayesianLogisticRegression:
-    """
-    Utility function to create a Bayesian Logistic Regression model, with default parameters.
-
-    It is modeled as:
-
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    Parameters
-    ----------
-    n_betas : PositiveInt
-        The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
-        after in the context matrix.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-
-    Returns
-    -------
-    blr: BayesianLogisticRegression
-        The Bayesian Logistic Regression model.
-    """
-    return BayesianLogisticRegression(
-        alpha=StudentT(),
-        betas=[StudentT() for _ in range(n_betas)],
-        update_method=update_method,
-        update_kwargs=update_kwargs,
-    )
-
-
-def create_bayesian_logistic_regression_cc_cold_start(
-    n_betas: PositiveInt,
-    cost: NonNegativeFloat,
-    update_method: UpdateMethods = "MCMC",
-    update_kwargs: Optional[dict] = None,
-) -> BayesianLogisticRegressionCC:
-    """
-    Utility function to create a Bayesian Logistic Regression model with cost control, with default parameters.
-
-    It is modeled as:
-
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    Parameters
-    ----------
-    n_betas : PositiveInt
-        The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
-        after in the context matrix.
-    cost: NonNegativeFloat
-        Cost associated to the Bayesian Logistic Regression model.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-
-    Returns
-    -------
-    blr: BayesianLogisticRegressionCC
-        The Bayesian Logistic Regression model.
-    """
-    return BayesianLogisticRegressionCC(
-        alpha=StudentT(),
-        betas=[StudentT() for _ in range(n_betas)],
-        cost=cost,
-        update_method=update_method,
-        update_kwargs=update_kwargs,
-    )

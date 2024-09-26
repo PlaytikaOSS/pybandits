@@ -31,12 +31,12 @@ from pydantic import ValidationError
 from pybandits.base import ActionId, Probability
 from pybandits.model import Beta, BetaCC, BetaMOCC
 from pybandits.strategy import (
-    BestActionIdentification,
+    BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
-    get_pareto_front,
+    MultiObjectiveStrategy,
 )
 
 ########################################################################################################################
@@ -62,36 +62,37 @@ def test_select_action_classic_bandit(a_list_str, a_list_float):
 ########################################################################################################################
 
 
-# BestActionIdentification
+# BestActionIdentificationBandit
 
 
 @given(st.floats())
 def test_can_init_best_action_identification(a_float):
     # init default params
-    b = BestActionIdentification()
+    b = BestActionIdentificationBandit()
     assert b.exploit_p == 0.5
 
     # init with input arguments
     if a_float < 0 or a_float > 1 or np.isnan(a_float) or np.isinf(a_float):
         with pytest.raises(ValidationError):
-            BestActionIdentification(exploit_p=a_float)
+            BestActionIdentificationBandit(exploit_p=a_float)
     else:
-        b = BestActionIdentification(exploit_p=a_float)
+        b = BestActionIdentificationBandit(exploit_p=a_float)
         assert b.exploit_p == a_float
 
 
 @given(st.floats())
-def test_set_exploit_p(a_float):
-    b = BestActionIdentification()
+def test_with_exploit_p(a_float):
+    b = BestActionIdentificationBandit()
 
     # set with invalid float
     if a_float < 0 or a_float > 1 or np.isnan(a_float) or np.isinf(a_float):
         with pytest.raises(ValidationError):
-            b.set_exploit_p(exploit_p=a_float)
+            b.with_exploit_p(exploit_p=a_float)
     # set with valid float
     else:
-        b.set_exploit_p(exploit_p=a_float)
-        assert b.exploit_p == a_float
+        mutated_b = b.with_exploit_p(exploit_p=a_float)
+        assert mutated_b.exploit_p == a_float
+        assert mutated_b is not b
 
 
 @given(
@@ -100,7 +101,7 @@ def test_set_exploit_p(a_float):
 )
 def test_select_action(a_list_str, a_list_float):
     p = dict(zip(a_list_str, a_list_float))
-    b = BestActionIdentification()
+    b = BestActionIdentificationBandit()
     b.select_action(p=p)
 
 
@@ -112,31 +113,31 @@ def test_select_action(a_list_str, a_list_float):
 def test_select_action_logic(a_float1, a_float2, a_float3):
     p = {"a1": a_float1, "a2": a_float2, "a3": a_float3}
 
-    b = BestActionIdentification(exploit_p=1)
+    b = BestActionIdentificationBandit(exploit_p=1)
     # if exploit_p factor is 1 => return the action with 1st highest prob (max)
     assert max(p, key=p.get) == b.select_action(p=p)
 
     # if exploit_p factor is 0 => return the action with 2nd highest prob (not 1st highest prob)
-    b.set_exploit_p(exploit_p=0)
-    assert max(p, key=p.get) != b.select_action(p=p)
-    assert sorted(p.items(), key=lambda x: x[1], reverse=True)[1][0] == b.select_action(p=p)
+    mutated_b = b.with_exploit_p(exploit_p=0)
+    assert max(p, key=p.get) != mutated_b.select_action(p=p)
+    assert sorted(p.items(), key=lambda x: x[1], reverse=True)[1][0] == mutated_b.select_action(p=p)
 
 
 def test_select_action_logic_all_probs_equal():
     p = {"a1": 0.5, "a2": 0.5, "a3": 0.5}
 
-    b = BestActionIdentification(exploit_p=1)
+    b = BestActionIdentificationBandit(exploit_p=1)
     # if exploit_p is 1 and all probs are equal => return the action with 1st highest prob (max)
     assert "a1" == b.select_action(p=p)
 
     # if exploit_p is 0 => return the action with 2nd highest prob (not 1st highest prob)
-    b.set_exploit_p(exploit_p=0)
-    assert "a2" == b.select_action(p=p)
+    mutated_b = b.with_exploit_p(exploit_p=0)
+    assert "a2" == mutated_b.select_action(p=p)
 
 
 @given(st.builds(Beta), st.builds(Beta), st.builds(Beta))
 def test_compare_best_action(b1, b2, b3):
-    b = BestActionIdentification()
+    b = BestActionIdentificationBandit()
     actions = {"a1": b1, "a2": b2, "a3": b3}
 
     pval = b.compare_best_actions(actions=actions)
@@ -166,17 +167,18 @@ def test_can_init_cost_control(a_float):
 
 
 @given(st.floats())
-def test_set_subsidy_factor(a_float):
+def test_with_subsidy_factor(a_float):
     c = CostControlBandit()
 
     # set with invalid float
     if a_float < 0 or a_float > 1 or np.isnan(a_float) or np.isinf(a_float):
         with pytest.raises(ValidationError):
-            c.set_subsidy_factor(subsidy_factor=a_float)
+            c.with_subsidy_factor(subsidy_factor=a_float)
     # set with valid float
     else:
-        c.set_subsidy_factor(subsidy_factor=a_float)
-        assert c.subsidy_factor == a_float
+        mutated_c = c.with_subsidy_factor(subsidy_factor=a_float)
+        assert mutated_c.subsidy_factor == a_float
+        assert mutated_c is not c
 
 
 @given(
@@ -210,12 +212,12 @@ def test_select_action_logic_cc():
     assert "a4" == c.select_action(p=p, actions=actions)
 
     # if subsidy_factor is 0 => return the action with highest p (classic bandit)
-    c.set_subsidy_factor(subsidy_factor=0)
-    assert "a2" == c.select_action(p=p, actions=actions)
+    mutated_c = c.with_subsidy_factor(subsidy_factor=0)
+    assert "a2" == mutated_c.select_action(p=p, actions=actions)
 
     # otherwise, return the cheapest feasible action with the highest sampled probability
-    c.set_subsidy_factor(subsidy_factor=0.5)
-    assert "a5" == c.select_action(p=p, actions=actions)
+    mutated_c = c.with_subsidy_factor(subsidy_factor=0.5)
+    assert "a5" == mutated_c.select_action(p=p, actions=actions)
 
 
 @given(
@@ -247,20 +249,20 @@ def test_select_action_logic_corner_cases(a_list_p, a_list_cost):
     assert sorted(actions_cost_proba)[0][-1] == c.select_action(p=p, actions=actions)
 
     # if cost factor is 0:
-    c.set_subsidy_factor(subsidy_factor=0)
+    mutated_c = c.with_subsidy_factor(subsidy_factor=0)
     # get the keys of the max p.values() (there might be more max_p_values)
     max_p_values = [k for k, v in p.items() if v == max(p.values())]
 
     # if cost factor is 0 and only 1 max_value => return the action with highest p (classic bandit)
     # e.g. p={"a1": 0.5, "a2": 0.2} => return always "a1"
     if len(max_p_values) == 1:
-        assert max(p, key=p.get) == c.select_action(p=p, actions=actions)
+        assert max(p, key=p.get) == mutated_c.select_action(p=p, actions=actions)
 
     # if cost factor is 0 and only 1+ max_values => return the action with highest p and min cost
     # e.g. p={"a1": 0.5, "a2": 0.5} and cost={"a1": 20, "a2": 10} => return always "a2"
     else:
         actions_cost_max = {k: actions_cost[k] for k in max_p_values}
-        min(actions_cost_max, key=actions_cost_max.get) == c.select_action(p=p, actions=actions)
+        assert min(actions_cost_max, key=actions_cost_max.get) == mutated_c.select_action(p=p, actions=actions)
 
 
 ########################################################################################################################
@@ -282,7 +284,7 @@ def test_can_init_multiobjective():
 )
 def test_select_action_mo(p: Dict[ActionId, List[Probability]]):
     m = MultiObjectiveBandit()
-    assert m.select_action(p=p) in get_pareto_front(p=p)
+    assert m.select_action(p=p) in m.get_pareto_front(p=p)
 
 
 def test_pareto_front():
@@ -310,7 +312,7 @@ def test_pareto_front():
         "a7": [0.1, 0.1],
     }
 
-    assert get_pareto_front(p2d) == ["a0", "a1", "a4", "a5"]
+    assert MultiObjectiveStrategy.get_pareto_front(p2d) == ["a0", "a1", "a4", "a5"]
 
     p2d = {
         "a0": [0.1, 0.1],
@@ -318,7 +320,7 @@ def test_pareto_front():
         "a2": [0.3, 0.3],
     }
 
-    assert get_pareto_front(p2d) == ["a1", "a2"]
+    assert MultiObjectiveStrategy.get_pareto_front(p2d) == ["a1", "a2"]
 
     # works in 3D
     p3d = {
@@ -332,7 +334,7 @@ def test_pareto_front():
         "a7": [0.1, 0.1, 0.3],
     }
 
-    assert get_pareto_front(p3d) == ["a0", "a1", "a4", "a5", "a7"]
+    assert MultiObjectiveStrategy.get_pareto_front(p3d) == ["a0", "a1", "a4", "a5", "a7"]
 
 
 ########################################################################################################################
@@ -363,7 +365,7 @@ def test_select_action_mo_cc():
         "a5": [0.6, 0.1, 0.5],
     }
     # within the pareto front ("a3", "a4", "a5") select the action with min cost ("a4")
-    assert get_pareto_front(p) == ["a3", "a4", "a5"]
+    assert m.get_pareto_front(p) == ["a3", "a4", "a5"]
     assert m.select_action(p=p, actions=actions) == "a4"
 
     actions = {
@@ -377,5 +379,5 @@ def test_select_action_mo_cc():
         "a3": [0.0, 0.1, 0.9],
     }
     # within the actions with the min cost ("a1" or "a2") select the action the highest mean of probabilities ("a2")
-    assert get_pareto_front(p) == ["a1", "a2", "a3"]
+    assert m.get_pareto_front(p) == ["a1", "a2", "a3"]
     assert m.select_action(p=p, actions=actions) == "a2"
