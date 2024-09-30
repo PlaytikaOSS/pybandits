@@ -30,7 +30,7 @@ from scipy.stats import ttest_ind_from_stats
 from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, Probability, PyBanditsBaseModel
-from pybandits.model import Beta, BetaMOCC, Model
+from pybandits.model import Beta, BetaMOCC, Model, ModelMO
 
 
 class Strategy(PyBanditsBaseModel, ABC):
@@ -243,7 +243,7 @@ class CostControlStrategy(Strategy, ABC):
     def _evaluate_and_select(
         cls,
         p: Union[Dict[ActionId, Probability], Dict[ActionId, List[Probability]]],
-        actions: Dict[ActionId, Model],
+        actions: Dict[ActionId, Union[Model, ModelMO]],
         feasible_actions: List[ActionId],
     ) -> ActionId:
         """

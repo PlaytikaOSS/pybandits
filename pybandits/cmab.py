@@ -19,7 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+from abc import ABC
 from typing import Dict, List, Optional, Set, Union
 
 from numpy import array
@@ -29,21 +29,31 @@ from pydantic import field_validator, validate_call
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
+from pybandits.model import (
+    BaseBayesianLogisticRegression,
+    BaseBayesianLogisticRegressionMO,
+    BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
+    BayesianLogisticRegressionMO,
+    BayesianLogisticRegressionMOCC,
+)
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+    MultiObjectiveStrategy,
 )
 
 
-class BaseCmabBernoulli(BaseMab):
+class BaseCmabBernoulli(BaseMab, ABC):
     """
     Base model for a Contextual Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, Union[BayesianLogisticRegression, BayesianLogisticRegressionMO]]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
@@ -54,9 +64,20 @@ class BaseCmabBernoulli(BaseMab):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, Union[BaseBayesianLogisticRegression, BaseBayesianLogisticRegressionMO]]
     predict_with_proba: bool
     predict_actions_randomly: bool
+
+    @classmethod
+    def _check_single_bayesian_logistic_regression_model(cls, action, first_action_type, first_action):
+        if not isinstance(action, first_action_type):
+            raise AttributeError("All actions should follow the same type.")
+        if not len(action.betas) == len(first_action.betas):
+            raise AttributeError("All actions should have the same number of betas.")
+        if not action.update_method == first_action.update_method:
+            raise AttributeError("All actions should have the same update method.")
+        if not action.update_kwargs == first_action.update_kwargs:
+            raise AttributeError("All actions should have the same update kwargs.")
 
     @field_validator("actions", mode="after")
     @classmethod
@@ -64,15 +85,21 @@ class BaseCmabBernoulli(BaseMab):
         action_models = list(v.values())
         first_action = action_models[0]
         first_action_type = type(first_action)
-        for action in action_models[1:]:
-            if not isinstance(action, first_action_type):
-                raise AttributeError("All actions should follow the same type.")
-            if not len(action.betas) == len(first_action.betas):
-                raise AttributeError("All actions should have the same number of betas.")
-            if not action.update_method == first_action.update_method:
-                raise AttributeError("All actions should have the same update method.")
-            if not action.update_kwargs == first_action.update_kwargs:
-                raise AttributeError("All actions should have the same update kwargs.")
+        if isinstance(first_action, BaseBayesianLogisticRegression):
+            for action in action_models[1:]:
+                if not isinstance(action, first_action_type):
+                    raise AttributeError("All actions should follow the same type.")
+                cls._check_single_bayesian_logistic_regression_model(action, first_action_type, first_action)
+        elif isinstance(first_action, BaseBayesianLogisticRegressionMO):
+            first_action = first_action.models[0]
+            first_action_type = type(first_action)
+            for action in action_models:
+                for model in action.models:
+                    cls._check_single_bayesian_logistic_regression_model(model, first_action_type, first_action)
+        else:
+            raise NotImplementedError(
+                "Only BaseBayesianLogisticRegression and BaseBayesianLogisticRegressionMO are supported."
+            )
         return v
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -112,7 +139,16 @@ class BaseCmabBernoulli(BaseMab):
 
         if self.predict_actions_randomly:
             # check that context has the expected number of columns
-            if context.shape[1] != len(list(self.actions.values())[0].betas):
+            first_action_model = list(self.actions.values())[0]
+            if isinstance(first_action_model, BaseBayesianLogisticRegression):
+                expected_length = len(first_action_model.betas)
+            elif isinstance(first_action_model, BaseBayesianLogisticRegressionMO):
+                expected_length = len(first_action_model.models[0].betas)
+            else:
+                raise NotImplementedError(
+                    "Only BaseBayesianLogisticRegression and BaseBayesianLogisticRegressionMO are supported."
+                )
+            if context.shape[1] != expected_length:
                 raise AttributeError("Context must have {n_betas} columns")
 
             selected_actions = choice(list(valid_actions), size=len(context)).tolist()  # predict actions randomly
@@ -170,6 +206,7 @@ class BaseCmabBernoulli(BaseMab):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
         self._validate_update_params(actions=actions, rewards=rewards)
+
         if len(context) != len(rewards):
             raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
 
@@ -270,5 +307,70 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
     actions: Dict[ActionId, BayesianLogisticRegressionCC]
     strategy: CostControlBandit
+    predict_with_proba: bool = True
+    predict_actions_randomly: bool = False
+
+
+class BaseCmabBernoulliMO(BaseCmabBernoulli, ABC):
+    """
+    Base model for a Contextual Multi-Armed Bandit with Thompson Sampling implementation, and Multi-Objectives
+    strategy.
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BetaMO]
+        The list of possible actions, and their associated Model.
+    strategy: Strategy
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BaseBayesianLogisticRegressionMO]
+    strategy: MultiObjectiveStrategy
+
+
+class CmabBernoulliMO(BaseCmabBernoulliMO):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling, and Multi-Objectives strategy.
+
+    The reward pertaining to an action is a multidimensional vector instead of a scalar value. In this setting,
+    different actions are compared according to Pareto order between their expected reward vectors, and those actions
+    whose expected rewards are not inferior to that of any other actions are called Pareto optimal actions, all of which
+    constitute the Pareto front.
+
+    Reference: Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+               https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BayesianLogisticRegressionMO]
+        The list of possible actions, and their associated Model.
+    strategy: MultiObjectiveBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BayesianLogisticRegressionMO]
+    strategy: MultiObjectiveBandit
+    predict_with_proba: bool = False
+    predict_actions_randomly: bool = False
+
+
+class CmabBernoulliMOCC(BaseCmabBernoulliMO):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling implementation for Multi-Objective (MO) with Cost
+    Control (CC) strategy.
+
+    This Bandit allows the reward to be a multidimensional vector and include a control of the action cost. It merges
+    the Multi-Objective and Cost Control strategies.
+
+    Parameters
+    ----------
+    actions: Dict[ActionId, BayesianLogisticRegressionMOCC]
+        The list of possible actions, and their associated Model.
+    strategy: MultiObjectiveCostControlBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BayesianLogisticRegressionMOCC]
+    strategy: MultiObjectiveCostControlBandit
     predict_with_proba: bool = True
     predict_actions_randomly: bool = False

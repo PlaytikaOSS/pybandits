@@ -37,7 +37,7 @@ from pybandits.base import (
     Predictions,
     PyBanditsBaseModel,
 )
-from pybandits.model import Model
+from pybandits.model import Model, ModelMO
 from pybandits.strategy import Strategy
 from pybandits.utils import extract_argument_names_from_function
 
@@ -48,7 +48,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     Parameters
     ----------
-    actions : Dict[ActionId, Model]
+    actions : Dict[ActionId, Union[Model,ModelMO]]
         The list of possible actions, and their associated Model.
     strategy : Strategy
         The strategy used to select actions.
@@ -62,14 +62,14 @@ class BaseMab(PyBanditsBaseModel, ABC):
         which in turn will be used to instantiate the strategy.
     """
 
-    actions: Dict[ActionId, Model]
+    actions: Dict[ActionId, Union[Model, ModelMO]]
     strategy: Strategy
     epsilon: Optional[Float01] = None
     default_action: Optional[ActionId] = None
 
     def __init__(
         self,
-        actions: Dict[ActionId, Model],
+        actions: Dict[ActionId, Union[Model, ModelMO]],
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
         **strategy_kwargs,
@@ -88,27 +88,26 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     @field_validator("actions", mode="before")
     @classmethod
-    def at_least_one_action_is_defined(cls, v):
+    def validate_action_configurations(cls, v):
         # validate number of actions
         if len(v) == 0:
             raise AttributeError("At least one action should be defined.")
         elif len(v) == 1:
             warnings.warn("Only a single action was supplied. This MAB will be deterministic.")
+
         # validate that all actions are of the same configuration
         action_models = list(v.values())
         first_action = action_models[0]
         first_action_type = type(first_action)
         if any(not isinstance(action, first_action_type) for action in action_models[1:]):
             raise AttributeError("All actions should follow the same type.")
-        return v
 
-    @model_validator(mode="after")
-    def check_default_action(self):
-        if not self.epsilon and self.default_action:
-            raise AttributeError("A default action should only be defined when epsilon is defined.")
-        if self.default_action and self.default_action not in self.actions:
-            raise AttributeError("The default action must be valid action defined in the actions set.")
-        return self
+        # For multi-objective actions, validate that all actions have the same number of objectives
+        if isinstance(first_action, ModelMO):
+            n_objs_per_action = [len(action_model.models) for action_model in v.values()]
+            if len(set(n_objs_per_action)) != 1:
+                raise ValueError("All actions should have the same number of objectives")
+        return v
 
     @model_validator(mode="after")
     def validate_default_action(self):
@@ -203,7 +202,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
             The probabilities of getting a positive reward for each action
         ws : List[Dict[ActionId, float]], only relevant for some of the MABs
-            The weighted sum of logistic regression logits..
+            The weighted sum of logistic regression logits.
         """
 
     def get_state(self) -> (str, dict):
@@ -224,7 +223,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def _select_epsilon_greedy_action(
         self,
         p: ActionRewardLikelihood,
-        actions: Optional[Dict[ActionId, Model]] = None,
+        actions: Optional[Dict[ActionId, Union[Model, ModelMO]]] = None,
     ) -> ActionId:
         """
         Wraps self.strategy.select_action function with epsilon-greedy strategy,

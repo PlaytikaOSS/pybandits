@@ -351,11 +351,11 @@ def test_select_action_mo_cc():
     m = MultiObjectiveCostControlBandit()
 
     actions = {
-        "a1": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=8),
-        "a2": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=2),
-        "a3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=5),
-        "a4": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=1),
-        "a5": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=7),
+        "a1": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=8),
+        "a2": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=2),
+        "a3": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=5),
+        "a4": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=1),
+        "a5": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=7),
     }
     p = {
         "a1": [0.1, 0.3, 0.5],
@@ -369,9 +369,9 @@ def test_select_action_mo_cc():
     assert m.select_action(p=p, actions=actions) == "a4"
 
     actions = {
-        "a1": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=2),
-        "a2": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=2),
-        "a3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=5),
+        "a1": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=2),
+        "a2": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=2),
+        "a3": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=5),
     }
     p = {
         "a1": [0.6, 0.1, 0.1],
