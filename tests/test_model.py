@@ -30,6 +30,8 @@ from pydantic import ValidationError
 from pybandits.model import (
     BayesianLogisticRegression,
     BayesianLogisticRegressionCC,
+    BayesianLogisticRegressionMO,
+    BayesianLogisticRegressionMOCC,
     Beta,
     BetaCC,
     BetaMO,
@@ -55,7 +57,7 @@ def test_can_init_beta(success_counter, failure_counter):
         assert (b.n_successes, b.n_failures) == (1, 1)
 
 
-def test_both_or_neither_counters_are_defined():
+def test_both_or_neither_models_are_defined():
     with pytest.raises(ValidationError):
         Beta(n_successes=0)
     with pytest.raises(ValidationError):
@@ -112,21 +114,21 @@ def test_can_init_betaCC(a_float):
 
 def test_can_init_base_beta_mo():
     # init with default params
-    b = BetaMO(counters=[Beta(), Beta()])
-    assert b.counters[0].n_successes == 1 and b.counters[0].n_failures == 1
-    assert b.counters[1].n_successes == 1 and b.counters[1].n_failures == 1
+    b = BetaMO(models=[Beta(), Beta()])
+    assert b.models[0].n_successes == 1 and b.models[0].n_failures == 1
+    assert b.models[1].n_successes == 1 and b.models[1].n_failures == 1
 
     # init with empty dict
-    b = BetaMO(counters=[{}, {}])
-    assert b.counters[0] == Beta()
+    b = BetaMO(models=[{}, {}])
+    assert b.models[0] == Beta()
 
     # invalid init with BetaCC instead of Beta
     with pytest.raises(ValidationError):
-        BetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
+        BetaMO(models=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
 def test_calculate_proba_beta_mo():
-    b = BetaMO(counters=[Beta(), Beta()])
+    b = BetaMO(models=[Beta(), Beta()])
     b.sample_proba()
 
 
@@ -139,12 +141,12 @@ def test_beta_update_mo(rewards1, rewards2):
     rewards1, rewards2 = rewards1[:min_len], rewards2[:min_len]
     rewards = [[a, b] for a, b in zip(rewards1, rewards2)]
 
-    b = BetaMO(counters=[Beta(n_successes=11, n_failures=22), Beta(n_successes=33, n_failures=44)])
+    b = BetaMO(models=[Beta(n_successes=11, n_failures=22), Beta(n_successes=33, n_failures=44)])
 
     b.update(rewards=rewards)
 
     assert b == BetaMO(
-        counters=[
+        models=[
             Beta(n_successes=11 + sum(rewards1), n_failures=22 + len(rewards1) - sum(rewards1)),
             Beta(n_successes=33 + sum(rewards2), n_failures=44 + len(rewards2) - sum(rewards2)),
         ]
@@ -157,26 +159,6 @@ def test_beta_update_mo(rewards1, rewards2):
 ########################################################################################################################
 
 
-# BetaMO
-
-
-def test_can_init_beta_mo():
-    # init with default params
-    b = BetaMO(counters=[Beta(), Beta()])
-    assert b.counters == [Beta(), Beta()]
-
-    # init with empty dict
-    b = BetaMO(counters=[{}, {}])
-    assert b.counters == [Beta(), Beta()]
-
-    # invalid init with BetaCC instead of Beta
-    with pytest.raises(ValidationError):
-        BetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
-
-
-########################################################################################################################
-
-
 # BetaMOCC
 
 
@@ -184,21 +166,21 @@ def test_can_init_beta_mo():
 def test_can_init_beta_mo_cc(a_float):
     if a_float < 0 or np.isnan(a_float):
         with pytest.raises(ValidationError):
-            BetaMOCC(counters=[Beta(), Beta()], cost=a_float)
+            BetaMOCC(models=[Beta(), Beta()], cost=a_float)
     else:
         # init with default params
-        b = BetaMOCC(counters=[Beta(), Beta()], cost=a_float)
-        assert b.counters == [Beta(), Beta()]
+        b = BetaMOCC(models=[Beta(), Beta()], cost=a_float)
+        assert b.models == [Beta(), Beta()]
         assert b.cost == a_float
 
         # init with empty dict
-        b = BetaMOCC(counters=[{}, {}], cost=a_float)
-        assert b.counters == [Beta(), Beta()]
+        b = BetaMOCC(models=[{}, {}], cost=a_float)
+        assert b.models == [Beta(), Beta()]
         assert b.cost == a_float
 
         # invalid init with BetaCC instead of Beta
         with pytest.raises(ValidationError):
-            BetaMOCC(counters=[BetaCC(cost=1), BetaCC(cost=1)], cost=a_float)
+            BetaMOCC(models=[BetaCC(cost=1), BetaCC(cost=1)], cost=a_float)
 
 
 ########################################################################################################################
@@ -381,4 +363,159 @@ def test_create_default_instance_bayesian_logistic_regression_cc(n_betas, cost):
         blr = BayesianLogisticRegressionCC.cold_start(n_features=n_betas, cost=cost)
         assert blr == BayesianLogisticRegressionCC(
             alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost
+        )
+
+
+########################################################################################################################
+
+
+# BayesianLogisticRegressionMO
+
+
+@given(st.integers(max_value=10), st.integers(min_value=2, max_value=100))
+def test_can_init_bayesian_logistic_regression_mo(n_objectives, n_features):
+    # at least one blr must be specified
+    model = BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_features)])
+    if n_objectives <= 0:
+        with pytest.raises(ValidationError):
+            BayesianLogisticRegressionMO(models=[model.model_copy(deep=True) for _ in range(n_objectives)])
+    else:
+        blr_mo = BayesianLogisticRegressionMO(models=[model.model_copy(deep=True) for _ in range(n_objectives)])
+        assert all(blr == model for blr in blr_mo.models)
+
+
+@given(st.integers(max_value=10), st.integers(max_value=100))
+def test_create_default_instance_bayesian_logistic_regression_mo(n_objectives, n_features):
+    # at least one beta must be specified
+    if n_objectives <= 0 or n_features <= 0:
+        with pytest.raises(ValidationError):
+            BayesianLogisticRegressionMO.cold_start(n_features=n_features, n_objectives=n_objectives)
+    else:
+        blr_mo = BayesianLogisticRegressionMO.cold_start(n_features=n_features, n_objectives=n_objectives)
+        assert all(
+            blr == BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_features)])
+            for blr in blr_mo.models
+        )
+
+
+@given(
+    st.integers(min_value=1, max_value=100),
+    st.integers(min_value=1, max_value=10),
+    st.integers(min_value=1, max_value=100),
+)
+def test_blr_mo_sample_proba(n_samples, n_objectives, n_features):
+    def sample_proba(context):
+        results = blr_mo.sample_proba(context=context)
+        prob, weighted_sum = zip(*results)  # unpack the results
+        assert type(prob) is type(weighted_sum) is tuple  # type of the returns must be np.ndarray
+        for p, ws in results:
+            assert type(p) is type(ws) is np.ndarray
+            assert len(p) == len(ws) == n_samples  # return 1 sampled probability and ws per each sample
+            assert (np.clip(p, 0, 1) == p).all()  # probs must be in the interval [0, 1]
+
+    blr_mo = BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+
+    # context is numpy array
+    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    assert type(context) is np.ndarray
+    sample_proba(context=context)
+
+    # context is python list
+    context = context.tolist()
+    assert type(context) is list
+    sample_proba(context=context)
+
+    # context is pandas DataFrame
+    context = pd.DataFrame(context)
+    assert type(context) is pd.DataFrame
+    sample_proba(context=context)
+
+
+def test_blr_mo_update(n_samples=10, n_objectives=3, n_features=3):
+    def update(context, rewards):
+        blr_mo = BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+        assert all(
+            [
+                blr.alpha == StudentT(mu=0.0, sigma=10.0, nu=5.0)
+                and blr.betas == [StudentT(mu=0.0, sigma=10.0, nu=5.0)] * n_objectives
+                for blr in blr_mo.models
+            ]
+        )
+
+        blr_mo.update(context=context, rewards=rewards)
+
+        assert all(
+            blr.alpha != StudentT(mu=0.0, sigma=10.0, nu=5.0)
+            and blr.betas != [StudentT(mu=0.0, sigma=10.0, nu=5.0)] * n_objectives
+            for blr in blr_mo.models
+        )
+
+    rewards = [np.random.choice([0, 1], size=n_objectives).tolist() for _ in range(n_samples)]
+
+    # context is numpy array
+    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    assert type(context) is np.ndarray
+    update(context=context, rewards=rewards)
+
+    # context is python list
+    context = context.tolist()
+    assert type(context) is list
+    update(context=context, rewards=rewards)
+
+    # context is pandas DataFrame
+    context = pd.DataFrame(context)
+    assert type(context) is pd.DataFrame
+    update(context=context, rewards=rewards)
+
+    # raise an error if len(context) != len(rewards)
+    with pytest.raises(ValueError):
+        blr_mo = BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+        blr_mo.update(context=context, rewards=rewards[1:])
+
+    # raise an error if n_objectives != len(rewards[0])
+    with pytest.raises(AttributeError):
+        blr_mo = BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+        blr_mo.update(context=context, rewards=[rewards[0][:1]] + rewards[1:])
+
+    # raise an error if n_objectives != len(rewards[*])
+    with pytest.raises(AttributeError):
+        blr_mo = BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+        blr_mo.update(context=context, rewards=[reward[:1] for reward in rewards])
+
+
+########################################################################################################################
+
+
+# BayesianLogisticRegressionMOCC
+
+
+@given(
+    st.integers(max_value=10), st.integers(min_value=2, max_value=100), st.floats(allow_nan=False, allow_infinity=False)
+)
+def test_can_init_bayesian_logistic_regression_mocc(n_objectives, n_features, cost):
+    # at least one blr must be specified
+    model = BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_features)])
+    if n_objectives <= 0 or cost < 0:
+        with pytest.raises(ValidationError):
+            BayesianLogisticRegressionMOCC(models=[model.model_copy(deep=True) for _ in range(n_objectives)], cost=cost)
+    else:
+        blr_mo = BayesianLogisticRegressionMOCC(
+            models=[model.model_copy(deep=True) for _ in range(n_objectives)], cost=cost
+        )
+        assert all(blr == model for blr in blr_mo.models)
+
+
+@given(st.integers(max_value=10), st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
+def test_create_default_instance_bayesian_logistic_regression_mocc(n_objectives, n_features, cost):
+    # at least one beta must be specified
+    if n_objectives <= 0 or n_features <= 0 or cost < 0:
+        with pytest.raises(ValidationError):
+            BayesianLogisticRegressionMOCC.cold_start(n_objectives=n_objectives, n_features=n_features, cost=cost)
+    else:
+        blr_mocc = BayesianLogisticRegressionMOCC.cold_start(
+            n_objectives=n_objectives, n_features=n_features, cost=cost
+        )
+        assert all(
+            blr == BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_features)])
+            for blr in blr_mocc.models
         )

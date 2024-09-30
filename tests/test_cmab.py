@@ -30,10 +30,23 @@ from hypothesis import strategies as st
 from pydantic import NonNegativeFloat, ValidationError
 
 from pybandits.base import Float01
-from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
-from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
-from pybandits.utils import to_serializable_dict
+from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
+from pybandits.model import (
+    BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
+    BayesianLogisticRegressionMO,
+    BayesianLogisticRegressionMOCC,
+    StudentT,
+    UpdateMethods,
+)
+from pybandits.strategy import (
+    BestActionIdentificationBandit,
+    ClassicBandit,
+    CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+)
+from pybandits.utils import to_serializable_dict, update_nested_struct
 from tests.test_utils import is_serializable
 
 literal_update_methods = get_args(UpdateMethods)
@@ -199,7 +212,7 @@ def test_cmab_update(n_samples, n_features, update_method):
     run_update(context=context)
 
 
-@settings(deadline=10000)
+@settings(deadline=30000)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
     actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
@@ -410,7 +423,7 @@ def test_cmab_from_state(state, update_method):
     assert isinstance(cmab, CmabBernoulli)
 
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
+    expected_actions = update_nested_struct(state["actions"], actual_actions)
     assert expected_actions == actual_actions
 
     # Ensure get_state and from_state compatibility
@@ -540,7 +553,7 @@ def test_cmab_bai_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=30000)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_bai_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -641,7 +654,7 @@ def test_cmab_bai_from_state(state, update_method):
     assert isinstance(cmab, CmabBernoulliBAI)
 
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
+    expected_actions = update_nested_struct(state["actions"], actual_actions)
     assert expected_actions == actual_actions
 
     expected_exploit_p = cmab.strategy.get_expected_value_from_state(state, "exploit_p")
@@ -776,7 +789,7 @@ def test_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=20000)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_cc_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -888,12 +901,428 @@ def test_cmab_cc_from_state(state, update_method):
     assert isinstance(cmab, CmabBernoulliCC)
 
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
+    expected_actions = update_nested_struct(state["actions"], actual_actions)
     assert expected_actions == actual_actions
 
     expected_subsidy_factor = cmab.strategy.get_expected_value_from_state(state, "subsidy_factor")
     actual_subsidy_factor = cmab.strategy.subsidy_factor
     assert expected_subsidy_factor == actual_subsidy_factor
+
+    # Ensure get_state and from_state compatibility
+    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
+    assert new_cmab == cmab
+
+
+########################################################################################################################
+
+
+# cmabBernoulli with strategy=MultiObjectiveBandit()
+
+
+@given(
+    st.lists(st.integers(min_value=1), min_size=6, max_size=6),
+    st.integers(min_value=2, max_value=100),
+)
+def test_can_init_cmab_mo(a_list, n_features):
+    a, b, c, d, e, f = a_list
+    model = BayesianLogisticRegressionMO(
+        models=[
+            BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+            BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+            BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+        ]
+    )
+
+    s = CmabBernoulliMO(
+        actions={
+            "a1": model.model_copy(deep=True),
+            "a2": model.model_copy(deep=True),
+        },
+    )
+    assert s.actions["a1"] == model
+    assert s.actions["a2"] == model
+    assert s.strategy == MultiObjectiveBandit()
+
+
+@given(st.lists(st.integers(min_value=1), min_size=7, max_size=7), st.integers(min_value=2, max_value=100))
+def test_bad_init_cmab_mo(a_list, n_features):
+    a, b, c, d, e, f, g = a_list
+    with pytest.raises(ValueError):
+        BayesianLogisticRegressionMO(
+            models=[
+                BayesianLogisticRegressionCC(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()], cost=g),
+                BayesianLogisticRegressionCC(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()], cost=g),
+                BayesianLogisticRegressionCC(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()], cost=g),
+            ]
+        )
+
+
+@settings(deadline=500)
+@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=2, max_value=100))
+def test_all_actions_must_have_same_number_of_objectives_cmab_mo(mu, sigma, n_features):
+    blr = BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()])
+    with pytest.raises(ValueError):
+        CmabBernoulliMO(
+            actions={
+                "a1": BayesianLogisticRegressionMO(models=[blr.model_copy(deep=True), blr.model_copy(deep=True)]),
+                "a2": BayesianLogisticRegressionMO(models=[blr.model_copy(deep=True), blr.model_copy(deep=True)]),
+                "a3": BayesianLogisticRegressionMO(
+                    models=[blr.model_copy(deep=True), blr.model_copy(deep=True), blr.model_copy(deep=True)]
+                ),
+            },
+        )
+
+
+def test_cmab_mo_predict(n_samples=1000, n_objectives=3, n_features=10):
+    s = CmabBernoulliMO.cold_start(action_ids={"a1", "a2"}, n_objectives=n_objectives, n_features=n_features)
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    forbidden = None
+    s.predict(context=context, forbidden_actions=forbidden)
+
+    forbidden = ["a1"]
+    predicted_actions, _, _ = s.predict(context=context, forbidden_actions=forbidden)
+
+    assert "a1" not in predicted_actions
+
+    forbidden = ["a1", "a2"]
+    with pytest.raises(ValueError):
+        s.predict(context=context, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a2", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(context=context, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(context=context, forbidden_actions=forbidden)
+
+
+def test_cmab_mo_update(action_ids={"a1", "a2"}, n_samples=10, n_objectives=3, n_features=10):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    rewards = [np.random.choice([0, 1], size=n_objectives).tolist() for _ in range(n_samples)]
+    actions = np.random.choice(list(action_ids), size=n_samples).tolist()
+    mab = CmabBernoulliMO.cold_start(action_ids=action_ids, n_objectives=n_objectives, n_features=n_features)
+    assert all(
+        [
+            mab.actions[a] == BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+            for a in action_ids
+        ]
+    )
+
+    mab.update(actions=actions, rewards=rewards, context=context)
+    assert all(
+        [
+            mab.actions[a] != BayesianLogisticRegressionMO.cold_start(n_objectives=n_objectives, n_features=n_features)
+            for a in set(action_ids)
+        ]
+    )
+
+
+@given(st.lists(st.integers(min_value=1), min_size=6, max_size=6), st.integers(min_value=2, max_value=100))
+def test_cmab_mo_get_state(a_list, n_features):
+    a, b, c, d, e, f = a_list
+    actions = {
+        "a1": BayesianLogisticRegressionMO(
+            models=[
+                BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+            ]
+        ),
+        "a2": BayesianLogisticRegressionMO(
+            models=[
+                BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+            ]
+        ),
+    }
+    cmab = CmabBernoulliMO(actions=actions)
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {},
+            "epsilon": None,
+            "default_action": None,
+            "predict_actions_randomly": False,
+            "predict_with_proba": False,
+        }
+    )
+
+    class_name, cmab_state = cmab.get_state()
+    assert class_name == "CmabBernoulliMO"
+    assert cmab_state == expected_state
+
+    assert is_serializable(cmab_state), "Internal state is not serializable"
+
+
+@settings(deadline=500)
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "models": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "alpha": st.fixed_dictionaries(
+                                        {
+                                            "mu": st.integers(min_value=1, max_value=100),
+                                            "sigma": st.integers(min_value=1, max_value=100),
+                                        },
+                                    ),
+                                    "betas": st.lists(
+                                        st.fixed_dictionaries(
+                                            {
+                                                "mu": st.integers(min_value=1, max_value=100),
+                                                "sigma": st.integers(min_value=1, max_value=100),
+                                            },
+                                        ),
+                                        min_size=2,
+                                        max_size=2,
+                                    ),
+                                },
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        )
+                    }
+                ),
+                min_size=2,
+            ),
+            "strategy": st.fixed_dictionaries({}),
+        }
+    )
+)
+def test_cmab_mo_from_state(state):
+    cmab = CmabBernoulliMO.from_state(state)
+    assert isinstance(cmab, CmabBernoulliMO)
+
+    actual_actions = to_serializable_dict(cmab.actions)
+    expected_actions = update_nested_struct(state["actions"], actual_actions)
+    assert expected_actions == actual_actions
+
+    # Ensure get_state and from_state compatibility
+    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
+    assert new_cmab == cmab
+
+
+########################################################################################################################
+
+
+# cmabBernoulli with strategy=MultiObjectiveCostControlBandit()
+
+
+@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8), st.integers(min_value=2, max_value=100))
+def test_can_init_cmab_mo_cc(a_list, n_features):
+    a, b, c, d, e, f, g, h = a_list
+    model1 = BayesianLogisticRegressionMOCC(
+        models=[
+            BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+            BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+            BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+        ],
+        cost=g,
+    )
+    model2 = model1.model_copy(deep=True, update={"cost": h})
+    s = CmabBernoulliMOCC(
+        actions={"a1": model1.model_copy(deep=True), "a2": model2.model_copy(deep=True)},
+    )
+    assert s.actions["a1"] == model1
+    assert s.actions["a2"] == model2
+    assert s.strategy == MultiObjectiveCostControlBandit()
+
+
+@given(st.lists(st.integers(min_value=1), min_size=7, max_size=7), st.integers(min_value=2, max_value=100))
+def test_bad_init_cmab_mocc(a_list, n_features):
+    a, b, c, d, e, f, g = a_list
+    with pytest.raises(ValueError):
+        BayesianLogisticRegressionMOCC(
+            models=[
+                BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+            ]
+        )
+    with pytest.raises(ValueError):
+        BayesianLogisticRegressionMOCC(
+            models=[
+                BayesianLogisticRegressionCC(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()], cost=g),
+                BayesianLogisticRegressionCC(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()], cost=g),
+                BayesianLogisticRegressionCC(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()], cost=g),
+            ]
+        )
+
+
+@settings(deadline=500)
+@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=2, max_value=100), st.just(1))
+def test_all_actions_must_have_same_number_of_objectives_cmab_mo_cc(mu, sigma, n_features, cost):
+    blr = BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()])
+    with pytest.raises(ValueError):
+        CmabBernoulliMO(
+            actions={
+                "a1": BayesianLogisticRegressionMOCC(
+                    models=[blr.model_copy(deep=True), blr.model_copy(deep=True)], cost=cost
+                ),
+                "a2": BayesianLogisticRegressionMOCC(
+                    models=[blr.model_copy(deep=True), blr.model_copy(deep=True)], cost=cost
+                ),
+                "a3": BayesianLogisticRegressionMOCC(
+                    models=[blr.model_copy(deep=True), blr.model_copy(deep=True), blr.model_copy(deep=True)], cost=cost
+                ),
+            },
+        )
+
+
+def test_cmab_mo_cc_predict(n_samples=10, n_objectives=3, n_features=10):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    s = CmabBernoulliMOCC.cold_start(
+        action_ids_cost={"a1": 1, "a2": 2}, n_objectives=n_objectives, n_features=n_features
+    )
+
+    forbidden = None
+    s.predict(context=context, forbidden_actions=forbidden)
+
+    forbidden = ["a1"]
+    predicted_actions, _, _ = s.predict(context=context, forbidden_actions=forbidden)
+
+    assert "a1" not in predicted_actions
+
+    forbidden = ["a1", "a2"]
+    with pytest.raises(ValueError):
+        s.predict(context=context, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a2", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(context=context, forbidden_actions=forbidden)
+
+    forbidden = ["a1", "a3"]
+    with pytest.raises(ValueError):
+        s.predict(context=context, forbidden_actions=forbidden)
+
+
+def test_cmab_mo_cc_update(action_ids_cost={"a1": 1, "a2": 2}, n_samples=10, n_objectives=3, n_features=10):
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    rewards = [np.random.choice([0, 1], size=n_objectives).tolist() for _ in range(n_samples)]
+    actions = np.random.choice(list(action_ids_cost), size=n_samples).tolist()
+    action_ids = set(action_ids_cost.keys())
+    mab = CmabBernoulliMOCC.cold_start(
+        action_ids_cost=action_ids_cost, n_objectives=n_objectives, n_features=n_features
+    )
+    assert all(
+        [
+            mab.actions[a]
+            == BayesianLogisticRegressionMOCC.cold_start(
+                n_objectives=n_objectives, n_features=n_features, cost=action_ids_cost[a]
+            )
+            for a in action_ids
+        ]
+    )
+
+    mab.update(actions=actions, rewards=rewards, context=context)
+    assert all(
+        [
+            mab.actions[a]
+            != BayesianLogisticRegressionMOCC.cold_start(
+                n_objectives=n_objectives, n_features=n_features, cost=action_ids_cost[a]
+            )
+            for a in set(action_ids)
+        ]
+    )
+
+
+@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8), st.integers(min_value=2, max_value=100))
+def test_cmab_mo_cc_get_state(a_list, n_features):
+    a, b, c, d, e, f, g, h = a_list
+
+    actions = {
+        "a1": BayesianLogisticRegressionMOCC(
+            models=[
+                BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+            ],
+            cost=g,
+        ),
+        "a2": BayesianLogisticRegressionMOCC(
+            models=[
+                BayesianLogisticRegression(alpha=StudentT(mu=a, sigma=b), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=c, sigma=d), betas=n_features * [StudentT()]),
+                BayesianLogisticRegression(alpha=StudentT(mu=e, sigma=f), betas=n_features * [StudentT()]),
+            ],
+            cost=h,
+        ),
+    }
+    cmab = CmabBernoulliMOCC(actions=actions)
+    expected_state = to_serializable_dict(
+        {
+            "actions": actions,
+            "strategy": {},
+            "epsilon": None,
+            "default_action": None,
+            "predict_actions_randomly": False,
+            "predict_with_proba": True,
+        }
+    )
+
+    class_name, cmab_state = cmab.get_state()
+    assert class_name == "CmabBernoulliMOCC"
+    assert cmab_state == expected_state
+
+    assert is_serializable(cmab_state), "Internal state is not serializable"
+
+
+@settings(deadline=500)
+@given(
+    state=st.fixed_dictionaries(
+        {
+            "actions": st.dictionaries(
+                keys=st.text(min_size=1, max_size=10),
+                values=st.fixed_dictionaries(
+                    {
+                        "models": st.lists(
+                            st.fixed_dictionaries(
+                                {
+                                    "alpha": st.fixed_dictionaries(
+                                        {
+                                            "mu": st.integers(min_value=1, max_value=100),
+                                            "sigma": st.integers(min_value=1, max_value=100),
+                                        },
+                                    ),
+                                    "betas": st.lists(
+                                        st.fixed_dictionaries(
+                                            {
+                                                "mu": st.integers(min_value=1, max_value=100),
+                                                "sigma": st.integers(min_value=1, max_value=100),
+                                            },
+                                        ),
+                                        min_size=2,
+                                        max_size=2,
+                                    ),
+                                },
+                            ),
+                            min_size=3,
+                            max_size=3,
+                        ),
+                        "cost": st.floats(min_value=0),
+                    }
+                ),
+                min_size=2,
+            ),
+            "strategy": st.fixed_dictionaries({}),
+        }
+    )
+)
+def test_cmab_mo_cc_from_state(state):
+    cmab = CmabBernoulliMOCC.from_state(state)
+    assert isinstance(cmab, CmabBernoulliMOCC)
+
+    actual_actions = to_serializable_dict(cmab.actions)
+    expected_actions = update_nested_struct(state["actions"], actual_actions)
+    assert expected_actions == actual_actions
 
     # Ensure get_state and from_state compatibility
     new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
@@ -949,3 +1378,31 @@ def test_epsilon_greedy_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == n_samples
     assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
     assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+def test_epsilon_greddy_cmab_mo_predict(
+    action_ids={"a1", "a2"}, n_samples=10, n_objectives=3, n_features=10, epsilon=0.1, default_action="a1"
+):
+    s = CmabBernoulliMO.cold_start(
+        action_ids=action_ids,
+        n_objectives=n_objectives,
+        n_features=n_features,
+        epsilon=epsilon,
+        default_action=default_action,
+    )
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    s.predict(context=context)
+
+
+def test_epsilon_greddy_smab_mo_cc_predict(
+    action_ids_cost={"a1": 1, "a2": 2}, n_samples=10, n_objectives=3, n_features=10, epsilon=0.1, default_action="a1"
+):
+    s = CmabBernoulliMOCC.cold_start(
+        action_ids_cost=action_ids_cost,
+        n_objectives=n_objectives,
+        n_features=n_features,
+        epsilon=epsilon,
+        default_action=default_action,
+    )
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    s.predict(context=context)

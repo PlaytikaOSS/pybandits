@@ -19,12 +19,11 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-
+from abc import ABC
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Union
 
-from pydantic import PositiveInt, field_validator, validate_call
+from pydantic import PositiveInt, validate_call
 
 from pybandits.base import (
     ActionId,
@@ -40,23 +39,23 @@ from pybandits.strategy import (
     CostControlBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
-    Strategy,
+    MultiObjectiveStrategy,
 )
 
 
-class BaseSmabBernoulli(BaseMab):
+class BaseSmabBernoulli(BaseMab, ABC):
     """
     Base model for a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
     Parameters
     ----------
-    actions: Dict[ActionId, BaseBeta]
+    actions: Dict[ActionId, Union[Beta, BetaMO]]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BaseBeta]
+    actions: Dict[ActionId, Union[BaseBeta, BetaMO]]
 
     @validate_call
     def predict(
@@ -189,7 +188,7 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     strategy: CostControlBandit
 
 
-class BaseSmabBernoulliMO(BaseSmabBernoulli):
+class BaseSmabBernoulliMO(BaseSmabBernoulli, ABC):
     """
     Base model for a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation, and Multi-Objectives
     strategy.
@@ -203,15 +202,7 @@ class BaseSmabBernoulliMO(BaseSmabBernoulli):
     """
 
     actions: Dict[ActionId, BetaMO]
-    strategy: Strategy
-
-    @field_validator("actions", mode="after")
-    @classmethod
-    def all_actions_have_same_number_of_objectives(cls, actions: Dict[ActionId, BetaMO]):
-        n_objs_per_action = [len(beta.counters) for beta in actions.values()]
-        if len(set(n_objs_per_action)) != 1:
-            raise ValueError("All actions should have the same number of objectives")
-        return actions
+    strategy: MultiObjectiveStrategy
 
 
 class SmabBernoulliMO(BaseSmabBernoulliMO):
@@ -234,7 +225,6 @@ class SmabBernoulliMO(BaseSmabBernoulliMO):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BetaMO]
     strategy: MultiObjectiveBandit
 
 
