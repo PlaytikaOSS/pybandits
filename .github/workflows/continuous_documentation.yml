@@ -1,0 +1,38 @@
+name: Build Documentation
+
+on:
+  push:
+    branches:
+      - main  # Rebuild docs on changes to the main branch
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'  # Specify the Python version needed for your environment
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.poetry/bin:$PATH"
+      - name: Install project dependencies with Poetry
+        run: |
+          poetry install
+
+      - name: Build HTML docs
+        run: |
+          cd docs/src
+          make html  # Build the HTML documentation
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/build/html
