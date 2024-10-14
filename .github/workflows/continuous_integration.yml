@@ -43,4 +43,4 @@ jobs:
           poetry run pre-commit run --all-files
       - name: Run tests
         run: |
-          poetry run pytest -vv -k 'not time and not update_parallel'
+          poetry run pytest -vv -k 'not time and not update_parallel' --cov=pybandits

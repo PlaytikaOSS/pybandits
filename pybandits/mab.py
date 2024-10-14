@@ -169,7 +169,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     ####################################################################################################################
 
-    @abstractmethod
     @validate_call
     def update(
         self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], *args, **kwargs
@@ -182,10 +181,27 @@ class BaseMab(PyBanditsBaseModel, ABC):
         rewards: List[Union[BinaryReward, List[BinaryReward]]]
             The reward for each sample.
         """
+        self._validate_update_params(actions=actions, rewards=rewards)
+        self._update(actions=actions, rewards=rewards, *args, **kwargs)
+        if hasattr(self.strategy, "update"):
+            self.strategy.update(rewards=rewards)
 
     @abstractmethod
+    def _update(
+        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], *args, **kwargs
+    ):
+        """
+        Update the multi-armed bandit model.
+
+        actions : List[ActionId]
+            The selected action for each sample.
+        rewards : List[Union[BinaryReward, List[BinaryReward]]]
+            The reward for each sample.
+        """
+        pass
+
     @validate_call
-    def predict(self, forbidden_actions: Optional[Set[ActionId]] = None) -> Predictions:
+    def predict(self, forbidden_actions: Optional[Set[ActionId]] = None, **kwargs) -> Predictions:
         """
         Predict actions.
 
@@ -198,13 +214,38 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Returns
         -------
+        actions : List[ActionId] of shape (n_samples,)
+            The actions selected by the multi-armed bandit model.
+        probs : List[Dict[ActionId, Probability]] of shape (n_samples,)
+            The probabilities of getting a positive reward for each action
+        ws : List[Dict[ActionId, float]], only relevant for some of the MABs
+            The weighted sum of logistic regression logits.
+        """
+        if hasattr(self.strategy, "reset"):
+            self.strategy.reset()
+        valid_actions = self._get_valid_actions(forbidden_actions)
+        return self._predict(valid_actions=valid_actions, **kwargs)
+
+    @abstractmethod
+    def _predict(self, valid_actions: Set[ActionId], **kwargs) -> Predictions:
+        """
+        Predict actions.
+
+        Parameters
+        ----------
+        valid_actions : Set[ActionId]
+            The set of valid actions.
+
+        Returns
+        -------
         actions: List[ActionId] of shape (n_samples,)
             The actions selected by the multi-armed bandit model.
         probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
             The probabilities of getting a positive reward for each action
         ws : List[Dict[ActionId, float]], only relevant for some of the MABs
-            The weighted sum of logistic regression logits..
+            The weighted sum of logistic regression logits.
         """
+        pass
 
     def get_state(self) -> (str, dict):
         """

@@ -22,7 +22,7 @@
 
 
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Set, Union
 
 from pydantic import PositiveInt, field_validator, validate_call
 
@@ -59,22 +59,16 @@ class BaseSmabBernoulli(BaseMab):
     actions: Dict[ActionId, BaseBeta]
 
     @validate_call
-    def predict(
-        self,
-        n_samples: PositiveInt = 1,
-        forbidden_actions: Optional[Set[ActionId]] = None,
-    ) -> SmabPredictions:
+    def _predict(self, n_samples: PositiveInt, valid_actions: Set[ActionId]) -> SmabPredictions:
         """
         Predict actions.
 
         Parameters
         ----------
-        n_samples : int > 0, default=1
+        n_samples : PositiveInt
             Number of samples to predict.
-        forbidden_actions : Optional[Set[ActionId]], default=None
-            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
-            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
-            Note that: actions = allowed_actions U forbidden_actions.
+        valid_actions : Set[ActionId]
+            The set of valid actions.
 
         Returns
         -------
@@ -83,7 +77,6 @@ class BaseSmabBernoulli(BaseMab):
         probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
             The probabilities of getting a positive reward for each action.
         """
-        valid_actions = self._get_valid_actions(forbidden_actions)
 
         selected_actions: List[ActionId] = []
         probs: List[Dict[ActionId, Probability]] = []
@@ -96,7 +89,7 @@ class BaseSmabBernoulli(BaseMab):
         return selected_actions, probs
 
     @validate_call
-    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
+    def _update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
         """
         Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
         rewards.
@@ -112,8 +105,6 @@ class BaseSmabBernoulli(BaseMab):
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
-
-        self._validate_update_params(actions=actions, rewards=rewards)
 
         rewards_dict = defaultdict(list)
 
