@@ -1,7 +1,7 @@
 import json
 from typing import Any, Callable, Dict, List, Union
 
-from pydantic import validate_call
+from pybandits.pydantic_version_compatibility import validate_call
 
 JSONSerializable = Union[str, int, float, bool, None, List["JSONSerializable"], Dict[str, "JSONSerializable"]]
 

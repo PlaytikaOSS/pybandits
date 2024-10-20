@@ -27,10 +27,10 @@ from typing import List
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from pydantic import NonNegativeFloat, ValidationError
 
 from pybandits.base import BinaryReward, Float01
 from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
+from pybandits.pydantic_version_compatibility import NonNegativeFloat, ValidationError
 from pybandits.smab import SmabBernoulli, SmabBernoulliBAI, SmabBernoulliCC, SmabBernoulliMO, SmabBernoulliMOCC
 from pybandits.strategy import (
     ClassicBandit,

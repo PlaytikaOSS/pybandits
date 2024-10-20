@@ -26,12 +26,12 @@ import hypothesis.strategies as st
 import numpy as np
 import pytest
 from hypothesis import given
-from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
 from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward, Float01, Probability
 from pybandits.mab import BaseMab
 from pybandits.model import Beta, BetaCC
+from pybandits.pydantic_version_compatibility import ValidationError
 from pybandits.strategy import ClassicBandit
 
 

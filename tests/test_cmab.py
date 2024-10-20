@@ -32,6 +32,7 @@ from pydantic import NonNegativeFloat, ValidationError
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
 from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
+from pybandits.pydantic_version_compatibility import PYDANTIC_VERSION_1, PYDANTIC_VERSION_2, pydantic_version
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
 from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
@@ -315,7 +316,13 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
         assert set(mab.predict(context=context, forbidden_actions={"a1"})[0]) == {"a2", "a3", "a4", "a5"}
         assert set(mab.predict(context=context, forbidden_actions=set())[0]) == {"a1", "a2", "a3", "a4", "a5"}
 
-        with pytest.raises(ValidationError):  # not a list
+        if pydantic_version == PYDANTIC_VERSION_1:
+            expected_error_type = ValueError
+        elif pydantic_version == PYDANTIC_VERSION_2:
+            expected_error_type = ValidationError
+        else:
+            raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+        with pytest.raises(expected_error_type):  # not a set
             assert set(mab.predict(context=context, forbidden_actions={1})[0])
         with pytest.raises(ValueError):  # invalid action_ids
             assert set(mab.predict(context=context, forbidden_actions={"a1", "a9999", "a", 5})[0])

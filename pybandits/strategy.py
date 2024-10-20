@@ -25,12 +25,12 @@ from random import random
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-from pydantic import field_validator, validate_call
 from scipy.stats import ttest_ind_from_stats
 from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, Probability, PyBanditsBaseModel
 from pybandits.model import Beta, BetaMOCC, Model
+from pybandits.pydantic_version_compatibility import field_validator, validate_call
 
 
 class Strategy(PyBanditsBaseModel, ABC):
@@ -54,7 +54,9 @@ class Strategy(PyBanditsBaseModel, ABC):
         mutated_strategy: Strategy
             The mutated strategy.
         """
-        mutated_strategy = self.model_copy(update={argument_name: argument_value}, deep=True)
+        mutated_strategy = self._apply_version_adjusted_method(
+            "model_copy", "copy", update={argument_name: argument_value}
+        )
         return mutated_strategy
 
     @abstractmethod

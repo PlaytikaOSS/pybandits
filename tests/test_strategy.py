@@ -26,10 +26,10 @@ import numpy as np
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from pydantic import ValidationError
 
 from pybandits.base import ActionId, Probability
 from pybandits.model import Beta, BetaCC, BetaMOCC
+from pybandits.pydantic_version_compatibility import ValidationError
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
