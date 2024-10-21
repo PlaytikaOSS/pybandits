@@ -12,6 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: [ "3.8", "3.9", "3.10" ]
+        pydantic-version: [ "1.10.*", "2.*" ]
 
     steps:
       - name: Checkout repository
@@ -28,6 +29,7 @@ jobs:
           export PATH="$HOME/.poetry/bin:$PATH"
       - name: Install project dependencies with Poetry
         run: |
+          poetry add pydantic@${{ matrix.pydantic-version }}
           poetry install
       - name: Style check
         run: |
@@ -51,14 +53,14 @@ jobs:
             echo "VERSION_CHANGED=true" >> $GITHUB_ENV
           fi
       - name: Create a Git tag
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions"
           git tag "${{ env.PACKAGE_VERSION }}"
           git push origin "${{ env.PACKAGE_VERSION }}"
       - name: Publish Draft Release
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -83,7 +85,7 @@ jobs:
               core.setFailed(`Draft release named "Draft" not found.`);
             };
       - name: Build and publish to pypi
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
         run: |
           poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
           poetry publish --build

@@ -21,9 +21,17 @@
 # SOFTWARE.
 
 
-from typing import Dict, List, NewType, Tuple, Union
+from typing import Any, Dict, List, NewType, Tuple, Union
 
-from pydantic import BaseModel, confloat, conint, constr
+from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
+    BaseModel,
+    confloat,
+    conint,
+    constr,
+    pydantic_version,
+)
 
 ActionId = NewType("ActionId", constr(min_length=1))
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
@@ -41,7 +49,48 @@ ActionRewardLikelihood = NewType(
 ACTION_IDS_PREFIX = "action_ids_"
 
 
+class _classproperty(property):
+    def __get__(self, instance, owner):
+        return self.fget(owner)
+
+
 class PyBanditsBaseModel(BaseModel, extra="forbid"):
     """
     BaseModel of the PyBandits library.
     """
+
+    def _apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
+        """
+        Apply the method with the given name, adjusting for the pydantic version.
+
+        Parameters
+        ----------
+        v2_method_name : str
+            The method name for pydantic v2.
+        v1_method_name : str
+            The method name for pydantic v1.
+        """
+        if pydantic_version == PYDANTIC_VERSION_1:
+            return getattr(self, v1_method_name)(**kwargs)
+        elif pydantic_version == PYDANTIC_VERSION_2:
+            return getattr(self, v2_method_name)(**kwargs)
+        else:
+            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+    @classmethod
+    def _get_value_with_default(cls, key: str, values: Dict[str, Any]) -> Any:
+        return values.get(key, cls.model_fields[key].default)
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+
+        @_classproperty
+        def model_fields(cls) -> Dict[str, Any]:
+            """
+            Get the model fields.
+
+            Returns
+            -------
+            List[str]
+                The model fields.
+            """
+            return cls.__fields__

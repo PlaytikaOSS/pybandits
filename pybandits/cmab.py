@@ -25,11 +25,11 @@ from typing import Dict, List, Optional, Set, Union
 from numpy import array
 from numpy.random import choice
 from numpy.typing import ArrayLike
-from pydantic import field_validator, validate_call
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
 from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
+from pybandits.pydantic_version_compatibility import field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,

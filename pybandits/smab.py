@@ -24,8 +24,6 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Union
 
-from pydantic import PositiveInt, field_validator, validate_call
-
 from pybandits.base import (
     ActionId,
     BinaryReward,
@@ -34,6 +32,7 @@ from pybandits.base import (
 )
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO, BetaMOCC
+from pybandits.pydantic_version_compatibility import PositiveInt, field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
