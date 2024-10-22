@@ -27,12 +27,17 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import NonNegativeFloat, ValidationError
 
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
 from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
-from pybandits.pydantic_version_compatibility import PYDANTIC_VERSION_1, PYDANTIC_VERSION_2, pydantic_version
+from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
+    NonNegativeFloat,
+    ValidationError,
+    pydantic_version,
+)
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
 from pybandits.utils import to_serializable_dict
 from tests.test_utils import is_serializable
