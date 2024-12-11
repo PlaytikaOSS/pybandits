@@ -227,7 +227,11 @@ class CmabBernoulli(BaseCmabBernoulli):
 
     @classmethod
     def from_state(cls, state: dict) -> "CmabBernoulli":
-        return cls(actions=state["actions"])
+        return cls(
+            actions=state["actions"],
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -271,7 +275,12 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
 
     @classmethod
     def from_state(cls, state: dict) -> "CmabBernoulliBAI":
-        return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
+        return cls(
+            actions=state["actions"],
+            exploit_p=state["strategy"].get("exploit_p", None),
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -324,7 +333,12 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
     @classmethod
     def from_state(cls, state: dict) -> "CmabBernoulliCC":
-        return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
+        return cls(
+            actions=state["actions"],
+            subsidy_factor=state["strategy"].get("subsidy_factor", None),
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, actions: List[ActionId], rewards: List[BinaryReward]):

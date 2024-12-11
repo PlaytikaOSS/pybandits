@@ -21,7 +21,7 @@
 # SOFTWARE.
 import json
 from copy import deepcopy
-from typing import List
+from typing import List, Optional
 
 import pytest
 from hypothesis import given
@@ -203,16 +203,22 @@ def test_smab_accepts_only_valid_actions(s):
         SmabBernoulli(actions={s: Beta(), s + "_": Beta()})
 
 
-@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=1))
-def test_smab_get_state(a, b, c, d):
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.sampled_from([None, 0.1]),
+)
+def test_smab_get_state(a, b, c, d, epsilon):
     actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
-    smab = SmabBernoulli(actions=actions)
+    smab = SmabBernoulli(actions=actions, epsilon=epsilon)
 
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {},
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -236,6 +242,7 @@ def test_smab_get_state(a, b, c, d):
                 min_size=2,
             ),
             "strategy": st.fixed_dictionaries({}),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     )
 )
@@ -324,15 +331,16 @@ def test_smabbai_with_betacc():
     st.integers(min_value=1),
     st.integers(min_value=1),
     st.floats(min_value=0, max_value=1),
+    st.sampled_from([None, 0.1]),
 )
-def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
+def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01, epsilon: Optional[Float01]):
     actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
-    smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {"exploit_p": exploit_p},
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -362,6 +370,7 @@ def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
                 st.just({"exploit_p": None}),
                 st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
             ),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     )
 )
@@ -454,20 +463,23 @@ def test_smabcc_update():
     st.floats(min_value=0),
     st.floats(min_value=0),
     st.floats(min_value=0, max_value=1),
+    st.sampled_from([None, 0.1]),
 )
-def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor: Float01):
+def test_smab_cc_get_state(
+    a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor: Float01, epsilon: Optional[Float01]
+):
     actions = {
         "action1": BetaCC(n_successes=a, n_failures=b, cost=cost1),
         "action2": BetaCC(n_successes=c, n_failures=d, cost=cost2),
     }
-    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {
                 "subsidy_factor": subsidy_factor,
             },
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -498,6 +510,7 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
                 st.just({"subsidy_factor": None}),
                 st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
             ),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     )
 )
@@ -606,8 +619,8 @@ def test_smab_mo_update():
     mab.update(actions=["a1", "a1"], rewards=[[1, 0, 1], [1, 1, 0]])
 
 
-@given(st.lists(st.integers(min_value=1), min_size=6, max_size=6))
-def test_smab_mo_get_state(a_list):
+@given(st.lists(st.integers(min_value=1), min_size=6, max_size=6), st.sampled_from([None, 0.1]))
+def test_smab_mo_get_state(a_list, epsilon):
     a, b, c, d, e, f = a_list
 
     actions = {
@@ -626,12 +639,12 @@ def test_smab_mo_get_state(a_list):
             ]
         ),
     }
-    smab = SmabBernoulliMO(actions=actions)
+    smab = SmabBernoulliMO(actions=actions, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {},
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -665,6 +678,7 @@ def test_smab_mo_get_state(a_list):
                 min_size=2,
             ),
             "strategy": st.fixed_dictionaries({}),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     )
 )
@@ -767,8 +781,8 @@ def test_smab_mo_cc_predict():
         s.predict(n_samples=n_samples, forbidden_actions=forbidden)
 
 
-@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8))
-def test_smab_mocc_get_state(a_list):
+@given(st.lists(st.integers(min_value=1), min_size=8, max_size=8), st.sampled_from([None, 0.1]))
+def test_smab_mo_cc_get_state(a_list, epsilon):
     a, b, c, d, e, f, g, h = a_list
 
     actions = {
@@ -789,12 +803,12 @@ def test_smab_mocc_get_state(a_list):
             cost=h,
         ),
     }
-    smab = SmabBernoulliMOCC(actions=actions)
+    smab = SmabBernoulliMOCC(actions=actions, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {},
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -829,6 +843,7 @@ def test_smab_mocc_get_state(a_list):
                 min_size=2,
             ),
             "strategy": st.fixed_dictionaries({}),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     )
 )

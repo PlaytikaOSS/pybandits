@@ -19,7 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from typing import get_args
+from typing import Optional, get_args
 
 import numpy as np
 import pandas as pd
@@ -381,21 +381,26 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=2, max_value=100))
-def test_cmab_get_state(mu, sigma, n_features):
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=2, max_value=100),
+    st.sampled_from([None, 0.1]),
+)
+def test_cmab_get_state(mu, sigma, n_features, epsilon):
     actions: dict = {
         "a1": BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()]),
         "a2": create_bayesian_logistic_regression_cold_start(n_betas=n_features),
     }
 
-    cmab = CmabBernoulli(actions=actions)
+    cmab = CmabBernoulli(actions=actions, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {},
             "predict_with_proba": False,
             "predict_actions_randomly": False,
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -438,6 +443,7 @@ def test_cmab_get_state(mu, sigma, n_features):
                 min_size=2,
             ),
             "strategy": st.fixed_dictionaries({}),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     ),
     update_method=st.sampled_from(literal_update_methods),
@@ -613,21 +619,22 @@ def test_cmab_bai_update(n_samples, n_features, update_method):
     st.integers(min_value=1),
     st.integers(min_value=2, max_value=100),
     st.floats(min_value=0, max_value=1),
+    st.sampled_from([None, 0.1]),
 )
-def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
+def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01, epsilon: Optional[Float01]):
     actions: dict = {
         "a1": BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()]),
         "a2": create_bayesian_logistic_regression_cold_start(n_betas=n_features),
     }
 
-    cmab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
+    cmab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {"exploit_p": exploit_p},
             "predict_with_proba": False,
             "predict_actions_randomly": False,
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -674,6 +681,7 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
                 st.just({"exploit_p": None}),
                 st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
             ),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     ),
     update_method=st.sampled_from(literal_update_methods),
@@ -864,9 +872,16 @@ def test_cmab_cc_update(n_samples, n_features, update_method):
     st.floats(min_value=0),
     st.floats(min_value=0),
     st.floats(min_value=0, max_value=1),
+    st.sampled_from([None, 0.1]),
 )
 def test_cmab_cc_get_state(
-    mu, sigma, n_features, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
+    mu,
+    sigma,
+    n_features,
+    cost_1: NonNegativeFloat,
+    cost_2: NonNegativeFloat,
+    subsidy_factor: Float01,
+    epsilon: Optional[Float01],
 ):
     actions: dict = {
         "a1": BayesianLogisticRegressionCC(
@@ -875,14 +890,14 @@ def test_cmab_cc_get_state(
         "a2": create_bayesian_logistic_regression_cc_cold_start(n_betas=n_features, cost=cost_2),
     }
 
-    cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
+    cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor, epsilon=epsilon)
     expected_state = to_serializable_dict(
         {
             "actions": actions,
             "strategy": {"subsidy_factor": subsidy_factor},
             "predict_with_proba": True,
             "predict_actions_randomly": False,
-            "epsilon": None,
+            "epsilon": epsilon,
             "default_action": None,
         }
     )
@@ -930,6 +945,7 @@ def test_cmab_cc_get_state(
                 st.just({"subsidy_factor": None}),
                 st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
             ),
+            "epsilon": st.sampled_from([None, 0.1]),
         }
     ),
     update_method=st.sampled_from(literal_update_methods),

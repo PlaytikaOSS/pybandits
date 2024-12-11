@@ -150,7 +150,11 @@ class SmabBernoulli(BaseSmabBernoulli):
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulli":
-        return cls(actions=state["actions"])
+        return cls(
+            actions=state["actions"],
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
     @validate_call
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -187,7 +191,12 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliBAI":
-        return cls(actions=state["actions"], exploit_p=state["strategy"].get("exploit_p", None))
+        return cls(
+            actions=state["actions"],
+            exploit_p=state["strategy"].get("exploit_p", None),
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
     @validate_call
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -232,7 +241,12 @@ class SmabBernoulliCC(BaseSmabBernoulli):
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliCC":
-        return cls(actions=state["actions"], subsidy_factor=state["strategy"].get("subsidy_factor", None))
+        return cls(
+            actions=state["actions"],
+            subsidy_factor=state["strategy"].get("subsidy_factor", None),
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
     @validate_call
     def update(self, actions: List[ActionId], rewards: List[BinaryReward]):
@@ -303,7 +317,11 @@ class SmabBernoulliMO(BaseSmabBernoulliMO):
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliMO":
-        return cls(actions=state["actions"])
+        return cls(
+            actions=state["actions"],
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
 
 class SmabBernoulliMOCC(BaseSmabBernoulliMO):
@@ -337,7 +355,11 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
 
     @classmethod
     def from_state(cls, state: dict) -> "SmabBernoulliMOCC":
-        return cls(actions=state["actions"])
+        return cls(
+            actions=state["actions"],
+            epsilon=state.get("epsilon", None),
+            default_action=state.get("default_action", None),
+        )
 
 
 @validate_call
