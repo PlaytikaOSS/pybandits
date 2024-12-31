@@ -20,16 +20,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Union
+from abc import ABC
+from typing import List, Optional, Set, Union
 
 from numpy import array
 from numpy.random import choice
 from numpy.typing import ArrayLike
 
+from pybandits.actions_manager import CmabActionsManager
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
 from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
-from pybandits.pydantic_version_compatibility import field_validator, validate_call
+from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
@@ -37,7 +39,7 @@ from pybandits.strategy import (
 )
 
 
-class BaseCmabBernoulli(BaseMab):
+class BaseCmabBernoulli(BaseMab, ABC):
     """
     Base model for a Contextual Multi-Armed Bandit for Bernoulli bandits with Thompson Sampling.
 
@@ -54,26 +56,9 @@ class BaseCmabBernoulli(BaseMab):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions_manager: CmabActionsManager[BayesianLogisticRegression]
     predict_with_proba: bool
     predict_actions_randomly: bool
-
-    @field_validator("actions", mode="after")
-    @classmethod
-    def check_bayesian_logistic_regression_models(cls, v):
-        action_models = list(v.values())
-        first_action = action_models[0]
-        first_action_type = type(first_action)
-        for action in action_models[1:]:
-            if not isinstance(action, first_action_type):
-                raise AttributeError("All actions should follow the same type.")
-            if not len(action.betas) == len(first_action.betas):
-                raise AttributeError("All actions should have the same number of betas.")
-            if not action.update_method == first_action.update_method:
-                raise AttributeError("All actions should have the same update method.")
-            if not action.update_kwargs == first_action.update_kwargs:
-                raise AttributeError("All actions should have the same update kwargs.")
-        return v
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def predict(
@@ -169,20 +154,7 @@ class BaseCmabBernoulli(BaseMab):
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
-        self._validate_update_params(actions=actions, rewards=rewards)
-        if len(context) != len(rewards):
-            raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
-
-        # cast inputs to numpy arrays to facilitate their manipulation
-        context, actions, rewards = array(context), array(actions), array(rewards)
-
-        for a in set(actions):
-            # get context and rewards of the samples associated to action a
-            context_of_a = context[actions == a]
-            rewards_of_a = rewards[actions == a].tolist()
-
-            # update model associated to action a
-            self.actions[a].update(context=context_of_a, rewards=rewards_of_a)
+        super().update(actions=actions, rewards=rewards, context=context)
 
         # always set predict_actions_randomly after update
         self.predict_actions_randomly = False
@@ -190,7 +162,7 @@ class BaseCmabBernoulli(BaseMab):
 
 class CmabBernoulli(BaseCmabBernoulli):
     """
-    Contextual  Bernoulli Multi-Armed Bandit with Thompson Sampling.
+    Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
     Reference: Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
                https://arxiv.org/pdf/1209.3352.pdf
@@ -208,7 +180,7 @@ class CmabBernoulli(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions_manager: CmabActionsManager[BayesianLogisticRegression]
     strategy: ClassicBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -234,7 +206,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions_manager: CmabActionsManager[BayesianLogisticRegression]
     strategy: BestActionIdentificationBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -268,7 +240,7 @@ class CmabBernoulliCC(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegressionCC]
+    actions_manager: CmabActionsManager[BayesianLogisticRegressionCC]
     strategy: CostControlBandit
     predict_with_proba: bool = True
     predict_actions_randomly: bool = False

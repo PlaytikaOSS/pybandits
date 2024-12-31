@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, Optional, Set
 
 import hypothesis.strategies as st
 import numpy as np
@@ -28,19 +28,18 @@ import pytest
 from hypothesis import given
 from pytest_mock import MockerFixture
 
-from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward, Float01, Probability
+from pybandits.base import ActionId, Float01, Probability
 from pybandits.mab import BaseMab
-from pybandits.model import Beta, BetaCC
+from pybandits.model import Beta
 from pybandits.pydantic_version_compatibility import ValidationError
 from pybandits.strategy import ClassicBandit
+from tests.test_actions_manager import DummyActionsManager
 
 
 class DummyMab(BaseMab):
+    actions_manager: DummyActionsManager
     epsilon: Optional[Float01] = None
     default_action: Optional[ActionId] = None
-
-    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
-        self._validate_update_params(actions=actions, rewards=rewards)
 
     def predict(
         self,
@@ -55,22 +54,19 @@ class DummyMab(BaseMab):
         return model_name, state
 
 
-def test_base_mab_raise_on_bad_actions(cost=0.0):
+def test_base_mab_raise_on_bad_actions():
     with pytest.raises(TypeError):
         DummyMab(actions={"a1": Beta(), "a2": Beta()})
     with pytest.raises(ValidationError):
         DummyMab(actions={"": Beta(), "a2": Beta()}, strategy=ClassicBandit())
     with pytest.raises(AttributeError):
         DummyMab(actions={}, strategy=ClassicBandit())
-    with pytest.warns(UserWarning):
-        with pytest.raises(ValidationError):
-            DummyMab(actions={"a1": None}, strategy=ClassicBandit())
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValidationError, TypeError)):
+        DummyMab(actions={"a1": None}, strategy=ClassicBandit())
+    with pytest.raises((ValidationError, TypeError)):
         DummyMab(actions={"a1": None, "a2": None}, strategy=ClassicBandit())
     with pytest.warns(UserWarning):
         DummyMab(actions={"a1": Beta()}, strategy=ClassicBandit())
-    with pytest.raises(AttributeError):
-        DummyMab(actions={"a1": Beta(), "a2": BetaCC(cost=cost)}, strategy=ClassicBandit())
 
 
 def test_base_mab_check_update_params():
@@ -90,108 +86,6 @@ def test_base_mab_update_ok(r1, r2):
     dummy_mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit())
     dummy_mab.update(actions=["a1", "a2"], rewards=[r1, r2])
     dummy_mab.update(actions=["a1", "a1"], rewards=[r1, r2])
-
-
-########################################################################################################################
-
-
-# BaseMab._extract_action_specific_kwargs functionality tests
-
-
-def test_returns_empty_dict_when_no_action_specific_kwargs():
-    kwargs = {"param1": 1, "param2": 2}
-    result, _ = BaseMab._extract_action_specific_kwargs(**kwargs)
-    assert result == {}
-
-
-def test_processes_kwargs_with_non_dict_values():
-    kwargs = {
-        f"{ACTION_IDS_PREFIX}param1": "not_a_dict",
-    }
-    result, _ = BaseMab._extract_action_specific_kwargs(**kwargs)
-    assert result == {}
-
-
-def test_manages_kwargs_with_empty_dicts():
-    kwargs = {f"{ACTION_IDS_PREFIX}param1": {}, f"{ACTION_IDS_PREFIX}param2": {}}
-    result, _ = BaseMab._extract_action_specific_kwargs(**kwargs)
-    assert result == {}
-
-
-def test_extracts_action_specific_kwargs_with_valid_keys():
-    kwargs = {
-        f"{ACTION_IDS_PREFIX}param1": {"action1": 1, "action2": 2},
-        f"{ACTION_IDS_PREFIX}param2": {"action1": 3, "action2": 4},
-    }
-    expected_output = {"action1": {"param1": 1, "param2": 3}, "action2": {"param1": 2, "param2": 4}}
-    result, _ = BaseMab._extract_action_specific_kwargs(**kwargs)
-    assert result == expected_output
-
-
-########################################################################################################################
-
-
-# BaseMab._extract_action_model_class_and_attributes functionality tests
-
-
-def test_extracts_action_model_class_and_attributes_with_valid_kwargs(mocker: MockerFixture):
-    class MockActionModel:
-        def __init__(self, param1, param2):
-            pass
-
-    mocker.patch("pybandits.mab.get_args", return_value=(None, MockActionModel))
-    mocker.patch("pybandits.mab.extract_argument_names_from_function", return_value=["param1", "param2"])
-
-    kwargs = {"param1": 1, "param2": 2}
-    action_model_cold_start, action_general_kwargs = BaseMab._extract_action_model_class_and_attributes(**kwargs)
-
-    assert action_model_cold_start == MockActionModel
-    assert action_general_kwargs == {"param1": 1, "param2": 2}
-
-
-def test_returns_callable_for_action_model_cold_start_instantiation(mocker: MockerFixture):
-    class MockActionModel:
-        @classmethod
-        def cold_start(cls):
-            pass
-
-    mocker.patch("pybandits.mab.get_args", return_value=(None, MockActionModel))
-    mocker.patch("pybandits.mab.extract_argument_names_from_function", return_value=[])
-
-    kwargs = {}
-    action_model_cold_start, _ = BaseMab._extract_action_model_class_and_attributes(**kwargs)
-
-    assert callable(action_model_cold_start)
-
-
-def test_handles_empty_kwargs_gracefully(mocker: MockerFixture):
-    class MockActionModel:
-        def __init__(self):
-            pass
-
-    mocker.patch("pybandits.mab.get_args", return_value=(None, MockActionModel))
-    mocker.patch("pybandits.mab.extract_argument_names_from_function", return_value=[])
-
-    kwargs = {}
-    action_model_cold_start, action_general_kwargs = BaseMab._extract_action_model_class_and_attributes(**kwargs)
-
-    assert action_model_cold_start == MockActionModel
-    assert action_general_kwargs == {}
-
-
-def test_handles_kwargs_with_no_matching_action_model_attributes(mocker: MockerFixture):
-    class MockActionModel:
-        def __init__(self):
-            pass
-
-    mocker.patch("pybandits.mab.get_args", return_value=(None, MockActionModel))
-    mocker.patch("pybandits.mab.extract_argument_names_from_function", return_value=[])
-
-    kwargs = {"irrelevant_param": 1}
-    action_model_cold_start, action_general_kwargs = BaseMab._extract_action_model_class_and_attributes(**kwargs)
-
-    assert action_model_cold_start == MockActionModel
-    assert action_general_kwargs == {}
 
 
 ########################################################################################################################
@@ -243,3 +137,30 @@ def test_default_action_in_forbidden_actions():
     mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.1, default_action="a1")
     with pytest.raises(ValueError):
         mab.predict(forbidden_actions={"a1"})
+
+
+@given(st.sampled_from([10, "inf"]), st.just(0.1))
+def test_adaptive_window_without_epsilon_fails(adaptive_window_size, epsilon):
+    with pytest.raises(ValueError):
+        DummyMab(
+            actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), adaptive_window_size=adaptive_window_size
+        )
+    with pytest.raises(ValueError):
+        DummyMab(
+            actions={"a1": Beta(), "a2": Beta()},
+            strategy=ClassicBandit(),
+            adaptive_window_size=adaptive_window_size,
+            epsilon=epsilon,
+            default_action="a1",
+        )
+
+
+@given(st.integers(min_value=10, max_value=9999), st.just(0.1))
+def test_small_window_size_raises_warning(adaptive_window_size, epsilon):
+    with pytest.warns(UserWarning):
+        DummyMab(
+            actions={"a1": Beta(), "a2": Beta()},
+            strategy=ClassicBandit(),
+            adaptive_window_size=adaptive_window_size,
+            epsilon=epsilon,
+        )

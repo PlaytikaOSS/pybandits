@@ -55,7 +55,7 @@ def test_can_init_beta(success_counter, failure_counter):
         assert (b.n_successes, b.n_failures) == (1, 1)
 
 
-def test_both_or_neither_counters_are_defined():
+def test_both_or_neither_models_are_defined():
     with pytest.raises(ValidationError):
         Beta(n_successes=0)
     with pytest.raises(ValidationError):
@@ -112,21 +112,21 @@ def test_can_init_betaCC(a_float):
 
 def test_can_init_base_beta_mo():
     # init with default params
-    b = BetaMO(counters=[Beta(), Beta()])
-    assert b.counters[0].n_successes == 1 and b.counters[0].n_failures == 1
-    assert b.counters[1].n_successes == 1 and b.counters[1].n_failures == 1
+    b = BetaMO(models=[Beta(), Beta()])
+    assert b.models[0].n_successes == 1 and b.models[0].n_failures == 1
+    assert b.models[1].n_successes == 1 and b.models[1].n_failures == 1
 
     # init with empty dict
-    b = BetaMO(counters=[{}, {}])
-    assert b.counters[0] == Beta()
+    b = BetaMO(models=[{}, {}])
+    assert b.models[0] == Beta()
 
     # invalid init with BetaCC instead of Beta
     with pytest.raises(ValidationError):
-        BetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
+        BetaMO(models=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
 def test_calculate_proba_beta_mo():
-    b = BetaMO(counters=[Beta(), Beta()])
+    b = BetaMO(models=[Beta(), Beta()])
     b.sample_proba()
 
 
@@ -139,12 +139,12 @@ def test_beta_update_mo(rewards1, rewards2):
     rewards1, rewards2 = rewards1[:min_len], rewards2[:min_len]
     rewards = [[a, b] for a, b in zip(rewards1, rewards2)]
 
-    b = BetaMO(counters=[Beta(n_successes=11, n_failures=22), Beta(n_successes=33, n_failures=44)])
+    b = BetaMO(models=[Beta(n_successes=11, n_failures=22), Beta(n_successes=33, n_failures=44)])
 
     b.update(rewards=rewards)
 
     assert b == BetaMO(
-        counters=[
+        models=[
             Beta(n_successes=11 + sum(rewards1), n_failures=22 + len(rewards1) - sum(rewards1)),
             Beta(n_successes=33 + sum(rewards2), n_failures=44 + len(rewards2) - sum(rewards2)),
         ]
@@ -162,16 +162,16 @@ def test_beta_update_mo(rewards1, rewards2):
 
 def test_can_init_beta_mo():
     # init with default params
-    b = BetaMO(counters=[Beta(), Beta()])
-    assert b.counters == [Beta(), Beta()]
+    b = BetaMO(models=[Beta(), Beta()])
+    assert b.models == [Beta(), Beta()]
 
     # init with empty dict
-    b = BetaMO(counters=[{}, {}])
-    assert b.counters == [Beta(), Beta()]
+    b = BetaMO(models=[{}, {}])
+    assert b.models == [Beta(), Beta()]
 
     # invalid init with BetaCC instead of Beta
     with pytest.raises(ValidationError):
-        BetaMO(counters=[BetaCC(cost=1), BetaCC(cost=1)])
+        BetaMO(models=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
 ########################################################################################################################
@@ -184,21 +184,21 @@ def test_can_init_beta_mo():
 def test_can_init_beta_mo_cc(a_float):
     if a_float < 0 or np.isnan(a_float):
         with pytest.raises(ValidationError):
-            BetaMOCC(counters=[Beta(), Beta()], cost=a_float)
+            BetaMOCC(models=[Beta(), Beta()], cost=a_float)
     else:
         # init with default params
-        b = BetaMOCC(counters=[Beta(), Beta()], cost=a_float)
-        assert b.counters == [Beta(), Beta()]
+        b = BetaMOCC(models=[Beta(), Beta()], cost=a_float)
+        assert b.models == [Beta(), Beta()]
         assert b.cost == a_float
 
         # init with empty dict
-        b = BetaMOCC(counters=[{}, {}], cost=a_float)
-        assert b.counters == [Beta(), Beta()]
+        b = BetaMOCC(models=[{}, {}], cost=a_float)
+        assert b.models == [Beta(), Beta()]
         assert b.cost == a_float
 
         # invalid init with BetaCC instead of Beta
         with pytest.raises(ValidationError):
-            BetaMOCC(counters=[BetaCC(cost=1), BetaCC(cost=1)], cost=a_float)
+            BetaMOCC(models=[BetaCC(cost=1), BetaCC(cost=1)], cost=a_float)
 
 
 ########################################################################################################################
