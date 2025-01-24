@@ -31,6 +31,7 @@ from numpy.typing import ArrayLike
 from pymc import Bernoulli, Data, Deterministic, fit, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
+import pymc as pm
 from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
@@ -492,11 +493,11 @@ class BayesianLogisticRegression(Model):
 
     @classmethod
     def cold_start(
-        cls,
-        n_features: PositiveInt,
-        update_method: UpdateMethods = "MCMC",
-        update_kwargs: Optional[dict] = None,
-        **kwargs,
+            cls,
+            n_features: PositiveInt,
+            update_method: UpdateMethods = "MCMC",
+            update_kwargs: Optional[dict] = None,
+            **kwargs,
     ) -> "BayesianLogisticRegression":
         """
         Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
@@ -564,337 +565,159 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
 
     cost: NonNegativeFloat
 
-class Quantitative_Cmab(Model):
-    """
-    Base Bayesian Logistic Regression model.
 
-    It is modeled as:
+class BayesianModel:
+    def __init__(self, in_dim, hid_dim, mu=0, sigma=10.):
+        self.trace = None
+        self.approx = None
 
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+        self.in_dim = in_dim
+        self.hid_dim = hid_dim
 
-    where the alpha and betas coefficients are Student's t-distributions.
+        self.init_params(mu, sigma)
+        self.init_model()
 
-    Parameters
-    ----------
-    alpha : StudentT
-        Student's t-distribution of the alpha coefficient.
-    betas : StudentT
-        Student's t-distributions of the betas coefficients.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-    """
+    def init_params(self, mu, sigma, seed=42):
+        # init params
+        rnd = np.random.default_rng(seed)
 
-    alpha: StudentT
-    actions_to_polynom_order_dict: Dict[str, PositiveInt]
-    if pydantic_version == PYDANTIC_VERSION_1:
-        betas: List[StudentT] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        betas: List[StudentT] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
-    update_method: UpdateMethods = "MCMC"
-    update_kwargs: Optional[dict] = None
-    _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
-    _default_mcmc_kwargs = dict(
-        tune=500,
-        draws=1000,
-        chains=2,
-        init="adapt_diag",
-        cores=1,
-        target_accept=0.95,
-        progressbar=False,
-        return_inferencedata=False,
-    )
-    _default_variational_inference_kwargs = dict(method="advi")
+        # Initialize random weights between each layer
+        init_w1 = mu + sigma * rnd.standard_normal(size=(self.in_dim, self.hid_dim))
+        init_b1 = mu + sigma * rnd.standard_normal(size=self.hid_dim)
+        init_w2 = mu + sigma * rnd.standard_normal(size=self.hid_dim)
+        init_b2 = mu + sigma * rnd.standard_normal(size=1)
 
-    if pydantic_version == PYDANTIC_VERSION_1:
+        self.init_dict = {
+            "w1": dict(initval=init_w1, shape=(self.in_dim, self.hid_dim)),
+            "b1": dict(initval=init_b1, shape=(self.hid_dim)),
+            "w2": dict(initval=init_w2, shape=(self.hid_dim)),
+            "b2": dict(initval=init_b2, shape=(1))
+        }
 
-        @model_validator(mode="before")
-        @classmethod
-        def arrange_update_kwargs(cls, values):
-            update_kwargs = cls._get_value_with_default("update_kwargs", values)
-            update_method = cls._get_value_with_default("update_method", values)
-            if update_kwargs is None:
-                update_kwargs = cls._default_update_kwargs
-            if update_method == "VI":
-                update_kwargs = {**cls._default_variational_inference_kwargs, **update_kwargs}
-            elif update_method == "MCMC":
-                update_kwargs = {**cls._default_mcmc_kwargs, **update_kwargs}
-            else:
-                raise ValueError("Invalid update method.")
-            values["update_kwargs"] = update_kwargs
-            values["update_method"] = update_method
-            return values
+        self.posterior_params = {name: dict(mu=mu, sigma=sigma) for name in self.init_dict.keys()}
 
-    elif pydantic_version == PYDANTIC_VERSION_2:
+    def init_model(self):
 
-        @model_validator(mode="after")
-        def arrange_update_kwargs(self):
-            if self.update_kwargs is None:
-                self.update_kwargs = self._default_update_kwargs
-            if self.update_method == "VI":
-                self.update_kwargs = {**self._default_variational_inference_kwargs, **self.update_kwargs}
-            elif self.update_method == "MCMC":
-                self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
-            else:
-                raise ValueError("Invalid update method.")
-            return self
+        X = np.zeros((1, self.in_dim))  # dummy data
+        y = np.zeros(1)  # dummy data
 
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        params_dict = {}
+        with pm.Model() as self.model:
+            # Define data variables using minibatches
+            ann_input = pm.MutableData("ann_input", X)
+            ann_output = pm.MutableData("ann_output", y)
 
-    @classmethod
-    def _stable_sigmoid(cls, x: Union[np.ndarray, TensorVariable]) -> Union[np.ndarray, TensorVariable]:
-        """
-        Vectorized sigmoid function that avoids overflow and underflow.
-        Compatible with both numpy and PyMC3 tensors.
+            for name in self.init_dict.keys():
+                params_dict[name] = pm.Normal(name=name, **self.posterior_params[name], **self.init_dict[name])
 
-        Parameters
-        ----------
-        x : Union[np.ndarray, TensorVariable]
-            Input values.
+            # Build neural-network using tanh activation function
+            act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
+            # act_out = pm.Deterministic("act_out",pm.math.sigmoid(pm.math.dot(act_1, weights_out) + bias_out))
+            act_out = pm.Deterministic("act_out", pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"])
+            # Binary classification -> Bernoulli likelihood
+            out = pm.Bernoulli(
+                "out",
+                logit_p=act_out,
+                observed=ann_output
+            )
 
-        Returns
-        -------
-        prob : Union[np.ndarray, TensorVariable]
-            Sigmoid function applied to the input values.
-        """
-        backend = np if isinstance(x, np.ndarray) else pmath
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
-        return prob
+    def mcmc_sample(self, draws=1000, tune=500):
+        with self.model:
+            self.trace = pm.sample(draws=draws, tune=tune)
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def check_context_matrix(self, context: ArrayLike):
-        """
-        Check and cast context matrix.
+    def update_variational(self, x_train, y_train, num_iter=10000, learning_rate=0.01):
+        with self.model:
+            pm.set_data(new_data={"ann_input": x_train, "ann_output": y_train})
+            self.approx = pm.fit(n=num_iter, method='advi', obj_optimizer=pm.adam(learning_rate=learning_rate))
 
-        Parameters
-        ----------
-        context : ArrayLike of shape (n_samples, n_features)
-            Matrix of contextual features.
+        trace = bayesian_model.approx.sample(draws=500)
 
-        Returns
-        -------
-        context : pandas DataFrame of shape (n_samples, n_features)
-            Matrix of contextual features.
-        """
-        if len(self.actions_to_polynom_order_dict) > 0:
-            num_action_params = sum(self.actions_to_polynom_order_dict.values())
+        for name in self.posterior_params.keys():
+            self.posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0)
+            self.posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0)
+
+    def vi_sample(self, x=None, draws=100):
+        if self.approx is not None:
+            if x is None:
+                # create a dummy x:
+                x = np.zeros((1, self.in_dim))
+
+            y = np.zeros(len(x))
+            with self.model:
+                pm.set_data(new_data={"ann_input": x, "ann_output": y})
+
+            approx_sample = pm.sample_approx(approx=self.approx, draws=draws)
+            return approx_sample
+
         else:
-            num_action_params = 0
+            print("No variational approximation available. Run the fit_variational method first.")
+            return None
 
-        try:
-            n_cols_context = array(context).shape[1]
-        except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {len(self.betas) - num_action_params} columns: {e}.")
+    def summary(self):
+        if self.trace is not None:
+            return pm.summary(self.trace)
+        elif self.approx is not None:
+            return self.approx.summary()
+        else:
+            print("No trace or variational approximation available. Run the sample or fit_variational method first.")
 
+    def update_data(self, new_data):
+        self.data = new_data
+        self.model = pm.Model()  # Reset the model
+        self.build_model()  # Rebuild the model with new data
 
-
-        if (n_cols_context + num_action_params) != len(self.betas):
-            raise AttributeError(f"Shape mismatch: context must have {len(self.betas) - num_action_params} columns.")
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
-        """
-        Compute the probability of getting a positive reward from the sampled regression coefficients and the context.
-
-        Parameters
-        ----------
-        context : ArrayLike
-            Context matrix of shape (n_samples, n_features).
-
-        Returns
-        -------
-        prob: ndarray of shape (n_samples)
-            Probability of getting a positive reward.
-        weighted_sum: ndarray of shape (n_samples)
-            Weighted sums between contextual feature values and sampled coefficients.
-        """
-
-        # check input args
-        self.check_context_matrix(context=context)
-
-        # extend context with a column of 1 to handle the dot product with the intercept
-        context_ext = c_[ones((len(context), 1)), context]
-
-        # set number of parameters
-        self.actions_to_polynom_order_dict
-
-
-        alpha = t.rvs(df=self.alpha.nu, loc=self.alpha.mu, scale=self.alpha.sigma, size=len(context_ext))
-        betas = array(
-            [
-                t.rvs(df=self.betas[i].nu, loc=self.betas[i].mu, scale=self.betas[i].sigma, size=len(context_ext))
-                for i in range(len(self.betas))
-            ]
-        )
-
-        # optimize actions polynomials
-        import sympy as sp
-        num_action_quant_actions = len(self.actions_to_polynom_order_dict)
-        quant_values = sp.symbols(f'x_0:{num_action_quant_actions}')
-        num_actions_params = sum(self.actions_to_polynom_order_dict.values())
-        action_betas = betas[:,0:num_actions_params]
-
-        polynomials = 0
-        for i, (_, polynom_order) in enumerate(self.actions_to_polynom_order_dict.items()):
-            for j in range(polynom_order):
-                polynomials += action_betas[:,i + j] * quant_values[i]**(j + 1)
-
-        # calculate the gradient of the polynomial
-        actions_list = []
-        for polynomial in polynomials:
-            gradient = [sp.diff(polynomial, x) for x in quant_values]
-            critical_points = sp.solve(gradient, quant_values)
-
-            # find maximum value:
-            if len(critical_points) == 0:
-                max_critical_point = None
-            else:
-                max_value = -np.inf
-                for critical_point in critical_points:
-                    values_dict = {x: critical_point[i] for i,x in enumerate(quant_values)}
-                    print(polynomial.subs(values_dict))
-                    if polynomial.subs(values_dict) > max_value:
-                        max_critical_point = critical_point
-
-            actions_list.append(max_critical_point)
-
-
-
-
-        # create coefficients matrix
-        coeff = insert(arr=betas, obj=0, values=alpha, axis=0)
-
-
-        # extract the weighted sum between the context and the coefficients
-        weighted_sum = multiply(context_ext, coeff.T).sum(axis=1)
-
-        # compute the probability with the sigmoid function
-        prob = self._stable_sigmoid(weighted_sum)
-
-        return prob, weighted_sum
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(self, context: ArrayLike, rewards: List[BinaryReward]):
-        """
-        Update the model parameters.
-
-        Parameters
-        ----------
-        context : ArrayLike
-            Context matrix of shape (n_samples, n_features).
-        rewards: List[BinaryReward]
-            A list of binary rewards.
-        """
-
-        # check input args
-        self.check_context_matrix(context=context)
-        if len(context) != len(rewards):
-            AttributeError("Shape mismatch: context and rewards must have the same length.")
-
-        with PymcModel() as _:
-            # update intercept (alpha) and coefficients (betas)
-            # if model was never updated priors_parameters = default arguments
-            # else priors_parameters are calculated from traces of the previous update
-            alpha = PymcStudentT("alpha", mu=self.alpha.mu, sigma=self.alpha.sigma, nu=self.alpha.nu)
-            beta_mu = [b.mu for b in self.betas]
-            beta_sigma = [b.sigma for b in self.betas]
-            beta_nu = [b.nu for b in self.betas]
-            betas = PymcStudentT("betas", mu=beta_mu, sigma=beta_sigma, nu=beta_nu, shape=len(self.betas))
-
-            context = Data("context", context, mutable=False)
-            rewards = Data("rewards", rewards, mutable=False)
-
-            # Likelihood (sampling distribution) of observations
-            weighted_sum = Deterministic("weighted_sum", alpha + dot(betas, context.T))
-            p = Deterministic("p", self._stable_sigmoid(weighted_sum))
-
-            # Bernoulli random vector with probability of success given by sigmoid function and actual data as observed
-            _ = Bernoulli("likelihood", p=p, observed=rewards)
-
-            # update traces object by sampling from posterior distribution
-            if self.update_method == "VI":
-                # variational inference
-                update_kwargs = self.update_kwargs.copy()
-                approx = fit(method=update_kwargs.pop("method"))
-                trace = approx.sample(**update_kwargs)
-            elif self.update_method == "MCMC":
-                # MCMC
-                trace = sample(**self.update_kwargs)
-            else:
-                raise ValueError("Invalid update method.")
-
-            # compute mean and std of the coefficients distributions
-            self.alpha.mu = mean(trace["alpha"])
-            self.alpha.sigma = std(trace["alpha"], ddof=1)
-            betas_mu = mean(trace["betas"], axis=0)
-            betas_std = std(trace["betas"], axis=0, ddof=1)
-            self.betas = [
-                StudentT(mu=mu, sigma=sigma, nu=beta.nu) for mu, sigma, beta in zip(betas_mu, betas_std, self.betas)
-            ]
-
-    @classmethod
-    def cold_start(
-        cls,
-        n_params: PositiveInt,
-        update_method: UpdateMethods = "MCMC",
-        update_kwargs: Optional[dict] = None,
-        **kwargs,
-    ) -> "BayesianLogisticRegression":
-        """
-        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
-        with default parameters.
-
-        It is modeled as:
-
-            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-        where the alpha and betas coefficients are Student's t-distributions.
-
-        Parameters
-        ----------
-        n_params : PositiveInt
-            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
-            after in the context matrix.
-        update_method : UpdateMethods, defaults to "MCMC"
-            The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-            chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-            full list.
-        update_kwargs : Optional[dict], uses default values if not specified
-            Additional arguments to pass to the update method.
-        kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child model.
-
-        Returns
-        -------
-        blr: BayesianLogisticRegrssion
-            The Bayesian Logistic Regression model.
-        """
-        return cls(
-            alpha=StudentT(),
-            betas=[StudentT() for _ in range(n_params)],
-            update_method=update_method,
-            update_kwargs=update_kwargs,
-            **kwargs,
-        )
 
 if __name__ == '__main__':
-    n_samples = 10
+    import torch
+    import matplotlib.pyplot as plt
+
+
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+
+
+    # %%
+    def create_data(c_params, n_samples, n_features, n_bias_features):
+        features_obs = np.random.uniform(0, 1, size=(n_samples, n_features))
+        amount = np.random.uniform(0, 2, size=(n_samples))
+        logit_bias = c_params[-1] + np.matmul(features_obs[:, 0:n_bias_features], c_params[0:n_bias_features])
+        logit_quant = c_params[n_bias_features] * np.multiply(features_obs[:, n_bias_features], amount) - c_params[
+            n_bias_features + 1] * np.multiply(features_obs[:, n_bias_features + 1], amount ** 2)
+        probs_obs = sigmoid(logit_bias + logit_quant)
+        y_obs = np.random.binomial(1, probs_obs)
+        x_obs = np.hstack((features_obs, amount.reshape(-1, 1)))
+        x = torch.from_numpy(x_obs).float()
+        y = torch.from_numpy(y_obs).float()
+
+        return x, y, probs_obs
+
+
+    c_params = [-4, 2, 3, 3, 1, -3]
+    n_bias_features = 3
     n_features = 5
-    actions_to_polynom_order_dict = {'a': 2, 'b': 3}
-    num_actions_params = sum(actions_to_polynom_order_dict.values())
+    n_samples_train = 30000
+    n_samples_val = 2000
+    n_samples_test = 10000
 
+    # train
+    x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
+    x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
+    x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
-    blr = Quantitative_Cmab.cold_start(n_params=n_features + num_actions_params,  actions_to_polynom_order_dict=actions_to_polynom_order_dict)
+    bayesian_model = BayesianModel(x_train.shape[1], 10)
+    bayesian_model.update_variational(x_train, y_train, num_iter=100, learning_rate=0.01)
 
-    # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
-    prob, weighted_sum = blr.sample_proba(context=context)
+    # %%
+    plt.figure()
+    plt.plot(bayesian_model.approx.hist)
+    plt.ylabel("ELBO")
+    plt.xlabel("iteration 1 ");
+    plt.show()
+
+    bayesian_model.update_variational(x_train, y_train, num_iter=100, learning_rate=0.01)
+    # %%
+    plt.figure()
+    plt.plot(bayesian_model.approx.hist)
+    plt.ylabel("ELBO")
+    plt.xlabel("iteration 2 ");
+    plt.show()
