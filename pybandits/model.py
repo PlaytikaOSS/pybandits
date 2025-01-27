@@ -579,6 +579,8 @@ class BayesianModel:
 
     def init_params(self, mu, sigma, seed=42):
         # init params
+        
+        
         rnd = np.random.default_rng(seed)
 
         # Initialize random weights between each layer
@@ -597,14 +599,20 @@ class BayesianModel:
         self.posterior_params = {name: dict(mu=mu, sigma=sigma) for name in self.init_dict.keys()}
 
     def init_model(self):
-
-        X = np.zeros((1, self.in_dim))  # dummy data
+        x = np.zeros((1, self.in_dim))  # dummy data
         y = np.zeros(1)  # dummy data
+        self.is_fitted = False
+        self.evaluate_model(x, y)
 
+    def mcmc_sample(self, draws=1000, tune=500):
+        with self.model:
+            self.trace = pm.sample(draws=draws, tune=tune)
+
+    def evaluate_model(self, x,y):
         params_dict = {}
         with pm.Model() as self.model:
             # Define data variables using minibatches
-            ann_input = pm.MutableData("ann_input", X)
+            ann_input = pm.MutableData("ann_input", x)
             ann_output = pm.MutableData("ann_output", y)
 
             for name in self.init_dict.keys():
@@ -621,20 +629,20 @@ class BayesianModel:
                 observed=ann_output
             )
 
-    def mcmc_sample(self, draws=1000, tune=500):
-        with self.model:
-            self.trace = pm.sample(draws=draws, tune=tune)
 
-    def update_variational(self, x_train, y_train, num_iter=10000, learning_rate=0.01):
+    def update(self, x_train, y_train, num_iter=10000, learning_rate=0.01):
+
         with self.model:
             pm.set_data(new_data={"ann_input": x_train, "ann_output": y_train})
             self.approx = pm.fit(n=num_iter, method='advi', obj_optimizer=pm.adam(learning_rate=learning_rate))
-
-        trace = bayesian_model.approx.sample(draws=500)
-
+        self.is_fitted = True
+        trace = self.approx.sample(draws=500)
+        print('hi!!!')
         for name in self.posterior_params.keys():
-            self.posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0)
-            self.posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0)
+            self.posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0).values
+            self.posterior_params[name]["sigma"] =np.std(trace['posterior'][name].squeeze(), axis=0).values
+        
+        self.evaluate_model(x_train, y_train) # re-evaluate the model with the new parameters
 
     def vi_sample(self, x=None, draws=100):
         if self.approx is not None:
@@ -705,7 +713,9 @@ if __name__ == '__main__':
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
     bayesian_model = BayesianModel(x_train.shape[1], 10)
-    bayesian_model.update_variational(x_train, y_train, num_iter=100, learning_rate=0.01)
+
+
+    bayesian_model.update(x_train, y_train, num_iter=500, learning_rate=0.01)
 
     # %%
     plt.figure()
@@ -713,8 +723,7 @@ if __name__ == '__main__':
     plt.ylabel("ELBO")
     plt.xlabel("iteration 1 ");
     plt.show()
-
-    bayesian_model.update_variational(x_train, y_train, num_iter=100, learning_rate=0.01)
+    bayesian_model.update(x_train, y_train, num_iter=500, learning_rate=0.01)
     # %%
     plt.figure()
     plt.plot(bayesian_model.approx.hist)
