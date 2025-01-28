@@ -80,12 +80,11 @@ def test_beta_get_stats_is_working(e: Beta):
     assert e.count >= 2, "Count too low"
 
 
-def test_beta_sample_proba():
+def test_beta_sample_proba(n_samples=100):
     b = Beta(n_successes=1, n_failures=2)
-
-    for _ in range(1000):
-        prob = b.sample_proba()
-        assert prob >= 0 and prob <= 1
+    prob = b.sample_proba(n_samples=n_samples)
+    assert len(prob) == n_samples
+    assert all([p >= 0 and p <= 1 for p in prob])
 
 
 ########################################################################################################################
@@ -125,9 +124,9 @@ def test_can_init_base_beta_mo():
         BetaMO(models=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
-def test_calculate_proba_beta_mo():
+def test_calculate_proba_beta_mo(n_samples=100):
     b = BetaMO(models=[Beta(), Beta()])
-    b.sample_proba()
+    b.sample_proba(n_samples=n_samples)
 
 
 @given(
@@ -204,7 +203,7 @@ def test_can_init_beta_mo_cc(a_float):
 ########################################################################################################################
 
 
-# StudentT
+# StudentTArray
 @settings(deadline=500)
 @given(
     st.one_of(
@@ -279,9 +278,8 @@ def test_check_context_matrix(n_samples, n_features, hidden_dim_list):
 )
 def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
     def sample_proba(context):
-        prob, weighted_sum = bnn.sample_proba(context=np.array(context))
-
-        assert type(prob) is type(weighted_sum) is np.ndarray  # type of the returns must be np.ndarray
+        prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
+        prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
@@ -309,7 +307,7 @@ def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(100),
     update_method=st.just("VI"),
-)  # max_size=2 takes a lot of time (>10 min.)
+)
 def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
     def update(context, rewards):
         bnn = BayesianNeuralNetwork.cold_start(
@@ -368,29 +366,29 @@ def test_bnn_mcmc_update(n_features, hidden_dim_list=(2,), n_samples=100, update
                 assert all(w_val == init_params[param] for w_val in np.array(layer_w[param]).flatten())
                 assert all(b_val == init_params[param] for b_val in np.array(layer_b[param]).flatten())
 
-        bnn.update(context=context, rewards=rewards)
+            bnn.update(context=context, rewards=rewards)
 
-        for param in ["mu", "sigma"]:  # nu is not updated:
-            for layer_ind in range(len(dim_list)):
-                layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-                layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            for param in ["mu", "sigma"]:  # nu is not updated:
+                for layer_ind in range(len(dim_list)):
+                    layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+                    layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
 
-                assert all(w_val != init_params[param] for w_val in np.array(layer_w[param]).flatten())
-                assert all(b_val != init_params[param] for b_val in np.array(layer_b[param]).flatten())
+                    assert all(w_val != init_params[param] for w_val in np.array(layer_w[param]).flatten())
+                    assert all(b_val != init_params[param] for b_val in np.array(layer_b[param]).flatten())
 
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+        rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
-    # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
-    update(context=context, rewards=rewards)
+        # context is numpy array
+        context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+        assert type(context) is np.ndarray
+        update(context=context, rewards=rewards)
 
-    # raise an error if len(context) != len(rewards)
-    with pytest.raises(AttributeError):
-        bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
-        )
-        bnn.update(context=context, rewards=rewards[1:])
+        # raise an error if len(context) != len(rewards)
+        with pytest.raises(AttributeError):
+            bnn = BayesianNeuralNetwork.cold_start(
+                n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+            )
+            bnn.update(context=context, rewards=rewards[1:])
 
 
 ########################################################################################################################

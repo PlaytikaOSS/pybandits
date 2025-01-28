@@ -19,7 +19,8 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import json
+
+import random
 from abc import ABC, abstractmethod
 from inspect import isclass
 from typing import Any, Dict, List, Optional, Set, Union, get_origin
@@ -32,18 +33,22 @@ from pybandits.base import (
     ActionRewardLikelihood,
     BinaryReward,
     Float01,
+    MOProbability,
+    MOProbabilityWeight,
     PositiveProbability,
     Predictions,
+    Probability,
+    ProbabilityWeight,
     PyBanditsBaseModel,
+    Serializable,
+    UnifiedActionId,
 )
-from pybandits.model import BaseModel
+from pybandits.base_model import BaseModel
+from pybandits.model import Model, ModelMO
 from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    model_validator,
-    pydantic_version,
     validate_call,
 )
+from pybandits.quantitative_model import QuantitativeModel
 from pybandits.strategy import Strategy
 from pybandits.utils import extract_argument_names_from_function
 
@@ -71,7 +76,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
     actions_manager: ActionsManager
     strategy: Strategy
     epsilon: Optional[Float01] = None
-    default_action: Optional[ActionId] = None
+    default_action: Optional[UnifiedActionId] = None
 
     def __init__(
         self,
@@ -89,12 +94,18 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     @classmethod
     def _get_instantiated_class_attribute(cls, attribute_name: str, kwargs: Dict[str, Any]) -> PyBanditsBaseModel:
+        attribute_class = cls._get_attribute_type(attribute_name)
         if attribute_name in kwargs:
-            attribute = kwargs[attribute_name]
+            attribute = (
+                kwargs[attribute_name]
+                if isinstance(kwargs[attribute_name], attribute_class)
+                else attribute_class(**kwargs.pop(attribute_name))
+            )
         else:
-            attribute_class = cls._get_attribute_type(attribute_name)
-            required_sub_attributes = extract_argument_names_from_function(attribute_class.__init__, True)
-            if not required_sub_attributes:  # case of no native __init__ method, just pydantic generic __init__
+            required_sub_attributes = extract_argument_names_from_function(attribute_class.__init__)
+            if required_sub_attributes == extract_argument_names_from_function(
+                PyBanditsBaseModel.__init__
+            ):  # case of no native __init__ method, just pydantic generic __init__
                 required_sub_attributes = list(attribute_class.model_fields.keys())
                 sub_attributes = {k: kwargs.pop(k) for k in required_sub_attributes if k in kwargs}
             else:
@@ -108,31 +119,25 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     ############################################ Instance Input Validators #############################################
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @model_validator(mode="before")
-        @classmethod
-        def check_default_action(cls, values):
-            epsilon = cls._get_value_with_default("epsilon", values)
-            default_action = cls._get_value_with_default("default_action", values)
-            if not epsilon and default_action:
-                raise AttributeError("A default action should only be defined when epsilon is defined.")
-            if default_action and default_action not in values["actions_manager"].actions:
-                raise AttributeError("The default action must be valid action defined in the actions set.")
-            return values
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @model_validator(mode="after")
-        def check_default_action(self):
-            if not self.epsilon and self.default_action:
-                raise AttributeError("A default action should only be defined when epsilon is defined.")
-            if self.default_action and self.default_action not in self.actions:
-                raise AttributeError("The default action must be valid action defined in the actions set.")
-            return self
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    def model_post_init(self, __context: Any) -> None:
+        if self.actions_manager.delta is not None and (not self.epsilon or self.default_action is not None):
+            raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
+        if not self.epsilon and self.default_action:
+            raise AttributeError("A default action should only be defined when epsilon is defined.")
+        if self.default_action and self.default_action not in self.actions:
+            raise AttributeError("The default action must be valid action defined in the actions set.")
+        if (
+            self.default_action
+            and isinstance(self.default_action, tuple)
+            and not isinstance(self.actions[self.default_action[0]], QuantitativeModel)
+        ):
+            raise AttributeError("Quantitative default action requires a quantitative action model.")
+        if (
+            self.default_action
+            and isinstance(self.default_action, str)
+            and not isinstance(self.actions[self.default_action], (Model, ModelMO))
+        ):
+            raise AttributeError("Standard default action requires a standard action model.")
 
     ############################################# Method Input Validators ##############################################
 
@@ -165,10 +170,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     ####################################################################################################################
 
-    def model_post_init(self, __context: Any) -> None:
-        if self.actions_manager.delta is not None and (not self.epsilon or self.default_action is not None):
-            raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
-
     @property
     def actions(self) -> Dict[ActionId, BaseModel]:
         return self.actions_manager.actions
@@ -178,6 +179,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
         **kwargs,
@@ -195,14 +197,103 @@ class BaseMab(PyBanditsBaseModel, ABC):
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        quantities: Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
         rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
             List of previously collected rewards.
         """
         self.actions_manager.update(
-            actions=actions, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory, **kwargs
+            actions=actions,
+            rewards=rewards,
+            quantities=quantities,
+            actions_memory=actions_memory,
+            rewards_memory=rewards_memory,
+            **kwargs,
         )
+
+    @staticmethod
+    def _transform_nested_list(lst: List[List[Dict]]):
+        return [{k: v for d in single_action_dicts for k, v in d.items()} for single_action_dicts in zip(*lst)]
+
+    @staticmethod
+    def _is_so_standard_action(value: Any) -> bool:
+        #       Probability                                      ProbabilityWeight
+        return isinstance(value, float) or (isinstance(value, tuple) and isinstance(value[0], float))
+
+    @staticmethod
+    def _is_so_quantitative_action(value: Any) -> bool:
+        return isinstance(value, tuple) and isinstance(value[0], tuple)
+
+    @classmethod
+    def _is_standard_action(cls, value: Any) -> bool:
+        return cls._is_so_standard_action(value) or (isinstance(value, list) and cls._is_so_standard_action(value[0]))
+
+    @classmethod
+    def _is_quantitative_action(cls, value: Any) -> bool:
+        return cls._is_so_quantitative_action(value) or (
+            isinstance(value, list) and cls._is_so_quantitative_action(value[0])
+        )
+
+    def _get_action_probabilities(
+        self, forbidden_actions: Optional[Set[ActionId]] = None, **kwargs
+    ) -> Union[
+        List[Dict[UnifiedActionId, Probability]],
+        List[Dict[UnifiedActionId, ProbabilityWeight]],
+        List[Dict[UnifiedActionId, MOProbability]],
+        List[Dict[UnifiedActionId, MOProbabilityWeight]],
+    ]:
+        """
+        Get the probability of getting a positive reward for each action.
+
+        Parameters
+        ----------
+        forbidden_actions : Optional[Set[ActionId]], default=None
+            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
+            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
+            Note that: actions = allowed_actions U forbidden_actions.
+
+        Returns
+        -------
+        action_probabilities: Union[List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, ProbabilityWeight]], List[Dict[UnifiedActionId, MOProbability]], List[Dict[UnifiedActionId, MOProbabilityWeight]]]
+            The probability of getting a positive reward for each action.
+        """
+
+        valid_actions = self._get_valid_actions(forbidden_actions)
+        action_probabilities = {
+            action: model.sample_proba(**kwargs) for action, model in self.actions.items() if action in valid_actions
+        }
+        # Handle standard actions for which the value is a (probability, weight) tuple
+        actions_transformations = [
+            [{key: proba} for proba in value]
+            for key, value in action_probabilities.items()
+            if self._is_standard_action(value[0])
+        ]
+        actions_transformations = self._transform_nested_list(actions_transformations)
+        # Handle quantitative actions, for which the value is a tuple of
+        # tuples of (quantity, (probability, weight) or probability)
+        quantitative_actions_transformations = [
+            [{(key, quantity): proba for quantity, proba in sample} for sample in value]
+            for key, value in action_probabilities.items()
+            if self._is_quantitative_action(value[0])
+        ]
+        quantitative_actions_transformations = self._transform_nested_list(quantitative_actions_transformations)
+        if not actions_transformations and not quantitative_actions_transformations:
+            return []
+        if not actions_transformations:  # No standard actions
+            actions_transformations = [dict() for _ in range(len(quantitative_actions_transformations))]
+        if not quantitative_actions_transformations:  # No quantitative actions
+            quantitative_actions_transformations = [dict() for _ in range(len(actions_transformations))]
+        if len(actions_transformations) != len(quantitative_actions_transformations):
+            raise ValueError("The number of standard and quantitative actions should be the same.")
+        action_probabilities = [
+            {**actions_dict, **quantitative_actions_dict}
+            for actions_dict, quantitative_actions_dict in zip(
+                actions_transformations, quantitative_actions_transformations
+            )
+        ]
+        return action_probabilities
 
     @abstractmethod
     @validate_call
@@ -238,8 +329,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The internal state of the model (actions, scores, etc.).
         """
         model_name = self.__class__.__name__
-        json_state = self._apply_version_adjusted_method("model_dump_json", "json")
-        state = json.loads(json_state)
+        state = self._apply_version_adjusted_method("model_dump", "dict")
         return model_name, state
 
     @validate_call
@@ -282,7 +372,16 @@ class BaseMab(PyBanditsBaseModel, ABC):
             if self.default_action and self.default_action not in p.keys():
                 raise KeyError(f"Default action {self.default_action} not in actions.")
             if np.random.binomial(1, self.epsilon):
-                selected_action = self.default_action or np.random.choice(list(p.keys()))
+                if self.default_action:
+                    selected_action = self.default_action
+                else:
+                    actions = list(set(a[0] if isinstance(a, tuple) else a for a in p.keys()))
+                    selected_action = random.choice(actions)
+                    if isinstance(self.actions[selected_action], QuantitativeModel):
+                        selected_action = (
+                            selected_action,
+                            tuple(np.random.random(self.actions[selected_action].dimension)),
+                        )
             else:
                 selected_action = self.strategy.select_action(p=p, actions=actions)
         else:
@@ -290,7 +389,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return selected_action
 
     @classmethod
-    def from_state(cls, state: dict) -> "BaseMab":
+    def from_state(cls, state: Dict[str, Serializable]) -> "BaseMab":
         """
         Create a new instance of the class from a given model state.
         The state can be obtained by applying get_state() to a model.
@@ -306,22 +405,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The new model instance.
 
         """
-        model_attributes = extract_argument_names_from_function(cls.__init__, True)
-        class_attributes = {
-            attribute_name: list(state[attribute_name].keys()) for attribute_name in cls._get_class_type_attributes()
-        }
-        flattened_class_attributes = [item for sublist in class_attributes.values() for item in sublist]
-        class_attributes_mapping = {
-            k: state[k] for k in model_attributes if k not in flattened_class_attributes and k in state
-        }
-        class_attributes_mapping.update(
-            {
-                k: state[attribute_name][k]
-                for attribute_name, sub_class_attributes in class_attributes.items()
-                for k in sub_class_attributes
-            }
-        )
-        return cls(**class_attributes_mapping)
+        return cls.model_validate(state)
 
     @classmethod
     def from_old_state(
@@ -383,12 +467,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        epsilon: Optional[Float01]
+        epsilon : Optional[Float01]
             epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
-        default_action: Optional[ActionId]
+        default_action : Optional[ActionId]
             The default action to select with a probability of epsilon when using the epsilon-greedy approach.
             If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-        kwargs: Dict[str, Any]
+        kwargs : Dict[str, Any]
             Additional parameters for the mab and for the action model.
 
         Returns
@@ -396,12 +480,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
         mab: BaseMab
             Multi-Armed Bandit
         """
-
         # Instantiate the MAB
         mab = cls(epsilon=epsilon, default_action=default_action, **kwargs)
-
-        # For contextual multi-armed bandit, until the very first update the model will predict actions randomly,
-        # where each action has equal probability to be selected.
-        if hasattr(mab, "predict_actions_randomly"):
-            mab.predict_actions_randomly = True
         return mab

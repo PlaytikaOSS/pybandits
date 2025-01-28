@@ -21,15 +21,22 @@
 # SOFTWARE.
 
 import random
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 
-from pybandits.base import ActionId, BinaryReward
+from pybandits.base import ActionId, BinaryReward, Probability, UnifiedActionId
 from pybandits.pydantic_version_compatibility import Field, model_validator
+from pybandits.quantitative_model import QuantitativeModel
 from pybandits.simulator import Simulator
 from pybandits.smab import BaseSmabBernoulli
+from pybandits.utils import extract_argument_names_from_function
+
+#                                        quantity
+ParametricActionProbability = Callable[[np.ndarray], Probability]
+SmabProbabilityValue = Union[Probability, ParametricActionProbability]
+SmabActionProbabilityGroundTruth = Dict[ActionId, SmabProbabilityValue]
 
 
 class SmabSimulator(Simulator):
@@ -46,35 +53,61 @@ class SmabSimulator(Simulator):
         sMAB model.
     """
 
+    probs_reward: Optional[Union[SmabActionProbabilityGroundTruth, Dict[str, SmabActionProbabilityGroundTruth]]] = None
     mab: BaseSmabBernoulli = Field(validation_alias="smab")
     _base_columns: List[str] = ["batch", "action", "reward"]
+
+    @classmethod
+    def _validate_probs_reward_values(cls, probability: SmabProbabilityValue, is_quantitative_action: bool):
+        if not is_quantitative_action:
+            if not isinstance(probability, float):
+                raise ValueError("The probability must be a float.")
+            if not 0 <= probability <= 1:
+                raise ValueError("The probability must be in the interval [0, 1].")
+        else:
+            if not callable(probability):
+                raise ValueError("The probability must be a callable function.")
+            if len(extract_argument_names_from_function(probability)) != 1:
+                raise ValueError("The probability function must have only one argument.")
 
     @model_validator(mode="before")
     @classmethod
     def replace_null_and_validate_probs_reward(cls, values):
-        mab_action_ids = list(values["mab"].actions.keys())
         probs_reward = cls._get_value_with_default("probs_reward", values)
         if probs_reward is None:
-            probs_reward = pd.DataFrame(0.5, index=[0], columns=mab_action_ids)
+            probs_reward = {
+                action: cls._generate_prob_reward(model.dimension)
+                if isinstance(model, QuantitativeModel)
+                else np.random.random()
+                for action, model in values["mab"].actions.items()
+            }
             values["probs_reward"] = probs_reward
-        else:
-            if len(probs_reward) != 1:
-                raise ValueError("probs_reward must have exactly one row.")
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_probs_reward_columns(cls, values):
+        if "probs_reward" in values and values["probs_reward"] is not None:
+            cls._validate_probs_reward_dict(values["probs_reward"], values["mab"].actions)
         return values
 
     def _initialize_results(self):
         """
         Initialize the results DataFrame. The results DataFrame is used to store the raw simulation results.
         """
-        self._results = pd.DataFrame(columns=["batch", "action", "reward"])
+        self._results = pd.DataFrame(
+            columns=["batch", "action", "reward", "quantities", "selected_prob_reward", "max_prob_reward"]
+        )
 
-    def _draw_rewards(self, actions: List[ActionId], metadata: Dict[str, List]) -> List[BinaryReward]:
+    def _draw_rewards(
+        self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
+    ) -> List[BinaryReward]:
         """
         Draw rewards for the selected actions according to probs_reward.
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : List[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
         metadata : Dict[str, List]
             The metadata for the selected actions. Not used in this implementation.
@@ -84,8 +117,30 @@ class SmabSimulator(Simulator):
         reward : List[BinaryReward]
             A list of binary rewards.
         """
-        rewards = [int(random.random() < self.probs_reward.loc[0, a]) for a in actions]
+        rewards = [int(random.random() < self._extract_ground_truth(a)) for a in actions]
         return rewards
+
+    def _extract_ground_truth(self, action: UnifiedActionId) -> Probability:
+        """
+        Extract the ground truth probability for the action.
+
+        Parameters
+        ----------
+        action : UnifiedActionId
+            The action for which the ground truth probability is extracted.
+
+        Returns
+        -------
+        Probability
+            The ground truth probability for the action.
+        """
+        return (
+            self.probs_reward[action[0]](np.array(action[1]))
+            if isinstance(action, tuple) and action[1] is not None
+            else self.probs_reward[action[0]]
+            if isinstance(action, tuple)
+            else self.probs_reward[action]
+        )
 
     def _get_batch_step_kwargs_and_metadata(
         self, batch_index
@@ -113,28 +168,33 @@ class SmabSimulator(Simulator):
         metadata = {}
         return predict_kwargs, update_kwargs, metadata
 
-    def _finalize_step(self, batch_results: pd.DataFrame) -> pd.DataFrame:
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]) -> pd.DataFrame:
         """
         Finalize the step by adding additional information to the batch results.
 
         Parameters
         ----------
         batch_results : pd.DataFrame
-            raw batch results
+            Raw batch results
+        update_kwargs : Dict[str, np.ndarray]
+            Placeholder for interface compatability
 
         Returns
         -------
         batch_results : pd.DataFrame
-            same raw batch results
+            Same raw batch results
         """
+        action_id = batch_results.loc[:, "action"]
+        quantity = batch_results.loc[:, "quantities"]
+        selected_prob_reward = [self._extract_ground_truth((a, q)) for a, q in zip(action_id, quantity)]
+        batch_results.loc[:, "selected_prob_reward"] = selected_prob_reward
+        max_prob_reward = [
+            max(
+                self._maximize_prob_reward((lambda q: self.probs_reward[a](q)), m.dimension)
+                if isinstance(m, QuantitativeModel)
+                else self.probs_reward[a]
+                for a, m in self.mab.actions.items()
+            )
+        ] * len(batch_results)
+        batch_results.loc[:, "max_prob_reward"] = max_prob_reward
         return batch_results
-
-    def _finalize_results(self):
-        """
-        Finalize the simulation process. It can be used to add additional information to the results.
-
-        Returns
-        -------
-        None
-        """
-        pass

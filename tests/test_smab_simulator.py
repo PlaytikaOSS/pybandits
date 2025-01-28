@@ -24,13 +24,13 @@ import os
 from tempfile import TemporaryDirectory
 
 import numpy as np
-import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
 from pybandits.model import Beta
+from pybandits.quantitative_model import SmabZoomingModel
 from pybandits.smab import SmabBernoulli
 from pybandits.smab_simulator import SmabSimulator
 
@@ -40,13 +40,19 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
     smab.actions = {"a1": mocker.Mock(), "a2": mocker.Mock()}
     smab.epsilon = 0.0
     smab.default_action = None
-    probs_reward = pd.DataFrame({"a1": [0.5, 0.5], "a2": [0.5, 0.5]})
+    probs_reward = {str(i): {"a1": 0.5, "a2": 0.5} for i in range(2)}
     with pytest.raises(ValueError):
         SmabSimulator(mab=smab, probs_reward=probs_reward)
 
 
-def test_smab_e2e_simulation_with_default_args(action_ids=["a1", "a2"]):
-    mab = SmabBernoulli(actions={action_id: Beta() for action_id in action_ids})
+@settings(deadline=None)
+@given(
+    action_ids=st.just(["a1", "a2"]),
+    models=st.lists(st.sampled_from([Beta(), SmabZoomingModel.cold_start()]), min_size=2, max_size=2),
+)
+def test_smab_e2e_simulation_with_default_args(action_ids, models, monkeymodule):
+    monkeymodule.setattr(SmabSimulator, "_maximize_prob_reward", lambda *args, **kwargs: np.random.random())
+    mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     with TemporaryDirectory() as path:
         simulator = SmabSimulator(mab=mab, visualize=True, save=True, path=path)
         simulator.run()
@@ -58,22 +64,27 @@ def test_smab_e2e_simulation_with_default_args(action_ids=["a1", "a2"]):
         assert "simulation_results.html" in dir_list
 
 
-@settings(deadline=1000)
+@settings(deadline=None)
 @given(
-    st.just(["a1", "a2"]),
-    st.integers(min_value=1, max_value=10),
-    st.integers(min_value=1, max_value=10),
-    st.booleans(),
-    st.sampled_from([None, 0, 42]),
-    st.booleans(),
-    st.booleans(),
-    st.sampled_from(["", "unit_test"]),
+    action_ids=st.just(["a1", "a2"]),
+    models=st.lists(st.sampled_from([Beta(), SmabZoomingModel.cold_start()]), min_size=2, max_size=2),
+    n_updates=st.integers(min_value=1, max_value=10),
+    batch_size=st.integers(min_value=1, max_value=10),
+    save=st.booleans(),
+    random_seed=st.sampled_from([None, 0, 42]),
+    verbose=st.booleans(),
+    visualize=st.booleans(),
+    file_prefix=st.sampled_from(["", "unit_test"]),
 )
 def test_smab_e2e_simulation_with_non_default_args(
-    action_ids, n_updates, batch_size, save, random_seed, verbose, visualize, file_prefix
+    action_ids, models, n_updates, batch_size, save, random_seed, verbose, visualize, file_prefix, monkeymodule
 ):
-    probs_reward = pd.DataFrame(np.random.uniform(0, 1, (1, len(action_ids))), columns=action_ids)
-    mab = SmabBernoulli.cold_start(action_ids=action_ids)
+    monkeymodule.setattr(
+        SmabSimulator,
+        "_maximize_prob_reward",
+        lambda *args, **kwargs: np.random.random(),
+    )
+    mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:
         with pytest.raises(ValueError):
             SmabSimulator(
@@ -83,7 +94,7 @@ def test_smab_e2e_simulation_with_non_default_args(
                 n_updates=n_updates,
                 batch_size=batch_size,
                 random_seed=random_seed,
-                probs_reward=probs_reward,
+                probs_reward=None,
                 verbose=verbose,
                 file_prefix=file_prefix,
             )
@@ -97,7 +108,7 @@ def test_smab_e2e_simulation_with_non_default_args(
                 n_updates=n_updates,
                 batch_size=batch_size,
                 random_seed=random_seed,
-                probs_reward=probs_reward,
+                probs_reward=None,
                 verbose=verbose,
                 file_prefix=file_prefix,
             )

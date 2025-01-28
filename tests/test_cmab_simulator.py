@@ -33,13 +33,15 @@ from pytest_mock import MockerFixture
 import pybandits
 from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
-from tests.test_utils import FakeApproximation
+from pybandits.model import BayesianLogisticRegression
+from pybandits.quantitative_model import CmabZoomingModel
+from tests.test_utils import FakeApproximation, FakePrediction
 
 
-def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=[0, 1]):
+def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
     def check_value_error(probs_reward, context):
         with pytest.raises(ValueError):
-            CmabSimulator(mab=cmab, probs_reward=probs_reward, groups=groups, context=context)
+            CmabSimulator(mab=cmab, probs_reward=probs_reward, group=list(groups), context=context)
 
     num_groups = len(groups)
     cmab = mocker.Mock(spec=CmabBernoulli)
@@ -53,9 +55,23 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=[0, 1]):
     check_value_error(probs_reward, context[:1])
 
 
-def test_cmab_e2e_simulation_with_default_arguments(
-    monkeymodule, action_ids=["a1", "a2"], n_features=3, n_updates=2, batch_size=10, num_groups=2
-):
+@settings(deadline=None)
+@given(
+    st.just(["a1", "a2"]),
+    st.lists(
+        st.sampled_from(
+            [
+                BayesianLogisticRegression.cold_start(n_features=3, update_method="VI"),
+                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 3, "update_method": "VI"}),
+            ]
+        ),
+        min_size=2,
+        max_size=2,
+    ),
+    st.just(3),
+    st.just(2),
+)
+def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, models, n_features, num_groups):
     monkeymodule.setattr(
         pybandits.model,
         "fit",
@@ -66,12 +82,22 @@ def test_cmab_e2e_simulation_with_default_arguments(
         "sample",
         FakeApproximation(n_features=n_features).sample,
     )
-    mab = CmabBernoulli.cold_start(action_ids=action_ids, n_features=n_features)
+    monkeymodule.setattr(
+        CmabSimulator,
+        "_maximize_prob_reward",
+        lambda *args, **kwargs: np.random.random(),
+    )
+    mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     base_groups = list(range(num_groups))
+    n_updates = CmabSimulator.model_fields["n_updates"].default
+    batch_size = CmabSimulator.model_fields["batch_size"].default
     group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
     context = (
         np.repeat(np.arange(3).reshape(1, -1), n_updates * batch_size, axis=0).T * (np.array(group) - np.mean(group))
     ).T
+    monkeymodule.setattr(
+        pybandits.model, "sample_prior_predictive", FakePrediction(n_samples=batch_size).sample_prior_predictive
+    )
     with TemporaryDirectory() as path:
         simulator = CmabSimulator(
             mab=mab,
@@ -95,6 +121,16 @@ def test_cmab_e2e_simulation_with_default_arguments(
 @settings(deadline=None)
 @given(
     action_ids=st.just(["a1", "a2"]),
+    models=st.lists(
+        st.sampled_from(
+            [
+                BayesianLogisticRegression.cold_start(n_features=3, update_method="VI"),
+                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 3, "update_method": "VI"}),
+            ]
+        ),
+        min_size=2,
+        max_size=2,
+    ),
     n_features=st.just(3),
     n_updates=st.integers(min_value=1, max_value=3),
     batch_size=st.integers(min_value=1, max_value=10),
@@ -107,6 +143,7 @@ def test_cmab_e2e_simulation_with_default_arguments(
 )
 def test_cmab_e2e_simulation_with_non_default_args(
     action_ids,
+    models,
     n_features,
     n_updates,
     batch_size,
@@ -128,19 +165,22 @@ def test_cmab_e2e_simulation_with_non_default_args(
         "sample",
         FakeApproximation(n_features=n_features).sample,
     )
+
+    monkeymodule.setattr(
+        CmabSimulator,
+        "_maximize_prob_reward",
+        lambda *args, **kwargs: np.random.random(),
+    )
     base_groups = list(range(num_groups))
     group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
-    effective_base_groups = sorted(set(group))
     context = (
         np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0).T
         * (np.array(group) - np.mean(group))
     ).T
-    probs_reward = pd.DataFrame(
-        np.random.uniform(0, 1, (len(effective_base_groups), len(action_ids))),
-        columns=action_ids,
-        index=[str(g) for g in effective_base_groups],
+    monkeymodule.setattr(
+        pybandits.model, "sample_prior_predictive", FakePrediction(n_samples=batch_size).sample_prior_predictive
     )
-    mab = CmabBernoulli.cold_start(action_ids=action_ids, n_features=n_features, update_method="VI")
+    mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:
         with pytest.raises(ValueError):
             CmabSimulator(
@@ -151,7 +191,7 @@ def test_cmab_e2e_simulation_with_non_default_args(
                 n_updates=n_updates,
                 batch_size=batch_size,
                 random_seed=random_seed,
-                probs_reward=probs_reward,
+                probs_reward=None,
                 verbose=verbose,
                 file_prefix=file_prefix,
                 context=context,
@@ -167,7 +207,7 @@ def test_cmab_e2e_simulation_with_non_default_args(
                 n_updates=n_updates,
                 batch_size=batch_size,
                 random_seed=random_seed,
-                probs_reward=probs_reward,
+                probs_reward=None,
                 verbose=verbose,
                 file_prefix=file_prefix,
                 context=context,

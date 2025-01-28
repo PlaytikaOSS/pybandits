@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set, Union
 
 import hypothesis.strategies as st
 import numpy as np
@@ -28,18 +28,27 @@ import pytest
 from hypothesis import given
 from pytest_mock import MockerFixture
 
-from pybandits.base import ActionId, Float01, Probability
+from pybandits.base import ActionId, BinaryReward, Float01, Probability
 from pybandits.mab import BaseMab
-from pybandits.model import Beta
+from pybandits.model import Beta, BetaCC
 from pybandits.pydantic_version_compatibility import ValidationError
 from pybandits.strategy import ClassicBandit
 from tests.test_actions_manager import DummyActionsManager
 
 
 class DummyMab(BaseMab):
-    actions_manager: DummyActionsManager
     epsilon: Optional[Float01] = None
     default_action: Optional[ActionId] = None
+    actions_manager: DummyActionsManager
+
+    def _update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]],
+        **kwargs,
+    ):
+        pass
 
     def predict(
         self,
@@ -54,7 +63,7 @@ class DummyMab(BaseMab):
         return model_name, state
 
 
-def test_base_mab_raise_on_bad_actions():
+def test_base_mab_raise_on_bad_actions(cost=0.0):
     with pytest.raises(TypeError):
         DummyMab(actions={"a1": Beta(), "a2": Beta()})
     with pytest.raises(ValidationError):
@@ -67,25 +76,35 @@ def test_base_mab_raise_on_bad_actions():
         DummyMab(actions={"a1": None, "a2": None}, strategy=ClassicBandit())
     with pytest.warns(UserWarning):
         DummyMab(actions={"a1": Beta()}, strategy=ClassicBandit())
+    with pytest.raises(ValidationError):
+        DummyMab(actions={"a1": Beta(), "a2": BetaCC(cost=cost)}, strategy=ClassicBandit())
 
 
 def test_base_mab_check_update_params():
     dummy_mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit())
     with pytest.raises(AttributeError):
         # actionId doesn't exist
-        dummy_mab._validate_update_params(actions=["a1", "a3"], rewards=[1, 1])
-    with pytest.raises(AttributeError):
+        dummy_mab.update(actions=["a1", "a3"], rewards=[1, 1], quantities=None)
+    with pytest.raises(ValidationError):
         # actionId cannot be empty
-        dummy_mab._validate_update_params(actions=[""], rewards=[1])
+        dummy_mab.update(actions=[""], rewards=[1], quantities=None)
     with pytest.raises(AttributeError):
-        dummy_mab._validate_update_params(actions=["a1", "a2"], rewards=[1])
+        dummy_mab._validate_params_lengths(actions=["a1", "a2"], rewards=[1], quantities=None)
+
+    with pytest.raises(AttributeError):
+        # quantities of different length
+        dummy_mab._validate_params_lengths(actions=["a1", "a2"], rewards=[1, 1], quantities=[1])
+
+    with pytest.raises(AttributeError):
+        # context of different length
+        dummy_mab._validate_params_lengths(actions=["a1", "a2"], rewards=[1, 1], quantities=None, context=[1])
 
 
 @given(r1=st.integers(min_value=0, max_value=1), r2=st.integers(min_value=0, max_value=1))
 def test_base_mab_update_ok(r1, r2):
     dummy_mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit())
-    dummy_mab.update(actions=["a1", "a2"], rewards=[r1, r2])
-    dummy_mab.update(actions=["a1", "a1"], rewards=[r1, r2])
+    dummy_mab.update(actions=["a1", "a2"], rewards=[r1, r2], quantities=None)
+    dummy_mab.update(actions=["a1", "a1"], rewards=[r1, r2], quantities=None)
 
 
 ########################################################################################################################

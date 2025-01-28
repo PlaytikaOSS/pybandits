@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pytest
@@ -9,22 +9,29 @@ from pytest_mock import MockerFixture
 
 import pybandits
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
-from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward
-from pybandits.model import BayesianLogisticRegression, BayesianNeuralNetwork, Beta
+from pybandits.base import ACTION_IDS_PREFIX, QUANTITATIVE_ACTION_IDS_PREFIX, ActionId, BinaryReward
+from pybandits.model import BayesianNeuralNetwork, Beta
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
     ValidationError,
     pydantic_version,
 )
+from pybandits.quantitative_model import CmabZoomingModel, SmabZoomingModel
 from tests.test_utils import FakeApproximation
 
 REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
+    actions: Dict[ActionId, Beta]
+
     def _update_actions(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        **kwargs,
     ):
         rewards_dict = defaultdict(list)
 
@@ -134,6 +141,41 @@ def test_mixed_action_types_error(n_features=1):
         CmabActionsManager[BayesianNeuralNetwork](actions=actions)
 
 
+def test_smab_mixed_action_types_error():
+    beta_model = Beta()
+    zoom_model = SmabZoomingModel.cold_start()
+
+    actions = {"a1": beta_model, "a2": zoom_model}
+    with pytest.raises(ValidationError):
+        SmabActionsManager[SmabZoomingModel](actions=actions)
+    with pytest.raises(ValidationError):
+        SmabActionsManager[Beta](actions=actions)
+
+    SmabActionsManager[Union[Beta, SmabZoomingModel]](actions=actions)
+
+
+def test_cmab_mixed_action_types_error(n_features=1):
+    blr_model = BayesianNeuralNetwork.cold_start(n_features=n_features)
+    blr_model2 = BayesianNeuralNetwork.cold_start(n_features=n_features + 1)
+    zoom_model = CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": n_features})
+    zoom_model2 = CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": n_features + 1})
+
+    actions = {"a1": blr_model, "a2": blr_model2}
+    with pytest.raises(AttributeError):
+        CmabActionsManager[BayesianNeuralNetwork](actions=actions)
+
+    actions = {"a1": zoom_model, "a2": zoom_model2}
+    with pytest.raises(AttributeError):
+        CmabActionsManager[CmabZoomingModel](actions=actions)
+
+    actions = {"a1": blr_model, "a2": zoom_model2}
+    with pytest.raises(AttributeError):
+        CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]](actions=actions)
+
+    actions = {"a1": blr_model, "a2": zoom_model}
+    CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]](actions=actions)
+
+
 @given(
     n_successes=st.just(100),
     n_failures=st.just(1),
@@ -167,7 +209,7 @@ def test_change_detection(n_successes, n_failures, delta, reference):
 def test_returns_empty_dict_when_no_action_specific_kwargs():
     kwargs = {"param1": 1, "param2": 2}
     result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == {}
+    assert result == ({}, {})
 
 
 def test_processes_kwargs_with_non_dict_values():
@@ -175,13 +217,14 @@ def test_processes_kwargs_with_non_dict_values():
         f"{ACTION_IDS_PREFIX}param1": "not_a_dict",
     }
     result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == {}
+    assert result == ({}, {})
 
 
 def test_manages_kwargs_with_empty_dicts():
     kwargs = {f"{ACTION_IDS_PREFIX}param1": {}, f"{ACTION_IDS_PREFIX}param2": {}}
     result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == {}
+    assert result == ({}, {})
+    assert kwargs == {}
 
 
 def test_extracts_action_specific_kwargs_with_valid_keys():
@@ -189,9 +232,21 @@ def test_extracts_action_specific_kwargs_with_valid_keys():
         f"{ACTION_IDS_PREFIX}param1": {"action1": 1, "action2": 2},
         f"{ACTION_IDS_PREFIX}param2": {"action1": 3, "action2": 4},
     }
-    expected_output = {"action1": {"param1": 1, "param2": 3}, "action2": {"param1": 2, "param2": 4}}
+    expected_output = ({"action1": {"param1": 1, "param2": 3}, "action2": {"param1": 2, "param2": 4}}, {})
     result = ActionsManager._extract_action_specific_kwargs(kwargs)
     assert result == expected_output
+    assert kwargs == {}
+
+
+def test_extracts_quantitative_action_specific_kwargs_with_valid_keys():
+    kwargs = {
+        f"{QUANTITATIVE_ACTION_IDS_PREFIX}param1": {"action1": 1, "action2": 2},
+        f"{QUANTITATIVE_ACTION_IDS_PREFIX}param2": {"action1": 3, "action2": 4},
+    }
+    expected_output = ({}, {"action1": {"param1": 1, "param2": 3}, "action2": {"param1": 2, "param2": 4}})
+    result = ActionsManager._extract_action_specific_kwargs(kwargs)
+    assert result == expected_output
+    assert kwargs == {}
 
 
 ########################################################################################################################
@@ -207,39 +262,89 @@ class MockActionModel:
         pass
 
 
-def test_extracts_action_model_class_and_attributes_with_valid_kwargs(mocker: MockerFixture):
-    mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=["param1", "param2"])
-
-    kwargs = {"param1": 1, "param2": 2}
-    action_general_kwargs = ActionsManager._extract_action_model_class_and_attributes(kwargs, MockActionModel.__init__)
-
-    assert action_general_kwargs == {"param1": 1, "param2": 2}
-
-
-def test_returns_callable_for_action_model_cold_start_instantiation(mocker: MockerFixture):
-    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
-
-    action_model_cold_start = ActionsManager._get_action_model_start_method(cold_start_mode=True)
-
-    assert callable(action_model_cold_start)
-
-
 def test_handles_empty_kwargs_gracefully(mocker: MockerFixture):
     mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=[])
+    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
+    mocker.patch("pybandits.actions_manager.issubclass", return_value=True)
 
-    kwargs = {}
-    action_general_kwargs = ActionsManager._extract_action_model_class_and_attributes(kwargs, MockActionModel.__init__)
+    (
+        _,
+        _,
+        action_general_kwargs,
+        quantitative_action_general_kwargs,
+    ) = ActionsManager._extract_action_model_class_and_attributes({})
 
     assert action_general_kwargs == {}
+    assert quantitative_action_general_kwargs is None
+
+    mocker.patch("pybandits.actions_manager.issubclass", side_effect=[False, True])
+    (
+        _,
+        _,
+        action_general_kwargs,
+        quantitative_action_general_kwargs,
+    ) = ActionsManager._extract_action_model_class_and_attributes({})
+    assert action_general_kwargs is None
+    assert quantitative_action_general_kwargs == {}
 
 
 def test_handles_kwargs_with_no_matching_action_model_attributes(mocker: MockerFixture):
     mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=[])
-
+    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
+    mocker.patch("pybandits.actions_manager.issubclass", return_value=True)
     kwargs = {"irrelevant_param": 1}
-    action_general_kwargs = ActionsManager._extract_action_model_class_and_attributes(kwargs, MockActionModel.__init__)
+    kwargs_copy = kwargs.copy()
+    (
+        _,
+        _,
+        action_general_kwargs,
+        quantitative_action_general_kwargs,
+    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs_copy)
 
     assert action_general_kwargs == {}
+    assert quantitative_action_general_kwargs is None
+    assert kwargs == kwargs_copy
+
+    mocker.patch("pybandits.actions_manager.issubclass", side_effect=[False, True])
+    (
+        _,
+        _,
+        action_general_kwargs,
+        quantitative_action_general_kwargs,
+    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs_copy)
+
+    assert action_general_kwargs is None
+    assert quantitative_action_general_kwargs == {}
+    assert kwargs == kwargs_copy
+
+
+def test_extracts_action_model_class_and_attributes_with_valid_kwargs(mocker: MockerFixture):
+    mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=["param1", "param2"])
+    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
+
+    kwargs = {"param1": 1, "param2": 2}
+    with pytest.raises(TypeError):
+        ActionsManager._extract_action_model_class_and_attributes(kwargs.copy())
+
+    mocker.patch("pybandits.actions_manager.issubclass", return_value=True)
+    (
+        _,
+        _,
+        action_general_kwargs,
+        quantitative_action_general_kwargs,
+    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs.copy())
+    assert action_general_kwargs == kwargs
+    assert quantitative_action_general_kwargs is None
+
+    mocker.patch("pybandits.actions_manager.issubclass", side_effect=[False, True])
+    (
+        _,
+        _,
+        action_general_kwargs,
+        quantitative_action_general_kwargs,
+    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs.copy())
+    assert action_general_kwargs is None
+    assert quantitative_action_general_kwargs == kwargs
 
 
 ########################################################################################################################
@@ -262,8 +367,8 @@ def test_smab_manager_update(data_len, other_reward):
     rewards = [1] * data_len
     actions_memory = ["action1"] * data_len
     rewards_memory = [other_reward] * data_len
-    manager.update(actions_memory, rewards_memory)
-    manager.update(actions, rewards, actions_memory=actions_memory, rewards_memory=rewards_memory)
+    manager.update(actions_memory, rewards_memory, None)
+    manager.update(actions, rewards, None, actions_memory=actions_memory, rewards_memory=rewards_memory)
 
 
 ########################################################################################################################
@@ -295,18 +400,19 @@ def test_cmab_manager_update(context, context_memory, n_features, other_reward, 
     )
 
     actions = {
-        "action1": BayesianLogisticRegression.cold_start(n_features=n_features),
-        "action2": BayesianLogisticRegression.cold_start(n_features=n_features),
+        "action1": BayesianNeuralNetwork.cold_start(n_features=n_features),
+        "action2": BayesianNeuralNetwork.cold_start(n_features=n_features),
     }
-    manager = CmabActionsManager[BayesianLogisticRegression](actions=actions, delta=REFERENCE_DELTA)
+    manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions, delta=REFERENCE_DELTA)
     actions = ["action1"] * len(context)
     rewards = [1] * len(context)
     actions_memory = ["action1"] * len(context_memory)
     rewards_memory = [other_reward] * len(context_memory)
-    manager.update(actions_memory, rewards_memory, context=context_memory)
+    manager.update(actions_memory, rewards_memory, None, context=context_memory)
     manager.update(
         actions,
         rewards,
+        None,
         context=context,
         actions_memory=actions_memory,
         rewards_memory=rewards_memory,
@@ -353,15 +459,15 @@ def test_cmab_context_memory_matching_dimensions(context, context_memory, n_feat
         FakeApproximation(n_features=n_features).sample,
     )
     actions = {
-        "action1": BayesianLogisticRegression.cold_start(n_features=n_features),
-        "action2": BayesianLogisticRegression.cold_start(n_features=n_features),
+        "action1": BayesianNeuralNetwork.cold_start(n_features=n_features),
+        "action2": BayesianNeuralNetwork.cold_start(n_features=n_features),
     }
-    manager = CmabActionsManager[BayesianLogisticRegression](actions=actions, delta=REFERENCE_DELTA)
+    manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions, delta=REFERENCE_DELTA)
     actions = ["action1"] * len(context)
     rewards = [1] * len(context)
     actions_memory = ["action1"] * len(context_memory)
     rewards_memory = [other_reward] * len(context_memory)
-    manager.update(actions_memory, rewards_memory, context=context_memory)
+    manager.update(actions_memory, rewards_memory, None, context=context_memory)
 
     with pytest.raises(ValueError):
         manager.update(

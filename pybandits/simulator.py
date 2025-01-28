@@ -23,10 +23,11 @@
 import os.path
 import random
 from abc import ABC, abstractmethod
-from functools import cached_property
-from typing import Any, Dict, List, Optional, Tuple, Union
+from functools import cached_property, lru_cache
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import optuna
 import pandas as pd
 from bokeh.core.enums import Palette
 from bokeh.layouts import layout
@@ -34,8 +35,16 @@ from bokeh.models import ColumnDataSource, HoverTool, Legend, Plot, TabPanel
 from bokeh.palettes import Category10, Turbo256
 from bokeh.plotting import figure
 from loguru import logger
+from scipy.interpolate import make_interp_spline
 
-from pybandits.base import ActionId, BinaryReward, PyBanditsBaseModel
+from pybandits.base import (
+    ActionId,
+    BinaryReward,
+    Probability,
+    PyBanditsBaseModel,
+    UnifiedActionId,
+)
+from pybandits.base_model import BaseModelSO
 from pybandits.mab import BaseMab
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
@@ -47,7 +56,15 @@ from pybandits.pydantic_version_compatibility import (
     model_validator,
     pydantic_version,
 )
+from pybandits.quantitative_model import QuantitativeModel
 from pybandits.utils import in_jupyter_notebook, visualize_via_bokeh
+
+#                                              context    quantity
+DoubleParametricActionProbability = Callable[[np.ndarray, np.ndarray], Probability]
+#                                  one of: quantity or context
+ParametricActionProbability = Callable[[np.ndarray], Probability]
+ProbabilityValue = Union[Probability, ParametricActionProbability, DoubleParametricActionProbability]
+ActionProbabilityGroundTruth = Dict[ActionId, ProbabilityValue]
 
 
 class Simulator(PyBanditsBaseModel, ABC):
@@ -64,12 +81,12 @@ class Simulator(PyBanditsBaseModel, ABC):
         MAB model.
     n_updates : PositiveInt, defaults  to 10
         The number of updates (i.e. batches of samples) in the simulation.
-    batch_size: PositiveInt, defaults to 100
+    batch_size : PositiveInt, defaults to 100
         The number of samples per batch.
-    probs_reward : Optional[pd.DataFrame], default=None
+    probs_reward : Optional[Union[ActionProbabilityGroundTruth, Dict[str, ActionProbabilityGroundTruth]]]
         The reward probability for the different actions. If None probabilities are set to 0.5.
-        The keys of the dict must match the mab actions_ids, and the values are float in the interval [0, 1].
-        e.g. probs_reward=pd.DataFrame({"a1 A": [0.6], "a2 B": [0.5], "a3": [0.8]}).
+        The keys of the dict must match the mab actions_ids, and the quantities are float in the interval [0, 1].
+        e.g. probs_reward={"a1 A": [0.6], "a2 B": [0.5], "a3": [0.8]}.
         Note that currently only single-objective reward is supported.
     save : bool, defaults to False
         Boolean flag to save the results.
@@ -88,7 +105,7 @@ class Simulator(PyBanditsBaseModel, ABC):
     mab: BaseMab
     n_updates: PositiveInt = 10
     batch_size: PositiveInt = 100
-    probs_reward: Optional[pd.DataFrame] = None
+    probs_reward: Optional[Union[ActionProbabilityGroundTruth, Dict[str, ActionProbabilityGroundTruth]]] = None
     save: bool = False
     path: str = ""
     file_prefix: str = ""
@@ -115,30 +132,24 @@ class Simulator(PyBanditsBaseModel, ABC):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    @field_validator("probs_reward", mode="before")
     @classmethod
-    def validate_probs_reward_values(cls, value):
-        if value is not None:
-            if not all(value.dtypes.apply(lambda x: x.kind == "f")):
-                raise ValueError("probs_reward values must be float.")
-            if not value.applymap(lambda x: 0 <= x <= 1).all().all():
-                raise ValueError("probs_reward values must be in the interval [0, 1].")
-        return value
+    def _validate_probs_reward_dict(
+        cls, action_probability_ground_truth: ActionProbabilityGroundTruth, actions: Dict[ActionId, BaseModelSO]
+    ):
+        if set(action_probability_ground_truth.keys()) != set(actions.keys()):
+            raise ValueError("The keys of the action probability ground truth dictionary must match the actions.")
+        for action_id, probability in action_probability_ground_truth.items():
+            is_quantitative_action = isinstance(actions[action_id], QuantitativeModel)
+            cls._validate_probs_reward_values(probability, is_quantitative_action)
+
+    @classmethod
+    @abstractmethod
+    def _validate_probs_reward_values(cls, probability: ProbabilityValue, is_quantitative_action: bool):
+        pass
 
     @field_validator("file_prefix", mode="before")
     def maybe_alter_file_prefix(cls, value):
         return f"{value}_" if value else ""
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_probs_reward_columns(cls, values):
-        if "probs_reward" in values and values["probs_reward"] is not None:
-            mab_action_ids = list(values["mab"].actions.keys())
-            if set(values["probs_reward"].columns) != set(mab_action_ids):
-                raise ValueError("probs_reward columns must match mab actions ids.")
-            if values["probs_reward"].shape[1] != len(mab_action_ids):
-                raise ValueError("probs_reward columns must be the same as the number of MAB actions.")
-        return values
 
     @model_validator(mode="before")
     @classmethod
@@ -175,6 +186,64 @@ class Simulator(PyBanditsBaseModel, ABC):
             A new instance of the simulator with the specified reward probabilities.
         """
         return self._with_argument("probs_reward", probs_reward)
+
+    @classmethod
+    def _generate_prob_reward(
+        cls,
+        first_dimension: PositiveInt,
+        second_dimension: NonNegativeInt = 0,
+        n_points: PositiveInt = 10,
+        spline_degree: PositiveInt = 3,
+    ) -> Union[ParametricActionProbability, DoubleParametricActionProbability]:
+        """
+        Generate a spline for the given dimensions.
+
+        Parameters
+        ----------
+        first_dimension : PositiveInt
+            The first dimension.
+        second_dimension : NonNegativeInt, defaults to 0
+            The second dimension.
+        n_points : PositiveInt, defaults to 10
+            The number of points to sample
+        spline_degree : PositiveInt, defaults to 3
+            The degree of the spline.
+
+        Returns
+        -------
+        Union[ParametricActionProbability, DoubleParametricActionProbability]
+            The spline function.
+        """
+        if spline_degree >= n_points:
+            raise ValueError(f"spline_degree ({spline_degree}) must be less than n_points ({n_points})")
+
+        def sigmoid(s: np.ndarray) -> np.ndarray:
+            return np.where(s >= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+
+        # Create the spline once
+
+        splines = [
+            make_interp_spline(np.linspace(0, 1, n_points), np.random.uniform(-1, 1, n_points), k=spline_degree)
+            for _ in range(first_dimension + second_dimension)
+        ]
+        weights = np.random.uniform(0, 1, first_dimension + second_dimension)
+        weights = weights / weights.sum()  # Normalize to sum to 1
+
+        if second_dimension:
+
+            def spline_function(input1: np.ndarray, input2: np.ndarray) -> Probability:
+                combined_input = np.concatenate((input1, input2))
+                logit = (weights * np.array([spline(x) for spline, x in zip(splines, combined_input)])).sum()
+                return sigmoid(logit)
+
+            return spline_function
+        else:
+
+            def spline_function(input1: np.ndarray) -> Probability:
+                logit = (weights * np.array([spline(x) for spline, x in zip(splines, input1)])).sum()
+                return sigmoid(logit)
+
+            return spline_function
 
     @abstractmethod
     def _initialize_results(self):
@@ -243,32 +312,99 @@ class Simulator(PyBanditsBaseModel, ABC):
         """
         # select actions for batch #index
         predictions = self.mab.predict(**predict_kwargs)
-        actions = predictions[0]  # location 0 is the actions for both SmabPredictions and CmabPredictions
-        rewards = self._draw_rewards(actions, metadata)
+        actions_quantities = predictions[0]  # location 0 is the actions for both SmabPredictions and CmabPredictions
+        actions = [x[0] if isinstance(x, tuple) else x for x in actions_quantities]
+        quantities = [x[1] if isinstance(x, tuple) else None for x in actions_quantities]
+        if all(q is None for q in quantities):
+            quantities = None
+        rewards = self._draw_rewards(actions_quantities, metadata, update_kwargs)
         # write the selected actions for batch #i in the results matrix
-        batch_results = pd.DataFrame({"action": actions, "reward": rewards, "batch": batch_index, **metadata})
-        batch_results = self._finalize_step(batch_results)
+        batch_results = pd.DataFrame(
+            {"action": actions, "reward": rewards, "quantities": quantities, "batch": batch_index, **metadata}
+        )
+        batch_results = self._finalize_step(batch_results, update_kwargs)
         if not all(col in batch_results.columns for col in self._base_columns):
             raise ValueError(f"The batch results must contain the {self._base_columns} columns")
         self._results = pd.concat((self._results, batch_results), ignore_index=True)
-        self.mab.update(actions=actions, rewards=rewards, **update_kwargs)
+        self.mab.update(actions=actions, rewards=rewards, quantities=quantities, **update_kwargs)
+
+    @staticmethod
+    @lru_cache
+    def _maximize_prob_reward(
+        prob_reward_func: Callable[[np.ndarray], Probability], input_dimension: PositiveInt, n_trials: PositiveInt = 100
+    ) -> Probability:
+        """
+        Maximize the probability of reward for the given function.
+
+        Parameters
+        ----------
+        prob_reward_func : Callable[[np.ndarray], Probability]
+            The probability of reward function.
+        input_dimension : PositiveInt
+            The input dimension.
+        n_trials : PositiveInt, defaults to 100
+            The number of otimization trials.
+
+        Returns
+        -------
+        Probability
+            The global maxima of prob_reward_func.
+        """
+
+        def objective(trial):
+            # Sample points from [0,1] for each dimension
+            points = [trial.suggest_float(f"x{i}", 0, 1) for i in range(input_dimension)]
+            return prob_reward_func(np.array(points))
+
+        # Configure TPE sampler with multivariate optimization
+        sampler = optuna.samplers.TPESampler(
+            multivariate=True,  # Enable multivariate optimization
+            group=True,  # Sample joint distribution of parameters
+            constant_liar=True,  # Better parallel optimization handling
+        )
+
+        # Create and configure the study
+        study = optuna.create_study(sampler=sampler, direction="maximize")
+
+        # Run optimization
+        study.optimize(objective, n_jobs=-1, n_trials=n_trials)  # Use all available cores
+        best_value = study.best_value
+        if (not isinstance(best_value, float)) or (best_value < 0) or (best_value > 1):
+            raise ValueError("The best value must be a float in the interval [0, 1].")
+        return best_value
 
     @abstractmethod
-    def _draw_rewards(self, actions: List[ActionId], metadata: Dict[str, List]) -> List[BinaryReward]:
+    def _draw_rewards(
+        self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
+    ) -> List[BinaryReward]:
         """
         Draw rewards for the selected actions based on metadata according to probs_reward.
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : List[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
         metadata : Dict[str, List]
             The metadata for the selected actions.
+        update_kwargs : Dict[str, np.ndarray]
+            Update keyword arguments.
 
         Returns
         -------
         reward : List[BinaryReward]
             A list of binary rewards.
+        """
+        pass
+
+    @abstractmethod
+    def _extract_ground_truth(self, *args, **kwargs) -> Probability:
+        """
+        Extract the ground truth probability for the action.
+
+        Returns
+        -------
+        Probability
+            The ground truth probability for the action.
         """
         pass
 
@@ -297,7 +433,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         pass
 
     @abstractmethod
-    def _finalize_step(self, batch_results: pd.DataFrame) -> pd.DataFrame:
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]) -> pd.DataFrame:
         """
         Finalize the step by adding additional information to the batch results.
 
@@ -305,6 +441,8 @@ class Simulator(PyBanditsBaseModel, ABC):
         ----------
         batch_results : pd.DataFrame
             raw batch results
+        update_kwargs : Dict[str, np.ndarray]
+            Update keyword arguments
 
         Returns
         -------
@@ -313,16 +451,16 @@ class Simulator(PyBanditsBaseModel, ABC):
         """
         pass
 
-    @abstractmethod
     def _finalize_results(self):
         """
-        Finalize the simulation process. It can be used to add additional information to the results.
+        Finalize the simulation process. Used to add regret and cumulative regret
 
         Returns
         -------
         None
         """
-        pass
+        self._results["regret"] = self._results["max_prob_reward"] - self._results["selected_prob_reward"]
+        self._results["cum_regret"] = self._results["regret"].cumsum()
 
     @cached_property
     def _action_ids(self) -> List[ActionId]:
@@ -363,7 +501,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         return Category10[max(n_actions, min(category10_keys))] if n_actions <= max(category10_keys) else Turbo256
 
     @classmethod
-    def _impute_missing_counts(cls, df, action_ids):
+    def _impute_missing_counts(cls, df: pd.DataFrame, action_ids: List[ActionId]) -> pd.DataFrame:
         """
         Impute missing counts for actions in the data frame.
 
@@ -394,7 +532,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         -------
         counts_df : pd.DataFrame
             Data frame with batch serial number as index (or total for all batches), actions as columns,
-            and count of recommended actions as values
+            and count of recommended actions as quantities
         """
         groupby_cols = [col for col in self._base_columns if col not in ["reward", "action"]]
         counts_df = self._results.groupby(groupby_cols)["action"].value_counts().unstack(fill_value=0).reset_index()
@@ -434,7 +572,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         Returns
         -------
         proportion_df : pd.DataFrame
-            Data frame with actions as index, and proportion of positive rewards as values
+            Data frame with actions as index, and proportion of positive rewards as quantities
         """
         groupby_cols = [col for col in self._base_columns if col not in ["reward", "batch"]]
         proportion_df = self._results.groupby(groupby_cols)["reward"].mean().to_frame(name="proportion")

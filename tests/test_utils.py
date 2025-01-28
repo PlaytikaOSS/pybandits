@@ -1,12 +1,11 @@
-import json
 import pickle
 import random
 from tempfile import NamedTemporaryFile
-from typing import Dict, get_args
+from typing import Dict, List, get_args
 
 import numpy as np
 
-from pybandits.base import PyBanditsBaseModel
+from pybandits.base import ProbabilityWeight, PyBanditsBaseModel
 from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
 from pybandits.pydantic_version_compatibility import Optional, PositiveInt
 
@@ -33,16 +32,33 @@ class FakeApproximation(PyBanditsBaseModel):
             self.hidden_dim_list = []
         dim_list = [self.n_features] + self.hidden_dim_list + [1]
         for i in range(len(dim_list) - 1):
-            (weight_layer_params_name, bias_layer_params_name) = BaseBayesianNeuralNetwork.get_layer_params_name(i)
+            weight_layer_params_name, bias_layer_params_name = BaseBayesianNeuralNetwork.get_layer_params_name(i)
             sample_dict[weight_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i], dim_list[i + 1]))
             sample_dict[bias_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i + 1]))
 
         return sample_dict
 
 
-def is_serializable(something) -> bool:
-    try:
-        json.dumps(something, default=dict)
-        return True
-    except Exception:
-        return False
+class FakePrediction(PyBanditsBaseModel):
+    n_samples: PositiveInt
+
+    def sample_prior_predictive(self, *args, **kwargs) -> Dict[str, Dict[str, object]]:
+        return {
+            "prior": {
+                BaseBayesianNeuralNetwork._prob_var_name: type(
+                    "FakeArray", (), {"values": np.random.random(size=(self.n_samples))}
+                ),
+                BaseBayesianNeuralNetwork._logit_var_name: type(
+                    "FakeArray", (), {"values": np.random.random(size=(self.n_samples))}
+                ),
+            }
+        }
+
+
+def fake_bnn_sample_proba(self, context: np.ndarray, *args, **kwargs) -> List[ProbabilityWeight]:
+    n_samples = len(context)
+    fake_prediction = FakePrediction(n_samples=n_samples)
+    predictions = fake_prediction.sample_prior_predictive()["prior"]
+    mock_probs = predictions[BaseBayesianNeuralNetwork._prob_var_name].values
+    mock_weighted_sums = predictions[BaseBayesianNeuralNetwork._logit_var_name].values
+    return list(zip(mock_probs, mock_weighted_sums))
