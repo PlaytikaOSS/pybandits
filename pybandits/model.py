@@ -566,8 +566,37 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     cost: NonNegativeFloat
 
 
-class BayesianModel:
+import torch.nn as nn
+
+class Torch_BNN(nn.Module):
+    def __init__(self, in_dim, out_dim=1, hid_dim=10):
+        super().__init__()
+        self.activation = nn.Tanh()  # or nn.ReLU()
+        self.layer1 = nn.Linear(in_dim, hid_dim)  # Input to hidden layer
+        self.layer2 = nn.Linear(hid_dim, out_dim)  # Hidden to output layer
+
+    def forward(self, x_features, x_actions):
+        x = torch.cat((x_features, x_actions))
+        x = self.activation(self.layer1(x))
+        logits = self.layer2(x).squeeze()
+        return logits
+
+
+class QuantitativeBNNModel:
     def __init__(self, in_dim, hid_dim, mu=0, sigma=10.):
+        self.model = BayesianNeuralNetwork(in_dim, hid_dim, mu, sigma)
+        self.torch_model = Torch_BNN(in_dim, hid_dim)
+
+        def sample_proba(self, x):
+            trace = self.model.sample(x)
+            probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
+            return probabilities
+
+
+
+
+class BayesianNeuralNetwork:
+    def __init__(self, in_dim, hid_dim, mu, sigma):
         self.update_method = "VI" # "MCMC"
 
         self.in_dim = in_dim
@@ -691,7 +720,7 @@ if __name__ == '__main__':
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
-    bayesian_model = BayesianModel(x_train.shape[1], 10)
+    bayesian_model = BayesianNeuralNetwork(x_train.shape[1], 10)
 
     num_iteration = 5
     for iter in range(num_iteration):
