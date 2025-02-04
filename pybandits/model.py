@@ -568,8 +568,7 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
 
 class BayesianModel:
     def __init__(self, in_dim, hid_dim, mu=0, sigma=10.):
-        self.trace = None
-        self.approx = None
+        self.update_method = "VI" # "MCMC"
 
         self.in_dim = in_dim
         self.hid_dim = hid_dim
@@ -577,89 +576,74 @@ class BayesianModel:
         self.init_params(mu, sigma)
         self.init_model()
 
-    def init_params(self, mu, sigma, seed=42):
-        # init params
-        
-        
-        rnd = np.random.default_rng(seed)
+    def init_params(self, mu, sigma):
 
-        # Initialize random weights between each layer
-        init_w1 = mu + sigma * rnd.standard_normal(size=(self.in_dim, self.hid_dim))
-        init_b1 = mu + sigma * rnd.standard_normal(size=self.hid_dim)
-        init_w2 = mu + sigma * rnd.standard_normal(size=self.hid_dim)
-        init_b2 = mu + sigma * rnd.standard_normal(size=1)
-
-        self.init_dict = {
-            "w1": dict(initval=init_w1, shape=(self.in_dim, self.hid_dim)),
-            "b1": dict(initval=init_b1, shape=(self.hid_dim)),
-            "w2": dict(initval=init_w2, shape=(self.hid_dim)),
-            "b2": dict(initval=init_b2, shape=(1))
+        self.shape_dict = {
+            "w1": dict(shape=(self.in_dim, self.hid_dim)),
+            "b1": dict(shape=(self.hid_dim)),
+            "w2": dict(shape=(self.hid_dim)),
+            "b2": dict(shape=(1))
         }
 
-        self.posterior_params = {name: dict(mu=mu, sigma=sigma) for name in self.init_dict.keys()}
+        self.posterior_params = {name: dict(mu=mu, sigma=sigma) for name in self.shape_dict.keys()}
 
     def init_model(self):
+        self.trace = None
+        self.approx = None
+        self.is_fitted = False
+
         x = np.zeros((1, self.in_dim))  # dummy data
         y = np.zeros(1)  # dummy data
-        self.is_fitted = False
+
         self.evaluate_model(x, y)
 
     def mcmc_sample(self, draws=1000, tune=500):
         with self.model:
             self.trace = pm.sample(draws=draws, tune=tune)
 
-    def evaluate_model(self, x,y):
+    def evaluate_model(self, x, y):
         params_dict = {}
         with pm.Model() as self.model:
             # Define data variables using minibatches
             ann_input = pm.MutableData("ann_input", x)
             ann_output = pm.MutableData("ann_output", y)
 
-            for name in self.init_dict.keys():
-                params_dict[name] = pm.Normal(name=name, **self.posterior_params[name], **self.init_dict[name])
+            for name in self.shape_dict.keys():
+                params_dict[name] = pm.Normal(name=name, **self.posterior_params[name], **self.shape_dict[name])
 
             # Build neural-network using tanh activation function
             act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
-            # act_out = pm.Deterministic("act_out",pm.math.sigmoid(pm.math.dot(act_1, weights_out) + bias_out))
-            act_out = pm.Deterministic("act_out", pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"])
+            act_out = pm.Deterministic("act_out",pm.math.sigmoid(pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"]))
+            # act_out = pm.Deterministic("act_out", pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"])
             # Binary classification -> Bernoulli likelihood
             out = pm.Bernoulli(
                 "out",
-                logit_p=act_out,
+                p=act_out,
                 observed=ann_output
             )
 
-
-    def update(self, x_train, y_train, num_iter=10000, learning_rate=0.01):
+    def update(self, x_train, y_train, num_iter=1000, learning_rate=0.01):
 
         with self.model:
             pm.set_data(new_data={"ann_input": x_train, "ann_output": y_train})
             self.approx = pm.fit(n=num_iter, method='advi', obj_optimizer=pm.adam(learning_rate=learning_rate))
         self.is_fitted = True
         trace = self.approx.sample(draws=500)
-        print('hi!!!')
+
         for name in self.posterior_params.keys():
             self.posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0).values
-            self.posterior_params[name]["sigma"] =np.std(trace['posterior'][name].squeeze(), axis=0).values
-        
-        self.evaluate_model(x_train, y_train) # re-evaluate the model with the new parameters
+            self.posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0).values
 
-    def vi_sample(self, x=None, draws=100):
-        if self.approx is not None:
-            if x is None:
-                # create a dummy x:
-                x = np.zeros((1, self.in_dim))
+        self.evaluate_model(x_train, y_train)  # re-evaluate the model with the new parameters
 
-            y = np.zeros(len(x))
-            with self.model:
-                pm.set_data(new_data={"ann_input": x, "ann_output": y})
+    def sample(self, x=None, draws=100):
+        y = np.zeros(len(x))
+        with self.model:
+            pm.set_data(new_data={"ann_input": x, "ann_output": y})
+            trace  = pm.sample_prior_predictive(samples=draws)
 
-            approx_sample = pm.sample_approx(approx=self.approx, draws=draws)
-            return approx_sample
+        return trace
 
-        else:
-            print("No variational approximation available. Run the fit_variational method first.")
-            return None
 
     def summary(self):
         if self.trace is not None:
@@ -668,11 +652,6 @@ class BayesianModel:
             return self.approx.summary()
         else:
             print("No trace or variational approximation available. Run the sample or fit_variational method first.")
-
-    def update_data(self, new_data):
-        self.data = new_data
-        self.model = pm.Model()  # Reset the model
-        self.build_model()  # Rebuild the model with new data
 
 
 if __name__ == '__main__':
@@ -714,19 +693,21 @@ if __name__ == '__main__':
 
     bayesian_model = BayesianModel(x_train.shape[1], 10)
 
+    num_iteration = 5
+    for iter in range(num_iteration):
+        trace = bayesian_model.sample(x_test)
+        probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
+        eps = 1e-5
+        logloss = -(y_test * np.log(probabilities + eps)).mean() - (
+                    (1 - y_test) * np.log(1 - probabilities + eps)).mean()
+        print(f"logloss: {logloss}")
+        x_train, y_train, probs_obs_train = create_data(c_params, 1000, n_features, n_bias_features)
+        bayesian_model.update(x_train, y_train, num_iter=1000, learning_rate=0.01)
 
-    bayesian_model.update(x_train, y_train, num_iter=500, learning_rate=0.01)
+        plt.figure()
+        plt.plot(bayesian_model.approx.hist)
+        plt.ylabel("ELBO")
+        plt.xlabel(f"iteration {iter}");
+        plt.show()
 
-    # %%
-    plt.figure()
-    plt.plot(bayesian_model.approx.hist)
-    plt.ylabel("ELBO")
-    plt.xlabel("iteration 1 ");
-    plt.show()
-    bayesian_model.update(x_train, y_train, num_iter=500, learning_rate=0.01)
-    # %%
-    plt.figure()
-    plt.plot(bayesian_model.approx.hist)
-    plt.ylabel("ELBO")
-    plt.xlabel("iteration 2 ");
-    plt.show()
+        print(1)
