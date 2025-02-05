@@ -53,7 +53,7 @@ UpdateMethods = Literal["MCMC", "VI"]
 
 class Model(PyBanditsBaseModel, ABC):
     """
-    Class to model the prior distributions.
+    Class to _model the prior distributions.
     """
 
     @abstractmethod
@@ -65,13 +65,13 @@ class Model(PyBanditsBaseModel, ABC):
     @abstractmethod
     def update(self, rewards: List[Any]):
         """
-        Update the model parameters.
+        Update the _model parameters.
         """
 
 
 class BaseBeta(Model):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits.
+    Beta Distribution _model for Bernoulli multi-armed bandits.
 
     Parameters
     ----------
@@ -139,13 +139,13 @@ class BaseBeta(Model):
 
 class Beta(BaseBeta):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits.
+    Beta Distribution _model for Bernoulli multi-armed bandits.
     """
 
 
 class BetaCC(BaseBeta):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits with cost control.
+    Beta Distribution _model for Bernoulli multi-armed bandits with cost control.
 
     Parameters
     ----------
@@ -158,7 +158,7 @@ class BetaCC(BaseBeta):
 
 class BetaMO(Model):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+    Beta Distribution _model for Bernoulli multi-armed bandits with multi-objectives.
 
     Parameters
     ----------
@@ -183,12 +183,12 @@ class BetaMO(Model):
     @validate_call
     def update(self, rewards: List[List[BinaryReward]]):
         """
-        Update the Beta model using the provided rewards.
+        Update the Beta _model using the provided rewards.
 
         Parameters
         ----------
         rewards: List[List[BinaryReward]]
-            A list of rewards, where each reward is in turn a list containing the reward of the Beta model
+            A list of rewards, where each reward is in turn a list containing the reward of the Beta _model
             associated to each objective.
             For example, `[[1, 1], [1, 0], [1, 1], [1, 0], [1, 1]]`.
         """
@@ -201,7 +201,7 @@ class BetaMO(Model):
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
         """
-        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        Utility function to create a Bayesian Logistic Regression _model  or child _model with cost control,
         with default parameters.
 
         It is modeled as:
@@ -213,15 +213,15 @@ class BetaMO(Model):
         Parameters
         ----------
         n_betas : PositiveInt
-            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
+            The number of betas of the Bayesian Logistic Regression _model. This is also the number of features expected
             after in the context matrix.
         kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child model.
+            Additional arguments for the Bayesian Logistic Regression child _model.
 
         Returns
         -------
         blr: BayesianLogisticRegrssion
-            The Bayesian Logistic Regression model.
+            The Bayesian Logistic Regression _model.
         """
         counters = n_objectives * [Beta()]
         blr = cls(counters=counters, **kwargs)
@@ -230,7 +230,7 @@ class BetaMO(Model):
 
 class BetaMOCC(BetaMO):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives and cost control.
+    Beta Distribution _model for Bernoulli multi-armed bandits with multi-objectives and cost control.
 
     Parameters
     ----------
@@ -264,7 +264,7 @@ class StudentT(PyBanditsBaseModel):
 
 class BayesianLogisticRegression(Model):
     """
-    Base Bayesian Logistic Regression model.
+    Base Bayesian Logistic Regression _model.
 
     It is modeled as:
 
@@ -280,7 +280,7 @@ class BayesianLogisticRegression(Model):
         Student's t-distributions of the betas coefficients.
     update_method : UpdateMethods, defaults to "MCMC"
         The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits._model for the
         full list.
     update_kwargs : Optional[dict], uses default values if not specified
         Additional arguments to pass to the update method.
@@ -435,7 +435,7 @@ class BayesianLogisticRegression(Model):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
         """
-        Update the model parameters.
+        Update the _model parameters.
 
         Parameters
         ----------
@@ -452,7 +452,7 @@ class BayesianLogisticRegression(Model):
 
         with PymcModel() as _:
             # update intercept (alpha) and coefficients (betas)
-            # if model was never updated priors_parameters = default arguments
+            # if _model was never updated priors_parameters = default arguments
             # else priors_parameters are calculated from traces of the previous update
             alpha = PymcStudentT("alpha", mu=self.alpha.mu, sigma=self.alpha.sigma, nu=self.alpha.nu)
             beta_mu = [b.mu for b in self.betas]
@@ -500,7 +500,7 @@ class BayesianLogisticRegression(Model):
             **kwargs,
     ) -> "BayesianLogisticRegression":
         """
-        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        Utility function to create a Bayesian Logistic Regression _model  or child _model with cost control,
         with default parameters.
 
         It is modeled as:
@@ -512,21 +512,21 @@ class BayesianLogisticRegression(Model):
         Parameters
         ----------
         n_features : PositiveInt
-            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
+            The number of betas of the Bayesian Logistic Regression _model. This is also the number of features expected
             after in the context matrix.
         update_method : UpdateMethods, defaults to "MCMC"
             The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-            chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+            chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits._model for the
             full list.
         update_kwargs : Optional[dict], uses default values if not specified
             Additional arguments to pass to the update method.
         kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child model.
+            Additional arguments for the Bayesian Logistic Regression child _model.
 
         Returns
         -------
         blr: BayesianLogisticRegrssion
-            The Bayesian Logistic Regression model.
+            The Bayesian Logistic Regression _model.
         """
         return cls(
             alpha=StudentT(),
@@ -539,7 +539,7 @@ class BayesianLogisticRegression(Model):
 
 class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     """
-    Bayesian Logistic Regression model with cost control.
+    Bayesian Logistic Regression _model with cost control.
 
     It is modeled as:
 
@@ -555,18 +555,19 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
         Student's t-distributions of the betas coefficients.
     update_method : UpdateMethods, defaults to "MCMC"
         The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits._model for the
         full list.
     update_kwargs : Optional[dict], uses default values if not specified
         Additional arguments to pass to the update method.
     cost: NonNegativeFloat
-        Cost associated to the Bayesian Logistic Regression model.
+        Cost associated to the Bayesian Logistic Regression _model.
     """
 
     cost: NonNegativeFloat
 
 
 import torch.nn as nn
+
 
 class Torch_BNN(nn.Module):
     def __init__(self, in_dim, out_dim=1, hid_dim=10):
@@ -588,62 +589,111 @@ class QuantitativeBNNModel:
         self.torch_model = Torch_BNN(in_dim, hid_dim)
 
         def sample_proba(self, x):
-            trace = self.model.sample(x)
+            trace = self._model.sample(x)
             probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
             return probabilities
 
 
+class BayesianNeuralNetwork(Model):
+    in_dim: int
+    hid_dim: int
+    mu: float
+    sigma: float
+    _model: PymcModel
 
+    _shape_dict: Dict[str, Union[Tuple[int, int], int]]
+    _posterior_params: Dict[str, Dict[str, float]]
 
-class BayesianNeuralNetwork:
-    def __init__(self, in_dim, hid_dim, mu, sigma):
-        self.update_method = "VI" # "MCMC"
+    update_method: UpdateMethods = "VI"  # "MCMC"
+    update_kwargs: Optional[dict] = None
 
-        self.in_dim = in_dim
-        self.hid_dim = hid_dim
+    _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
+    _default_mcmc_kwargs = dict(
+        tune=500,
+        draws=1000,
+        chains=2,
+        init="adapt_diag",
+        cores=1,
+        target_accept=0.95,
+        progressbar=False,
+        return_inferencedata=False,
+    )
+    _default_variational_inference_kwargs = dict(method="advi")
 
-        self.init_params(mu, sigma)
+    if pydantic_version == PYDANTIC_VERSION_1:
+
+        @model_validator(mode="before")
+        @classmethod
+        def arrange_update_kwargs(cls, values):
+            update_kwargs = cls._get_value_with_default("update_kwargs", values)
+            update_method = cls._get_value_with_default("update_method", values)
+            if update_kwargs is None:
+                update_kwargs = cls._default_update_kwargs
+            if update_method == "VI":
+                update_kwargs = {**cls._default_variational_inference_kwargs, **update_kwargs}
+            elif update_method == "MCMC":
+                update_kwargs = {**cls._default_mcmc_kwargs, **update_kwargs}
+            else:
+                raise ValueError("Invalid update method.")
+            values["update_kwargs"] = update_kwargs
+            values["update_method"] = update_method
+            return values
+
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        @model_validator(mode="after")
+        def arrange_update_kwargs(self):
+            if self.update_kwargs is None:
+                self.update_kwargs = self._default_update_kwargs
+            if self.update_method == "VI":
+                self.update_kwargs = {**self._default_variational_inference_kwargs, **self.update_kwargs}
+            elif self.update_method == "MCMC":
+                self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
+            else:
+                raise ValueError("Invalid update method.")
+            return self
+
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def model_post_init(self, __context: Any) -> None:
+        self.init_params()
         self.init_model()
 
-    def init_params(self, mu, sigma):
-
-        self.shape_dict = {
-            "w1": dict(shape=(self.in_dim, self.hid_dim)),
-            "b1": dict(shape=(self.hid_dim)),
-            "w2": dict(shape=(self.hid_dim)),
-            "b2": dict(shape=(1))
+    def init_params(self):
+        self._shape_dict = {
+            "w1": (self.in_dim, self.hid_dim),
+            "b1": self.hid_dim,
+            "w2": self.hid_dim,
+            "b2": 1
         }
 
-        self.posterior_params = {name: dict(mu=mu, sigma=sigma) for name in self.shape_dict.keys()}
+        self._posterior_params = {name: dict(mu=self.mu, sigma=self.sigma) for name in self._shape_dict.keys()}
 
     def init_model(self):
-        self.trace = None
-        self.approx = None
-        self.is_fitted = False
-
         x = np.zeros((1, self.in_dim))  # dummy data
         y = np.zeros(1)  # dummy data
 
         self.evaluate_model(x, y)
 
-    def mcmc_sample(self, draws=1000, tune=500):
-        with self.model:
-            self.trace = pm.sample(draws=draws, tune=tune)
 
     def evaluate_model(self, x, y):
         params_dict = {}
-        with pm.Model() as self.model:
+        with pm.Model() as self._model:
             # Define data variables using minibatches
             ann_input = pm.MutableData("ann_input", x)
             ann_output = pm.MutableData("ann_output", y)
 
-            for name in self.shape_dict.keys():
-                params_dict[name] = pm.Normal(name=name, **self.posterior_params[name], **self.shape_dict[name])
+            for name in self._shape_dict.keys():
+                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name], **self._shape_dict[name])
 
             # Build neural-network using tanh activation function
             act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
-            act_out = pm.Deterministic("act_out",pm.math.sigmoid(pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"]))
-            # act_out = pm.Deterministic("act_out", pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"])
+            act_out = pm.Deterministic("act_out",
+                                       pm.math.sigmoid(pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"]))
+
             # Binary classification -> Bernoulli likelihood
             out = pm.Bernoulli(
                 "out",
@@ -651,48 +701,74 @@ class BayesianNeuralNetwork:
                 observed=ann_output
             )
 
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def check_context_matrix(self, context: ArrayLike):
+        """
+        Check and cast context matrix.
+
+        Parameters
+        ----------
+        context : ArrayLike of shape (n_samples, n_features)
+            Matrix of contextual features.
+
+        Returns
+        -------
+        context : pandas DataFrame of shape (n_samples, n_features)
+            Matrix of contextual features.
+        """
+        try:
+            n_cols_context = array(context).shape[1]
+        except Exception as e:
+            raise AttributeError(f"Context must be an ArrayLike with {self.in_dim} columns: {e}.")
+        if n_cols_context != self.in_dim:
+            raise AttributeError(f"Shape mismatch: context must have {self.in_dim} columns.")
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
+        # check input args
+        self.check_context_matrix(context=context)
+
+        trace = self.sample(x=context, draws=1)
+
+
+    def sample(self, x=None, draws=100):
+        y = np.zeros(len(x))
+        with self._model:
+            pm.set_data(new_data={"ann_input": x, "ann_output": y})
+            trace = pm.sample_prior_predictive(samples=draws)
+
+        return trace
+
     def update(self, x_train, y_train, num_iter=1000, learning_rate=0.01):
 
-        with self.model:
+        with self._model:
             pm.set_data(new_data={"ann_input": x_train, "ann_output": y_train})
             self.approx = pm.fit(n=num_iter, method='advi', obj_optimizer=pm.adam(learning_rate=learning_rate))
         self.is_fitted = True
         trace = self.approx.sample(draws=500)
 
-        for name in self.posterior_params.keys():
-            self.posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0).values
-            self.posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0).values
+        for name in self._posterior_params.keys():
+            self._posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0).values
+            self._posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0).values
 
-        self.evaluate_model(x_train, y_train)  # re-evaluate the model with the new parameters
-
-    def sample(self, x=None, draws=100):
-        y = np.zeros(len(x))
-        with self.model:
-            pm.set_data(new_data={"ann_input": x, "ann_output": y})
-            trace  = pm.sample_prior_predictive(samples=draws)
-
-        return trace
+        self.evaluate_model(x_train, y_train)  # re-evaluate the _model with the new parameters
 
 
-    def summary(self):
-        if self.trace is not None:
-            return pm.summary(self.trace)
-        elif self.approx is not None:
-            return self.approx.summary()
-        else:
-            print("No trace or variational approximation available. Run the sample or fit_variational method first.")
 
 
 if __name__ == '__main__':
-    import torch
-    import matplotlib.pyplot as plt
+    c_params = [-4, 2, 3, 3, 1, -3]
+    n_bias_features = 3
+    n_features = 5
+    n_samples_train = 30000
+    n_samples_val = 2000
+    n_samples_test = 10000
 
 
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
 
 
-    # %%
     def create_data(c_params, n_samples, n_features, n_bias_features):
         features_obs = np.random.uniform(0, 1, size=(n_samples, n_features))
         amount = np.random.uniform(0, 2, size=(n_samples))
@@ -702,41 +778,142 @@ if __name__ == '__main__':
         probs_obs = sigmoid(logit_bias + logit_quant)
         y_obs = np.random.binomial(1, probs_obs)
         x_obs = np.hstack((features_obs, amount.reshape(-1, 1)))
-        x = torch.from_numpy(x_obs).float()
-        y = torch.from_numpy(y_obs).float()
+        # x = torch.from_numpy(x_obs).float()
+        # y = torch.from_numpy(y_obs).float()
 
-        return x, y, probs_obs
-
-
-    c_params = [-4, 2, 3, 3, 1, -3]
-    n_bias_features = 3
-    n_features = 5
-    n_samples_train = 30000
-    n_samples_val = 2000
-    n_samples_test = 10000
+        return x_obs, y_obs, probs_obs
+    
 
     # train
     x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
-    bayesian_model = BayesianNeuralNetwork(x_train.shape[1], 10)
+    bayesian_model = BayesianNeuralNetwork(in_dim = x_train.shape[1], hid_dim=10 ,mu=0, sigma=10)
+    bayesian_model.sample_proba(x_train)
 
-    num_iteration = 5
-    for iter in range(num_iteration):
-        trace = bayesian_model.sample(x_test)
-        probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
-        eps = 1e-5
-        logloss = -(y_test * np.log(probabilities + eps)).mean() - (
-                    (1 - y_test) * np.log(1 - probabilities + eps)).mean()
-        print(f"logloss: {logloss}")
-        x_train, y_train, probs_obs_train = create_data(c_params, 1000, n_features, n_bias_features)
-        bayesian_model.update(x_train, y_train, num_iter=1000, learning_rate=0.01)
 
-        plt.figure()
-        plt.plot(bayesian_model.approx.hist)
-        plt.ylabel("ELBO")
-        plt.xlabel(f"iteration {iter}");
-        plt.show()
-
-        print(1)
+#     import torch
+#     import matplotlib.pyplot as plt
+#
+#
+#     def sigmoid(x):
+#         return 1 / (1 + np.exp(-x))
+#
+#
+#     # %%
+#     def create_data(c_params, n_samples, n_features, n_bias_features):
+#         features_obs = np.random.uniform(0, 1, size=(n_samples, n_features))
+#         amount = np.random.uniform(0, 2, size=(n_samples))
+#         logit_bias = c_params[-1] + np.matmul(features_obs[:, 0:n_bias_features], c_params[0:n_bias_features])
+#         logit_quant = c_params[n_bias_features] * np.multiply(features_obs[:, n_bias_features], amount) - c_params[
+#             n_bias_features + 1] * np.multiply(features_obs[:, n_bias_features + 1], amount ** 2)
+#         probs_obs = sigmoid(logit_bias + logit_quant)
+#         y_obs = np.random.binomial(1, probs_obs)
+#         x_obs = np.hstack((features_obs, amount.reshape(-1, 1)))
+#         x = torch.from_numpy(x_obs).float()
+#         y = torch.from_numpy(y_obs).float()
+#
+#         return x, y, probs_obs
+#
+#
+#     c_params = [-4, 2, 3, 3, 1, -3]
+#     n_bias_features = 3
+#     n_features = 5
+#     n_samples_train = 30000
+#     n_samples_val = 2000
+#     n_samples_test = 10000
+#
+#     # train
+#     x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
+#     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
+#     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
+#
+#     bayesian_model = BayesianNeuralNetwork(x_train.shape[1], 10)
+#
+#     num_iteration = 5
+#     for iter in range(num_iteration):
+#         trace = bayesian_model.sample(x_test)
+#         probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
+#         eps = 1e-5
+#         logloss = -(y_test * np.log(probabilities + eps)).mean() - (
+#                 (1 - y_test) * np.log(1 - probabilities + eps)).mean()
+#         print(f"logloss: {logloss}")
+#         x_train, y_train, probs_obs_train = create_data(c_params, 1000, n_features, n_bias_features)
+#         bayesian_model.update(x_train, y_train, num_iter=1000, learning_rate=0.01)
+#
+#         plt.figure()
+#         plt.plot(bayesian_model.approx.hist)
+#         plt.ylabel("ELBO")
+#         plt.xlabel(f"iteration {iter}");
+#         plt.show()
+#
+#         print(1)
+#
+# from pydantic import BaseModel, Field
+#
+#
+# class User(BaseModel):
+#     id: int
+#     name: str
+#     age2: int
+#     age: int = Field(..., ge=0)  # Age must be a non-negative integer
+#
+#     def __init__(self, **data):
+#         super().__init__(**data)
+#         self.age2 = 2 * self.age
+#
+#
+# user = User(id=1, name="Alice", age=30)
+# print(user)
+#
+# #%%
+# import warnings
+# from abc import ABC, abstractmethod
+# from random import betavariate
+# from typing import Any, List, Literal, Optional, Tuple, Union, Dict
+#
+# import numpy as np
+# import pymc.math as pmath
+# from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
+# from numpy.typing import ArrayLike
+# from pymc import Bernoulli, Data, Deterministic, fit, sample
+# from pymc import Model as PymcModel
+# from pymc import StudentT as PymcStudentT
+# import pymc as pm
+# from pytensor.tensor import TensorVariable, dot
+# from scipy.stats import t
+#
+# from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
+# from pybandits.pydantic_version_compatibility import (
+#     PYDANTIC_VERSION_1,
+#     PYDANTIC_VERSION_2,
+#     Field,
+#     NonNegativeFloat,
+#     PositiveInt,
+#     confloat,
+#     model_validator,
+#     pydantic_version,
+#     validate_call,
+# )
+#
+# UpdateMethods = Literal["MCMC", "VI"]
+# class Model(PyBanditsBaseModel, ABC):
+#     """
+#     Class to _model the prior distributions.
+#     """
+#
+#     @abstractmethod
+#     def sample_proba(self) -> Probability:
+#         """
+#         Sample the probability of getting a positive reward.
+#         """
+#
+#     @abstractmethod
+#     def update(self, rewards: List[Any]):
+#         """
+#         Update the _model parameters.
+#         """
+#
+#
+#
