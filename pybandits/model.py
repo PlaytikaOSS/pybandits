@@ -594,15 +594,16 @@ class QuantitativeBNNModel:
             return probabilities
 
 
+from pydantic import  PrivateAttr
 class BayesianNeuralNetwork(Model):
     in_dim: int
     hid_dim: int
     mu: float
     sigma: float
-    _model: PymcModel
 
-    _shape_dict: Dict[str, Union[Tuple[int, int], int]]
-    _posterior_params: Dict[str, Dict[str, float]]
+    _model: Optional[pm.Model] = PrivateAttr()
+    _shape_dict: Dict[str, Union[Tuple[int, int], int]] = PrivateAttr()
+    _posterior_params: Dict[str, Dict[str, float]] =PrivateAttr()
 
     update_method: UpdateMethods = "VI"  # "MCMC"
     update_kwargs: Optional[dict] = None
@@ -687,17 +688,17 @@ class BayesianNeuralNetwork(Model):
             ann_output = pm.MutableData("ann_output", y)
 
             for name in self._shape_dict.keys():
-                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name], **self._shape_dict[name])
+                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name], shape= self._shape_dict[name])
 
             # Build neural-network using tanh activation function
             act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
-            act_out = pm.Deterministic("act_out",
-                                       pm.math.sigmoid(pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"]))
+            logit = pm.Deterministic("logit", pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"])
+            prob = pm.Deterministic("prob", pm.math.sigmoid(logit))
 
             # Binary classification -> Bernoulli likelihood
             out = pm.Bernoulli(
                 "out",
-                p=act_out,
+                p=prob,
                 observed=ann_output
             )
 
@@ -729,6 +730,10 @@ class BayesianNeuralNetwork(Model):
         self.check_context_matrix(context=context)
 
         trace = self.sample(x=context, draws=1)
+        prob = trace['prior']['prob'].squeeze().values
+        weighted_sum = trace['prior']['logit'].squeeze().values
+        print(prob, weighted_sum)
+        return prob, weighted_sum
 
 
     def sample(self, x=None, draws=100):
