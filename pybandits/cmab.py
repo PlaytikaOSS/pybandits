@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Union, NewType
 
 from numpy import array
 from numpy.random import choice
@@ -28,7 +28,7 @@ from numpy.typing import ArrayLike
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
+from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, BayesianNeuralNetwork
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -36,6 +36,7 @@ from pybandits.strategy import (
     CostControlBandit,
 )
 
+BayesianRegressionModel = NewType("BayesianRegressionModel", Union[BayesianLogisticRegression, BayesianNeuralNetwork])
 
 class BaseCmabBernoulli(BaseMab):
     """
@@ -43,7 +44,7 @@ class BaseCmabBernoulli(BaseMab):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianRegressionModel]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
@@ -54,7 +55,7 @@ class BaseCmabBernoulli(BaseMab):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianRegressionModel]
     predict_with_proba: bool
     predict_actions_randomly: bool
 
@@ -67,8 +68,6 @@ class BaseCmabBernoulli(BaseMab):
         for action in action_models[1:]:
             if not isinstance(action, first_action_type):
                 raise AttributeError("All actions should follow the same type.")
-            if not len(action.betas) == len(first_action.betas):
-                raise AttributeError("All actions should have the same number of betas.")
             if not action.update_method == first_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
             if not action.update_kwargs == first_action.update_kwargs:
@@ -197,7 +196,7 @@ class CmabBernoulli(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianRegressionModel]
         The list of possible actions, and their associated Model.
     strategy: ClassicBandit
         The strategy used to select actions.
@@ -208,7 +207,7 @@ class CmabBernoulli(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianRegressionModel]
     strategy: ClassicBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -223,7 +222,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianRegressionModel]
         The list of possible actions, and their associated Model.
     strategy: BestActionIdentificationBandit
         The strategy used to select actions.

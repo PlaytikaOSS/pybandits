@@ -594,16 +594,19 @@ class QuantitativeBNNModel:
             return probabilities
 
 
-from pydantic import  PrivateAttr
+from pydantic import PrivateAttr
+
+
 class BayesianNeuralNetwork(Model):
     in_dim: int
     hid_dim: int
-    mu: float
-    sigma: float
+    mu: confloat(allow_inf_nan=False) = 0.0
+    sigma: confloat(allow_inf_nan=False) = 10.0
+    nu: confloat(allow_inf_nan=False) = 5.0
 
     _model: Optional[pm.Model] = PrivateAttr()
     _shape_dict: Dict[str, Union[Tuple[int, int], int]] = PrivateAttr()
-    _posterior_params: Dict[str, Dict[str, float]] =PrivateAttr()
+    _posterior_params: Dict[str, Dict[str, float]] = PrivateAttr()
 
     update_method: UpdateMethods = "VI"  # "MCMC"
     update_kwargs: Optional[dict] = None
@@ -619,7 +622,8 @@ class BayesianNeuralNetwork(Model):
         progressbar=False,
         return_inferencedata=False,
     )
-    _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01), num_iter=2000)
+    _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01),
+                                                 num_iter=2000)
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -679,7 +683,6 @@ class BayesianNeuralNetwork(Model):
 
         self.evaluate_model(x, y)
 
-
     def evaluate_model(self, x, y):
         params_dict = {}
         with pm.Model() as self._model:
@@ -688,7 +691,7 @@ class BayesianNeuralNetwork(Model):
             ann_output = pm.MutableData("ann_output", y)
 
             for name in self._shape_dict.keys():
-                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name], shape= self._shape_dict[name])
+                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name], shape=self._shape_dict[name])
 
             # Build neural-network using tanh activation function
             act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
@@ -735,7 +738,6 @@ class BayesianNeuralNetwork(Model):
         print(prob, weighted_sum)
         return prob, weighted_sum
 
-
     def sample(self, x=None, draws=100):
         y = np.zeros(len(x))
         with self._model:
@@ -747,7 +749,7 @@ class BayesianNeuralNetwork(Model):
         self.check_context_matrix(context=context)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
-            
+
         with self._model:
             pm.set_data(new_data={"ann_input": context, "ann_output": rewards})
 
@@ -768,6 +770,12 @@ class BayesianNeuralNetwork(Model):
             self._posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0).values
 
         self.evaluate_model(context, rewards)  # re-evaluate the _model with the new parameters
+
+    @classmethod
+    def cold_start(cls, in_dim, hid_dim, update_method: UpdateMethods = "MCMC",
+                   update_kwargs: Optional[dict] = None,
+                   **kwargs) -> "BayesianNeuralNetwork":
+        return cls(in_dim=in_dim, hid_dim=hid_dim, update_method=update_method, update_kwargs=update_kwargs, **kwargs)
 
 
 if __name__ == '__main__':
@@ -796,19 +804,17 @@ if __name__ == '__main__':
         # y = torch.from_numpy(y_obs).float()
 
         return x_obs, y_obs, probs_obs
-    
+
 
     # train
     x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
-    bayesian_model = BayesianNeuralNetwork(in_dim = x_train.shape[1], hid_dim=10 ,mu=0, sigma=10)
+    bayesian_model = BayesianNeuralNetwork(in_dim=x_train.shape[1], hid_dim=10, mu=0, sigma=10)
     bayesian_model.sample_proba(x_train)
     bayesian_model.update(x_train, y_train)
-    prob,_ = bayesian_model.sample_proba(x_train)
-
-
+    prob, _ = bayesian_model.sample_proba(x_train)
 
 #     import torch
 #     import matplotlib.pyplot as plt
