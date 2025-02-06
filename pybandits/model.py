@@ -53,7 +53,7 @@ UpdateMethods = Literal["MCMC", "VI"]
 
 class Model(PyBanditsBaseModel, ABC):
     """
-    Class to _model the prior distributions.
+    Class to model the prior distributions.
     """
 
     @abstractmethod
@@ -65,13 +65,13 @@ class Model(PyBanditsBaseModel, ABC):
     @abstractmethod
     def update(self, rewards: List[Any]):
         """
-        Update the _model parameters.
+        Update the model parameters.
         """
 
 
 class BaseBeta(Model):
     """
-    Beta Distribution _model for Bernoulli multi-armed bandits.
+    Beta Distribution model for Bernoulli multi-armed bandits.
 
     Parameters
     ----------
@@ -139,13 +139,13 @@ class BaseBeta(Model):
 
 class Beta(BaseBeta):
     """
-    Beta Distribution _model for Bernoulli multi-armed bandits.
+    Beta Distribution model for Bernoulli multi-armed bandits.
     """
 
 
 class BetaCC(BaseBeta):
     """
-    Beta Distribution _model for Bernoulli multi-armed bandits with cost control.
+    Beta Distribution model for Bernoulli multi-armed bandits with cost control.
 
     Parameters
     ----------
@@ -158,7 +158,7 @@ class BetaCC(BaseBeta):
 
 class BetaMO(Model):
     """
-    Beta Distribution _model for Bernoulli multi-armed bandits with multi-objectives.
+    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
     Parameters
     ----------
@@ -183,12 +183,12 @@ class BetaMO(Model):
     @validate_call
     def update(self, rewards: List[List[BinaryReward]]):
         """
-        Update the Beta _model using the provided rewards.
+        Update the Beta model using the provided rewards.
 
         Parameters
         ----------
         rewards: List[List[BinaryReward]]
-            A list of rewards, where each reward is in turn a list containing the reward of the Beta _model
+            A list of rewards, where each reward is in turn a list containing the reward of the Beta model
             associated to each objective.
             For example, `[[1, 1], [1, 0], [1, 1], [1, 0], [1, 1]]`.
         """
@@ -201,7 +201,7 @@ class BetaMO(Model):
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
         """
-        Utility function to create a Bayesian Logistic Regression _model  or child _model with cost control,
+        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
         with default parameters.
 
         It is modeled as:
@@ -213,15 +213,15 @@ class BetaMO(Model):
         Parameters
         ----------
         n_betas : PositiveInt
-            The number of betas of the Bayesian Logistic Regression _model. This is also the number of features expected
+            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
             after in the context matrix.
         kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child _model.
+            Additional arguments for the Bayesian Logistic Regression child model.
 
         Returns
         -------
         blr: BayesianLogisticRegrssion
-            The Bayesian Logistic Regression _model.
+            The Bayesian Logistic Regression model.
         """
         counters = n_objectives * [Beta()]
         blr = cls(counters=counters, **kwargs)
@@ -230,7 +230,7 @@ class BetaMO(Model):
 
 class BetaMOCC(BetaMO):
     """
-    Beta Distribution _model for Bernoulli multi-armed bandits with multi-objectives and cost control.
+    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives and cost control.
 
     Parameters
     ----------
@@ -264,7 +264,7 @@ class StudentT(PyBanditsBaseModel):
 
 class BayesianLogisticRegression(Model):
     """
-    Base Bayesian Logistic Regression _model.
+    Base Bayesian Logistic Regression model.
 
     It is modeled as:
 
@@ -280,7 +280,7 @@ class BayesianLogisticRegression(Model):
         Student's t-distributions of the betas coefficients.
     update_method : UpdateMethods, defaults to "MCMC"
         The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits._model for the
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
         full list.
     update_kwargs : Optional[dict], uses default values if not specified
         Additional arguments to pass to the update method.
@@ -435,7 +435,7 @@ class BayesianLogisticRegression(Model):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
         """
-        Update the _model parameters.
+        Update the model parameters.
 
         Parameters
         ----------
@@ -452,7 +452,7 @@ class BayesianLogisticRegression(Model):
 
         with PymcModel() as _:
             # update intercept (alpha) and coefficients (betas)
-            # if _model was never updated priors_parameters = default arguments
+            # if model was never updated priors_parameters = default arguments
             # else priors_parameters are calculated from traces of the previous update
             alpha = PymcStudentT("alpha", mu=self.alpha.mu, sigma=self.alpha.sigma, nu=self.alpha.nu)
             beta_mu = [b.mu for b in self.betas]
@@ -500,7 +500,7 @@ class BayesianLogisticRegression(Model):
             **kwargs,
     ) -> "BayesianLogisticRegression":
         """
-        Utility function to create a Bayesian Logistic Regression _model  or child _model with cost control,
+        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
         with default parameters.
 
         It is modeled as:
@@ -512,21 +512,21 @@ class BayesianLogisticRegression(Model):
         Parameters
         ----------
         n_features : PositiveInt
-            The number of betas of the Bayesian Logistic Regression _model. This is also the number of features expected
+            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
             after in the context matrix.
         update_method : UpdateMethods, defaults to "MCMC"
             The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-            chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits._model for the
+            chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
             full list.
         update_kwargs : Optional[dict], uses default values if not specified
             Additional arguments to pass to the update method.
         kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child _model.
+            Additional arguments for the Bayesian Logistic Regression child model.
 
         Returns
         -------
         blr: BayesianLogisticRegrssion
-            The Bayesian Logistic Regression _model.
+            The Bayesian Logistic Regression model.
         """
         return cls(
             alpha=StudentT(),
@@ -539,7 +539,7 @@ class BayesianLogisticRegression(Model):
 
 class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     """
-    Bayesian Logistic Regression _model with cost control.
+    Bayesian Logistic Regression model with cost control.
 
     It is modeled as:
 
@@ -555,12 +555,12 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
         Student's t-distributions of the betas coefficients.
     update_method : UpdateMethods, defaults to "MCMC"
         The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits._model for the
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
         full list.
     update_kwargs : Optional[dict], uses default values if not specified
         Additional arguments to pass to the update method.
     cost: NonNegativeFloat
-        Cost associated to the Bayesian Logistic Regression _model.
+        Cost associated to the Bayesian Logistic Regression model.
     """
 
     cost: NonNegativeFloat
@@ -619,7 +619,7 @@ class BayesianNeuralNetwork(Model):
         progressbar=False,
         return_inferencedata=False,
     )
-    _default_variational_inference_kwargs = dict(method="advi")
+    _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01), num_iter=2000)
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -741,24 +741,33 @@ class BayesianNeuralNetwork(Model):
         with self._model:
             pm.set_data(new_data={"ann_input": x, "ann_output": y})
             trace = pm.sample_prior_predictive(samples=draws)
-
         return trace
 
-    def update(self, x_train, y_train, num_iter=1000, learning_rate=0.01):
-
+    def update(self, context: ArrayLike, rewards: List[BinaryReward]):
+        self.check_context_matrix(context=context)
+        if len(context) != len(rewards):
+            AttributeError("Shape mismatch: context and rewards must have the same length.")
+            
         with self._model:
-            pm.set_data(new_data={"ann_input": x_train, "ann_output": y_train})
-            self.approx = pm.fit(n=num_iter, method='advi', obj_optimizer=pm.adam(learning_rate=learning_rate))
-        self.is_fitted = True
-        trace = self.approx.sample(draws=500)
+            pm.set_data(new_data={"ann_input": context, "ann_output": rewards})
+
+            # update traces object by sampling from posterior distribution
+            if self.update_method == "VI":
+                # variational inference
+                update_kwargs = self.update_kwargs.copy()
+                approx = fit(method=update_kwargs.pop("method"))
+                trace = approx.sample(**update_kwargs)
+            elif self.update_method == "MCMC":
+                # MCMC
+                trace = sample(**self.update_kwargs)
+            else:
+                raise ValueError("Invalid update method.")
 
         for name in self._posterior_params.keys():
             self._posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0).values
             self._posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0).values
 
-        self.evaluate_model(x_train, y_train)  # re-evaluate the _model with the new parameters
-
-
+        self.evaluate_model(context, rewards)  # re-evaluate the _model with the new parameters
 
 
 if __name__ == '__main__':
@@ -796,6 +805,9 @@ if __name__ == '__main__':
 
     bayesian_model = BayesianNeuralNetwork(in_dim = x_train.shape[1], hid_dim=10 ,mu=0, sigma=10)
     bayesian_model.sample_proba(x_train)
+    bayesian_model.update(x_train, y_train)
+    prob,_ = bayesian_model.sample_proba(x_train)
+
 
 
 #     import torch
