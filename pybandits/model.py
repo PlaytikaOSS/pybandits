@@ -262,7 +262,7 @@ class StudentT(PyBanditsBaseModel):
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
 
-class BaseBayesianModel(PyBanditsBaseModel, ABC):
+class BaseBayesianModel(Model, ABC):
     update_method: str = "MCMC"
     update_kwargs: Optional[dict] = None
     _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
