@@ -36,6 +36,7 @@ from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
+from pydantic import PrivateAttr
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -261,39 +262,8 @@ class StudentT(PyBanditsBaseModel):
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
 
-
-class BayesianLogisticRegression(Model):
-    """
-    Base Bayesian Logistic Regression model.
-
-    It is modeled as:
-
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    Parameters
-    ----------
-    alpha : StudentT
-        Student's t-distribution of the alpha coefficient.
-    betas : StudentT
-        Student's t-distributions of the betas coefficients.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-    """
-
-    alpha: StudentT
-    if pydantic_version == PYDANTIC_VERSION_1:
-        betas: List[StudentT] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        betas: List[StudentT] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
-    update_method: UpdateMethods = "MCMC"
+class BaseBayesianModel(PyBanditsBaseModel, ABC):
+    update_method: str = "MCMC"
     update_kwargs: Optional[dict] = None
     _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
     _default_mcmc_kwargs = dict(
@@ -306,7 +276,12 @@ class BayesianLogisticRegression(Model):
         progressbar=False,
         return_inferencedata=False,
     )
-    _default_variational_inference_kwargs = dict(method="advi")
+
+    _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01),
+                                                 num_iter=2000)
+
+    class Config:
+        arbitrary_types_allowed = True
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -344,6 +319,60 @@ class BayesianLogisticRegression(Model):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def check_context_matrix(self, context: ArrayLike, expected_columns: int):
+        try:
+            n_cols_context = np.array(context).shape[1]
+        except Exception as e:
+            raise AttributeError(f"Context must be an ArrayLike with {expected_columns} columns: {e}.")
+        if n_cols_context != expected_columns:
+            raise AttributeError(f"Shape mismatch: context must have {expected_columns} columns.")
+
+    @abstractmethod
+    def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
+        pass
+
+    @abstractmethod
+    def update(self, context: ArrayLike, rewards: List[BinaryReward]):
+        pass
+
+    @abstractmethod
+    def cold_start(cls, **kwargs) -> "BaseBayesianModel":
+        pass
+
+
+class BayesianLogisticRegression(BaseBayesianModel):
+    """
+    Base Bayesian Logistic Regression model.
+
+    It is modeled as:
+
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    Parameters
+    ----------
+    alpha : StudentT
+        Student's t-distribution of the alpha coefficient.
+    betas : StudentT
+        Student's t-distributions of the betas coefficients.
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
+    """
+
+    alpha: StudentT
+    if pydantic_version == PYDANTIC_VERSION_1:
+        betas: List[StudentT] = Field(..., min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        betas: List[StudentT] = Field(..., min_length=1)
+    else:
+        raise ValueError("Invalid version.")
+
     @classmethod
     def _stable_sigmoid(cls, x: Union[np.ndarray, TensorVariable]) -> Union[np.ndarray, TensorVariable]:
         """
@@ -366,27 +395,6 @@ class BayesianLogisticRegression(Model):
             prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
         return prob
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def check_context_matrix(self, context: ArrayLike):
-        """
-        Check and cast context matrix.
-
-        Parameters
-        ----------
-        context : ArrayLike of shape (n_samples, n_features)
-            Matrix of contextual features.
-
-        Returns
-        -------
-        context : pandas DataFrame of shape (n_samples, n_features)
-            Matrix of contextual features.
-        """
-        try:
-            n_cols_context = array(context).shape[1]
-        except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {len(self.betas)} columns: {e}.")
-        if n_cols_context != len(self.betas):
-            raise AttributeError(f"Shape mismatch: context must have {len(self.betas)} columns.")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
@@ -407,7 +415,7 @@ class BayesianLogisticRegression(Model):
         """
 
         # check input args
-        self.check_context_matrix(context=context)
+        self.check_context_matrix(context=context, expected_columns=len(self.betas))
 
         # extend context with a column of 1 to handle the dot product with the intercept
         context_ext = c_[ones((len(context), 1)), context]
@@ -446,7 +454,7 @@ class BayesianLogisticRegression(Model):
         """
 
         # check input args
-        self.check_context_matrix(context=context)
+        self.check_context_matrix(context=context, expected_columns=len(self.betas))
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
@@ -594,10 +602,8 @@ class QuantitativeBNNModel:
             return probabilities
 
 
-from pydantic import PrivateAttr
 
-
-class BayesianNeuralNetwork(Model):
+class BayesianNeuralNetwork(BaseBayesianModel):
     in_dim: int
     hid_dim: int
     mu: confloat(allow_inf_nan=False) = 0.0
@@ -607,61 +613,6 @@ class BayesianNeuralNetwork(Model):
     _model: Optional[pm.Model] = PrivateAttr()
     _shape_dict: Dict[str, Union[Tuple[int, int], int]] = PrivateAttr()
     _posterior_params: Dict[str, Dict[str, float]] = PrivateAttr()
-
-    update_method: UpdateMethods = "VI"  # "MCMC"
-    update_kwargs: Optional[dict] = None
-
-    _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
-    _default_mcmc_kwargs = dict(
-        tune=500,
-        draws=1000,
-        chains=2,
-        init="adapt_diag",
-        cores=1,
-        target_accept=0.95,
-        progressbar=False,
-        return_inferencedata=False,
-    )
-    _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01),
-                                                 num_iter=2000)
-
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @model_validator(mode="before")
-        @classmethod
-        def arrange_update_kwargs(cls, values):
-            update_kwargs = cls._get_value_with_default("update_kwargs", values)
-            update_method = cls._get_value_with_default("update_method", values)
-            if update_kwargs is None:
-                update_kwargs = cls._default_update_kwargs
-            if update_method == "VI":
-                update_kwargs = {**cls._default_variational_inference_kwargs, **update_kwargs}
-            elif update_method == "MCMC":
-                update_kwargs = {**cls._default_mcmc_kwargs, **update_kwargs}
-            else:
-                raise ValueError("Invalid update method.")
-            values["update_kwargs"] = update_kwargs
-            values["update_method"] = update_method
-            return values
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        @model_validator(mode="after")
-        def arrange_update_kwargs(self):
-            if self.update_kwargs is None:
-                self.update_kwargs = self._default_update_kwargs
-            if self.update_method == "VI":
-                self.update_kwargs = {**self._default_variational_inference_kwargs, **self.update_kwargs}
-            elif self.update_method == "MCMC":
-                self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
-            else:
-                raise ValueError("Invalid update method.")
-            return self
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
-
-    class Config:
-        arbitrary_types_allowed = True
 
     def model_post_init(self, __context: Any) -> None:
         self.init_params()
@@ -705,32 +656,12 @@ class BayesianNeuralNetwork(Model):
                 observed=ann_output
             )
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def check_context_matrix(self, context: ArrayLike):
-        """
-        Check and cast context matrix.
 
-        Parameters
-        ----------
-        context : ArrayLike of shape (n_samples, n_features)
-            Matrix of contextual features.
-
-        Returns
-        -------
-        context : pandas DataFrame of shape (n_samples, n_features)
-            Matrix of contextual features.
-        """
-        try:
-            n_cols_context = array(context).shape[1]
-        except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {self.in_dim} columns: {e}.")
-        if n_cols_context != self.in_dim:
-            raise AttributeError(f"Shape mismatch: context must have {self.in_dim} columns.")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         # check input args
-        self.check_context_matrix(context=context)
+        self.check_context_matrix(context=context, expected_columns=self.in_dim)
 
         trace = self.sample(x=context, draws=1)
         prob = trace['prior']['prob'].squeeze().values
@@ -746,7 +677,7 @@ class BayesianNeuralNetwork(Model):
         return trace
 
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
-        self.check_context_matrix(context=context)
+        self.check_context_matrix(context=context, expected_columns=self.in_dim)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
