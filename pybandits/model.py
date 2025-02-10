@@ -23,6 +23,7 @@ import warnings
 from abc import ABC, abstractmethod
 from random import betavariate
 from typing import Any, List, Literal, Optional, Tuple, Union, Dict
+from enum import Enum
 
 import numpy as np
 import pymc.math as pmath
@@ -262,6 +263,7 @@ class StudentT(PyBanditsBaseModel):
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
 
+
 class BaseBayesianModel(Model, ABC):
     update_method: str = "MCMC"
     update_kwargs: Optional[dict] = None
@@ -394,7 +396,6 @@ class BayesianLogisticRegression(BaseBayesianModel):
             warnings.simplefilter("ignore", RuntimeWarning)
             prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
         return prob
-
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
@@ -656,8 +657,6 @@ class BayesianNeuralNetwork(BaseBayesianModel):
                 observed=ann_output
             )
 
-
-
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         # check input args
@@ -708,6 +707,9 @@ class BayesianNeuralNetwork(BaseBayesianModel):
                    **kwargs) -> "BayesianNeuralNetwork":
         return cls(in_dim=in_dim, hid_dim=hid_dim, update_method=update_method, update_kwargs=update_kwargs, **kwargs)
 
+class BayesianRegressionModelEnum(Enum):
+    BAYESIAN_LOGISTIC_REGRESSION = BayesianLogisticRegression 
+    BAYESIAN_NEURAL_NETWORK = BayesianNeuralNetwork
 
 if __name__ == '__main__':
     c_params = [-4, 2, 3, 3, 1, -3]
