@@ -280,7 +280,7 @@ class BaseBayesianModel(Model, ABC):
     )
 
     _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01),
-                                                 num_iter=2000)
+                                                 n=2000)
 
     class Config:
         arbitrary_types_allowed = True
@@ -610,24 +610,31 @@ class BayesianNeuralNetwork(BaseBayesianModel):
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
+    posterior_params: Optional[Dict[str, Dict[str, np.ndarray[Any, Any]]]] = None
 
     _model: Optional[pm.Model] = PrivateAttr()
     _shape_dict: Dict[str, Union[Tuple[int, int], int]] = PrivateAttr()
-    _posterior_params: Dict[str, Dict[str, float]] = PrivateAttr()
+    _posterior_params: Dict[str, Dict[str, np.ndarray[Any, Any]]] = PrivateAttr()
 
     def model_post_init(self, __context: Any) -> None:
         self.init_params()
         self.init_model()
 
     def init_params(self):
-        self._shape_dict = {
+        if self.posterior_params is not None:
+            self._posterior_params = self.posterior_params
+        else:
+            shape_dict = {
             "w1": (self.in_dim, self.hid_dim),
             "b1": self.hid_dim,
             "w2": self.hid_dim,
             "b2": 1
         }
+            self._posterior_params = {}
+            for name in shape_dict.keys():
+                self._posterior_params[name] = dict(mu=self.mu* np.ones(shape_dict[name]),
+                                                    sigma=self.sigma * np.ones(shape_dict[name]))
 
-        self._posterior_params = {name: dict(mu=self.mu, sigma=self.sigma) for name in self._shape_dict.keys()}
 
     def init_model(self):
         x = np.zeros((1, self.in_dim))  # dummy data
@@ -642,8 +649,8 @@ class BayesianNeuralNetwork(BaseBayesianModel):
             ann_input = pm.MutableData("ann_input", x)
             ann_output = pm.MutableData("ann_output", y)
 
-            for name in self._shape_dict.keys():
-                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name], shape=self._shape_dict[name])
+            for name in self._posterior_params.keys():
+                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name])
 
             # Build neural-network using tanh activation function
             act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
@@ -669,7 +676,7 @@ class BayesianNeuralNetwork(BaseBayesianModel):
         return prob, weighted_sum
 
     def sample(self, x=None, draws=100):
-        y = np.zeros(len(x))
+        y = np.zeros(len(x), dtype=np.int64)
         with self._model:
             pm.set_data(new_data={"ann_input": x, "ann_output": y})
             trace = pm.sample_prior_predictive(samples=draws)
@@ -687,8 +694,8 @@ class BayesianNeuralNetwork(BaseBayesianModel):
             if self.update_method == "VI":
                 # variational inference
                 update_kwargs = self.update_kwargs.copy()
-                approx = fit(method=update_kwargs.pop("method"))
-                trace = approx.sample(**update_kwargs)
+                approx = fit(**update_kwargs)
+                trace = approx.sample()
             elif self.update_method == "MCMC":
                 # MCMC
                 trace = sample(**self.update_kwargs)
@@ -744,7 +751,7 @@ if __name__ == '__main__':
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
-    bayesian_model = BayesianNeuralNetwork(in_dim=x_train.shape[1], hid_dim=10, mu=0, sigma=10)
+    bayesian_model = BayesianNeuralNetwork(in_dim=x_train.shape[1], hid_dim=10, mu=0, sigma=10, update_method = "VI", update_kwargs={"n": 100})
     bayesian_model.sample_proba(x_train)
     bayesian_model.update(x_train, y_train)
     prob, _ = bayesian_model.sample_proba(x_train)
