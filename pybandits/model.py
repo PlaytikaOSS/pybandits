@@ -713,10 +713,7 @@ class BayesianNeuralNetwork(BaseBayesianModel):
                    update_kwargs: Optional[dict] = None,
                    **kwargs) -> "BayesianNeuralNetwork":
         return cls(in_dim=in_dim, hid_dim=hid_dim, update_method=update_method, update_kwargs=update_kwargs, **kwargs)
-
-class BayesianRegressionModelEnum(Enum):
-    BAYESIAN_LOGISTIC_REGRESSION = BayesianLogisticRegression 
-    BAYESIAN_NEURAL_NETWORK = BayesianNeuralNetwork
+ 
 
 if __name__ == '__main__':
     c_params = [-4, 2, 3, 3, 1, -3]
