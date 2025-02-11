@@ -46,7 +46,7 @@ from pybandits.pydantic_version_compatibility import (
     validate_call,
 )
 from pybandits.strategy import Strategy
-from pybandits.utils import extract_argument_names_from_function
+from pybandits.utils import extract_argument_names_from_function, get_class
 
 
 class BaseMab(PyBanditsBaseModel, ABC):
@@ -405,7 +405,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
         action_general_kwargs : Dict[str, any]
             Dictionary of parameters and their values for the action model.
         """
-        action_model_class = get_args(cls.model_fields["actions"].annotation)[1]
+        # create a class from the string in regression model (can't put the class itself because of the serialization)
+        action_model_class_name = cls.model_fields["regression_model"].default
+        action_model_class = get_class(module_name="pybandits.model", class_name=action_model_class_name)
+
         if hasattr(action_model_class, "cold_start"):
             action_model_cold_start_init = action_model_cold_start = action_model_class.cold_start
         else:

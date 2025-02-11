@@ -371,6 +371,7 @@ def test_cmab_get_state(mu, sigma, n_features):
             "predict_actions_randomly": False,
             "epsilon": None,
             "default_action": None,
+            "regression_model": "BayesianLogisticRegression"
         }
     )
 
@@ -389,6 +390,7 @@ def test_cmab_get_state(mu, sigma, n_features):
                 keys=st.text(min_size=1, max_size=10),
                 values=st.fixed_dictionaries(
                     {
+                        
                         "alpha": st.fixed_dictionaries(
                             {
                                 "mu": st.floats(min_value=-100, max_value=100),
@@ -825,7 +827,7 @@ def test_cmab_cc_update(n_samples, n_features, update_method):
     st.floats(min_value=0),
     st.floats(min_value=0, max_value=1),
 )
-def test_cmab_cc_get_state(
+def test_cmab_cc_get_state( 
     mu, sigma, n_features, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
 ):
     actions: dict = {
@@ -961,3 +963,12 @@ def test_epsilon_greedy_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == n_samples
     assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
     assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+if __name__ == '__main__':
+    test_create_cmab_bernoulli_cold_start()
+   #test_cmab_predict_not_cold_start()
+
+from pydantic import BaseModel
+from pybandits.pydantic_version_compatibility import field_validator, validate_call
+
+
