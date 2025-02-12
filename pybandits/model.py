@@ -37,7 +37,7 @@ from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
-from pydantic import PrivateAttr
+from pydantic import PrivateAttr, conint
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -322,13 +322,18 @@ class BaseBayesianModel(Model, ABC):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def check_context_matrix(self, context: ArrayLike, expected_columns: int):
+    def check_context_matrix(self, context: ArrayLike):
         try:
             n_cols_context = np.array(context).shape[1]
         except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {expected_columns} columns: {e}.")
-        if n_cols_context != expected_columns:
-            raise AttributeError(f"Shape mismatch: context must have {expected_columns} columns.")
+            raise AttributeError(f"Context must be an ArrayLike with {self.expected_input} columns: {e}.")
+        if n_cols_context != self.expected_input:
+            raise AttributeError(f"Shape mismatch: context must have {self.expected_input} columns.")
+    
+    @property
+    @abstractmethod
+    def expected_input(self):
+        pass
 
     @abstractmethod
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
@@ -375,6 +380,10 @@ class BayesianLogisticRegression(BaseBayesianModel):
     else:
         raise ValueError("Invalid version.")
 
+    @property
+    def expected_input(self):
+        return len(self.betas)
+    
     @classmethod
     def _stable_sigmoid(cls, x: Union[np.ndarray, TensorVariable]) -> Union[np.ndarray, TensorVariable]:
         """
@@ -416,7 +425,7 @@ class BayesianLogisticRegression(BaseBayesianModel):
         """
 
         # check input args
-        self.check_context_matrix(context=context, expected_columns=len(self.betas))
+        self.check_context_matrix(context=context)
 
         # extend context with a column of 1 to handle the dot product with the intercept
         context_ext = c_[ones((len(context), 1)), context]
@@ -455,7 +464,7 @@ class BayesianLogisticRegression(BaseBayesianModel):
         """
 
         # check input args
-        self.check_context_matrix(context=context, expected_columns=len(self.betas))
+        self.check_context_matrix(context=context)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
@@ -605,8 +614,8 @@ class QuantitativeBNNModel:
 
 
 class BayesianNeuralNetwork(BaseBayesianModel):
-    in_dim: int
-    hid_dim: int
+    in_dim: conint(gt=0)
+    hid_dim: conint(gt=0)
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
@@ -642,6 +651,10 @@ class BayesianNeuralNetwork(BaseBayesianModel):
 
         self.evaluate_model(x, y)
 
+    @property
+    def expected_input(self):
+        return self.in_dim
+    
     def evaluate_model(self, x, y):
         params_dict = {}
         with pm.Model() as self._model:
@@ -667,7 +680,7 @@ class BayesianNeuralNetwork(BaseBayesianModel):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         # check input args
-        self.check_context_matrix(context=context, expected_columns=self.in_dim)
+        self.check_context_matrix(context=context)
 
         trace = self.sample(x=context, draws=1)
         prob = trace['prior']['prob'].squeeze().values
@@ -683,7 +696,7 @@ class BayesianNeuralNetwork(BaseBayesianModel):
         return trace
 
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
-        self.check_context_matrix(context=context, expected_columns=self.in_dim)
+        self.check_context_matrix(context=context)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
