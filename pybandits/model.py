@@ -37,7 +37,7 @@ from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
-from pydantic import PrivateAttr, conlist
+from pydantic import PrivateAttr, conlist, root_validator
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -262,6 +262,30 @@ class StudentT(PyBanditsBaseModel):
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
+
+
+class StudentTArray(PyBanditsBaseModel):
+    shape: Tuple[int, ...] = (1,)
+    params_dict: Optional[Dict[str, np.ndarray]] = None
+    mu: confloat(allow_inf_nan=False) = 0.0
+    sigma: confloat(allow_inf_nan=False) = 10.0
+    nu: confloat(allow_inf_nan=False) = 5.0
+
+    @root_validator
+    def initialize_arrays(cls, values):    
+        if (values["params_dict"] is None):
+            shape = values.get("shape")     
+            values["params_dict"] = {}  
+            values["params_dict"]["mu"] = np.zeros(shape) + values.get("mu")
+            values["params_dict"]["sigma"] = np.full(shape, values.get("sigma"))
+            values["params_dict"]["nu"] = np.full(shape, values.get("nu"))
+
+
+        return values
+
+    class Config:
+        arbitrary_types_allowed = True
+
 
 
 class BaseBayesianModel(Model, ABC):
@@ -764,6 +788,9 @@ if __name__ == '__main__':
     n_samples_train = 30000
     n_samples_val = 2000
     n_samples_test = 10000
+
+    a1 = StudentTArray(shape=(2, 3))
+
 
 
     def sigmoid(x):
