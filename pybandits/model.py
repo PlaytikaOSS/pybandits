@@ -37,7 +37,7 @@ from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
-from pydantic import PrivateAttr, conint
+from pydantic import PrivateAttr, conlist
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -614,46 +614,53 @@ class QuantitativeBNNModel:
 
 
 class BayesianNeuralNetwork(BaseBayesianModel):
-    in_dim: conint(gt=0)
-    hid_dim: conint(gt=0)
+    dim_list: conlist(PositiveInt)
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
-    posterior_params: Optional[Dict[str, Dict[str, np.ndarray[Any, Any]]]] = None
+    posterior_params: Optional[List[Dict[str, Dict[str, np.ndarray[Any, Any]]]]] = None
 
-    _model: Optional[pm.Model] = PrivateAttr()
-    _shape_dict: Dict[str, Union[Tuple[int, int], int]] = PrivateAttr()
-    _posterior_params: Dict[str, Dict[str, np.ndarray[Any, Any]]] = PrivateAttr()
+    _model: pm.Model = PrivateAttr()
+    _posterior_params: List[Dict[str, Dict[str, np.ndarray[Any, Any]]]] = PrivateAttr()
+    _in_dim: PositiveInt = PrivateAttr()
 
     def model_post_init(self, __context: Any) -> None:
         self.init_params()
         self.init_model()
 
     def init_params(self):
+        self._in_dim = self.dim_list[0]
+
         if self.posterior_params is not None:
             self._posterior_params = self.posterior_params
         else:
-            shape_dict = {
-            "w1": (self.in_dim, self.hid_dim),
-            "b1": self.hid_dim,
-            "w2": self.hid_dim,
-            "b2": 1
-        }
-            self._posterior_params = {}
-            for name in shape_dict.keys():
-                self._posterior_params[name] = dict(mu=self.mu* np.ones(shape_dict[name]),
-                                                    sigma=self.sigma * np.ones(shape_dict[name]))
+            dim_list = self.dim_list
+            dim_list.append(1)
+
+            self._posterior_params = []
+            for layer_ind in range(len(dim_list) - 1):
+                input_dim = dim_list[layer_ind]
+                output_dim = dim_list[layer_ind + 1]
+                w_param = dict(
+                    mu=self.mu * np.ones((input_dim, output_dim)),
+                    sigma=self.sigma * np.ones((input_dim, output_dim))
+                )
+                b_param = dict(
+                    mu=self.mu * np.ones(output_dim),
+                    sigma=self.sigma * np.ones(output_dim)
+                )
+                self._posterior_params.append(dict(w=w_param, b=b_param))
 
 
     def init_model(self):
-        x = np.zeros((1, self.in_dim))  # dummy data
+        x = np.zeros((1, self._in_dim))  # dummy data
         y = np.zeros(1)  # dummy data
 
         self.evaluate_model(x, y)
 
     @property
     def expected_input(self):
-        return self.in_dim
+        return self._in_dim
     
     def evaluate_model(self, x, y):
         params_dict = {}
@@ -662,12 +669,21 @@ class BayesianNeuralNetwork(BaseBayesianModel):
             ann_input = pm.MutableData("ann_input", x)
             ann_output = pm.MutableData("ann_output", y)
 
-            for name in self._posterior_params.keys():
-                params_dict[name] = pm.Normal(name=name, **self._posterior_params[name])
+            for layer_ind in range(len(self._posterior_params)):
+                params = self._posterior_params[layer_ind]
+                w = pm.Normal(f"w{layer_ind}", **params["w"])
+                b = pm.Normal(f"b{layer_ind}", **params["b"])
+                
 
-            # Build neural-network using tanh activation function
-            act_1 = pm.math.tanh(pm.math.dot(ann_input, params_dict["w1"]) + params_dict["b1"])
-            logit = pm.Deterministic("logit", pm.math.dot(act_1, params_dict["w2"]) + params_dict["b2"])
+                if layer_ind == 0:
+                    linear_transform = pm.math.dot(ann_input, w) + b
+                else:
+                    linear_transform = pm.math.dot(act, w) + b
+                
+                if layer_ind < len(self._posterior_params) - 1:
+                    act = pm.math.tanh(linear_transform)
+
+            logit = pm.Deterministic("logit", linear_transform.squeeze())
             prob = pm.Deterministic("prob", pm.math.sigmoid(logit))
 
             # Binary classification -> Bernoulli likelihood
@@ -715,17 +731,30 @@ class BayesianNeuralNetwork(BaseBayesianModel):
             else:
                 raise ValueError("Invalid update method.")
 
-        for name in self._posterior_params.keys():
-            self._posterior_params[name]["mu"] = np.mean(trace['posterior'][name].squeeze(), axis=0).values
-            self._posterior_params[name]["sigma"] = np.std(trace['posterior'][name].squeeze(), axis=0).values
+        
+        new_posterior_params = []
+        for layer_ind in range(len(self._posterior_params)):
+            name = f"w{layer_ind}"
+            w_mu = np.mean(trace['posterior'][name].squeeze(), axis=0).values
+            w_sigma = np.std(trace['posterior'][name].squeeze(), axis=0).values
 
+            name = f"b{layer_ind}"
+            b_mu = np.mean(trace['posterior'][name].squeeze(), axis=0).values
+            b_sigma = np.std(trace['posterior'][name].squeeze(), axis=0).values
+
+            w_param = dict(mu=w_mu, sigma=w_sigma)
+            b_param = dict(mu=b_mu, sigma=b_sigma)
+
+            new_posterior_params.append(dict(w=w_param, b=b_param))
+
+        self._posterior_params = new_posterior_params
         self.evaluate_model(context, rewards)  # re-evaluate the _model with the new parameters
 
     @classmethod
-    def cold_start(cls, in_dim, hid_dim, update_method: UpdateMethods = "MCMC",
+    def cold_start(cls, dim_list, update_method: UpdateMethods = "MCMC",
                    update_kwargs: Optional[dict] = None,
                    **kwargs) -> "BayesianNeuralNetwork":
-        return cls(in_dim=in_dim, hid_dim=hid_dim, update_method=update_method, update_kwargs=update_kwargs, **kwargs)
+        return cls(dim_list=dim_list,  update_method=update_method, update_kwargs=update_kwargs, **kwargs)
  
 
 if __name__ == '__main__':
@@ -761,7 +790,7 @@ if __name__ == '__main__':
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
 
-    bayesian_model = BayesianNeuralNetwork(in_dim=x_train.shape[1], hid_dim=10, mu=0, sigma=10, update_method = "VI", update_kwargs={"n": 100})
+    bayesian_model = BayesianNeuralNetwork(dim_list=[x_train.shape[1], 10], mu=0, sigma=10, update_method = "VI", update_kwargs={"n": 100})
     bayesian_model.sample_proba(x_train)
     bayesian_model.update(x_train, y_train)
     prob, _ = bayesian_model.sample_proba(x_train)
