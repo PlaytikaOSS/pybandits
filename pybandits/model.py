@@ -762,6 +762,50 @@ class BayesianNeuralNetwork(BaseBayesianModel):
         return cls(posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs)
  
 
+class BayesianLogisticRegression2(BayesianNeuralNetwork):
+    alpha: StudentT
+    if pydantic_version == PYDANTIC_VERSION_1:
+        betas: List[StudentT] = Field(..., min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        betas: List[StudentT] = Field(..., min_length=1)
+    else:
+        raise ValueError("Invalid version.")
+    
+    @root_validator(pre=True)
+    def set_posterior_params(cls, values):
+        input_dim = len(values["betas"])
+        output_dim = 1
+
+        w_param = StudentTArray(shape=(input_dim, output_dim))
+        for i,beta in enumerate(values["betas"]):
+            w_param.params_dict["mu"][i,0] = beta.mu
+            w_param.params_dict["sigma"][i,0] = beta.sigma
+            w_param.params_dict["nu"][i,0] = beta.nu
+
+
+        b_param = StudentTArray(shape=(output_dim,))
+        b_param.params_dict["mu"][0] = values["alpha"].mu
+        b_param.params_dict["sigma"][0] = values["alpha"].sigma
+        b_param.params_dict["nu"][0] = values["alpha"].nu
+
+
+        values["posterior_params"] = [dict(w=w_param, b=b_param)]
+        return values
+
+    @classmethod
+    def cold_start(cls, n_features, update_method: UpdateMethods = "MCMC",
+                   update_kwargs: Optional[dict] = None,
+                   **kwargs) -> "BayesianLogisticRegression2":
+        return cls(
+        alpha=StudentT(),
+        betas=[StudentT() for _ in range(n_features)],
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+        **kwargs,
+    )
+
+    
+
 if __name__ == '__main__':
     c_params = [-4, 2, 3, 3, 1, -3]
     n_bias_features = 3
@@ -771,6 +815,7 @@ if __name__ == '__main__':
     n_samples_test = 10000
 
     a1 = StudentTArray(shape=(2, 3))
+    BayesianLogisticRegression2(alpha=StudentT(), betas=[StudentT() for _ in range(3)])
 
 
 
@@ -797,11 +842,11 @@ if __name__ == '__main__':
     x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
-    bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="VI", update_kwargs={"n": 100})
+    # bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="VI", update_kwargs={"n": 100})
 
-    bayesian_model.sample_proba(x_train)
-    bayesian_model.update(x_train, y_train)
-    prob, _ = bayesian_model.sample_proba(x_train)
+    # bayesian_model.sample_proba(x_train)
+    # bayesian_model.update(x_train, y_train)
+    # prob, _ = bayesian_model.sample_proba(x_train)
 
 #     import torch
 #     import matplotlib.pyplot as plt
