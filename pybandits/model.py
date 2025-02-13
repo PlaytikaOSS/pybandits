@@ -283,6 +283,13 @@ class StudentTArray(PyBanditsBaseModel):
 
         return values
 
+    def __eq__(self, other):
+        for key, value in self.params_dict.items():
+            if not np.array_equal(value, other.params_dict[key]):
+                return False
+        return True
+
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -636,6 +643,9 @@ class QuantitativeBNNModel:
             return probabilities
 
 
+    
+
+    
 
 class BayesianNeuralNetwork(BaseBayesianModel):
     posterior_params: List[Dict[str, StudentTArray]] 
@@ -760,6 +770,12 @@ class BayesianNeuralNetwork(BaseBayesianModel):
             posterior_params.append(dict(w=w_param, b=b_param))
         
         return cls(posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs)
+
+    def __eq__(self, other):
+        for i, layer in enumerate(self.posterior_params):
+            if not layer["w"] == other.posterior_params[i]["w"] or not layer["b"] == other.posterior_params[i]["b"]:
+                return False
+        return True
  
 
 class BayesianLogisticRegression2(BayesianNeuralNetwork):
@@ -814,7 +830,11 @@ if __name__ == '__main__':
     n_samples_val = 2000
     n_samples_test = 10000
 
-    a1 = StudentTArray(shape=(2, 3))
+    a1 = StudentTArray(shape=(3, 3))
+    a2 = StudentTArray(shape=(2, 3))
+    a1 == a2
+
+
     BayesianLogisticRegression2(alpha=StudentT(), betas=[StudentT() for _ in range(3)])
 
 
