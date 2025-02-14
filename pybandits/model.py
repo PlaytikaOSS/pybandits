@@ -266,7 +266,7 @@ class StudentT(PyBanditsBaseModel):
 
 class StudentTArray(PyBanditsBaseModel):
     shape: Tuple[int, ...] = (1,)
-    params_dict: Optional[Dict[str, np.ndarray]] = None
+    params_dict: Optional[Dict[str, Union[List[float],List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
@@ -276,9 +276,9 @@ class StudentTArray(PyBanditsBaseModel):
         if (values["params_dict"] is None):
             shape = values.get("shape")     
             values["params_dict"] = {}  
-            values["params_dict"]["mu"] = np.zeros(shape) + values.get("mu")
-            values["params_dict"]["sigma"] = np.full(shape, values.get("sigma"))
-            values["params_dict"]["nu"] = np.full(shape, values.get("nu"))
+            values["params_dict"]["mu"] = (np.zeros(shape) + values.get("mu")).tolist()
+            values["params_dict"]["sigma"] = np.full(shape, values.get("sigma")).tolist()
+            values["params_dict"]["nu"] = np.full(shape, values.get("nu")).tolist()
 
 
         return values
@@ -310,7 +310,7 @@ class BaseBayesianModel(Model, ABC):
         return_inferencedata=False,
     )
 
-    _default_variational_inference_kwargs = dict(method="advi", obj_optimizer=pm.adam(learning_rate=0.01),
+    _default_variational_inference_kwargs = dict(method="advi", 
                                                  n=2000)
 
     class Config:
@@ -794,9 +794,9 @@ class BayesianLogisticRegression2(BayesianNeuralNetwork):
 
         w_param = StudentTArray(shape=(input_dim, output_dim))
         for i,beta in enumerate(values["betas"]):
-            w_param.params_dict["mu"][i,0] = beta.mu
-            w_param.params_dict["sigma"][i,0] = beta.sigma
-            w_param.params_dict["nu"][i,0] = beta.nu
+            w_param.params_dict["mu"][i][0] = beta.mu
+            w_param.params_dict["sigma"][i][0] = beta.sigma
+            w_param.params_dict["nu"][i][0] = beta.nu
 
 
         b_param = StudentTArray(shape=(output_dim,))
@@ -836,7 +836,20 @@ if __name__ == '__main__':
 
 
     BayesianLogisticRegression2(alpha=StudentT(), betas=[StudentT() for _ in range(3)])
+        #posterior_params: List[Dict[str, StudentTArray]] 
+    posterior_params = [dict(w=StudentTArray(shape=(3, 3)), b=StudentTArray(shape=(3,)))]
+    betas = [[StudentT() for _ in range(3)], [StudentT() for _ in range(3)]]
+    
 
+    xx = BayesianNeuralNetwork.cold_start(dim_list=[5, 10, 1], update_method="VI", update_kwargs={"n": 100})
+    xxx = BayesianLogisticRegression.cold_start(n_features=5, update_method="VI", update_kwargs={"n": 100})
+    xxx = BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()])
+    import json
+    from pybandits.utils import to_serializable_dict
+    d = {'1': xx}
+    tt = to_serializable_dict(d)
+  
+    ttt = json.loads(json.dumps(tt, default=dict))
 
 
     def sigmoid(x):
