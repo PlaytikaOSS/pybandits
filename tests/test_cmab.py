@@ -62,9 +62,9 @@ def test_create_cmab_bernoulli_cold_start(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianLogisticRegression, n_features=a_int)
     else:
-        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianLogisticRegression, n_features=a_int)
         mab2 = CmabBernoulli(
             actions={
                 "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
@@ -73,6 +73,19 @@ def test_create_cmab_bernoulli_cold_start(a_int):
         )
         mab2.predict_actions_randomly = True
         assert mab1 == mab2
+
+# for k in mab1.dict()['actions']['a1']:
+#     print(mab1.dict()['actions']['a1'][k] == mab2.dict()['actions']['a1'][k])
+
+# for key, value in mab1.__dict__.items():
+#         print(key)
+#         if value != mab2.__dict__.get(key):
+#             #print(f"{key} mismatch: {value} != {mab2.__dict__.get(key)}")
+#             print("missmatch")
+#         else:
+#             #print(f"{key} match: {value} == {mab2.__dict__.get(key)}")
+#             print("match")
+            
 
 
 @settings(deadline=500)
@@ -371,7 +384,6 @@ def test_cmab_get_state(mu, sigma, n_features):
             "predict_actions_randomly": False,
             "epsilon": None,
             "default_action": None,
-            "regression_model": "BayesianLogisticRegression"
         }
     )
 

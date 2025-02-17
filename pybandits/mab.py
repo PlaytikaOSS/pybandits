@@ -311,7 +311,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
         action_ids: Optional[Set[ActionId]] = None,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
-        **kwargs,
+        action_model_class: Optional[Model] = None,
+        **kwargs,   
     ) -> "BaseMab":
         """
         Factory method to create a Multi-Armed Bandit with Thompson Sampling, with default
@@ -345,7 +346,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             )
 
         # Assign model for each action
-        action_model_cold_start, action_general_kwargs = cls._extract_action_model_class_and_attributes(**kwargs)
+        action_model_cold_start, action_general_kwargs = cls._extract_action_model_class_and_attributes(action_model_class, **kwargs)
         actions = {}
         for a in inner_action_ids:
             actions[a] = action_model_cold_start(**action_general_kwargs, **action_specific_kwargs.get(a, {}))
@@ -389,7 +390,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return dict(action_specific_kwargs), kwargs
 
     @classmethod
-    def _extract_action_model_class_and_attributes(cls, **kwargs) -> Tuple[Callable, Dict[str, Dict]]:
+    def _extract_action_model_class_and_attributes(cls,action_model_class: Optional[Model] = None, **kwargs) -> Tuple[Callable, Dict[str, Dict]]:
         """
         Utility function to extract kwargs that are specific for each action when constructing the action model.
 
@@ -405,7 +406,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
         action_general_kwargs : Dict[str, any]
             Dictionary of parameters and their values for the action model.
         """
-        action_model_class = get_args(cls.model_fields["actions"].annotation)[1]
+        if action_model_class is None:
+            action_model_class = get_args(cls.model_fields["actions"].annotation)[1]
+
         if hasattr(action_model_class, "cold_start"):
             action_model_cold_start_init = action_model_cold_start = action_model_class.cold_start
         else:
