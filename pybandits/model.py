@@ -388,7 +388,7 @@ class BaseBayesianModel(Model, ABC):
         pass
 
 
-class BayesianLogisticRegression(BaseBayesianModel):
+class BayesianLogisticRegression2(BaseBayesianModel):
     """
     Base Bayesian Logistic Regression model.
 
@@ -556,7 +556,7 @@ class BayesianLogisticRegression(BaseBayesianModel):
             update_method: UpdateMethods = "MCMC",
             update_kwargs: Optional[dict] = None,
             **kwargs,
-    ) -> "BayesianLogisticRegression":
+    ) -> "BayesianLogisticRegression2":
         """
         Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
         with default parameters.
@@ -594,67 +594,6 @@ class BayesianLogisticRegression(BaseBayesianModel):
             **kwargs,
         )
 
-
-class BayesianLogisticRegressionCC(BayesianLogisticRegression):
-    """
-    Bayesian Logistic Regression model with cost control.
-
-    It is modeled as:
-
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    Parameters
-    ----------
-    alpha: StudentT
-        Student's t-distribution of the alpha coefficient.
-    betas: StudentT
-        Student's t-distributions of the betas coefficients.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-    cost: NonNegativeFloat
-        Cost associated to the Bayesian Logistic Regression model.
-    """
-
-    cost: NonNegativeFloat
-
-
-import torch.nn as nn
-
-
-class Torch_BNN(nn.Module):
-    def __init__(self, in_dim, out_dim=1, hid_dim=10):
-        super().__init__()
-        self.activation = nn.Tanh()  # or nn.ReLU()
-        self.layer1 = nn.Linear(in_dim, hid_dim)  # Input to hidden layer
-        self.layer2 = nn.Linear(hid_dim, out_dim)  # Hidden to output layer
-
-    def forward(self, x_features, x_actions):
-        x = torch.cat((x_features, x_actions))
-        x = self.activation(self.layer1(x))
-        logits = self.layer2(x).squeeze()
-        return logits
-
-
-class QuantitativeBNNModel:
-    def __init__(self, in_dim, hid_dim, mu=0, sigma=10.):
-        self.model = BayesianNeuralNetwork(in_dim, hid_dim, mu, sigma)
-        self.torch_model = Torch_BNN(in_dim, hid_dim)
-
-        def sample_proba(self, x):
-            trace = self._model.sample(x)
-            probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
-            return probabilities
-
-
-    
-
-    
 
 class BayesianNeuralNetwork(Model):
     update_method: str = "MCMC"
@@ -802,7 +741,7 @@ class BayesianNeuralNetwork(Model):
                 # variational inference
                 update_kwargs = self.update_kwargs.copy()
                 approx = fit(**update_kwargs)
-                trace = approx.sample()
+                trace = approx.sample()['posterior']
             elif self.update_method == "MCMC":
                 # MCMC
                 trace = sample(**self.update_kwargs)
@@ -813,8 +752,8 @@ class BayesianNeuralNetwork(Model):
         for layer_ind in range(len(self.posterior_params)):
             name = f"w{layer_ind}"
         
-            w_mu = np.mean(trace['posterior'][name].squeeze(axis=0), axis=0).values
-            w_sigma = np.std(trace['posterior'][name].squeeze(axis=0), axis=0).values
+            w_mu = np.mean(trace[name].squeeze(axis=0), axis=0).values
+            w_sigma = np.std(trace[name].squeeze(axis=0), axis=0).values
             
             self.posterior_params[layer_ind]["w"].params_dict["mu"] = w_mu
             self.posterior_params[layer_ind]["w"].params_dict["sigma"] = w_sigma
@@ -853,7 +792,7 @@ class BayesianNeuralNetwork(Model):
         return True
  
 
-class BayesianLogisticRegression2(BayesianNeuralNetwork):
+class BayesianLogisticRegression(BayesianNeuralNetwork):
     alpha: StudentT
     if pydantic_version == PYDANTIC_VERSION_1:
         betas: List[StudentT] = Field(..., min_items=1)
@@ -886,7 +825,7 @@ class BayesianLogisticRegression2(BayesianNeuralNetwork):
     @classmethod
     def cold_start(cls, n_features, update_method: UpdateMethods = "MCMC",
                    update_kwargs: Optional[dict] = None,
-                   **kwargs) -> "BayesianLogisticRegression2":
+                   **kwargs) -> "BayesianLogisticRegression":
         return cls(
         alpha=StudentT(),
         betas=[StudentT() for _ in range(n_features)],
@@ -894,6 +833,68 @@ class BayesianLogisticRegression2(BayesianNeuralNetwork):
         update_kwargs=update_kwargs,
         **kwargs,
     )
+
+
+class BayesianLogisticRegressionCC(BayesianLogisticRegression):
+    """
+    Bayesian Logistic Regression model with cost control.
+
+    It is modeled as:
+
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    Parameters
+    ----------
+    alpha: StudentT
+        Student's t-distribution of the alpha coefficient.
+    betas: StudentT
+        Student's t-distributions of the betas coefficients.
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
+    cost: NonNegativeFloat
+        Cost associated to the Bayesian Logistic Regression model.
+    """
+
+    cost: NonNegativeFloat
+
+
+import torch.nn as nn
+
+
+class Torch_BNN(nn.Module):
+    def __init__(self, in_dim, out_dim=1, hid_dim=10):
+        super().__init__()
+        self.activation = nn.Tanh()  # or nn.ReLU()
+        self.layer1 = nn.Linear(in_dim, hid_dim)  # Input to hidden layer
+        self.layer2 = nn.Linear(hid_dim, out_dim)  # Hidden to output layer
+
+    def forward(self, x_features, x_actions):
+        x = torch.cat((x_features, x_actions))
+        x = self.activation(self.layer1(x))
+        logits = self.layer2(x).squeeze()
+        return logits
+
+
+class QuantitativeBNNModel:
+    def __init__(self, in_dim, hid_dim, mu=0, sigma=10.):
+        self.model = BayesianNeuralNetwork(in_dim, hid_dim, mu, sigma)
+        self.torch_model = Torch_BNN(in_dim, hid_dim)
+
+        def sample_proba(self, x):
+            trace = self._model.sample(x)
+            probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
+            return probabilities
+
+
+    
+
+    
 
     
 
@@ -910,15 +911,15 @@ if __name__ == '__main__':
     a1 == a2
 
 
-    BayesianLogisticRegression2(alpha=StudentT(), betas=[StudentT() for _ in range(3)])
+    BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(3)])
         #posterior_params: List[Dict[str, StudentTArray]] 
     posterior_params = [dict(w=StudentTArray(shape=(3, 3)), b=StudentTArray(shape=(3,)))]
     betas = [[StudentT() for _ in range(3)], [StudentT() for _ in range(3)]]
     
 
     xx = BayesianNeuralNetwork.cold_start(dim_list=[5, 10, 1], update_method="VI", update_kwargs={"n": 100})
-    xxx = BayesianLogisticRegression.cold_start(n_features=5, update_method="VI", update_kwargs={"n": 100})
-    xxx = BayesianLogisticRegression2(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(mu=2, sigma=4), StudentT(mu=6, sigma=7)])
+    xxx = BayesianLogisticRegression2.cold_start(n_features=5, update_method="VI", update_kwargs={"n": 100})
+    xxx = BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(mu=2, sigma=4), StudentT(mu=6, sigma=7)])
     import json
     from pybandits.utils import to_serializable_dict
     d = {'1': xx}
