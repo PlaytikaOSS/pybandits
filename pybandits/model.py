@@ -265,7 +265,7 @@ class StudentT(PyBanditsBaseModel):
 
 
 class StudentTArray(PyBanditsBaseModel):
-    shape: Tuple[int, ...] = (1,)
+    shape: List[int] = [1]
     params_dict: Optional[Dict[str, Union[List[float],List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
@@ -630,38 +630,52 @@ class BayesianNeuralNetwork(Model):
         def arrange_update_kwargs(cls, values):
             update_kwargs = cls._get_value_with_default("update_kwargs", values)
             update_method = cls._get_value_with_default("update_method", values)
+            
+            
             if update_kwargs is None: 
                 if update_method == "VI":
                     update_kwargs= dict()
                     update_kwargs["trace"] = cls._default_update_trace_kwargs
-                    update_kwargs["trace"] = {**cls._default_variational_inference_trace_kwargs, **update_kwargs["trace"]}
-                    update_kwargs["fit"] = {**cls._default_variational_inference_fit_kwargs}
-                    
+
                 elif update_method == "MCMC":
                     update_kwargs = cls._default_update_trace_kwargs
-                    update_kwargs = {**cls._default_mcmc_trace_kwargs, **update_kwargs}
-                else:
-                    raise ValueError("Invalid update method.")
-                values["update_kwargs"] = update_kwargs
-                values["update_method"] = update_method
-                return values
+                
+            if update_method == "VI":       
+                update_kwargs["trace"] = {**cls._default_variational_inference_trace_kwargs, **update_kwargs["trace"]}
+                update_kwargs["fit"] = {**cls._default_variational_inference_fit_kwargs, **update_kwargs.get("fit",{})}
+
+            elif update_method == "MCMC":     
+                update_kwargs = {**cls._default_mcmc_trace_kwargs, **update_kwargs}
+            else:
+                raise ValueError("Invalid update method.")
+                
+            values["update_kwargs"] = update_kwargs
+            values["update_method"] = update_method
+            return values
 
     elif pydantic_version == PYDANTIC_VERSION_2:
         @model_validator(mode="after")
         def arrange_update_kwargs(self):
+            
             if self.update_kwargs is None:
                 if self.update_method == "VI":
                     self.update_kwargs = dict()
                     self.update_kwargs["trace"] = self._default_update_trace_kwargs
-                    self.update_kwargs["trace"] = {**self._default_variational_inference_trace_kwargs, **self.update_kwargs["trace"]}
-                    self.update_kwargs["fit"] = {**self._default_variational_inference_fit_kwargs}
- 
+
                 elif self.update_method == "MCMC":
                     self.update_kwargs = self._default_update_trace_kwargs
-                    self.update_kwargs = {**self._default_mcmc_trace_kwargs, **self.update_kwargs}
-                else:
-                    raise ValueError("Invalid update method.")
-                return self
+           
+            
+            if self.update_method == "VI":
+                    self.update_kwargs["trace"] = {**self._default_variational_inference_trace_kwargs, **self.update_kwargs["trace"]}
+                    self.update_kwargs["fit"] = {**self._default_variational_inference_fit_kwargs, **self.update_kwargs.get("fit",{})}
+ 
+            elif self.update_method == "MCMC":
+                self.update_kwargs = self._default_update_trace_kwargs
+                self.update_kwargs = {**self._default_mcmc_trace_kwargs, **self.update_kwargs}
+            else:
+                raise ValueError("Invalid update method.")
+            return self
 
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
@@ -731,7 +745,7 @@ class BayesianNeuralNetwork(Model):
         print(prob, weighted_sum)
         return prob, weighted_sum
 
-    def sample(self, x=None, draws=100):
+    def sample(self, x=None, draws=1000):
         y = np.zeros(len(x), dtype=np.int64)
         with self._model:
             pm.set_data(new_data={"ann_input": x, "ann_output": y})
@@ -789,8 +803,8 @@ class BayesianNeuralNetwork(Model):
         for layer_ind in range(len(_dim_list) - 1):
             input_dim = dim_list[layer_ind]
             output_dim = dim_list[layer_ind + 1]
-            w_param = StudentTArray(shape=(input_dim, output_dim))
-            b_param = StudentTArray(shape=(output_dim,))
+            w_param = StudentTArray(shape=[input_dim, output_dim])
+            b_param = StudentTArray(shape=[output_dim])
             posterior_params.append(dict(w=w_param, b=b_param))
         
         return cls(posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs)
@@ -816,17 +830,23 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
         input_dim = len(values["betas"])
         output_dim = 1
 
-        w_param = StudentTArray(shape=(input_dim, output_dim))
-        for i,beta in enumerate(values["betas"]):
+        w_param = StudentTArray(shape=[input_dim, output_dim])
+        betas = values["betas"].copy()
+        for i,beta in enumerate(betas):
+            if type(beta) == dict:
+                beta = StudentT(**beta) # handle from_state
             w_param.params_dict["mu"][i][0] = beta.mu
             w_param.params_dict["sigma"][i][0] = beta.sigma
             w_param.params_dict["nu"][i][0] = beta.nu
 
+        alpha = values["alpha"].copy()
+        if type(alpha) == dict:
+            alpha = StudentT(**alpha)
 
-        b_param = StudentTArray(shape=(output_dim,))
-        b_param.params_dict["mu"][0] = values["alpha"].mu
-        b_param.params_dict["sigma"][0] = values["alpha"].sigma
-        b_param.params_dict["nu"][0] = values["alpha"].nu
+        b_param = StudentTArray(shape=[output_dim])
+        b_param.params_dict["mu"][0] = alpha.mu
+        b_param.params_dict["sigma"][0] = alpha.sigma
+        b_param.params_dict["nu"][0] = alpha.nu
 
 
         values["posterior_params"] = [dict(w=w_param, b=b_param)]
@@ -906,8 +926,6 @@ class QuantitativeBNNModel:
 
     
 
-    
-
 if __name__ == '__main__':
     c_params = [-4, 2, 3, 3, 1, -3]
     n_bias_features = 3
@@ -926,16 +944,15 @@ if __name__ == '__main__':
     posterior_params = [dict(w=StudentTArray(shape=(3, 3)), b=StudentTArray(shape=(3,)))]
     betas = [[StudentT() for _ in range(3)], [StudentT() for _ in range(3)]]
     
-
-    xx = BayesianNeuralNetwork.cold_start(dim_list=[5, 10, 1], update_method="VI", update_kwargs={"n": 100})
-    xxx = BayesianLogisticRegression2.cold_start(n_features=5, update_method="VI", update_kwargs={"n": 100})
-    xxx = BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(mu=2, sigma=4), StudentT(mu=6, sigma=7)])
-    import json
-    from pybandits.utils import to_serializable_dict
-    d = {'1': xx}
-    tt = to_serializable_dict(d)
+    # xx = BayesianNeuralNetwork.cold_start(dim_list=[5, 10, 1], update_method="VI")
+    # xxx = BayesianLogisticRegression2.cold_start(n_features=5, update_method="VI")
+    # xxx = BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(mu=2, sigma=4), StudentT(mu=6, sigma=7)])
+    # import json
+    # from pybandits.utils import to_serializable_dict
+    # d = {'1': xx}
+    # tt = to_serializable_dict(d)
   
-    ttt = json.loads(json.dumps(tt, default=dict))
+    # ttt = json.loads(json.dumps(tt, default=dict))
 
 
     def sigmoid(x):
@@ -961,11 +978,21 @@ if __name__ == '__main__':
     x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
-    # bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="VI", update_kwargs={"n": 100})
+    #bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="VI", update_kwargs={"trace":{"n": 100}})
+    #bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="MCMC")
+    
+    n_features = x_train.shape[1]
+   
+    #### 
+    n_samples = 10
+    n_features = 1
+    bayesian_model =  BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()])
+    x_train = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    bayesian_model.sample_proba(x_train)
+    ###
 
-    # bayesian_model.sample_proba(x_train)
-    # bayesian_model.update(x_train, y_train)
-    # prob, _ = bayesian_model.sample_proba(x_train)
+    bayesian_model.update(x_train, y_train)
+    prob, _ = bayesian_model.sample_proba(x_train)
 
 #     import torch
 #     import matplotlib.pyplot as plt
@@ -1091,3 +1118,20 @@ if __name__ == '__main__':
 #
 #
 #
+######
+# import pymc as pm
+# import numpy as np
+# with self.actions["a5"]._model:
+#     trace = pm.sample_prior_predictive(samples=1000)
+
+# for name in ["w0","b0"]:
+#     print(name)
+#     print(np.mean(trace["prior"][name].values.squeeze(), axis=0))
+#     print(np.std(trace["prior"][name].values.squeeze(), axis=0))
+
+
+
+
+
+
+#####
