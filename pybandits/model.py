@@ -616,9 +616,6 @@ class BayesianNeuralNetwork(Model):
     _default_variational_inference_fit_kwargs = dict(method="advi") 
     _default_variational_inference_trace_kwargs = dict(n=2000)
     
-    
-    _model: pm.Model = PrivateAttr()
-
 
     class Config:
         arbitrary_types_allowed = True
@@ -690,22 +687,12 @@ class BayesianNeuralNetwork(Model):
             raise AttributeError(f"Shape mismatch: context must have {self.expected_input} columns.")
     
 
-    def model_post_init(self, __context: Any) -> None:
-        self.init_model()
-
-    def init_model(self):
-        x = np.zeros((1, self.expected_input))  # dummy data
-        y = np.zeros(1)  # dummy data
-
-        self.evaluate_model(x, y)
-
     @property
     def expected_input(self):
         return self.posterior_params[0]["w"].shape[0]
     
-    def evaluate_model(self, x, y):
-        params_dict = {}
-        with pm.Model() as self._model:
+    def create_model(self, x, y):
+        with pm.Model() as _model:
             # Define data variables using minibatches
             ann_input = pm.MutableData("ann_input", x)
             ann_output = pm.MutableData("ann_output", y)
@@ -715,7 +702,6 @@ class BayesianNeuralNetwork(Model):
                 w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict)
                 b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict)
                 
-
                 if layer_ind == 0:
                     linear_transform = pm.math.dot(ann_input, w) + b
                 else:
@@ -733,33 +719,30 @@ class BayesianNeuralNetwork(Model):
                 p=prob,
                 observed=ann_output
             )
+        return _model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         # check input args
         self.check_context_matrix(context=context)
 
-        trace = self.sample(x=context, draws=1)
+        dummy_y = np.zeros(len(context), dtype=np.int64)
+        _model = self.create_model(context, dummy_y)
+        with _model:
+            trace = pm.sample_prior_predictive(samples=1)
+
         prob = trace['prior']['prob'].squeeze().values
         weighted_sum = trace['prior']['logit'].squeeze().values
         print(prob, weighted_sum)
         return prob, weighted_sum
-
-    def sample(self, x=None, draws=1000):
-        y = np.zeros(len(x), dtype=np.int64)
-        with self._model:
-            pm.set_data(new_data={"ann_input": x, "ann_output": y})
-            trace = pm.sample_prior_predictive(samples=draws)
-        return trace
 
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
         self.check_context_matrix(context=context)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
-        with self._model:
-            pm.set_data(new_data={"ann_input": context, "ann_output": rewards})
-
+        _model = self.create_model(context, rewards)
+        with _model:
             # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
                 # variational inference
@@ -789,7 +772,6 @@ class BayesianNeuralNetwork(Model):
             self.posterior_params[layer_ind]["b"].params_dict["mu"] = b_mu.tolist()
             self.posterior_params[layer_ind]["b"].params_dict["sigma"] = b_sigma.tolist()
 
-        self.evaluate_model(context, rewards)  # re-evaluate the _model with the new parameters
 
     @classmethod
     def cold_start(cls, dim_list, update_method: UpdateMethods = "MCMC",
@@ -832,6 +814,7 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
 
         w_param = StudentTArray(shape=[input_dim, output_dim])
         betas = values["betas"].copy()
+        
         for i,beta in enumerate(betas):
             if type(beta) == dict:
                 beta = StudentT(**beta) # handle from_state
@@ -839,11 +822,11 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
             w_param.params_dict["sigma"][i][0] = beta.sigma
             w_param.params_dict["nu"][i][0] = beta.nu
 
+        b_param = StudentTArray(shape=[output_dim])
         alpha = values["alpha"].copy()
         if type(alpha) == dict:
             alpha = StudentT(**alpha)
 
-        b_param = StudentTArray(shape=[output_dim])
         b_param.params_dict["mu"][0] = alpha.mu
         b_param.params_dict["sigma"][0] = alpha.sigma
         b_param.params_dict["nu"][0] = alpha.nu
@@ -851,7 +834,7 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
 
         values["posterior_params"] = [dict(w=w_param, b=b_param)]
         return values
-
+    
     @classmethod
     def cold_start(cls, n_features, update_method: UpdateMethods = "MCMC",
                    update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None,
@@ -985,9 +968,10 @@ if __name__ == '__main__':
    
     #### 
     n_samples = 10
-    n_features = 1
+    n_features = 5
     bayesian_model =  BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()])
     x_train = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    y_train = np.random.binomial(1, 0.5, size=(n_samples,))
     bayesian_model.sample_proba(x_train)
     ###
 
