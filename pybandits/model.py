@@ -627,22 +627,17 @@ class BayesianNeuralNetwork(Model):
         def arrange_update_kwargs(cls, values):
             update_kwargs = cls._get_value_with_default("update_kwargs", values)
             update_method = cls._get_value_with_default("update_method", values)
-            
-            
+                    
             if update_kwargs is None: 
-                if update_method == "VI":
-                    update_kwargs= dict()
-                    update_kwargs["trace"] = cls._default_update_trace_kwargs
-
-                elif update_method == "MCMC":
-                    update_kwargs = cls._default_update_trace_kwargs
+                update_kwargs= dict()
+                update_kwargs["trace"] = cls._default_update_trace_kwargs
                 
             if update_method == "VI":       
-                update_kwargs["trace"] = {**cls._default_variational_inference_trace_kwargs, **update_kwargs["trace"]}
+                update_kwargs["trace"] = {**cls._default_variational_inference_trace_kwargs, **update_kwargs.get("trace",{})}
                 update_kwargs["fit"] = {**cls._default_variational_inference_fit_kwargs, **update_kwargs.get("fit",{})}
 
             elif update_method == "MCMC":     
-                update_kwargs = {**cls._default_mcmc_trace_kwargs, **update_kwargs}
+                update_kwargs["trace"] = {**cls._default_mcmc_trace_kwargs, **update_kwargs.get("trace",{})}
             else:
                 raise ValueError("Invalid update method.")
                 
@@ -655,21 +650,15 @@ class BayesianNeuralNetwork(Model):
         def arrange_update_kwargs(self):
             
             if self.update_kwargs is None:
-                if self.update_method == "VI":
-                    self.update_kwargs = dict()
-                    self.update_kwargs["trace"] = self._default_update_trace_kwargs
-
-                elif self.update_method == "MCMC":
-                    self.update_kwargs = self._default_update_trace_kwargs
-           
-            
+                self.update_kwargs = dict()
+                self.update_kwargs["trace"] = self._default_update_trace_kwargs
+ 
             if self.update_method == "VI":
-                    self.update_kwargs["trace"] = {**self._default_variational_inference_trace_kwargs, **self.update_kwargs["trace"]}
+                    self.update_kwargs["trace"] = {**self._default_variational_inference_trace_kwargs, **self.update_kwargs.get("trace",{})}
                     self.update_kwargs["fit"] = {**self._default_variational_inference_fit_kwargs, **self.update_kwargs.get("fit",{})}
  
             elif self.update_method == "MCMC":
-                self.update_kwargs = self._default_update_trace_kwargs
-                self.update_kwargs = {**self._default_mcmc_trace_kwargs, **self.update_kwargs}
+                self.update_kwargs["trace"] = {**self._default_mcmc_trace_kwargs, **self.update_kwargs.get("trace",{})}
             else:
                 raise ValueError("Invalid update method.")
             return self
@@ -699,12 +688,15 @@ class BayesianNeuralNetwork(Model):
 
             for layer_ind in range(len(self.posterior_params)):
                 layer_params = self.posterior_params[layer_ind]
-                w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict)
+                w_shape = np.array(layer_params["w"].params_dict["mu"]).shape # without it n_features = 1 doesn't work
+                w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape)
                 b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict)
                 
                 if layer_ind == 0:
+                    #linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(ann_input, w) + b)
                     linear_transform = pm.math.dot(ann_input, w) + b
                 else:
+                    #linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(act, w) + b)
                     linear_transform = pm.math.dot(act, w) + b
                 
                 if layer_ind < len(self.posterior_params) - 1:
@@ -731,8 +723,8 @@ class BayesianNeuralNetwork(Model):
         with _model:
             trace = pm.sample_prior_predictive(samples=1)
 
-        prob = trace['prior']['prob'].squeeze().values
-        weighted_sum = trace['prior']['logit'].squeeze().values
+        prob = trace['prior']['prob'].values.reshape(-1)
+        weighted_sum = trace['prior']['logit'].values.reshape(-1)
         print(prob, weighted_sum)
         return prob, weighted_sum
 
@@ -751,7 +743,7 @@ class BayesianNeuralNetwork(Model):
                 trace = approx.sample(**update_kwargs["trace"])
             elif self.update_method == "MCMC":
                 # MCMC
-                trace = sample(**self.update_kwargs)
+                trace = sample(**self.update_kwargs["trace"])
             else:
                 raise ValueError("Invalid update method.")
 
@@ -967,8 +959,8 @@ if __name__ == '__main__':
     n_features = x_train.shape[1]
    
     #### 
-    n_samples = 10
-    n_features = 5
+    n_samples = 12
+    n_features = 10
     bayesian_model =  BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()])
     x_train = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     y_train = np.random.binomial(1, 0.5, size=(n_samples,))
