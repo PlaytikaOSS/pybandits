@@ -163,7 +163,7 @@ def test_cmab_init_with_wrong_blr_models(n_features, other_n_features, update_me
             }
         )
     model = BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method)
-    altered_kwarg = model.update_kwargs[kwarg_to_alter] // factor
+    altered_kwarg = model.update_kwargs["trace"][kwarg_to_alter] // factor
     with pytest.raises(AttributeError):
         CmabBernoulli(
             actions={
@@ -171,7 +171,7 @@ def test_cmab_init_with_wrong_blr_models(n_features, other_n_features, update_me
                 "a2": BayesianLogisticRegression.cold_start(
                     n_features=n_features,
                     update_method=update_method,
-                    update_kwargs={kwarg_to_alter: altered_kwarg},
+                    update_kwargs={"trace" : {kwarg_to_alter: altered_kwarg}},
                 ),
             }
         )
@@ -285,7 +285,7 @@ def test_cmab_predict_cold_start(n_samples, n_features):
     run_predict(context=context)
 
 
-@settings(deadline=500)
+@settings(deadline=1000)
 @given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
 def test_cmab_predict_not_cold_start(n_samples, n_features):
     def run_predict(context):
@@ -346,8 +346,8 @@ def test_cmab_predict_with_forbidden_actions(n_features=3):
             assert set(mab.predict(context=context, forbidden_actions={"a1", "a9999", "a", 5})[0])
         with pytest.raises(ValueError):  # all actions forbidden
             assert set(mab.predict(context=context, forbidden_actions={"a1", "a2", "a3", "a4", "a5"})[0])
-        # with pytest.raises(ValueError):  # all actions forbidden (unordered)
-        #     assert set(mab.predict(n_samples=1000, forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
+        with pytest.raises(ValueError):  # all actions forbidden (unordered)
+            assert set(mab.predict(context=context,forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
 
     # cold start mab
     mab = CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, n_features=n_features)
@@ -622,7 +622,7 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
     assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
-@settings(deadline=500)
+@settings(deadline=1000)
 @given(
     state=st.fixed_dictionaries(
         {

@@ -312,26 +312,26 @@ def test_blr_sample_proba(n_samples, n_features):
     assert type(context) is pd.DataFrame
     sample_proba(context=context)
 
-@settings(deadline=500)
 def test_blr_update(n_samples=100, n_features=3):
     def update(context, rewards):
         blr = BayesianLogisticRegression.cold_start(n_features=n_features)
-        assert blr.alpha == StudentT(mu=0.0, sigma=10.0, nu=5.0)
-        assert blr.betas == [
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-        ]
+        init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
+        
+        alpha = blr.posterior_params[0]["b"].params_dict
+        betas = blr.posterior_params[0]["w"].params_dict
+        
+        for param in init_params.keys():
+            assert alpha[param] == [init_params[param]]
+            assert all([beta_param_val == [init_params[param]] for beta_param_val in betas[param]]) 
 
         blr.update(context=context, rewards=rewards)
 
-        assert blr.alpha != StudentT(mu=0.0, sigma=10.0, nu=5.0)
-        assert blr.betas != [
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-        ]
-
+        alpha = blr.posterior_params[0]["b"].params_dict
+        betas = blr.posterior_params[0]["w"].params_dict
+        
+        assert any([alpha[param] != [init_params[param]] for param in init_params.keys()])
+        assert any([any([beta_param_val != [init_params[param]] for beta_param_val in betas[param]]) for param in init_params.keys()])
+  
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
     # context is numpy array

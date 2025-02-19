@@ -716,17 +716,20 @@ class BayesianNeuralNetwork(Model):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         # check input args
-        self.check_context_matrix(context=context)
+        self.check_context_matrix(context=context) 
+        prob_list = []
+        weighted_sum_list = []
 
-        dummy_y = np.zeros(len(context), dtype=np.int64)
-        _model = self.create_model(context, dummy_y)
-        with _model:
-            trace = pm.sample_prior_predictive(samples=1)
+        for sample_context in context:
+            dummy_y = np.zeros(1, dtype=np.int64)
+            _model = self.create_model(sample_context.reshape(1,-1), dummy_y)
+        
+            with _model:
+                trace = pm.sample_prior_predictive(samples=1)
+                prob_list.append(trace['prior']['prob'].values.reshape(-1))
+                weighted_sum_list.append(trace['prior']['logit'].values.reshape(-1))
 
-        prob = trace['prior']['prob'].values.reshape(-1)
-        weighted_sum = trace['prior']['logit'].values.reshape(-1)
-        print(prob, weighted_sum)
-        return prob, weighted_sum
+        return np.array(prob_list), np.array(weighted_sum_list)
 
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
         self.check_context_matrix(context=context)
@@ -959,7 +962,7 @@ if __name__ == '__main__':
     n_features = x_train.shape[1]
    
     #### 
-    n_samples = 12
+    n_samples = 1000
     n_features = 10
     bayesian_model =  BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()])
     x_train = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -968,7 +971,7 @@ if __name__ == '__main__':
     ###
 
     bayesian_model.update(x_train, y_train)
-    prob, _ = bayesian_model.sample_proba(x_train)
+    #prob, _ = bayesian_model.sample_proba(x_train)
 
 #     import torch
 #     import matplotlib.pyplot as plt
