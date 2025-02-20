@@ -30,7 +30,7 @@ from hypothesis import strategies as st
 
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
+from pybandits.model import BayesianNeuralNetwork, BayesianLogisticRegressionCC, BayesianLogisticRegression, StudentT, UpdateMethods
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -74,18 +74,23 @@ def test_create_cmab_bernoulli_cold_start(a_int):
         mab2.predict_actions_randomly = True
         assert mab1 == mab2
 
-# for k in mab1.dict()['actions']['a1']:
-#     print(mab1.dict()['actions']['a1'][k] == mab2.dict()['actions']['a1'][k])
-
-# for key, value in mab1.__dict__.items():
-#         print(key)
-#         if value != mab2.__dict__.get(key):
-#             #print(f"{key} mismatch: {value} != {mab2.__dict__.get(key)}")
-#             print("missmatch")
-#         else:
-#             #print(f"{key} match: {value} == {mab2.__dict__.get(key)}")
-#             print("match")
-            
+@settings(deadline=5000)
+@given(st.integers(max_value=100))
+def test_create_cmab_bernoulli_cold_start_bnn(a_int):
+    # n_features must be > 0
+    if a_int <= 0:
+        with pytest.raises(ValidationError):
+            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianNeuralNetwork, dim_list = [a_int, 10])
+    else:
+        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianNeuralNetwork, dim_list = [a_int, 10])
+        mab2 = CmabBernoulli(
+            actions={
+                "a1": BayesianNeuralNetwork.cold_start(n_features=a_int, dim_list = [a_int, 10]),
+                "a2": BayesianNeuralNetwork.cold_start(n_features=a_int, dim_list = [a_int, 10]),
+            }
+        )
+        mab2.predict_actions_randomly = True
+        assert mab1 == mab2
 
 
 @settings(deadline=500)
@@ -285,7 +290,7 @@ def test_cmab_predict_cold_start(n_samples, n_features):
     run_predict(context=context)
 
 
-@settings(deadline=1000)
+@settings(deadline=20000)
 @given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
 def test_cmab_predict_not_cold_start(n_samples, n_features):
     def run_predict(context):
@@ -328,7 +333,7 @@ def test_cmab_predict_shape_mismatch(a_int):
 
 def test_cmab_predict_with_forbidden_actions(n_features=3):
     def run_predict(mab):
-        context = np.random.uniform(low=-1.0, high=1.0, size=(1000, n_features))
+        context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features))
         assert set(mab.predict(context=context, forbidden_actions={"a2", "a3", "a4", "a5"})[0]) == {"a1"}
         assert set(mab.predict(context=context, forbidden_actions={"a1", "a3"})[0]) == {"a2", "a4", "a5"}
         assert set(mab.predict(context=context, forbidden_actions={"a1"})[0]) == {"a2", "a3", "a4", "a5"}

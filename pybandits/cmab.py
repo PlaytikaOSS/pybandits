@@ -28,7 +28,7 @@ from numpy.typing import ArrayLike
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
+from pybandits.model import  BayesianLogisticRegressionCC, BayesianNeuralNetwork
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -54,20 +54,20 @@ class BaseCmabBernoulli(BaseMab):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianNeuralNetwork]
     predict_with_proba: bool
     predict_actions_randomly: bool
 
     @field_validator("actions", mode="after")
     @classmethod
-    def check_bayesian_logistic_regression_models(cls, v):
+    def check_bayesian_egression_models(cls, v):
         action_models = list(v.values())
         first_action = action_models[0]
         first_action_type = type(first_action)
         for action in action_models[1:]:
             if not isinstance(action, first_action_type):
                 raise AttributeError("All actions should follow the same type.")
-            if not len(action.betas) == len(first_action.betas):
+            if not action.expected_input == first_action.expected_input:
                 raise AttributeError("All actions should have the same number of betas.")
             if not action.update_method == first_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
@@ -208,8 +208,7 @@ class CmabBernoulli(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    #actions: Dict[ActionId, BayesianNeuralNetwork]
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianNeuralNetwork]
     strategy: ClassicBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -243,7 +242,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianNeuralNetwork]
     strategy: BestActionIdentificationBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False

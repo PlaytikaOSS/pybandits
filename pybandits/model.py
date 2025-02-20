@@ -37,7 +37,6 @@ from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
-from pydantic import PrivateAttr
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -263,9 +262,8 @@ class StudentT(PyBanditsBaseModel):
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
 
-
 class StudentTArray(PyBanditsBaseModel):
-    shape: List[int] = [1]
+    shape: Optional[List[PositiveInt]] = None
     params_dict: Optional[Dict[str, Union[List[float],List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
     sigma: confloat(allow_inf_nan=False) = 10.0
@@ -766,20 +764,20 @@ class BayesianNeuralNetwork(Model):
    
             self.posterior_params[layer_ind]["b"].params_dict["mu"] = b_mu.tolist()
             self.posterior_params[layer_ind]["b"].params_dict["sigma"] = b_sigma.tolist()
-
+   
 
     @classmethod
-    def cold_start(cls, dim_list, update_method: UpdateMethods = "MCMC",
+    def cold_start(cls, dim_list : List[PositiveInt], update_method: UpdateMethods= "MCMC",
                    update_kwargs: Optional[dict] = None,
                    **kwargs) -> "BayesianNeuralNetwork":
             
-        _dim_list = dim_list
+        _dim_list = dim_list.copy()
         _dim_list.append(1)
 
         posterior_params = []
         for layer_ind in range(len(_dim_list) - 1):
-            input_dim = dim_list[layer_ind]
-            output_dim = dim_list[layer_ind + 1]
+            input_dim = _dim_list[layer_ind]
+            output_dim = _dim_list[layer_ind + 1]
             w_param = StudentTArray(shape=[input_dim, output_dim])
             b_param = StudentTArray(shape=[output_dim])
             posterior_params.append(dict(w=w_param, b=b_param))

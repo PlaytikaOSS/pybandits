@@ -28,6 +28,7 @@ from hypothesis import strategies as st
 
 from pybandits.model import (
     BayesianLogisticRegression,
+    BayesianNeuralNetwork,
     BayesianLogisticRegressionCC,
     Beta,
     BetaCC,
