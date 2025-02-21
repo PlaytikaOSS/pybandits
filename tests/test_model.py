@@ -228,6 +228,7 @@ def test_can_init_studentt(mu, sigma, nu):
 
 
 # BayesianLogisticRegression
+
 @given(st.integers(min_value=1, max_value=100))
 def test_bayesian_logistic_regression_equals_bnn(n_features):
     def compare_bnn_attributes(bnn, blr):
@@ -277,71 +278,64 @@ def test_bayesian_logistic_regression_equals_bnn(n_features):
 
 
 
-
-
-
-
-
-
+@settings(deadline=500)
+@given(st.lists(st.integers(max_value=100), min_size=1, max_size=3))
+def test_can_init_bayesian_neural_network(dim_list):
+    def create_posterior_params(dim_list):
+        _dim_list = dim_list.copy()
+        _dim_list.append(1)
+        posterior_params = []
+        for layer in range(len(_dim_list) - 1):
+            input_dim = _dim_list[layer]
+            output_dim = _dim_list[layer + 1]
+            posterior_params.append({"w": StudentTArray(shape=[input_dim, output_dim]), "b": StudentTArray(shape=[output_dim])})
+        return posterior_params
     
-
-
-@settings(deadline=500)
-@given(st.integers(max_value=100))
-def test_can_init_bayesian_logistic_regression(a_int):
     # at least one beta must be specified
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(a_int)])
+    if any(layer_dim <= 0 for layer_dim in  dim_list):
+        with pytest.raises((ValidationError, ValueError)):
+            posterior_params = create_posterior_params(dim_list)
+            bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
     else:
-        blr = BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(a_int)])
-        assert (blr.alpha, blr.betas) == (StudentT(), [StudentT() for _ in range(a_int)])
+        posterior_params = create_posterior_params(dim_list)     
+        bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
+        assert bnn.posterior_params == posterior_params
+
 
 @settings(deadline=500)
-@given(st.integers(max_value=100))
-def test_create_default_instance_bayesian_logistic_regression(a_int):
-    # at least one beta must be specified
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegression.cold_start(n_features=a_int)
-    else:
-        blr = BayesianLogisticRegression.cold_start(n_features=a_int)
-        assert blr == BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(a_int)])
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_check_context_matrix(n_samples, n_features):
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features)
+@given(st.integers(min_value=1, max_value=1000), st.lists(st.integers(min_value=1,max_value=100), min_size=1, max_size=3))
+def test_check_context_matrix(n_samples, dim_list):
+    bnn = BayesianNeuralNetwork.cold_start(dim_list)
 
     # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, dim_list[0]))
     assert type(context) is np.ndarray
-    blr.check_context_matrix(context=context)
+    bnn.check_context_matrix(context=context)
 
     # context is python list
     context = context.tolist()
     assert type(context) is list
-    blr.check_context_matrix(context=context)
+    bnn.check_context_matrix(context=context)
 
     # context is pandas DataFrame
     context = pd.DataFrame(context)
     assert type(context) is pd.DataFrame
-    blr.check_context_matrix(context=context)
+    bnn.check_context_matrix(context=context)
 
     # raise an error if len(context) != len(self.betas)
     with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=context.loc[:, 1:])
+        bnn.check_context_matrix(context=context.loc[:, 1:])
 
-    blr = BayesianLogisticRegression.cold_start(n_features=2)
+    bnn = BayesianLogisticRegression.cold_start(n_features=2)
 
     with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=[[1], [2, 3]])  # context has shape mismatch
+        bnn.check_context_matrix(context=[[1], [2, 3]])  # context has shape mismatch
     with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=1.0)  # context is a number
+        bnn.check_context_matrix(context=1.0)  # context is a number
     with pytest.raises(AttributeError):
-        blr.check_context_matrix(context="a")  # context is a string
+        bnn.check_context_matrix(context="a")  # context is a string
     with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=[1.0])  # context is a 1-dim list
+        bnn.check_context_matrix(context=[1.0])  # context is a 1-dim list
 
 @settings(deadline=10000)
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))

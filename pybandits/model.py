@@ -45,6 +45,7 @@ from pybandits.pydantic_version_compatibility import (
     PositiveInt,
     confloat,
     model_validator,
+    root_validator,
     pydantic_version,
     validate_call,
 )
@@ -269,14 +270,14 @@ class StudentTArray(PyBanditsBaseModel):
     sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
 
-    @model_validator(mode="after")
-    def initialize_arrays(cls, values):    
-        if (values["params_dict"] is None):
-            if values["shape"] is None:
-                raise ValueError("either 'shape' or 'params_dict' must be specified")
+    @root_validator(pre=False, skip_on_failure=False)
+    def initialize_arrays(cls, values):
+        if values.get("params_dict") is None:
+            if values.get("shape") is None:
+                raise ValueError("either legal 'shape' or 'params_dict' must be specified")
             
-            shape = values.get("shape")     
-            values["params_dict"] = {}  
+            shape = values.get("shape")
+            values["params_dict"] = {}
             values["params_dict"]["mu"] = (np.zeros(shape) + values.get("mu")).tolist()
             values["params_dict"]["sigma"] = np.full(shape, values.get("sigma")).tolist()
             values["params_dict"]["nu"] = np.full(shape, values.get("nu")).tolist()
