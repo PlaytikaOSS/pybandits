@@ -23,7 +23,7 @@ import warnings
 from abc import ABC, abstractmethod
 from random import betavariate
 from typing import Any, List, Literal, Optional, Tuple, Union, Dict
-from enum import Enum
+import pytensor.tensor as pt
 
 import numpy as np
 import pymc.math as pmath
@@ -272,21 +272,23 @@ class StudentTArray(PyBanditsBaseModel):
     @model_validator(mode="after")
     def initialize_arrays(cls, values):    
         if (values["params_dict"] is None):
+            if values["shape"] is None:
+                raise ValueError("either 'shape' or 'params_dict' must be specified")
+            
             shape = values.get("shape")     
             values["params_dict"] = {}  
             values["params_dict"]["mu"] = (np.zeros(shape) + values.get("mu")).tolist()
             values["params_dict"]["sigma"] = np.full(shape, values.get("sigma")).tolist()
             values["params_dict"]["nu"] = np.full(shape, values.get("nu")).tolist()
-
         else:
             mu = values["params_dict"].get('mu')
             sigma = values["params_dict"].get('sigma')
             nu = values["params_dict"].get('nu')
+            
             if not (mu and sigma and nu):
-                raise ValueError('params_dict must contain mu, sigma, and nu')
+                raise ValueError("params_dict must contain mu, sigma, and nu")
             if not (np.array(mu).shape == np.array(sigma).shape == np.array(nu).shape):
-                raise ValueError('mu, sigma, and nu must have the same sizes')
-
+                raise ValueError("mu, sigma, and nu must have the same sizes")
 
         return values
 
@@ -678,11 +680,11 @@ class BayesianNeuralNetwork(Model):
     def expected_input(self):
         return self.posterior_params[0]["w"].shape[0]
     
-    def create_model(self, x, y):
+    def create_model(self, x, y, is_sampelwise):
+        
         with pm.Model() as _model:
-            # Define data variables using minibatches
-            ann_input = pm.MutableData("ann_input", x)
-            ann_output = pm.MutableData("ann_output", y)
+            # Define data variables using minibatches  
+            bnn_output = pm.MutableData("ann_output", y)
 
             for layer_ind in range(len(self.posterior_params)):
                 layer_params = self.posterior_params[layer_ind]
@@ -691,11 +693,17 @@ class BayesianNeuralNetwork(Model):
                 b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict)
                 
                 if layer_ind == 0:
-                    #linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(ann_input, w) + b)
-                    linear_transform = pm.math.dot(ann_input, w) + b
+                    if is_sampelwise:    
+                        x_tensor = pt.vector("x_tensor")
+                        linear_transform_func = pm.math.dot(x_tensor, w) + b
+                        compiled_linear_transform = pm.pytensorf.compile_pymc(inputs=[x_tensor], outputs=linear_transform_func)
+                        linear_transform = pt.as_tensor_variable([compiled_linear_transform(row) for row in x], name=f"linear_transform{layer_ind}")
+                    else:
+                        bnn_input = pm.MutableData("bnn_input", x)
+                        linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(bnn_input, w) + b)
                 else:
-                    #linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(act, w) + b)
-                    linear_transform = pm.math.dot(act, w) + b
+                    linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(act, w) + b)
+
                 
                 if layer_ind < len(self.posterior_params) - 1:
                     act = pm.math.tanh(linear_transform)
@@ -707,7 +715,7 @@ class BayesianNeuralNetwork(Model):
             out = pm.Bernoulli(
                 "out",
                 p=prob,
-                observed=ann_output
+                observed=bnn_output
             )
         return _model
 
@@ -715,26 +723,27 @@ class BayesianNeuralNetwork(Model):
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
         # check input args
         self.check_context_matrix(context=context) 
-        prob_list = []
-        weighted_sum_list = []
 
-        for sample_context in context:
-            dummy_y = np.zeros(1, dtype=np.int64)
-            _model = self.create_model(sample_context.reshape(1,-1), dummy_y)
+        _context = np.array(context, ndmin = 2)
+        dummy_y = np.zeros(len(context), dtype=np.int64)
+        _model = self.create_model(_context, dummy_y, is_sampelwise=True)
         
-            with _model:
-                trace = pm.sample_prior_predictive(samples=1)
-                prob_list.append(trace['prior']['prob'].values.reshape(-1))
-                weighted_sum_list.append(trace['prior']['logit'].values.reshape(-1))
+        with _model:
+            trace = pm.sample_prior_predictive(samples=1)
+        
+        prob = trace['prior']['prob'].values.reshape(-1)
+        weighted_sum = trace['prior']['logit'].values.reshape(-1)
 
-        return np.array(prob_list), np.array(weighted_sum_list)
+
+        return prob, weighted_sum
 
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
         self.check_context_matrix(context=context)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
-        _model = self.create_model(context, rewards)
+        _context = np.array(context, ndmin = 2)
+        _model = self.create_model(x=_context, y=rewards, is_sampelwise=False)
         with _model:
             # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
@@ -773,6 +782,8 @@ class BayesianNeuralNetwork(Model):
             
         _dim_list = dim_list.copy()
         _dim_list.append(1)
+        # if any(dim <= 0 for dim in _dim_list):
+        #     raise ValueError("All dimensions must be positive integers.")
 
         posterior_params = []
         for layer_ind in range(len(_dim_list) - 1):
@@ -817,6 +828,7 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
 
         b_param = StudentTArray(shape=[output_dim])
         alpha = values["alpha"].copy()
+        
         if type(alpha) == dict:
             alpha = StudentT(**alpha)
 
