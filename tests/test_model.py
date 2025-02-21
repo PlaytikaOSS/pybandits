@@ -29,7 +29,7 @@ from hypothesis import strategies as st
 from pybandits.model import (
     BayesianLogisticRegression,
     BayesianNeuralNetwork,
-    BayesianLogisticRegressionCC,
+    BayesianNeuralNetworkCC,
     Beta,
     BetaCC,
     BetaMO,
@@ -281,23 +281,14 @@ def test_bayesian_logistic_regression_equals_bnn(n_features):
 @settings(deadline=500)
 @given(st.lists(st.integers(max_value=100), min_size=1, max_size=3))
 def test_can_init_bayesian_neural_network(dim_list):
-    def create_posterior_params(dim_list):
-        _dim_list = dim_list.copy()
-        _dim_list.append(1)
-        posterior_params = []
-        for layer in range(len(_dim_list) - 1):
-            input_dim = _dim_list[layer]
-            output_dim = _dim_list[layer + 1]
-            posterior_params.append({"w": StudentTArray(shape=[input_dim, output_dim]), "b": StudentTArray(shape=[output_dim])})
-        return posterior_params
-    
+ 
     # at least one beta must be specified
     if any(layer_dim <= 0 for layer_dim in  dim_list):
         with pytest.raises((ValidationError, ValueError)):
-            posterior_params = create_posterior_params(dim_list)
+            posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list)
             bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
     else:
-        posterior_params = create_posterior_params(dim_list)     
+        posterior_params =  BayesianNeuralNetwork.create_posterior_params(dim_list)     
         bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
         assert bnn.posterior_params == posterior_params
 
@@ -410,31 +401,35 @@ def test_blr_update(n_samples=100, n_features=3):
 ########################################################################################################################
 
 
-# BayesianLogisticRegressionCC
+# BayesianNeuralNetworkCC
 
 @settings(deadline=500)
-@given(st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
-def test_can_init_bayesian_logistic_regression_cc(n_betas, cost):
+@given(st.lists(st.integers(max_value=100), min_size=1, max_size=3),st.floats(allow_nan=False, allow_infinity=False))
+def test_can_init_bayesian_neural_network_cc(dim_list, cost):
+
     # at least one beta must be specified
-    if n_betas <= 0 or cost < 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
+    if any(layer_dim <= 0 for layer_dim in  dim_list) or (cost < 0):
+        with pytest.raises((ValidationError, ValueError)):
+            posterior_params =  BayesianNeuralNetwork.create_posterior_params(dim_list)
+            bnn = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
     else:
-        blr = BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
-        assert (blr.alpha, blr.betas) == (StudentT(), [StudentT() for _ in range(n_betas)])
+        posterior_params =  BayesianNeuralNetwork.create_posterior_params(dim_list)     
+        bnn = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
+        assert bnn.posterior_params == posterior_params
 
 @settings(deadline=500)
-@given(st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
-def test_create_default_instance_bayesian_logistic_regression_cc(n_betas, cost):
+@given(st.lists(st.integers(max_value=100), min_size=1, max_size=3),st.floats(allow_nan=False, allow_infinity=False))
+def test_create_default_instance_bayesian_logistic_regression_cc(dim_list, cost):
     # at least one beta must be specified
-    if n_betas <= 0 or cost < 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegressionCC.cold_start(n_features=n_betas, cost=cost)
+    if any(layer_dim <= 0 for layer_dim in  dim_list) or (cost < 0):
+        with pytest.raises((ValidationError, ValueError)):
+            BayesianNeuralNetworkCC.cold_start(dim_list=dim_list, cost=cost)
     else:
-        blr = BayesianLogisticRegressionCC.cold_start(n_features=n_betas, cost=cost)
-        assert blr == BayesianLogisticRegressionCC(
-            alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost
-        )
+        bnn_cold_start = BayesianNeuralNetworkCC.cold_start(dim_list=dim_list, cost=cost)
+        posterior_params =  BayesianNeuralNetwork.create_posterior_params(dim_list)
+        bnn_init = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
+        assert bnn_cold_start == bnn_init
+
 
 ########################################################################################################################
 

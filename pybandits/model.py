@@ -667,6 +667,21 @@ class BayesianNeuralNetwork(Model):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
+    @classmethod
+    def create_posterior_params(cls, dim_list):
+        _dim_list = dim_list.copy()
+        _dim_list.append(1)
+
+        posterior_params = []
+        for layer_ind in range(len(_dim_list) - 1):
+            input_dim = _dim_list[layer_ind]
+            output_dim = _dim_list[layer_ind + 1]
+            w_param = StudentTArray(shape=[input_dim, output_dim])
+            b_param = StudentTArray(shape=[output_dim])
+            posterior_params.append(dict(w=w_param, b=b_param))
+
+        return posterior_params
+
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def check_context_matrix(self, context: ArrayLike):
         try:
@@ -781,20 +796,8 @@ class BayesianNeuralNetwork(Model):
                    update_kwargs: Optional[dict] = None,
                    **kwargs) -> "BayesianNeuralNetwork":
             
-        _dim_list = dim_list.copy()
-        _dim_list.append(1)
-        # if any(dim <= 0 for dim in _dim_list):
-        #     raise ValueError("All dimensions must be positive integers.")
-
-        posterior_params = []
-        for layer_ind in range(len(_dim_list) - 1):
-            input_dim = _dim_list[layer_ind]
-            output_dim = _dim_list[layer_ind + 1]
-            w_param = StudentTArray(shape=[input_dim, output_dim])
-            b_param = StudentTArray(shape=[output_dim])
-            posterior_params.append(dict(w=w_param, b=b_param))
-        
-        return cls(posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs)
+        posterior_params = cls.create_posterior_params(dim_list)
+        return cls(posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs,**kwargs)
 
     def __eq__(self, other):
         for i, layer in enumerate(self.posterior_params):
@@ -854,7 +857,7 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
     )
 
 
-class BayesianLogisticRegressionCC(BayesianLogisticRegression):
+class BayesianNeuralNetworkCC(BayesianNeuralNetwork):
     """
     Bayesian Logistic Regression model with cost control.
 
