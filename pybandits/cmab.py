@@ -28,7 +28,7 @@ from numpy.typing import ArrayLike
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import  BayesianLogisticRegressionCC, BayesianNeuralNetwork
+from pybandits.model import  BayesianNeuralNetworkCC, BayesianNeuralNetwork
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -68,7 +68,7 @@ class BaseCmabBernoulli(BaseMab):
             if not isinstance(action, first_action_type):
                 raise AttributeError("All actions should follow the same type.")
             if not action.expected_input == first_action.expected_input:
-                raise AttributeError("All actions should have the same number of betas.")
+                raise AttributeError("All actions should have the same input size.")
             if not action.update_method == first_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
             if not action.update_kwargs == first_action.update_kwargs:
@@ -112,7 +112,7 @@ class BaseCmabBernoulli(BaseMab):
 
         if self.predict_actions_randomly:
             # check that context has the expected number of columns
-            if context.shape[1] != len(list(self.actions.values())[0].betas):
+            if context.shape[1] != list(self.actions.values())[0].expected_input:
                 raise AttributeError("Context must have {n_betas} columns")
 
             selected_actions = choice(list(valid_actions), size=len(context)).tolist()  # predict actions randomly
@@ -265,7 +265,7 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegressionCC]
+    actions: Dict[ActionId, BayesianNeuralNetworkCC]
         The list of possible actions, and their associated Model.
     strategy: CostControlBandit
         The strategy used to select actions.
@@ -276,7 +276,7 @@ class CmabBernoulliCC(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianLogisticRegressionCC]
+    actions: Dict[ActionId, BayesianNeuralNetworkCC]
     strategy: CostControlBandit
     predict_with_proba: bool = True
     predict_actions_randomly: bool = False

@@ -383,7 +383,6 @@ def test_bnn_update(dim_list):
                 assert all(b_val != init_params[param] for b_val in np.array(layer_b[param][0]).flatten())
 
 
-    print('hi!!!!!')
     n_samples = 100
     n_features = dim_list[0]  
     print(dim_list)
