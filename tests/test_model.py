@@ -329,16 +329,17 @@ def test_check_context_matrix(n_samples, dim_list):
         bnn.check_context_matrix(context=[1.0])  # context is a 1-dim list
 
 @settings(deadline=10000)
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_blr_sample_proba(n_samples, n_features):
+@given(st.integers(min_value=1, max_value=1000) ,st.lists(st.integers(min_value=1,max_value=100), min_size=1, max_size=3))
+def test_bnn_sample_proba(n_samples, dim_list):
     def sample_proba(context):
-        prob, weighted_sum = blr.sample_proba(context=context)
+        prob, weighted_sum = bnn.sample_proba(context=context)
 
         assert type(prob) is type(weighted_sum) is np.ndarray  # type of the returns must be np.ndarray
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features)
+    n_features = dim_list[0]    
+    bnn = BayesianNeuralNetwork.cold_start(dim_list=dim_list)
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
@@ -355,26 +356,38 @@ def test_blr_sample_proba(n_samples, n_features):
     assert type(context) is pd.DataFrame
     sample_proba(context=context)
 
-def test_blr_update(n_samples=100, n_features=3):
+@settings(deadline=50000)
+@given(st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=1)) # max_size=2 takes a lot of time (>10 min.)
+def test_bnn_update(dim_list):
     def update(context, rewards):
-        blr = BayesianLogisticRegression.cold_start(n_features=n_features)
+          
+        bnn = BayesianNeuralNetwork.cold_start(dim_list=dim_list)
         init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
         
-        alpha = blr.posterior_params[0]["b"].params_dict
-        betas = blr.posterior_params[0]["w"].params_dict
-        
         for param in init_params.keys():
-            assert alpha[param] == [init_params[param]]
-            assert all([beta_param_val == [init_params[param]] for beta_param_val in betas[param]]) 
+            for layer_ind in range(len(dim_list)):
+                layer_w = bnn.posterior_params[layer_ind]["w"].params_dict
+                layer_b = bnn.posterior_params[layer_ind]["b"].params_dict
+                
+                assert all(w_val == init_params[param] for w_val in np.array(layer_w[param][layer_ind]).flatten())
+                assert all(b_val == init_params[param] for b_val in np.array(layer_b[param][0]).flatten())
+       
+        bnn.update(context=context, rewards=rewards)
 
-        blr.update(context=context, rewards=rewards)
+        for param in updated_params:
+            for layer_ind in range(len(dim_list)):
+                layer_w = bnn.posterior_params[layer_ind]["w"].params_dict
+                layer_b = bnn.posterior_params[layer_ind]["b"].params_dict
+                
+                assert all(w_val != init_params[param] for w_val in np.array(layer_w[param][layer_ind]).flatten())
+                assert all(b_val != init_params[param] for b_val in np.array(layer_b[param][0]).flatten())
 
-        alpha = blr.posterior_params[0]["b"].params_dict
-        betas = blr.posterior_params[0]["w"].params_dict
-        
-        assert any([alpha[param] != [init_params[param]] for param in init_params.keys()])
-        assert any([any([beta_param_val != [init_params[param]] for beta_param_val in betas[param]]) for param in init_params.keys()])
-  
+
+    print('hi!!!!!')
+    n_samples = 100
+    n_features = dim_list[0]  
+    print(dim_list)
+    updated_params = ["mu", "sigma"] # nu is not updated
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
     # context is numpy array
@@ -394,8 +407,8 @@ def test_blr_update(n_samples=100, n_features=3):
 
     # raise an error if len(context) != len(rewards)
     with pytest.raises(ValueError):
-        blr = BayesianLogisticRegression.cold_start(n_features=n_features)
-        blr.update(context=context, rewards=rewards[1:])
+        bnn = BayesianNeuralNetwork.cold_start(dim_list=dim_list)
+        bnn.update(context=context, rewards=rewards[1:])
 
 
 ########################################################################################################################
