@@ -48,7 +48,22 @@ literal_update_methods = get_args(UpdateMethods)
 def _apply_update_method_to_state(state, update_method):
     for action in state["actions"]:
         state["actions"][action]["update_method"] = update_method
+        if "dim_list" in state["actions"][action]:
+            posterior_params = _create_random_posterior_params(state["actions"][action]["dim_list"])
+            state["actions"][action]["posterior_params"] = to_serializable_dict({'posterior_params' : posterior_params})['posterior_params']
+            state["actions"][action].pop("dim_list")
 
+
+def _create_random_posterior_params(dim_list):
+    posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list=dim_list)
+
+    for layer_ind in range(len(posterior_params)):
+        for layer_parameter, layer_parameter_values in posterior_params[layer_ind].items():
+            size = np.array(layer_parameter_values.params_dict["mu"]).shape
+            for dist_param in layer_parameter_values.params_dict:
+                layer_parameter_values.params_dict[dist_param] = np.random.uniform(low=-1.0, high=1.0, size=size).tolist()
+    
+    return posterior_params
 
 ########################################################################################################################
 
@@ -336,10 +351,10 @@ def test_cmab_predict_shape_mismatch(dim_list):
     with pytest.raises(AttributeError):
         mab.predict(context=[])
 
+@settings(deadline=100000)
 @given(st.lists(st.integers(min_value=1,max_value=3), min_size=1, max_size=2))
 def test_cmab_predict_with_forbidden_actions(dim_list):
-    def run_predict(mab):
-        n_features=dim_list[0]
+    def run_predict(mab, n_features):
         context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features))
         assert set(mab.predict(context=context, forbidden_actions={"a2", "a3", "a4", "a5"})[0]) == {"a1"}
         assert set(mab.predict(context=context, forbidden_actions={"a1", "a3"})[0]) == {"a2", "a4", "a5"}
@@ -362,21 +377,22 @@ def test_cmab_predict_with_forbidden_actions(dim_list):
             assert set(mab.predict(context=context,forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
 
     # cold start mab
+    n_features=dim_list[0]
     mab = CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, dim_list=dim_list)
-    run_predict(mab=mab)
+    run_predict(mab=mab, n_features=n_features)
 
     # not cold start mab
     mab = CmabBernoulli(
         actions={
-            "a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(), StudentT(), StudentT()]),
+            "a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT() for _ in range(n_features)]),
             "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
             "a3": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a4": BayesianLogisticRegression(alpha=StudentT(mu=4, sigma=5), betas=[StudentT(), StudentT(), StudentT()]),
+            "a4": BayesianLogisticRegression(alpha=StudentT(mu=4, sigma=5), betas=[StudentT() for _ in range(n_features)]),
             "a5": BayesianLogisticRegression.cold_start(n_features=n_features),
         },
     )
-    assert mab != CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, n_features=n_features)
-    run_predict(mab=mab)
+    assert mab != CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, dim_list=dim_list)
+    run_predict(mab=mab, n_features=n_features)
 
 
 @settings(deadline=500)
@@ -406,35 +422,13 @@ def test_cmab_get_state(mu, sigma, n_features):
     assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
-@settings(deadline=1000)
+@settings(deadline=500)
 @given(
     state=st.fixed_dictionaries(
         {
             "actions": st.dictionaries(
                 keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        
-                        "alpha": st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0, max_value=100),
-                                "sigma": st.floats(min_value=0.1, max_value=100),
-                            }
-                        ),
-                        "betas": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "mu": st.floats(min_value=-100, max_value=100),
-                                    "nu": st.floats(min_value=0, max_value=100),
-                                    "sigma": st.floats(min_value=0.1, max_value=100),
-                                }
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        ),
-                    },
-                ),
+                values=st.fixed_dictionaries({"dim_list" : st.lists(st.integers(min_value=3,max_value=3), min_size=1, max_size=3)}), 
                 min_size=2,
             ),
             "strategy": st.fixed_dictionaries({}),
@@ -643,28 +637,7 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
         {
             "actions": st.dictionaries(
                 keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "alpha": st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0, max_value=100),
-                                "sigma": st.floats(min_value=0, max_value=100),
-                            }
-                        ),
-                        "betas": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "mu": st.floats(min_value=-100, max_value=100),
-                                    "nu": st.floats(min_value=0, max_value=100),
-                                    "sigma": st.floats(min_value=0, max_value=100),
-                                }
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        ),
-                    },
-                ),
+                values=st.fixed_dictionaries({"dim_list" : st.lists(st.integers(min_value=3,max_value=3), min_size=1, max_size=3)}), 
                 min_size=2,
             ),
             "strategy": st.one_of(
@@ -818,7 +791,7 @@ def test_cmab_cc_predict(n_samples, dim_list):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=None)
+@settings(deadline=10000)
 @given(st.just(100), st.just([3]), st.sampled_from(literal_update_methods))
 def test_cmab_cc_update(n_samples, dim_list, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -847,21 +820,23 @@ def test_cmab_cc_update(n_samples, dim_list, update_method):
     assert not mab.predict_actions_randomly
 
 
-@settings(deadline=500)
+@settings(deadline=2000)
 @given(
-    st.integers(min_value=1),
-    st.integers(min_value=1),
-    st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=1),
+    st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=3),
     st.floats(min_value=0),
     st.floats(min_value=0),
     st.floats(min_value=0, max_value=1),
 )
 def test_cmab_cc_get_state( 
-    mu, sigma, dim_list, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
+    dim_list, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
 ):
     posterior_params = BayesianNeuralNetworkCC.create_posterior_params(dim_list=dim_list)
 
-    ## EDIT POOSTERIOR PARAMS!!
+    for layer_ind in range(len(posterior_params)):
+        for layer_parameter, layer_parameter_values in posterior_params[layer_ind].items():
+            size = np.array(layer_parameter_values.params_dict["mu"]).shape
+            for dist_param in layer_parameter_values.params_dict:
+                layer_parameter_values.params_dict[dist_param] = np.random.uniform(low=-1.0, high=1.0, size=size).tolist()
 
     actions: dict = {
         "a1": BayesianNeuralNetworkCC(
@@ -896,27 +871,10 @@ def test_cmab_cc_get_state(
                 keys=st.text(min_size=1, max_size=10),
                 values=st.fixed_dictionaries(
                     {
-                        "alpha": st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0, max_value=100),
-                                "sigma": st.floats(min_value=0, max_value=100),
-                            }
-                        ),
-                        "betas": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "mu": st.floats(min_value=-100, max_value=100),
-                                    "nu": st.floats(min_value=0, max_value=100),
-                                    "sigma": st.floats(min_value=0, max_value=100),
-                                }
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        ),
-                        "cost": st.floats(min_value=0),
-                    },
-                ),
+                        "dim_list" : st.lists(st.integers(min_value=3,max_value=3), min_size=1, max_size=3),
+                        "cost": st.floats(min_value=0)
+                    }), 
+                   
                 min_size=2,
             ),
             "strategy": st.one_of(
