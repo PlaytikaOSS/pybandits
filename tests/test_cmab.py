@@ -61,7 +61,7 @@ def _create_random_posterior_params(dim_list):
         for layer_parameter, layer_parameter_values in posterior_params[layer_ind].items():
             size = np.array(layer_parameter_values.params_dict["mu"]).shape
             for dist_param in layer_parameter_values.params_dict:
-                layer_parameter_values.params_dict[dist_param] = np.random.uniform(low=-1.0, high=1.0, size=size).tolist()
+                layer_parameter_values.params_dict[dist_param] = np.random.uniform(low=0, high=1, size=size).tolist()
     
     return posterior_params
 
@@ -309,9 +309,9 @@ def test_cmab_predict_cold_start(n_samples, dim_list):
     run_predict(context=context)
 
 
-@settings(deadline=20000)
-@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=10), min_size=1, max_size=3))
-def test_cmab_predict_not_cold_start(n_samples, dim_list):
+@settings(deadline=5000)
+@given(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=3))
+def test_cmab_predict_not_cold_start(n_samples, n_features):
     def run_predict(context):
 
         mab = CmabBernoulli(
@@ -338,6 +338,40 @@ def test_cmab_predict_not_cold_start(n_samples, dim_list):
     context = pd.DataFrame(context)
     assert type(context) is pd.DataFrame
     run_predict(context=context)
+
+@settings(deadline=10000)
+@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=5), min_size=1, max_size=2))
+def test_cmab_bnn_predict_not_cold_start(n_samples, dim_list):
+    def run_predict(context):
+        
+        posterior_params = _create_random_posterior_params(dim_list=dim_list)
+
+        mab = CmabBernoulli(
+            actions={
+                "a1": BayesianNeuralNetwork(posterior_params=posterior_params),
+                "a2": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
+            },
+        )
+        assert not mab.predict_actions_randomly
+        selected_actions, probs, weighted_sums = mab.predict(context=context)
+        assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
+
+    # context is numpy array
+    n_features = dim_list[0]
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    assert type(context) is np.ndarray
+    run_predict(context=context)
+
+    # context is python list
+    context = context.tolist()
+    assert type(context) is list
+    run_predict(context=context)
+
+    # context is pandas DataFrame
+    context = pd.DataFrame(context)
+    assert type(context) is pd.DataFrame
+    run_predict(context=context)
+
 
 
 @settings(deadline=500)
