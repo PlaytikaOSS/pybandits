@@ -45,7 +45,23 @@ from tests.test_utils import is_serializable
 literal_update_methods = get_args(UpdateMethods)
 
 
-def _apply_update_method_to_state(state, update_method):
+def _apply_update_method_and_add_params_to_state(state, update_method):
+    """
+    Apply the update method to each action in the state and add posterior parameters.
+
+    Parameters
+    ----------
+    state : dict
+        The state dictionary containing actions and their properties.
+    update_method : str
+        The update method to be applied to each action.
+
+    Notes
+    -----
+    - For each action in the state, the update method is set.
+    - If an action contains a "dim_list", random posterior parameters are created and added to the action.
+    - The "dim_list" is removed from the action after the posterior parameters are added.
+    """
     for action in state["actions"]:
         state["actions"][action]["update_method"] = update_method
         if "dim_list" in state["actions"][action]:
@@ -55,6 +71,21 @@ def _apply_update_method_to_state(state, update_method):
 
 
 def _create_random_posterior_params(dim_list):
+    """
+    Create random posterior parameters for a Bayesian Neural Network.
+    This function generates random posterior parameters for each layer of a Bayesian Neural Network
+    based on the provided dimensions list. The parameters are initialized with random values drawn
+    from a uniform distribution between 0 and 1.
+    Parameters
+    ----------
+    dim_list : list of int
+        A list containing the dimensions of each layer in the Bayesian Neural Network.
+    Returns
+    -------
+    posterior_params : list of dict
+        A list of dictionaries where each dictionary contains the posterior parameters for a layer.
+        Each parameter is initialized with random values.
+    """
     posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list=dim_list)
 
     for layer_ind in range(len(posterior_params)):
@@ -471,7 +502,7 @@ def test_cmab_get_state(mu, sigma, n_features):
     update_method=st.sampled_from(literal_update_methods),
 )
 def test_cmab_from_state(state, update_method):
-    _apply_update_method_to_state(state, update_method)
+    _apply_update_method_and_add_params_to_state(state, update_method)
     cmab = CmabBernoulli.from_state(state)
     assert isinstance(cmab, CmabBernoulli)
 
@@ -684,7 +715,7 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
     update_method=st.sampled_from(literal_update_methods),
 )
 def test_cmab_bai_from_state(state, update_method):
-    _apply_update_method_to_state(state, update_method)
+    _apply_update_method_and_add_params_to_state(state, update_method)
     cmab = CmabBernoulliBAI.from_state(state)
     assert isinstance(cmab, CmabBernoulliBAI)
 
@@ -921,7 +952,7 @@ def test_cmab_cc_get_state(
     update_method=st.sampled_from(literal_update_methods),
 )
 def test_cmab_cc_from_state(state, update_method):
-    _apply_update_method_to_state(state, update_method)
+    _apply_update_method_and_add_params_to_state(state, update_method)
     cmab = CmabBernoulliCC.from_state(state)
     assert isinstance(cmab, CmabBernoulliCC)
 
@@ -990,12 +1021,3 @@ def test_epsilon_greedy_cmab_cc_predict(n_samples, dim_list):
     assert len(selected_actions) == n_samples
     assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
     assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-if __name__ == '__main__':
-    test_create_cmab_bernoulli_cold_start()
-   #test_cmab_predict_not_cold_start()
-
-from pydantic import BaseModel
-from pybandits.pydantic_version_compatibility import field_validator, validate_call
-
-

@@ -29,10 +29,10 @@ import numpy as np
 import pymc.math as pmath
 from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
 from numpy.typing import ArrayLike
-from pymc import Bernoulli, Data, Deterministic, fit, sample
+from pymc import Bernoulli, Data, Deterministic, fit, sample, MutableData, math, sample_prior_predictive, pytensorf
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
-import pymc as pm
+
 from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
@@ -305,8 +305,38 @@ class StudentTArray(PyBanditsBaseModel):
 
 
 
-class BaseBayesianModel(Model, ABC):
-    update_method: str = "MCMC"
+class LegacyBayesianLogisticRegression(Model):
+    """
+    Base Bayesian Logistic Regression model.
+
+    It is modeled as:
+
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    Parameters
+    ----------
+    alpha : StudentT
+        Student's t-distribution of the alpha coefficient.
+    betas : StudentT
+        Student's t-distributions of the betas coefficients.
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
+    """
+
+    alpha: StudentT
+    if pydantic_version == PYDANTIC_VERSION_1:
+        betas: List[StudentT] = Field(..., min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        betas: List[StudentT] = Field(..., min_length=1)
+    else:
+        raise ValueError("Invalid version.")
+    update_method: UpdateMethods = "MCMC"
     update_kwargs: Optional[dict] = None
     _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
     _default_mcmc_kwargs = dict(
@@ -319,12 +349,7 @@ class BaseBayesianModel(Model, ABC):
         progressbar=False,
         return_inferencedata=False,
     )
-
-    _default_variational_inference_kwargs = dict(method="advi", 
-                                                 n=2000)
-
-    class Config:
-        arbitrary_types_allowed = True
+    _default_variational_inference_kwargs = dict(method="advi")
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -362,69 +387,6 @@ class BaseBayesianModel(Model, ABC):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def check_context_matrix(self, context: ArrayLike):
-        try:
-            n_cols_context = np.array(context).shape[1]
-        except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {self.expected_input} columns: {e}.")
-        if n_cols_context != self.expected_input:
-            raise AttributeError(f"Shape mismatch: context must have {self.expected_input} columns.")
-    
-    @property
-    @abstractmethod
-    def expected_input(self):
-        pass
-
-    @abstractmethod
-    def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
-        pass
-
-    @abstractmethod
-    def update(self, context: ArrayLike, rewards: List[BinaryReward]):
-        pass
-
-    @abstractmethod
-    def cold_start(cls, **kwargs) -> "BaseBayesianModel":
-        pass
-
-
-class BayesianLogisticRegression2(BaseBayesianModel):
-    """
-    Base Bayesian Logistic Regression model.
-
-    It is modeled as:
-
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    Parameters
-    ----------
-    alpha : StudentT
-        Student's t-distribution of the alpha coefficient.
-    betas : StudentT
-        Student's t-distributions of the betas coefficients.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-    """
-
-    alpha: StudentT
-    if pydantic_version == PYDANTIC_VERSION_1:
-        betas: List[StudentT] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        betas: List[StudentT] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
-
-    @property
-    def expected_input(self):
-        return len(self.betas)
-    
     @classmethod
     def _stable_sigmoid(cls, x: Union[np.ndarray, TensorVariable]) -> Union[np.ndarray, TensorVariable]:
         """
@@ -446,6 +408,28 @@ class BayesianLogisticRegression2(BaseBayesianModel):
             warnings.simplefilter("ignore", RuntimeWarning)
             prob = backend.where(x >= 0, 1 / (1 + backend.exp(-x)), backend.exp(x) / (1 + backend.exp(x)))
         return prob
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def check_context_matrix(self, context: ArrayLike):
+        """
+        Check and cast context matrix.
+
+        Parameters
+        ----------
+        context : ArrayLike of shape (n_samples, n_features)
+            Matrix of contextual features.
+
+        Returns
+        -------
+        context : pandas DataFrame of shape (n_samples, n_features)
+            Matrix of contextual features.
+        """
+        try:
+            n_cols_context = array(context).shape[1]
+        except Exception as e:
+            raise AttributeError(f"Context must be an ArrayLike with {len(self.betas)} columns: {e}.")
+        if n_cols_context != len(self.betas):
+            raise AttributeError(f"Shape mismatch: context must have {len(self.betas)} columns.")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
@@ -552,12 +536,12 @@ class BayesianLogisticRegression2(BaseBayesianModel):
 
     @classmethod
     def cold_start(
-            cls,
-            n_features: PositiveInt,
-            update_method: UpdateMethods = "MCMC",
-            update_kwargs: Optional[dict] = None,
-            **kwargs,
-    ) -> "BayesianLogisticRegression2":
+        cls,
+        n_features: PositiveInt,
+        update_method: UpdateMethods = "MCMC",
+        update_kwargs: Optional[dict] = None,
+        **kwargs,
+    ) -> "LegacyBayesianLogisticRegression":
         """
         Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
         with default parameters.
@@ -595,8 +579,57 @@ class BayesianLogisticRegression2(BaseBayesianModel):
             **kwargs,
         )
 
-
 class BayesianNeuralNetwork(Model):
+    """Bayesian Neural Network model for binary classification.
+    This class implements a Bayesian Neural Network using PyMC for binary classification tasks.
+    It supports both MCMC and Variational Inference methods for posterior inference.
+    
+    Parameters
+    ----------
+    posterior_params : List[Dict[str, StudentTArray]]
+        List of dictionaries containing weight and bias parameters for each layer.
+        Each dictionary should have 'w' and 'b' keys with StudentTArray values.
+    update_method : str, optional
+        Method used for posterior inference, either "MCMC" or "VI" (default is "MCMC")
+    update_kwargs : dict, optional
+        Dictionary of keyword arguments for the update method.
+        For MCMC: Contains 'trace' settings
+        For VI: Contains both 'trace' and 'fit' settings
+    
+    Attributes
+    ----------
+    expected_input : int
+        Number of input features expected by the model
+    posterior_params : List[Dict[str, StudentTArray]]
+        Current posterior parameters of the network
+    Methods
+    -------
+    cold_start(dim_list, update_method="MCMC", update_kwargs=None, **kwargs)
+        Create a new BNN instance with specified architecture
+    sample_proba(context)
+        Sample probabilities for given context
+    update(context, rewards)
+        Update model parameters using observed context-reward pairs
+    create_posterior_params(dim_list)
+        Create initial posterior parameters for network layers
+    check_context_matrix(context)
+        Validate input context matrix dimensions
+    create_model(x, y, is_samplewise)
+        Create PyMC model for inference
+    
+    Notes
+    -----
+    The network uses tanh activation for hidden layers and sigmoid for output layer.
+    Supported PyMC sampling methods are MCMC (default) and Variational Inference (VI).
+    
+    Examples
+    --------
+    >>> dim_list = [5, 3, 1]  # 5 inputs, 1 hidden layer with 3 nodes, 1 output
+    >>> bnn = BayesianNeuralNetwork.cold_start(dim_list)
+    >>> probs, _ = bnn.sample_proba([[1,2,3,4,5]])
+    >>> bnn.update([[1,2,3,4,5]], [1])
+    """
+    
     update_method: str = "MCMC"
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
 
@@ -668,7 +701,28 @@ class BayesianNeuralNetwork(Model):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def create_posterior_params(cls, dim_list):
+    def create_posterior_params(cls, dim_list: List[PositiveInt]) -> List[Dict[str, StudentTArray]]:
+        """Create a list of posterior parameters for a neural network.
+
+        This classmethod creates posterior parameters for each layer in a neural network
+        based on the provided dimensions. Each layer's parameters include weights (w) and
+        biases (b) as StudentT distributions.
+
+        Parameters
+        ----------
+        dim_list : List[PositiveInt]
+            List of integers representing the dimensions of each layer in the neural
+            network. The output dimension will be automatically appended as 1.
+
+        Returns
+        -------
+        List[Dict[str, StudentTArray]]
+            List of dictionaries containing posterior parameters for each layer.
+            Each dictionary has two keys:
+                - 'w': StudentTArray for weights with shape [input_dim, output_dim]
+                - 'b': StudentTArray for biases with shape [output_dim]
+
+        """
         _dim_list = dim_list.copy()
         _dim_list.append(1)
 
@@ -684,6 +738,19 @@ class BayesianNeuralNetwork(Model):
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def check_context_matrix(self, context: ArrayLike):
+        """
+        Check and cast context matrix.
+
+        Parameters
+        ----------
+        context : ArrayLike of shape (n_samples, n_features)
+            Matrix of contextual features.
+
+        Returns
+        -------
+        context : pandas DataFrame of shape (n_samples, n_features)
+            Matrix of contextual features.
+        """
         try:
             n_cols_context = np.array(context).shape[1]
         except Exception as e:
@@ -693,14 +760,53 @@ class BayesianNeuralNetwork(Model):
     
 
     @property
-    def expected_input(self):
+    def expected_input(self) -> PositiveInt:
+        """
+        Returns the expected input dimension of the model.
+
+        Returns
+        -------
+        int
+            The number of input features expected by the model, derived from
+            the shape of the weight matrix in the first layer's posterior parameters.
+        """
         return self.posterior_params[0]["w"].shape[0]
     
-    def create_model(self, x, y, is_sampelwise):
+    def create_model(self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], is_sampelwise: bool) -> PymcModel:
+        """
+        Create a PyMC model for Bayesian Neural Network.
+
+        This method builds a PyMC model with the network architecture specified in posterior_params.
+        The model uses tanh activation for hidden layers and sigmoid for the output layer.
+
+        Parameters
+        ----------
+        x : ArrayLike
+            Input features of shape (n_samples, n_features)
+        y : Union[List[BinaryReward], np.ndarray]
+            Binary target values of shape (n_samples,)
+        is_sampelwise : bool
+            If True, process samples independently. If False, process all samples at once.
+
+        Returns
+        -------
+        PymcModel
+            PyMC model object with the specified neural network architecture
+
+        Notes
+        -----
+        The model structure follows these steps:
+        1. For each layer, create weight and bias variables from StudentT distributions
+        2. Apply linear transformations and activations through the layers. 
+           When is_sampelwise is True, the linear transformation is applied on each row separately (so random variables are not shared)
+           When is_sampelwise is False, the linear transformation is applied on the whole matrix at once, so random variables are shared.
+        3. Apply sigmoid activation at the output
+        4. Use Bernoulli likelihood for binary classification
+        """
         
-        with pm.Model() as _model:
+        with PymcModel() as _model:
             # Define data variables using minibatches  
-            bnn_output = pm.MutableData("ann_output", y)
+            bnn_output = MutableData("bnn_output", y)
 
             for layer_ind in range(len(self.posterior_params)):
                 layer_params = self.posterior_params[layer_ind]
@@ -711,24 +817,23 @@ class BayesianNeuralNetwork(Model):
                 if layer_ind == 0:
                     if is_sampelwise:    
                         x_tensor = pt.vector("x_tensor")
-                        linear_transform_func = pm.math.dot(x_tensor, w) + b
-                        compiled_linear_transform = pm.pytensorf.compile_pymc(inputs=[x_tensor], outputs=linear_transform_func)
+                        linear_transform_func = math.dot(x_tensor, w) + b
+                        compiled_linear_transform = pytensorf.compile_pymc(inputs=[x_tensor], outputs=linear_transform_func)
                         linear_transform = pt.as_tensor_variable([compiled_linear_transform(row) for row in x], name=f"linear_transform{layer_ind}")
                     else:
-                        bnn_input = pm.MutableData("bnn_input", x)
-                        linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(bnn_input, w) + b)
+                        bnn_input = MutableData("bnn_input", x)
+                        linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(bnn_input, w) + b)
                 else:
-                    linear_transform = pm.Deterministic(f"linear_transform{layer_ind}", pm.math.dot(act, w) + b)
+                    linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(act, w) + b)
 
                 
                 if layer_ind < len(self.posterior_params) - 1:
-                    act = pm.math.tanh(linear_transform)
+                    act = math.tanh(linear_transform)
 
-            logit = pm.Deterministic("logit", linear_transform.squeeze())
-            prob = pm.Deterministic("prob", pm.math.sigmoid(logit))
+            logit = Deterministic("logit", linear_transform.squeeze())
+            prob = Deterministic("prob", math.sigmoid(logit))
 
-            # Binary classification -> Bernoulli likelihood
-            out = pm.Bernoulli(
+            out = Bernoulli(
                 "out",
                 p=prob,
                 observed=bnn_output
@@ -737,6 +842,18 @@ class BayesianNeuralNetwork(Model):
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
+        """
+        Samples probabilities and weighted sums from the prior predictive distribution.
+        Parameters
+        ----------
+        context : ArrayLike
+            The context matrix for which the probabilities are to be sampled.
+        Returns
+        -------
+        Tuple[Probability, float]
+            A tuple containing the sampled probabilities and the weighted sum.
+        """
+
         # check input args
         self.check_context_matrix(context=context) 
 
@@ -745,7 +862,7 @@ class BayesianNeuralNetwork(Model):
         _model = self.create_model(_context, dummy_y, is_sampelwise=True)
         
         with _model:
-            trace = pm.sample_prior_predictive(samples=1)
+            trace = sample_prior_predictive(samples=1)
         
         prob = trace['prior']['prob'].values.reshape(-1)
         weighted_sum = trace['prior']['logit'].values.reshape(-1)
@@ -754,6 +871,25 @@ class BayesianNeuralNetwork(Model):
         return prob, weighted_sum
 
     def update(self, context: ArrayLike, rewards: List[BinaryReward]):
+        """
+        Update the posterior_params with new context and rewards.
+        Parameters
+        ----------
+        context : ArrayLike
+            The context matrix where each row represents a context vector.
+        rewards : List[BinaryReward]
+            A list of binary rewards corresponding to each context vector.
+        Raises
+        ------
+        AttributeError
+            If the length of the context matrix does not match the length of the rewards list.
+        ValueError
+            If the update method is not recognized.
+        Notes
+        -----
+        This method updates the model's posterior parameters by sampling from the posterior distribution
+        using either Variational Inference (VI) or Markov Chain Monte Carlo (MCMC) methods.
+        """
         self.check_context_matrix(context=context)
         if len(context) != len(rewards):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
@@ -795,6 +931,26 @@ class BayesianNeuralNetwork(Model):
     def cold_start(cls, dim_list : List[PositiveInt], update_method: UpdateMethods= "MCMC",
                    update_kwargs: Optional[dict] = None,
                    **kwargs) -> "BayesianNeuralNetwork":
+        """Create a new BayesianNeuralNetwork instance with specified architecture with default student-t distribution.
+
+        Parameters
+        ----------
+        dim_list : List[PositiveInt]
+            List specifying the number of nodes in each layer.
+            Example: [5, 3, 1] means 5 input nodes, 3 hidden nodes, 1 output node
+        update_method : UpdateMethods, optional
+            Method used for posterior inference, by default "MCMC"
+        update_kwargs : Optional[dict], optional
+            Additional arguments for the update method, by default None
+        **kwargs : dict
+            Additional keyword arguments to pass to BayesianNeuralNetwork constructor
+
+        Returns
+        -------
+        BayesianNeuralNetwork
+            A new instance of BayesianNeuralNetwork with the specified architecture
+            and initialization parameters
+        """
             
         posterior_params = cls.create_posterior_params(dim_list)
         return cls(posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs,**kwargs)
@@ -807,6 +963,44 @@ class BayesianNeuralNetwork(Model):
  
 
 class BayesianLogisticRegression(BayesianNeuralNetwork):
+    """A Bayesian logistic regression model where the weights (betas) and
+    intercept (alpha) follow Student-T distributions.
+    
+    The model output is calculated as follows:
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    The implementation is based on the Bayesian Neural Network model with a single output node.
+
+    Parameters
+    ----------
+    alpha : StudentT
+        The intercept parameter following a Student-T distribution
+    betas : List[StudentT]
+        List of weight parameters, each following a Student-T distribution.
+        Length must be equal to number of features (minimum 1)
+    Attributes
+    ----------
+    posterior_params : list
+        List containing dictionary of posterior parameters for weights (w) and bias (b)
+    Methods
+    -------
+    cold_start(n_features, update_method='MCMC', update_kwargs=None, **kwargs)
+        Creates a new instance with default initialization
+        Parameters:
+            n_features : int
+                Number of input features
+            update_method : str, optional
+                Method for updating parameters (default is 'MCMC')
+            update_kwargs : dict, optional
+                Additional arguments for the update method
+            **kwargs
+                Additional keyword arguments
+        Returns:
+            BayesianLogisticRegression
+                New instance of the model
+   """
+    
     alpha: StudentT
     if pydantic_version == PYDANTIC_VERSION_1:
         betas: List[StudentT] = Field(..., min_items=1)
@@ -859,272 +1053,15 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
 
 class BayesianNeuralNetworkCC(BayesianNeuralNetwork):
     """
-    Bayesian Logistic Regression model with cost control.
+    Bayesian Neural Network with Cost Constraint.
 
-    It is modeled as:
+    This class extends the BayesianNeuralNetwork to include a cost constraint.
 
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    Parameters
+    Attributes
     ----------
-    alpha: StudentT
-        Student's t-distribution of the alpha coefficient.
-    betas: StudentT
-        Student's t-distributions of the betas coefficients.
-    update_method : UpdateMethods, defaults to "MCMC"
-        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
-        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
-        full list.
-    update_kwargs : Optional[dict], uses default values if not specified
-        Additional arguments to pass to the update method.
-    cost: NonNegativeFloat
-        Cost associated to the Bayesian Logistic Regression model.
+    cost : NonNegativeFloat
+        The cost associated with the neural network, which must be a non-negative float.
     """
 
+
     cost: NonNegativeFloat
-
-
-import torch.nn as nn
-
-
-class Torch_BNN(nn.Module):
-    def __init__(self, in_dim, out_dim=1, hid_dim=10):
-        super().__init__()
-        self.activation = nn.Tanh()  # or nn.ReLU()
-        self.layer1 = nn.Linear(in_dim, hid_dim)  # Input to hidden layer
-        self.layer2 = nn.Linear(hid_dim, out_dim)  # Hidden to output layer
-
-    def forward(self, x_features, x_actions):
-        x = torch.cat((x_features, x_actions))
-        x = self.activation(self.layer1(x))
-        logits = self.layer2(x).squeeze()
-        return logits
-
-
-class QuantitativeBNNModel:
-    def __init__(self, in_dim, hid_dim, mu=0, sigma=10.):
-        self.model = BayesianNeuralNetwork(in_dim, hid_dim, mu, sigma)
-        self.torch_model = Torch_BNN(in_dim, hid_dim)
-
-        def sample_proba(self, x):
-            trace = self._model.sample(x)
-            probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
-            return probabilities
-
-
-    
-
-    
-
-if __name__ == '__main__':
-    c_params = [-4, 2, 3, 3, 1, -3]
-    n_bias_features = 3
-    n_features = 5
-    n_samples_train = 30000
-    n_samples_val = 2000
-    n_samples_test = 10000
-
-    a1 = StudentTArray(shape=(3, 3))
-    a2 = StudentTArray(shape=(2, 3))
-    a1 == a2
-
-
-    BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(3)])
-        #posterior_params: List[Dict[str, StudentTArray]] 
-    posterior_params = [dict(w=StudentTArray(shape=(3, 3)), b=StudentTArray(shape=(3,)))]
-    betas = [[StudentT() for _ in range(3)], [StudentT() for _ in range(3)]]
-    
-    # xx = BayesianNeuralNetwork.cold_start(dim_list=[5, 10, 1], update_method="VI")
-    # xxx = BayesianLogisticRegression2.cold_start(n_features=5, update_method="VI")
-    # xxx = BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(mu=2, sigma=4), StudentT(mu=6, sigma=7)])
-    # import json
-    # from pybandits.utils import to_serializable_dict
-    # d = {'1': xx}
-    # tt = to_serializable_dict(d)
-  
-    # ttt = json.loads(json.dumps(tt, default=dict))
-
-
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
-
-
-    def create_data(c_params, n_samples, n_features, n_bias_features):
-        features_obs = np.random.uniform(0, 1, size=(n_samples, n_features))
-        amount = np.random.uniform(0, 2, size=(n_samples))
-        logit_bias = c_params[-1] + np.matmul(features_obs[:, 0:n_bias_features], c_params[0:n_bias_features])
-        logit_quant = c_params[n_bias_features] * np.multiply(features_obs[:, n_bias_features], amount) - c_params[
-            n_bias_features + 1] * np.multiply(features_obs[:, n_bias_features + 1], amount ** 2)
-        probs_obs = sigmoid(logit_bias + logit_quant)
-        y_obs = np.random.binomial(1, probs_obs)
-        x_obs = np.hstack((features_obs, amount.reshape(-1, 1)))
-        # x = torch.from_numpy(x_obs).float()
-        # y = torch.from_numpy(y_obs).float()
-
-        return x_obs, y_obs, probs_obs
-
-
-    # train
-    x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
-    x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
-    x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
-    #bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="VI", update_kwargs={"trace":{"n": 100}})
-    #bayesian_model = BayesianNeuralNetwork.cold_start(dim_list=[x_train.shape[1], 10], update_method="MCMC")
-    
-    n_features = x_train.shape[1]
-   
-    #### 
-    n_samples = 1000
-    n_features = 10
-    bayesian_model =  BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()])
-    x_train = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    y_train = np.random.binomial(1, 0.5, size=(n_samples,))
-    bayesian_model.sample_proba(x_train)
-    ###
-
-    bayesian_model.update(x_train, y_train)
-    #prob, _ = bayesian_model.sample_proba(x_train)
-
-#     import torch
-#     import matplotlib.pyplot as plt
-#
-#
-#     def sigmoid(x):
-#         return 1 / (1 + np.exp(-x))
-#
-#
-#     # %%
-#     def create_data(c_params, n_samples, n_features, n_bias_features):
-#         features_obs = np.random.uniform(0, 1, size=(n_samples, n_features))
-#         amount = np.random.uniform(0, 2, size=(n_samples))
-#         logit_bias = c_params[-1] + np.matmul(features_obs[:, 0:n_bias_features], c_params[0:n_bias_features])
-#         logit_quant = c_params[n_bias_features] * np.multiply(features_obs[:, n_bias_features], amount) - c_params[
-#             n_bias_features + 1] * np.multiply(features_obs[:, n_bias_features + 1], amount ** 2)
-#         probs_obs = sigmoid(logit_bias + logit_quant)
-#         y_obs = np.random.binomial(1, probs_obs)
-#         x_obs = np.hstack((features_obs, amount.reshape(-1, 1)))
-#         x = torch.from_numpy(x_obs).float()
-#         y = torch.from_numpy(y_obs).float()
-#
-#         return x, y, probs_obs
-#
-#
-#     c_params = [-4, 2, 3, 3, 1, -3]
-#     n_bias_features = 3
-#     n_features = 5
-#     n_samples_train = 30000
-#     n_samples_val = 2000
-#     n_samples_test = 10000
-#
-#     # train
-#     x_train, y_train, probs_obs_train = create_data(c_params, n_samples_train, n_features, n_bias_features)
-#     x_val, y_val, probs_obs_val = create_data(c_params, n_samples_train, n_features, n_bias_features)
-#     x_test, y_test, probs_obs_test = create_data(c_params, n_samples_test, n_features, n_bias_features)
-#
-#     bayesian_model = BayesianNeuralNetwork(x_train.shape[1], 10)
-#
-#     num_iteration = 5
-#     for iter in range(num_iteration):
-#         trace = bayesian_model.sample(x_test)
-#         probabilities = trace['prior_predictive']['out'].squeeze().mean(axis=0).values
-#         eps = 1e-5
-#         logloss = -(y_test * np.log(probabilities + eps)).mean() - (
-#                 (1 - y_test) * np.log(1 - probabilities + eps)).mean()
-#         print(f"logloss: {logloss}")
-#         x_train, y_train, probs_obs_train = create_data(c_params, 1000, n_features, n_bias_features)
-#         bayesian_model.update(x_train, y_train, num_iter=1000, learning_rate=0.01)
-#
-#         plt.figure()
-#         plt.plot(bayesian_model.approx.hist)
-#         plt.ylabel("ELBO")
-#         plt.xlabel(f"iteration {iter}");
-#         plt.show()
-#
-#         print(1)
-#
-# from pydantic import BaseModel, Field
-#
-#
-# class User(BaseModel):
-#     id: int
-#     name: str
-#     age2: int
-#     age: int = Field(..., ge=0)  # Age must be a non-negative integer
-#
-#     def __init__(self, **data):
-#         super().__init__(**data)
-#         self.age2 = 2 * self.age
-#
-#
-# user = User(id=1, name="Alice", age=30)
-# print(user)
-#
-# #%%
-# import warnings
-# from abc import ABC, abstractmethod
-# from random import betavariate
-# from typing import Any, List, Literal, Optional, Tuple, Union, Dict
-#
-# import numpy as np
-# import pymc.math as pmath
-# from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
-# from numpy.typing import ArrayLike
-# from pymc import Bernoulli, Data, Deterministic, fit, sample
-# from pymc import Model as PymcModel
-# from pymc import StudentT as PymcStudentT
-# import pymc as pm
-# from pytensor.tensor import TensorVariable, dot
-# from scipy.stats import t
-#
-# from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
-# from pybandits.pydantic_version_compatibility import (
-#     PYDANTIC_VERSION_1,
-#     PYDANTIC_VERSION_2,
-#     Field,
-#     NonNegativeFloat,
-#     PositiveInt,
-#     confloat,
-#     model_validator,
-#     pydantic_version,
-#     validate_call,
-# )
-#
-# UpdateMethods = Literal["MCMC", "VI"]
-# class Model(PyBanditsBaseModel, ABC):
-#     """
-#     Class to _model the prior distributions.
-#     """
-#
-#     @abstractmethod
-#     def sample_proba(self) -> Probability:
-#         """
-#         Sample the probability of getting a positive reward.
-#         """
-#
-#     @abstractmethod
-#     def update(self, rewards: List[Any]):
-#         """
-#         Update the _model parameters.
-#         """
-#
-#
-#
-######
-# import pymc as pm
-# import numpy as np
-# with self.actions["a5"]._model:
-#     trace = pm.sample_prior_predictive(samples=1000)
-
-# for name in ["w0","b0"]:
-#     print(name)
-#     print(np.mean(trace["prior"][name].values.squeeze(), axis=0))
-#     print(np.std(trace["prior"][name].values.squeeze(), axis=0))
-
-
-
-
-
-
-#####

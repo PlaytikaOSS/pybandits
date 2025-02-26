@@ -43,7 +43,7 @@ class BaseCmabBernoulli(BaseMab):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianNeuralNetwork]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
@@ -60,7 +60,7 @@ class BaseCmabBernoulli(BaseMab):
 
     @field_validator("actions", mode="after")
     @classmethod
-    def check_bayesian_egression_models(cls, v):
+    def check_bayesian_regression_models(cls, v):
         action_models = list(v.values())
         first_action = action_models[0]
         first_action_type = type(first_action)
@@ -197,7 +197,7 @@ class CmabBernoulli(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianNeuralNetwork]
         The list of possible actions, and their associated Model.
     strategy: ClassicBandit
         The strategy used to select actions.
@@ -231,7 +231,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BayesianNeuralNetwork]
         The list of possible actions, and their associated Model.
     strategy: BestActionIdentificationBandit
         The strategy used to select actions.
