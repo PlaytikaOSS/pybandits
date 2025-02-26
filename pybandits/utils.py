@@ -22,7 +22,6 @@
 
 import json
 from typing import Any, Callable, Dict, List, Optional, Union
-import importlib
 
 from bokeh.io import curdoc, output_file, output_notebook, save, show
 from bokeh.models import InlineStyleSheet, TabPanel, Tabs
@@ -56,7 +55,7 @@ def extract_argument_names_from_function(function_handle: Callable, is_class_met
     Parameters
     ----------
     function_handle : Callable
-    Handle of a function to extract the argument names from
+        Handle of a function to extract the argument names from
 
     is_class_method : bool, defaults to False
         Whether the function is a class method
@@ -70,11 +69,6 @@ def extract_argument_names_from_function(function_handle: Callable, is_class_met
     argument_names = function_handle.__code__.co_varnames[start_index : function_handle.__code__.co_argcount]
     return argument_names
 
-@validate_call
-def get_class(module_name: str, class_name: str):
-    module = importlib.import_module(module_name)
-    cls = getattr(module, class_name)
-    return cls
 
 def in_jupyter_notebook() -> bool:
     """
