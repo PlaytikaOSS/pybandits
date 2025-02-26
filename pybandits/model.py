@@ -264,6 +264,22 @@ class StudentT(PyBanditsBaseModel):
     nu: confloat(allow_inf_nan=False) = 5.0
 
 class StudentTArray(PyBanditsBaseModel):
+    """
+    A model representing an array of Student's t-distributions.
+    Attributes
+    ----------
+    shape : Optional[List[PositiveInt]]
+        The shape of the arrays for the parameters. If not provided, `params_dict` must be specified.
+    params_dict : Optional[Dict[str, Union[List[float], List[List[float]]]]]
+        A dictionary containing the parameters 'mu', 'sigma', and 'nu'. If not provided, `shape` must be specified.
+    mu : confloat(allow_inf_nan=False)
+        The mean of the Student's t-distribution. Default is 0.0.
+    sigma : confloat(allow_inf_nan=False)
+        The scale (standard deviation) of the Student's t-distribution. Default is 10.0.
+    nu : confloat(allow_inf_nan=False)
+        The degrees of freedom of the Student's t-distribution. Default is 5.0.
+
+    """
     shape: Optional[List[PositiveInt]] = None
     params_dict: Optional[Dict[str, Union[List[float],List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
