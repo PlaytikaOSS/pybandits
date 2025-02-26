@@ -635,7 +635,6 @@ class BayesianNeuralNetwork(Model):
 
     posterior_params: List[Dict[str, StudentTArray]] 
 
-    _default_update_trace_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False) 
     _default_mcmc_trace_kwargs = dict( 
         tune=500,
         draws=1000,
@@ -648,8 +647,7 @@ class BayesianNeuralNetwork(Model):
     )  
 
     _default_variational_inference_fit_kwargs = dict(method="advi") 
-    _default_variational_inference_trace_kwargs = dict(n=2000)
-    
+    _default_variational_inference_trace_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
 
     class Config:
         arbitrary_types_allowed = True
@@ -664,7 +662,6 @@ class BayesianNeuralNetwork(Model):
                     
             if update_kwargs is None: 
                 update_kwargs= dict()
-                update_kwargs["trace"] = cls._default_update_trace_kwargs
                 
             if update_method == "VI":       
                 update_kwargs["trace"] = {**cls._default_variational_inference_trace_kwargs, **update_kwargs.get("trace",{})}
@@ -685,7 +682,6 @@ class BayesianNeuralNetwork(Model):
             
             if self.update_kwargs is None:
                 self.update_kwargs = dict()
-                self.update_kwargs["trace"] = self._default_update_trace_kwargs
  
             if self.update_method == "VI":
                     self.update_kwargs["trace"] = {**self._default_variational_inference_trace_kwargs, **self.update_kwargs.get("trace",{})}
@@ -807,26 +803,31 @@ class BayesianNeuralNetwork(Model):
         with PymcModel() as _model:
             # Define data variables using minibatches  
             bnn_output = MutableData("bnn_output", y)
+            bnn_input = MutableData("bnn_input", x)
+            n_samples = len(x)
 
             for layer_ind in range(len(self.posterior_params)):
                 layer_params = self.posterior_params[layer_ind]
                 w_shape = np.array(layer_params["w"].params_dict["mu"]).shape # without it n_features = 1 doesn't work
-                w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape)
-                b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict)
-                
-                if layer_ind == 0:
-                    if is_sampelwise:    
-                        x_tensor = pt.vector("x_tensor")
-                        linear_transform_func = math.dot(x_tensor, w) + b
-                        compiled_linear_transform = pytensorf.compile_pymc(inputs=[x_tensor], outputs=linear_transform_func)
-                        linear_transform = pt.as_tensor_variable([compiled_linear_transform(row) for row in x], name=f"linear_transform{layer_ind}")
-                    else:
-                        bnn_input = MutableData("bnn_input", x)
-                        linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(bnn_input, w) + b)
-                else:
-                    linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(act, w) + b)
+                b_shape = np.array(layer_params["b"].params_dict["mu"]).shape
 
-                
+                if is_sampelwise:
+                    
+                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=(n_samples,) + w_shape) # this create a tensor of shape (n_samples, n_features, n_output)
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=(n_samples,) + b_shape)
+                    if layer_ind == 0:
+                        linear_transform = pt.as_tensor_variable(pt.batched_dot(bnn_input,w) + b, name=f"linear_transform{layer_ind}")
+                    else:
+                        linear_transform = pt.as_tensor_variable(pt.batched_dot(act,w) + b, name=f"linear_transform{layer_ind}")
+                else:
+                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape)
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict)
+                    if layer_ind == 0:
+                        linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(bnn_input, w) + b)
+                    else:
+                        linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(act, w) + b)
+
+               
                 if layer_ind < len(self.posterior_params) - 1:
                     act = math.tanh(linear_transform)
 
