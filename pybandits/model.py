@@ -284,8 +284,8 @@ class StudentTArray(PyBanditsBaseModel):
     shape: Optional[List[PositiveInt]] = None
     params_dict: Optional[Dict[str, Union[List[float], List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
-    sigma: confloat(allow_inf_nan=False) = 10.0
-    nu: confloat(allow_inf_nan=False) = 5.0
+    sigma: confloat(allow_inf_nan=False) = 1.0
+    nu: confloat(allow_inf_nan=False) = 20.0
 
     @root_validator(pre=False, skip_on_failure=False)
     def initialize_arrays(cls, values):
@@ -650,6 +650,7 @@ class BayesianNeuralNetwork(Model):
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
 
     posterior_params: List[Dict[str, StudentTArray]]
+    is_fitted: Optional[bool] = False
 
     _default_mcmc_trace_kwargs = dict(
         tune=500,
@@ -664,7 +665,6 @@ class BayesianNeuralNetwork(Model):
 
     _default_variational_inference_fit_kwargs = dict(method="advi")
     _default_variational_inference_trace_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
-
     class Config:
         arbitrary_types_allowed = True
 
@@ -836,18 +836,24 @@ class BayesianNeuralNetwork(Model):
                 w_shape = np.array(layer_params["w"].params_dict["mu"]).shape  # without it n_features = 1 doesn't work
                 b_shape = np.array(layer_params["b"].params_dict["mu"]).shape
 
+                if self.is_fitted:
+                    w_init_val = None
+                else:
+                    w_init_val = np.random.randn(*w_shape)
+                    b_init_val = np.random.randn(*b_shape)
+
                 if is_sampelwise:
                     w = PymcStudentT(
-                        f"w{layer_ind}", **layer_params["w"].params_dict, shape=(n_samples,) + w_shape
-                    )  # this create a tensor of shape (n_samples, n_features, n_output)
+                        f"w{layer_ind}", **layer_params["w"].params_dict, shape=(n_samples,) + w_shape)
+                      # this create a tensor of shape (n_samples, n_features, n_output)
                     b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=(n_samples,) + b_shape)
                     linear_transform = pt.as_tensor_variable(
                         pt.batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
                     )
 
                 else:
-                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape)
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict)
+                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape,initval=w_init_val)
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=b_shape ,initval=b_init_val)
                     linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
 
                 if layer_ind < len(self.posterior_params) - 1:
@@ -942,6 +948,8 @@ class BayesianNeuralNetwork(Model):
 
             self.posterior_params[layer_ind]["b"].params_dict["mu"] = b_mu.tolist()
             self.posterior_params[layer_ind]["b"].params_dict["sigma"] = b_sigma.tolist()
+
+        self.is_fitted = True
 
     @classmethod
     def cold_start(
