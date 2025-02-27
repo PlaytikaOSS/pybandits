@@ -28,7 +28,7 @@ from numpy.typing import ArrayLike
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import  BayesianNeuralNetworkCC, BayesianNeuralNetwork
+from pybandits.model import BayesianNeuralNetwork, BayesianNeuralNetworkCC
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,

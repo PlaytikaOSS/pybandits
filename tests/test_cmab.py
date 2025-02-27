@@ -30,7 +30,13 @@ from hypothesis import strategies as st
 
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
-from pybandits.model import BayesianNeuralNetwork, BayesianNeuralNetworkCC, BayesianLogisticRegression, StudentT, UpdateMethods
+from pybandits.model import (
+    BayesianLogisticRegression,
+    BayesianNeuralNetwork,
+    BayesianNeuralNetworkCC,
+    StudentT,
+    UpdateMethods,
+)
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -66,7 +72,9 @@ def _apply_update_method_and_add_params_to_state(state, update_method):
         state["actions"][action]["update_method"] = update_method
         if "dim_list" in state["actions"][action]:
             posterior_params = _create_random_posterior_params(state["actions"][action]["dim_list"])
-            state["actions"][action]["posterior_params"] = to_serializable_dict({'posterior_params' : posterior_params})['posterior_params']
+            state["actions"][action]["posterior_params"] = to_serializable_dict({"posterior_params": posterior_params})[
+                "posterior_params"
+            ]
             state["actions"][action].pop("dim_list")
 
 
@@ -93,8 +101,9 @@ def _create_random_posterior_params(dim_list):
             size = np.array(layer_parameter_values.params_dict["mu"]).shape
             for dist_param in layer_parameter_values.params_dict:
                 layer_parameter_values.params_dict[dist_param] = np.random.uniform(low=0, high=1, size=size).tolist()
-    
+
     return posterior_params
+
 
 ########################################################################################################################
 
@@ -108,9 +117,13 @@ def test_create_cmab_bernoulli_cold_start(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianLogisticRegression, n_features=a_int)
+            CmabBernoulli.cold_start(
+                action_ids={"a1", "a2"}, action_model_class=BayesianLogisticRegression, n_features=a_int
+            )
     else:
-        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianLogisticRegression, n_features=a_int)
+        mab1 = CmabBernoulli.cold_start(
+            action_ids={"a1", "a2"}, action_model_class=BayesianLogisticRegression, n_features=a_int
+        )
         mab2 = CmabBernoulli(
             actions={
                 "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
@@ -120,19 +133,24 @@ def test_create_cmab_bernoulli_cold_start(a_int):
         mab2.predict_actions_randomly = True
         assert mab1 == mab2
 
+
 @settings(deadline=5000)
 @given(st.integers(max_value=100))
 def test_create_cmab_bernoulli_cold_start_bnn(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianNeuralNetwork, dim_list = [a_int, 10])
+            CmabBernoulli.cold_start(
+                action_ids={"a1", "a2"}, action_model_class=BayesianNeuralNetwork, dim_list=[a_int, 10]
+            )
     else:
-        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, action_model_class = BayesianNeuralNetwork, dim_list = [a_int, 10])
+        mab1 = CmabBernoulli.cold_start(
+            action_ids={"a1", "a2"}, action_model_class=BayesianNeuralNetwork, dim_list=[a_int, 10]
+        )
         mab2 = CmabBernoulli(
             actions={
-                "a1": BayesianNeuralNetwork.cold_start(dim_list = [a_int, 10]),
-                "a2": BayesianNeuralNetwork.cold_start(dim_list = [a_int, 10]),
+                "a1": BayesianNeuralNetwork.cold_start(dim_list=[a_int, 10]),
+                "a2": BayesianNeuralNetwork.cold_start(dim_list=[a_int, 10]),
             }
         )
         mab2.predict_actions_randomly = True
@@ -140,19 +158,19 @@ def test_create_cmab_bernoulli_cold_start_bnn(a_int):
 
 
 @settings(deadline=500)
-@given(st.lists(st.integers(min_value=1,max_value=10), min_size=1, max_size=3))
+@given(st.lists(st.integers(min_value=1, max_value=10), min_size=1, max_size=3))
 def test_cmab_can_instantiate(dim_list):
     with pytest.raises(TypeError):
         CmabBernoulli()
     with pytest.raises(AttributeError):
         CmabBernoulli(actions={})
     with pytest.warns(UserWarning):
-        CmabBernoulli(actions={"a1": BayesianNeuralNetwork.cold_start(dim_list = dim_list)})
+        CmabBernoulli(actions={"a1": BayesianNeuralNetwork.cold_start(dim_list=dim_list)})
     with pytest.raises(ValidationError):  # predict_with_proba is not an argument of init
         CmabBernoulli(
             actions={
-                "a1": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
-                "a2": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
+                "a1": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
+                "a2": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
             },
             predict_with_proba=True,
         )
@@ -165,20 +183,20 @@ def test_cmab_can_instantiate(dim_list):
         )
     CmabBernoulli(
         actions={
-            "a1": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
-            "a2": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
+            "a1": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
+            "a2": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
         },
         strategy=ClassicBandit(),
     )
     mab = CmabBernoulli(
         actions={
-            "a1": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
-            "a2": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
+            "a1": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
+            "a2": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
         }
     )
 
-    assert mab.actions["a1"] == BayesianNeuralNetwork.cold_start(dim_list = dim_list)
-    assert mab.actions["a2"] == BayesianNeuralNetwork.cold_start(dim_list = dim_list)
+    assert mab.actions["a1"] == BayesianNeuralNetwork.cold_start(dim_list=dim_list)
+    assert mab.actions["a2"] == BayesianNeuralNetwork.cold_start(dim_list=dim_list)
     assert not mab.predict_actions_randomly
     assert not mab.predict_with_proba
     mab.predict_with_proba = True
@@ -189,8 +207,8 @@ def test_cmab_can_instantiate(dim_list):
 
 @settings(deadline=500)
 @given(
-    st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=2),
-    st.lists(st.integers(min_value=3,max_value=4), min_size=1, max_size=2),
+    st.lists(st.integers(min_value=1, max_value=2), min_size=1, max_size=2),
+    st.lists(st.integers(min_value=3, max_value=4), min_size=1, max_size=2),
     st.integers(min_value=0, max_value=1),
     st.just("draws"),
     st.just(2),
@@ -199,9 +217,9 @@ def test_cmab_init_with_wrong_bnn_models(dim_list, other_dim_list, update_method
     with pytest.raises(AttributeError):
         CmabBernoulli(
             actions={
-                "a1": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
-                "a2": BayesianNeuralNetwork.cold_start(dim_list = dim_list),
-                "a3": BayesianNeuralNetwork.cold_start(dim_list = other_dim_list),
+                "a1": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
+                "a2": BayesianNeuralNetwork.cold_start(dim_list=dim_list),
+                "a3": BayesianNeuralNetwork.cold_start(dim_list=other_dim_list),
             }
         )
     update_method = literal_update_methods[update_method_index]
@@ -209,8 +227,8 @@ def test_cmab_init_with_wrong_bnn_models(dim_list, other_dim_list, update_method
     with pytest.raises(AttributeError):
         CmabBernoulli(
             actions={
-                "a1": BayesianNeuralNetwork.cold_start(dim_list = dim_list, update_method=update_method),
-                "a2": BayesianNeuralNetwork.cold_start(dim_list = dim_list, update_method=other_update_method),
+                "a1": BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=update_method),
+                "a2": BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=other_update_method),
             }
         )
     model = BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=update_method)
@@ -222,7 +240,7 @@ def test_cmab_init_with_wrong_bnn_models(dim_list, other_dim_list, update_method
                 "a2": BayesianNeuralNetwork.cold_start(
                     dim_list=dim_list,
                     update_method=update_method,
-                    update_kwargs={"trace" : {kwarg_to_alter: altered_kwarg}},
+                    update_kwargs={"trace": {kwarg_to_alter: altered_kwarg}},
                 ),
             }
         )
@@ -238,16 +256,14 @@ def test_cmab_update(n_samples, dim_list, update_method):
         mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, dim_list=dim_list, update_method=update_method)
         assert all(
             [
-                mab.actions[a]
-                == BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=update_method)
+                mab.actions[a] == BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=update_method)
                 for a in set(actions)
             ]
         )
         mab.update(context=context, actions=actions, rewards=rewards)
         assert all(
             [
-                mab.actions[a]
-                != BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=update_method)
+                mab.actions[a] != BayesianNeuralNetwork.cold_start(dim_list=dim_list, update_method=update_method)
                 for a in set(actions)
             ]
         )
@@ -312,7 +328,9 @@ def test_cmab_update_shape_mismatch(n_samples, n_features, update_method):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=1000), st.lists(st.integers(min_value=1,max_value=10), min_size=1, max_size=3))
+@given(
+    st.integers(min_value=1, max_value=1000), st.lists(st.integers(min_value=1, max_value=10), min_size=1, max_size=3)
+)
 def test_cmab_predict_cold_start(n_samples, dim_list):
     def run_predict(context):
         mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, dim_list=dim_list)
@@ -344,7 +362,6 @@ def test_cmab_predict_cold_start(n_samples, dim_list):
 @given(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=3))
 def test_cmab_predict_not_cold_start(n_samples, n_features):
     def run_predict(context):
-
         mab = CmabBernoulli(
             actions={
                 "a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()]),
@@ -370,11 +387,11 @@ def test_cmab_predict_not_cold_start(n_samples, n_features):
     assert type(context) is pd.DataFrame
     run_predict(context=context)
 
+
 @settings(deadline=10000)
-@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=5), min_size=1, max_size=2))
+@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=2))
 def test_cmab_bnn_predict_not_cold_start(n_samples, dim_list):
     def run_predict(context):
-        
         posterior_params = _create_random_posterior_params(dim_list=dim_list)
 
         mab = CmabBernoulli(
@@ -404,9 +421,8 @@ def test_cmab_bnn_predict_not_cold_start(n_samples, dim_list):
     run_predict(context=context)
 
 
-
 @settings(deadline=500)
-@given(st.lists(st.integers(min_value=1,max_value=5), min_size=1, max_size=2))
+@given(st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=2))
 def test_cmab_predict_shape_mismatch(dim_list):
     n_features = dim_list[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features - 1))
@@ -416,8 +432,9 @@ def test_cmab_predict_shape_mismatch(dim_list):
     with pytest.raises(AttributeError):
         mab.predict(context=[])
 
+
 @settings(deadline=100000)
-@given(st.lists(st.integers(min_value=1,max_value=3), min_size=1, max_size=2))
+@given(st.lists(st.integers(min_value=1, max_value=3), min_size=1, max_size=2))
 def test_cmab_predict_with_forbidden_actions(dim_list):
     def run_predict(mab, n_features):
         context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features))
@@ -439,20 +456,24 @@ def test_cmab_predict_with_forbidden_actions(dim_list):
         with pytest.raises(ValueError):  # all actions forbidden
             assert set(mab.predict(context=context, forbidden_actions={"a1", "a2", "a3", "a4", "a5"})[0])
         with pytest.raises(ValueError):  # all actions forbidden (unordered)
-            assert set(mab.predict(context=context,forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
+            assert set(mab.predict(context=context, forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
 
     # cold start mab
-    n_features=dim_list[0]
+    n_features = dim_list[0]
     mab = CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, dim_list=dim_list)
     run_predict(mab=mab, n_features=n_features)
 
     # not cold start mab
     mab = CmabBernoulli(
         actions={
-            "a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT() for _ in range(n_features)]),
+            "a1": BayesianLogisticRegression(
+                alpha=StudentT(mu=1, sigma=2), betas=[StudentT() for _ in range(n_features)]
+            ),
             "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
             "a3": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a4": BayesianLogisticRegression(alpha=StudentT(mu=4, sigma=5), betas=[StudentT() for _ in range(n_features)]),
+            "a4": BayesianLogisticRegression(
+                alpha=StudentT(mu=4, sigma=5), betas=[StudentT() for _ in range(n_features)]
+            ),
             "a5": BayesianLogisticRegression.cold_start(n_features=n_features),
         },
     )
@@ -493,7 +514,9 @@ def test_cmab_get_state(mu, sigma, n_features):
         {
             "actions": st.dictionaries(
                 keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries({"dim_list" : st.lists(st.integers(min_value=3,max_value=3), min_size=1, max_size=3)}), 
+                values=st.fixed_dictionaries(
+                    {"dim_list": st.lists(st.integers(min_value=3, max_value=3), min_size=1, max_size=3)}
+                ),
                 min_size=2,
             ),
             "strategy": st.fixed_dictionaries({}),
@@ -522,7 +545,7 @@ def test_cmab_from_state(state, update_method):
 
 
 @settings(deadline=500)
-@given(st.lists(st.integers(min_value=1,max_value=10), min_size=1, max_size=3))
+@given(st.lists(st.integers(min_value=1, max_value=10), min_size=1, max_size=3))
 def test_create_cmab_bernoulli_bai_cold_start(dim_list):
     # n_features must be > 0
     if any(dim_val <= 0 for dim_val in dim_list):
@@ -611,9 +634,8 @@ def test_cmab_bai_can_instantiate(n_features):
 
 
 @settings(deadline=10000)
-@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=3), min_size=1, max_size=2))
+@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1, max_value=3), min_size=1, max_size=2))
 def test_cmab_bai_predict(n_samples, dim_list):
-
     n_features = dim_list[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
@@ -640,7 +662,11 @@ def test_cmab_bai_predict(n_samples, dim_list):
 
 
 @settings(deadline=10000)
-@given(st.just(100), st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=1), st.sampled_from(literal_update_methods))
+@given(
+    st.just(100),
+    st.lists(st.integers(min_value=1, max_value=2), min_size=1, max_size=1),
+    st.sampled_from(literal_update_methods),
+)
 def test_cmab_bai_update(n_samples, dim_list, update_method):
     n_features = dim_list[0]
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -702,7 +728,9 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
         {
             "actions": st.dictionaries(
                 keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries({"dim_list" : st.lists(st.integers(min_value=3,max_value=3), min_size=1, max_size=3)}), 
+                values=st.fixed_dictionaries(
+                    {"dim_list": st.lists(st.integers(min_value=3, max_value=3), min_size=1, max_size=3)}
+                ),
                 min_size=2,
             ),
             "strategy": st.one_of(
@@ -739,7 +767,7 @@ def test_cmab_bai_from_state(state, update_method):
 
 
 @settings(deadline=500)
-@given(st.lists(st.integers(min_value=1,max_value=10), min_size=1, max_size=3))
+@given(st.lists(st.integers(min_value=1, max_value=10), min_size=1, max_size=3))
 def test_create_cmab_bernoulli_cc_cold_start(dim_list):
     action_ids_cost = {"a1": 10, "a2": 20.5}
     # n_features must be > 0
@@ -759,7 +787,7 @@ def test_create_cmab_bernoulli_cc_cold_start(dim_list):
         assert mab1 == mab2
 
         # set subsidy_factor
-        mab1 = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost,  dim_list=dim_list, subsidy_factor=0.42)
+        mab1 = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, dim_list=dim_list, subsidy_factor=0.42)
         mab2 = CmabBernoulliCC(
             actions={
                 "a1": BayesianNeuralNetworkCC.cold_start(dim_list=dim_list, cost=action_ids_cost["a1"]),
@@ -772,7 +800,7 @@ def test_create_cmab_bernoulli_cc_cold_start(dim_list):
 
 
 @settings(deadline=500)
-@given(st.lists(st.integers(min_value=1,max_value=10), min_size=1, max_size=3))
+@given(st.lists(st.integers(min_value=1, max_value=10), min_size=1, max_size=3))
 def test_cmab_cc_can_instantiate(dim_list):
     with pytest.raises(TypeError):
         CmabBernoulliCC()
@@ -829,7 +857,7 @@ def test_cmab_cc_can_instantiate(dim_list):
 
 
 @settings(deadline=10000)
-@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=2))
+@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1, max_value=2), min_size=1, max_size=2))
 def test_cmab_cc_predict(n_samples, dim_list):
     n_features = dim_list[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -887,25 +915,24 @@ def test_cmab_cc_update(n_samples, dim_list, update_method):
 
 @settings(deadline=2000)
 @given(
-    st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=3),
+    st.lists(st.integers(min_value=1, max_value=2), min_size=1, max_size=3),
     st.floats(min_value=0),
     st.floats(min_value=0),
     st.floats(min_value=0, max_value=1),
 )
-def test_cmab_cc_get_state( 
-    dim_list, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
-):
+def test_cmab_cc_get_state(dim_list, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01):
     posterior_params = BayesianNeuralNetworkCC.create_posterior_params(dim_list=dim_list)
 
     for layer_ind in range(len(posterior_params)):
         for layer_parameter, layer_parameter_values in posterior_params[layer_ind].items():
             size = np.array(layer_parameter_values.params_dict["mu"]).shape
             for dist_param in layer_parameter_values.params_dict:
-                layer_parameter_values.params_dict[dist_param] = np.random.uniform(low=-1.0, high=1.0, size=size).tolist()
+                layer_parameter_values.params_dict[dist_param] = np.random.uniform(
+                    low=-1.0, high=1.0, size=size
+                ).tolist()
 
     actions: dict = {
-        "a1": BayesianNeuralNetworkCC(
-            posterior_params=posterior_params, cost=cost_1),
+        "a1": BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost_1),
         "a2": BayesianNeuralNetworkCC.cold_start(dim_list=dim_list, cost=cost_2),
     }
 
@@ -936,10 +963,10 @@ def test_cmab_cc_get_state(
                 keys=st.text(min_size=1, max_size=10),
                 values=st.fixed_dictionaries(
                     {
-                        "dim_list" : st.lists(st.integers(min_value=3,max_value=3), min_size=1, max_size=3),
-                        "cost": st.floats(min_value=0)
-                    }), 
-                   
+                        "dim_list": st.lists(st.integers(min_value=3, max_value=3), min_size=1, max_size=3),
+                        "cost": st.floats(min_value=0),
+                    }
+                ),
                 min_size=2,
             ),
             "strategy": st.one_of(
@@ -976,7 +1003,9 @@ def test_cmab_cc_from_state(state, update_method):
 
 
 @settings(deadline=1000)
-@given(st.integers(min_value=1, max_value=1000), st.lists(st.integers(min_value=1,max_value=3), min_size=1, max_size=2))
+@given(
+    st.integers(min_value=1, max_value=1000), st.lists(st.integers(min_value=1, max_value=3), min_size=1, max_size=2)
+)
 def test_epsilon_greedy_cmab_predict_cold_start(n_samples, dim_list):
     n_features = dim_list[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -991,7 +1020,7 @@ def test_epsilon_greedy_cmab_predict_cold_start(n_samples, dim_list):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=2))
+@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1, max_value=2), min_size=1, max_size=2))
 def test_epsilon_greedy_cmab_bai_predict(n_samples, dim_list):
     n_features = dim_list[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -1006,7 +1035,7 @@ def test_epsilon_greedy_cmab_bai_predict(n_samples, dim_list):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1,max_value=2), min_size=1, max_size=2))
+@given(st.integers(min_value=1, max_value=100), st.lists(st.integers(min_value=1, max_value=2), min_size=1, max_size=2))
 def test_epsilon_greedy_cmab_cc_predict(n_samples, dim_list):
     n_features = dim_list[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
