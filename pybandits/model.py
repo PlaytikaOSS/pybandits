@@ -285,7 +285,7 @@ class StudentTArray(PyBanditsBaseModel):
     shape: Optional[List[PositiveInt]] = None
     params_dict: Optional[Dict[str, Union[List[float], List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
-    sigma: confloat(allow_inf_nan=False) = 5.0
+    sigma: confloat(allow_inf_nan=False) = 10.0
     nu: confloat(allow_inf_nan=False) = 5.0
 
     @root_validator(pre=False, skip_on_failure=False)
@@ -724,7 +724,7 @@ class BayesianNeuralNetwork(Model):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def create_posterior_params(cls, dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]) -> List[Dict[str, StudentTArray]]:
+    def create_posterior_params(cls, dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]=None) -> List[Dict[str, StudentTArray]]:
         """
         Create posterior parameters for a neural network model.
 
@@ -752,6 +752,8 @@ class BayesianNeuralNetwork(Model):
             (weights and biases) for a layer in the neural network. Each dictionary has two
             keys: 'w' for weights and 'b' for biases, with corresponding `StudentTArray` values.
         """
+        if dist_params_init is None:
+                dist_params_init = {}
 
         _dim_list = dim_list.copy()
         _dim_list.append(1)
