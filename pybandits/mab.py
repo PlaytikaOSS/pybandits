@@ -19,28 +19,28 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-import warnings
+import json
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, get_args
+from inspect import isclass
+from typing import Any, Dict, List, Literal, Optional, Set, Union, get_origin
 
 import numpy as np
 
+from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
-    ACTION_IDS_PREFIX,
     ActionId,
     ActionRewardLikelihood,
     BinaryReward,
     Float01,
+    PositiveProbability,
     Predictions,
     PyBanditsBaseModel,
 )
-from pybandits.model import Model
+from pybandits.model import BaseModel, Model
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
-    field_validator,
+    PositiveInt,
     model_validator,
     pydantic_version,
     validate_call,
@@ -69,45 +69,45 @@ class BaseMab(PyBanditsBaseModel, ABC):
         which in turn will be used to instantiate the strategy.
     """
 
-    actions: Dict[ActionId, Model]
+    actions_manager: ActionsManager
     strategy: Strategy
     epsilon: Optional[Float01] = None
     default_action: Optional[ActionId] = None
 
     def __init__(
         self,
-        actions: Dict[ActionId, Model],
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
-        **strategy_kwargs,
+        **kwargs,
     ):
-        if "strategy" in strategy_kwargs:
-            strategy = strategy_kwargs["strategy"]
-            if len(strategy_kwargs) > 1:
-                raise ValueError("strategy should be the only keyword argument.")
-        else:
-            strategy_class = self.model_fields["strategy"].annotation
-            strategy = strategy_class(**strategy_kwargs)
+        class_attributes = {
+            attribute_name: self._get_instantiated_class_attribute(attribute_name, kwargs)
+            for attribute_name in self._get_class_type_attributes()
+        }
+        if kwargs:
+            raise ValueError(f"Unknown arguments: {kwargs.keys()}")
+        super().__init__(**class_attributes, epsilon=epsilon, default_action=default_action)
 
-        super().__init__(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
+    @classmethod
+    def _get_instantiated_class_attribute(cls, attribute_name: str, kwargs: Dict[str, Any]) -> PyBanditsBaseModel:
+        if attribute_name in kwargs:
+            attribute = kwargs[attribute_name]
+        else:
+            attribute_class = cls._get_attribute_type(attribute_name)
+            required_sub_attributes = extract_argument_names_from_function(attribute_class.__init__, True)
+            if not required_sub_attributes:  # case of no native __init__ method, just pydantic generic __init__
+                required_sub_attributes = list(attribute_class.model_fields.keys())
+                sub_attributes = {k: kwargs.pop(k) for k in required_sub_attributes if k in kwargs}
+            else:
+                sub_attributes = {k: kwargs.pop(k) for k in required_sub_attributes if k in kwargs}
+                if "kwargs" in required_sub_attributes:
+                    sub_attributes["kwargs"] = kwargs
+
+            attribute = attribute_class(**sub_attributes)
+        kwargs.pop(attribute_name, None)
+        return attribute
 
     ############################################ Instance Input Validators #############################################
-
-    @field_validator("actions", mode="before")
-    @classmethod
-    def at_least_one_action_is_defined(cls, v):
-        # validate number of actions
-        if len(v) == 0:
-            raise AttributeError("At least one action should be defined.")
-        elif len(v) == 1:
-            warnings.warn("Only a single action was supplied. This MAB will be deterministic.")
-        # validate that all actions are of the same configuration
-        action_models = list(v.values())
-        first_action = action_models[0]
-        first_action_type = type(first_action)
-        if any(not isinstance(action, first_action_type) for action in action_models[1:]):
-            raise AttributeError("All actions should follow the same type.")
-        return v
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -118,7 +118,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             default_action = cls._get_value_with_default("default_action", values)
             if not epsilon and default_action:
                 raise AttributeError("A default action should only be defined when epsilon is defined.")
-            if default_action and default_action not in values["actions"]:
+            if default_action and default_action not in values["actions_manager"].actions:
                 raise AttributeError("The default action must be valid action defined in the actions set.")
             return values
 
@@ -153,10 +153,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
         """
         if forbidden_actions is None:
             forbidden_actions = set()
-
-        if not all(a in self.actions.keys() for a in forbidden_actions):
+        action_ids = set(self.actions.keys())
+        if not all(a in action_ids for a in forbidden_actions):
             raise ValueError("forbidden_actions contains invalid action IDs.")
-        valid_actions = set(self.actions.keys()) - forbidden_actions
+        valid_actions = action_ids - forbidden_actions
         if len(valid_actions) == 0:
             raise ValueError("All actions are forbidden. You must allow at least 1 action.")
         if self.default_action and self.default_action not in valid_actions:
@@ -164,41 +164,35 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         return valid_actions
 
-    def _validate_update_params(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
-    ):
-        """
-        Verify that the given list of action IDs is a subset of the currently defined actions and that
-         the rewards type matches the strategy type.
-
-        Parameters
-        ----------
-        actions : List[ActionId]
-            The selected action for each sample.
-        rewards: List[Union[BinaryReward, List[BinaryReward]]]
-            The reward for each sample.
-        """
-        invalid = set(actions) - set(self.actions.keys())
-        if invalid:
-            raise AttributeError(f"The following invalid action(s) were specified: {invalid}.")
-        if len(actions) != len(rewards):
-            raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
-
     ####################################################################################################################
 
-    @abstractmethod
+    def model_post_init(self, __context: Any) -> None:
+        if self.actions_manager.adaptive_window_size is not None and (
+            not self.epsilon or self.default_action is not None
+        ):
+            raise ValueError("Adaptive window size requires epsilon greedy super strategy with not default action.")
+
+    @property
+    def actions(self) -> Dict[ActionId, Model]:
+        return self.actions_manager.actions
+
     @validate_call
-    def update(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], *args, **kwargs
-    ):
+    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
         """
         Update the multi-armed bandit model.
 
+        Parameters
+        ----------
         actions: List[ActionId]
             The selected action for each sample.
-        rewards: List[Union[BinaryReward, List[BinaryReward]]]
-            The reward for each sample.
+        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+            The binary reward for each sample.
+                If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
+                    rewards = [1, 0, 1, 1, 1, ...]
+                If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
+                    rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
+        self.actions_manager.update(actions=actions, rewards=rewards, **kwargs)
 
     @abstractmethod
     @validate_call
@@ -234,14 +228,15 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The internal state of the model (actions, scores, etc.).
         """
         model_name = self.__class__.__name__
-        state: dict = self._apply_version_adjusted_method("model_dump", "dict")
+        json_state = self._apply_version_adjusted_method("model_dump_json", "json")
+        state = json.loads(json_state)
         return model_name, state
 
     @validate_call
     def _select_epsilon_greedy_action(
         self,
         p: ActionRewardLikelihood,
-        actions: Optional[Dict[ActionId, Model]] = None,
+        actions: Optional[Dict[ActionId, BaseModel]] = None,
     ) -> ActionId:
         """
         Wraps self.strategy.select_action function with epsilon-greedy strategy,
@@ -300,15 +295,74 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         """
         model_attributes = extract_argument_names_from_function(cls.__init__, True)
-        strategy_attributes = list(state["strategy"].keys())
-        attributes_mapping = {k: state[k] for k in model_attributes if k not in strategy_attributes and k in state}
-        attributes_mapping.update({k: state["strategy"][k] for k in strategy_attributes})
-        return cls(**attributes_mapping)
+        class_attributes = {
+            attribute_name: list(state[attribute_name].keys()) for attribute_name in cls._get_class_type_attributes()
+        }
+        flattened_class_attributes = [item for sublist in class_attributes.values() for item in sublist]
+        class_attributes_mapping = {
+            k: state[k] for k in model_attributes if k not in flattened_class_attributes and k in state
+        }
+        class_attributes_mapping.update(
+            {
+                k: state[attribute_name][k]
+                for attribute_name, sub_class_attributes in class_attributes.items()
+                for k in sub_class_attributes
+            }
+        )
+        return cls(**class_attributes_mapping)
+
+    @classmethod
+    def from_old_state(
+        cls,
+        state: dict,
+        adaptive_window_size: Optional[Union[PositiveInt, Literal["inf"]]] = None,
+        delta: Optional[PositiveProbability] = None,
+    ) -> "BaseMab":
+        """
+        Create a new instance of the class from a given model state.
+        The state can be obtained by applying get_state() to a model.
+
+        Parameters
+        ----------
+        state: dict
+            The internal state of a model (actions, strategy, etc.) of the same type.
+            The state is expected to be in the old format of PyBandits < 2.0.0.
+
+        Returns
+        -------
+        model: BaseMab
+            The new model instance.
+
+        """
+        if "actions" not in state or "actions_manager" in state:
+            raise ValueError("The state is expected to be in the old format of PyBandits < 2.0.0.")
+        state["actions_manager"] = {}
+        state["actions_manager"]["actions"] = state.pop("actions")
+        state["actions_manager"]["adaptive_window_size"] = adaptive_window_size
+        state["actions_manager"]["delta"] = delta
+
+        return cls.from_state(state)
+
+    @classmethod
+    def _get_class_type_attributes(cls) -> List[str]:
+        return [
+            attribute_name
+            for attribute_name in cls.model_fields.keys()
+            if isclass(class_ := cls._get_attribute_type(attribute_name))
+            and issubclass(
+                class_,
+                PyBanditsBaseModel,
+            )
+        ]
+
+    @classmethod
+    def _get_attribute_type(cls, attribute_name: str) -> PyBanditsBaseModel:
+        attribute_type = cls._get_field_type(attribute_name)
+        return get_origin(attribute_type) or attribute_type
 
     @classmethod
     def cold_start(
         cls,
-        action_ids: Optional[Set[ActionId]] = None,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
         **kwargs,
@@ -319,8 +373,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        action_ids: Optional[Set[ActionId]]
-            The list of possible actions.
         epsilon: Optional[Float01]
             epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
         default_action: Optional[ActionId]
@@ -334,85 +386,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
         mab: BaseMab
             Multi-Armed Bandit
         """
-        action_specific_kwargs, kwargs = cls._extract_action_specific_kwargs(**kwargs)
-
-        # Extract inner_action_ids
-        inner_action_ids = action_ids or set(action_specific_kwargs.keys())
-        if not inner_action_ids:
-            raise ValueError(
-                "inner_action_ids should be provided either directly or via keyword argument in the form of "
-                "action_id_{model argument name} = {action_id: value}."
-            )
-
-        # Assign model for each action
-        action_model_cold_start, action_general_kwargs = cls._extract_action_model_class_and_attributes(**kwargs)
-        actions = {}
-        for a in inner_action_ids:
-            actions[a] = action_model_cold_start(**action_general_kwargs, **action_specific_kwargs.get(a, {}))
 
         # Instantiate the MAB
-        strategy_kwargs = {k: kwargs[k] for k in kwargs.keys() if k not in action_general_kwargs.keys()}
-        strategy_class = cls.model_fields["strategy"].annotation
-        strategy = strategy_class(**strategy_kwargs)
-        mab = cls(actions=actions, strategy=strategy, epsilon=epsilon, default_action=default_action)
+        mab = cls(epsilon=epsilon, default_action=default_action, **kwargs)
+
         # For contextual multi-armed bandit, until the very first update the model will predict actions randomly,
         # where each action has equal probability to be selected.
         if hasattr(mab, "predict_actions_randomly"):
             mab.predict_actions_randomly = True
         return mab
-
-    @staticmethod
-    def _extract_action_specific_kwargs(**kwargs) -> Tuple[Dict[str, Dict], Dict[str, Any]]:
-        """
-        Utility function to extract kwargs that are specific for each action when constructing the action model.
-
-        Parameters
-        ----------
-        kwargs : Dict[str, Any]
-            Additional parameters for the mab and for the action model.
-
-        Returns
-        -------
-        action_specific_kwargs : Dict[str, Dict]
-            Dictionary of actions and the parameters of their associated model.
-        kwargs : Dict[str, Any]
-            Dictionary of parameters and their values, without the action_specific_kwargs.
-        """
-        action_specific_kwargs = defaultdict(dict)
-        for keyword in list(kwargs):
-            argument = kwargs[keyword]
-            if keyword.startswith(ACTION_IDS_PREFIX) and type(argument) is dict:
-                kwargs.pop(keyword)
-                inner_keyword = keyword.split(ACTION_IDS_PREFIX)[1]
-                for action_id, value in argument.items():
-                    action_specific_kwargs[action_id][inner_keyword] = value
-        return dict(action_specific_kwargs), kwargs
-
-    @classmethod
-    def _extract_action_model_class_and_attributes(cls, **kwargs) -> Tuple[Callable, Dict[str, Dict]]:
-        """
-        Utility function to extract kwargs that are specific for each action when constructing the action model.
-
-        Parameters
-        ----------
-        kwargs : Dict[str, Any]
-            Additional parameters for the mab and for the action model.
-
-        Returns
-        -------
-        action_model_cold_start : Callable
-            Function handle for factoring the required action model.
-        action_general_kwargs : Dict[str, any]
-            Dictionary of parameters and their values for the action model.
-        """
-        action_model_class = get_args(cls.model_fields["actions"].annotation)[1]
-        if hasattr(action_model_class, "cold_start"):
-            action_model_cold_start_init = action_model_cold_start = action_model_class.cold_start
-        else:
-            action_model_cold_start_init = action_model_class.__init__
-            action_model_cold_start = action_model_class
-
-        action_model_attributes = extract_argument_names_from_function(action_model_cold_start_init, True)
-
-        action_general_kwargs = {k: kwargs[k] for k in action_model_attributes if k in kwargs.keys()}
-        return action_model_cold_start, action_general_kwargs

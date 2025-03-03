@@ -32,6 +32,7 @@ from pydantic import (
     Field,
     NonNegativeFloat,
     NonNegativeInt,
+    NonPositiveInt,
     PositiveInt,
     PrivateAttr,
     ValidationError,
@@ -39,6 +40,7 @@ from pydantic import (
     conint,
     constr,
 )
+from pydantic.generics import GenericModel
 from pydantic.version import VERSION as _VERSION
 
 # Define the pydantic versions
@@ -270,6 +272,7 @@ __all__ = [
     "validate_call",
     "NonNegativeFloat",
     "NonNegativeInt",
+    "NonPositiveInt",
     "PositiveInt",
     "BaseModel",
     "ValidationError",
@@ -278,4 +281,5 @@ __all__ = [
     "constr",
     "Field",
     "PrivateAttr",
+    "GenericModel",
 ]

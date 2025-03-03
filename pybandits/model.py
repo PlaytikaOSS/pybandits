@@ -22,7 +22,7 @@
 import warnings
 from abc import ABC, abstractmethod
 from random import betavariate
-from typing import Any, List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import pymc.math as pmath
@@ -50,27 +50,35 @@ from pybandits.pydantic_version_compatibility import (
 UpdateMethods = Literal["MCMC", "VI"]
 
 
-class Model(PyBanditsBaseModel, ABC):
-    """
-    Class to model the prior distributions.
-    """
-
+class BaseModel(PyBanditsBaseModel, ABC):
     @abstractmethod
     def sample_proba(self) -> Probability:
         """
         Sample the probability of getting a positive reward.
         """
 
+    @validate_call
     @abstractmethod
-    def update(self, rewards: List[Any]):
+    def update(self, rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
         """
-        Update the model parameters.
+        Update the model.
+
+        Parameters
+        ----------
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+            A list of binary rewards.
+        """
+
+    @abstractmethod
+    def reset(self):
+        """
+        Reset the model.
         """
 
 
-class BaseBeta(Model):
+class Model(BaseModel, ABC):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits.
+    Class to model the prior distributions.
 
     Parameters
     ----------
@@ -82,6 +90,105 @@ class BaseBeta(Model):
 
     n_successes: PositiveInt = 1
     n_failures: PositiveInt = 1
+
+    @validate_call
+    def update(self, rewards: List[BinaryReward], **kwargs):
+        """
+        Update n_successes and n_failures.
+
+        Parameters
+        ----------
+        rewards: List[BinaryReward]
+            A list of binary rewards.
+        """
+        self.n_successes += sum(rewards)
+        self.n_failures += len(rewards) - sum(rewards)
+        self._update(rewards=rewards, **kwargs)
+
+    @abstractmethod
+    def _update(self, rewards: List[BinaryReward], **kwargs):
+        """
+        Update the model.
+
+        Parameters
+        ----------
+        rewards: List[BinaryReward]
+            A list of binary rewards.
+        """
+
+    def reset(self):
+        """
+        Reset the model.
+        """
+        self.n_successes = 1
+        self.n_failures = 1
+        self._reset()
+
+    @abstractmethod
+    def _reset(self):
+        """
+        Reset the model.
+        """
+
+
+class ModelMO(BaseModel, ABC):
+    """
+    Multi-objective extension of Model.
+    Parameters
+    ----------
+    models : List[Model]
+        List of models.
+    """
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+        models: List[Model] = Field(..., min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        models: List[Model] = Field(..., min_length=1)
+    else:
+        raise ValueError("Invalid version.")
+
+    @validate_call
+    def sample_proba(self, **kwargs) -> List[Probability]:
+        """
+        Sample the probability of getting a positive reward.
+        Returns
+        -------
+        prob: List[Probability]
+            Probabilities of getting a positive reward for each objective.
+        """
+        return [x.sample_proba(**kwargs) for x in self.models]
+
+    @validate_call
+    def update(self, rewards: List[List[BinaryReward]], **kwargs):
+        """
+        Update the Beta model using the provided rewards.
+        Parameters
+        ----------
+        rewards: List[List[BinaryReward]]
+            A list of rewards, where each reward is in turn a list containing the reward of the Beta model
+            associated to each objective.
+            For example, `[[1, 1], [1, 0], [1, 1], [1, 0], [1, 1]]`.
+        kwargs: Dict[str, Any]
+            Additional arguments for the Bayesian Logistic Regression MO child model.
+        """
+        if any(len(x) != len(self.models) for x in rewards):
+            raise AttributeError("The shape of rewards is incorrect")
+
+        for i, model in enumerate(self.models):
+            model.update(rewards=[r[i] for r in rewards], **kwargs)
+
+    def reset(self):
+        """
+        Reset the model.
+        """
+        for model in self.models:
+            model.reset()
+
+
+class BaseBeta(Model):
+    """
+    Beta Distribution model for Bernoulli multi-armed bandits.
+    """
 
     @model_validator(mode="before")
     @classmethod
@@ -111,19 +218,6 @@ class BaseBeta(Model):
         """
         return sqrt((self.n_successes * self.n_failures) / (self.count * (self.count - 1)))
 
-    @validate_call
-    def update(self, rewards: List[BinaryReward]):
-        """
-        Update n_successes and and n_failures.
-
-        Parameters
-        ----------
-        rewards: List[BinaryReward]
-            A list of binary rewards.
-        """
-        self.n_successes += sum(rewards)
-        self.n_failures += len(rewards) - sum(rewards)
-
     def sample_proba(self) -> Probability:
         """
         Sample the probability of getting a positive reward.
@@ -134,6 +228,20 @@ class BaseBeta(Model):
             Probability of getting a positive reward.
         """
         return betavariate(self.n_successes, self.n_failures)  # type: ignore
+
+    def _update(self, rewards: List[BinaryReward], **kwargs):
+        """
+        Update the model.
+
+        Parameters
+        ----------
+        rewards: List[BinaryReward]
+            A list of binary rewards.
+        """
+        pass
+
+    def _reset(self):
+        pass
 
 
 class Beta(BaseBeta):
@@ -155,17 +263,17 @@ class BetaCC(BaseBeta):
     cost: NonNegativeFloat
 
 
-class BetaMO(Model):
+class BetaMO(ModelMO):
     """
     Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
     Parameters
     ----------
-    counters: List[Beta] of shape (n_objectives,)
+    models: List[Beta] of shape (n_objectives,)
         List of Beta distributions.
     """
 
-    counters: List[Beta]
+    models: List[Beta]
 
     @validate_call
     def sample_proba(self) -> List[Probability]:
@@ -177,10 +285,10 @@ class BetaMO(Model):
         prob: List[Probability]
             Probabilities of getting a positive reward for each objective.
         """
-        return [x.sample_proba() for x in self.counters]
+        return [x.sample_proba() for x in self.models]
 
     @validate_call
-    def update(self, rewards: List[List[BinaryReward]]):
+    def _update(self, rewards: List[List[BinaryReward]]):
         """
         Update the Beta model using the provided rewards.
 
@@ -191,10 +299,10 @@ class BetaMO(Model):
             associated to each objective.
             For example, `[[1, 1], [1, 0], [1, 1], [1, 0], [1, 1]]`.
         """
-        if any(len(x) != len(self.counters) for x in rewards):
+        if any(len(x) != len(self.models) for x in rewards):
             raise AttributeError("The shape of rewards is incorrect")
 
-        for i, counter in enumerate(self.counters):
+        for i, counter in enumerate(self.models):
             counter.update([r[i] for r in rewards])
 
     @classmethod
@@ -222,9 +330,13 @@ class BetaMO(Model):
         blr: BayesianLogisticRegrssion
             The Bayesian Logistic Regression model.
         """
-        counters = n_objectives * [Beta()]
-        blr = cls(counters=counters, **kwargs)
+        models = n_objectives * [Beta()]
+        blr = cls(models=models, **kwargs)
         return blr
+
+    def _reset(self):
+        for model in self.models:
+            model._reset()
 
 
 class BetaMOCC(BetaMO):
@@ -233,13 +345,16 @@ class BetaMOCC(BetaMO):
 
     Parameters
     ----------
-    counters: List[BetaCC] of shape (n_objectives,)
+    models: List[BetaCC] of shape (n_objectives,)
         List of Beta distributions.
     cost: NonNegativeFloat
         Cost associated to the Beta distribution.
     """
 
     cost: NonNegativeFloat
+
+
+SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BetaMO])
 
 
 class StudentT(PyBanditsBaseModel):
@@ -432,7 +547,7 @@ class BayesianLogisticRegression(Model):
         return prob, weighted_sum
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def update(self, context: ArrayLike, rewards: List[BinaryReward]):
+    def _update(self, context: ArrayLike, rewards: List[BinaryReward]):
         """
         Update the model parameters.
 
@@ -443,7 +558,6 @@ class BayesianLogisticRegression(Model):
         rewards: List[BinaryReward]
             A list of binary rewards.
         """
-
         # check input args
         self.check_context_matrix(context=context)
         if len(context) != len(rewards):
@@ -535,6 +649,10 @@ class BayesianLogisticRegression(Model):
             **kwargs,
         )
 
+    def _reset(self):
+        self.alpha = StudentT()
+        self.betas = [StudentT() for _ in range(len(self.betas))]
+
 
 class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     """
@@ -563,3 +681,6 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     """
 
     cost: NonNegativeFloat
+
+
+CmabModelType = TypeVar("CmabModelType", bound=BayesianLogisticRegression)

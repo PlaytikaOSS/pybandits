@@ -24,9 +24,11 @@ import json
 from copy import deepcopy
 from typing import List
 
+import numpy as np
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 from pybandits.base import BinaryReward, Float01
 from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
@@ -39,6 +41,7 @@ from pybandits.strategy import (
     MultiObjectiveCostControlBandit,
 )
 from pybandits.utils import to_serializable_dict
+from tests.test_actions_manager import REFERENCE_DELTA
 from tests.test_utils import is_serializable
 
 
@@ -67,13 +70,13 @@ def test_base_smab_update_ok(r1, r2):
 
 
 def test_can_instantiate_smab():
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         SmabBernoulli()
     with pytest.raises(AttributeError):
         SmabBernoulli(actions={})
     with pytest.warns(UserWarning):
         SmabBernoulli(actions={"action1": Beta()})
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValueError, TypeError)):
         SmabBernoulli(
             actions={
                 "action1": None,
@@ -204,7 +207,13 @@ def test_smab_get_state(a, b, c, d):
 
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {},
             "epsilon": None,
             "default_action": None,
@@ -216,28 +225,98 @@ def test_smab_get_state(a, b, c, d):
     assert smab_state == expected_state
 
 
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "n_successes": st.integers(min_value=1, max_value=100),
-                        "n_failures": st.integers(min_value=1, max_value=100),
-                    },
-                ),
-                min_size=2,
+@composite
+def smab_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                },
             ),
-            "strategy": st.fixed_dictionaries({}),
-        }
+            min_size=2,
+        )
     )
-)
+
+    actions_manager = {"actions": actions}
+    state = {
+        "actions_manager": actions_manager,
+        "strategy": {},
+    }
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+
+    return state
+
+
+@given(state=smab_state())
 def test_smab_from_state(state):
     smab = SmabBernoulli.from_state(state)
     assert isinstance(smab, SmabBernoulli)
 
-    expected_actions = state["actions"]
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_smab = SmabBernoulli.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        SmabBernoulli.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_smab = SmabBernoulli.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_smab == memory_less_smab
+
+    expected_actions = state["actions_manager"]["actions"]
     actual_actions = to_serializable_dict(smab.actions)  # Normalize the dict
     assert expected_actions == actual_actions
 
@@ -302,7 +381,7 @@ def test_smabbai_update():
 
 def test_smabbai_with_betacc():
     # Fails because smab bernoulli with BAI shouldn't support BetaCC
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValidationError, TypeError)):
         SmabBernoulliBAI(
             actions={
                 "a1": BetaCC(cost=10),
@@ -323,7 +402,13 @@ def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
     smab = SmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {"exploit_p": exploit_p},
             "epsilon": None,
             "default_action": None,
@@ -337,32 +422,111 @@ def test_smab_bai_get_state(a, b, c, d, exploit_p: Float01):
     assert is_serializable(smab_state), "Internal state is not serializable"
 
 
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "n_successes": st.integers(min_value=1, max_value=100),
-                        "n_failures": st.integers(min_value=1, max_value=100),
-                    },
-                ),
-                min_size=2,
+@st.composite
+def smab_bai_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                }
             ),
-            "strategy": st.one_of(
-                st.just({}),
-                st.just({"exploit_p": None}),
-                st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
-            ),
-        }
+            min_size=2,
+        )
     )
-)
+
+    actions_manager = {"actions": actions}
+
+    # Draw the strategy separately
+    strategy = draw(
+        st.one_of(
+            st.just({}),
+            st.just({"exploit_p": None}),
+            st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
+        )
+    )
+
+    state = {
+        "actions_manager": actions_manager,
+        "strategy": strategy,
+    }
+
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+        state["epsilon"] = epsilon
+
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            else:
+                default_action_index = draw(st.sampled_from([None, 1]))
+                default_action = (
+                    list(actions.keys())[default_action_index] if default_action_index is not None else None
+                )
+
+            state["default_action"] = default_action
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+
+    return state
+
+
+@given(state=smab_bai_state())
 def test_smab_bai_from_state(state):
     smab = SmabBernoulliBAI.from_state(state)
     assert isinstance(smab, SmabBernoulliBAI)
 
-    expected_actions = state["actions"]
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_smab = SmabBernoulliBAI.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        SmabBernoulliBAI.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_smab = SmabBernoulliBAI.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_smab == memory_less_smab
+
+    expected_actions = state["actions_manager"]["actions"]
     actual_actions = to_serializable_dict(smab.actions)  # Normalize the dict
     assert expected_actions == actual_actions
     expected_exploit_p = smab.strategy.get_expected_value_from_state(state, "exploit_p")
@@ -441,8 +605,8 @@ def test_smabcc_update():
     st.integers(min_value=1),
     st.integers(min_value=1),
     st.integers(min_value=1),
-    st.floats(min_value=0),
-    st.floats(min_value=0),
+    st.floats(min_value=0, max_value=1),
+    st.floats(min_value=0, max_value=1),
     st.floats(min_value=0, max_value=1),
 )
 def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegativeFloat, subsidy_factor: Float01):
@@ -453,7 +617,13 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
     smab = SmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {
                 "subsidy_factor": subsidy_factor,
             },
@@ -469,33 +639,113 @@ def test_smab_cc_get_state(a, b, c, d, cost1: NonNegativeFloat, cost2: NonNegati
     assert is_serializable(smab_state), "Internal state is not serializable"
 
 
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "n_successes": st.integers(min_value=1, max_value=100),
-                        "n_failures": st.integers(min_value=1, max_value=100),
-                        "cost": st.floats(min_value=0),
-                    },
-                ),
-                min_size=2,
+@st.composite
+def smab_cc_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                    "cost": st.floats(min_value=0, max_value=1),
+                }
             ),
-            "strategy": st.one_of(
-                st.just({}),
-                st.just({"subsidy_factor": None}),
-                st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
-            ),
-        }
+            min_size=2,
+        )
     )
-)
+
+    actions_manager = {"actions": actions}
+
+    # Draw the strategy separately
+    strategy = draw(
+        st.one_of(
+            st.just({}),
+            st.just({"subsidy_factor": None}),
+            st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
+        )
+    )
+
+    state = {
+        "actions_manager": actions_manager,
+        "strategy": strategy,
+    }
+
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+        state["epsilon"] = epsilon
+
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            else:
+                default_action_index = draw(st.sampled_from([None, 1]))
+                default_action = (
+                    list(actions.keys())[default_action_index] if default_action_index is not None else None
+                )
+
+            state["default_action"] = default_action
+
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+
+    return state
+
+
+@given(state=smab_cc_state())
 def test_smab_cc_from_state(state):
     smab = SmabBernoulliCC.from_state(state)
     assert isinstance(smab, SmabBernoulliCC)
 
-    expected_actions = state["actions"]
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_smab = SmabBernoulliCC.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        SmabBernoulliCC.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_smab = SmabBernoulliCC.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_smab == memory_less_smab
+
+    expected_actions = state["actions_manager"]["actions"]
     actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
     assert expected_actions == actual_actions
     expected_subsidy_factor = smab.strategy.get_expected_value_from_state(state, "subsidy_factor")
@@ -520,14 +770,14 @@ def test_can_init_smab_mo(a_list):
     s = SmabBernoulliMO(
         actions={
             "a1": BetaMO(
-                counters=[
+                models=[
                     Beta(n_successes=a, n_failures=b),
                     Beta(n_successes=c, n_failures=d),
                     Beta(n_successes=e, n_failures=f),
                 ]
             ),
             "a2": BetaMO(
-                counters=[
+                models=[
                     Beta(n_successes=d, n_failures=a),
                     Beta(n_successes=e, n_failures=b),
                     Beta(n_successes=f, n_failures=c),
@@ -536,14 +786,14 @@ def test_can_init_smab_mo(a_list):
         },
     )
     assert s.actions["a1"] == BetaMO(
-        counters=[
+        models=[
             Beta(n_successes=a, n_failures=b),
             Beta(n_successes=c, n_failures=d),
             Beta(n_successes=e, n_failures=f),
         ]
     )
     assert s.actions["a2"] == BetaMO(
-        counters=[
+        models=[
             Beta(n_successes=d, n_failures=a),
             Beta(n_successes=e, n_failures=b),
             Beta(n_successes=f, n_failures=c),
@@ -556,9 +806,9 @@ def test_all_actions_must_have_same_number_of_objectives_smab_mo():
     with pytest.raises(ValueError):
         SmabBernoulliMO(
             actions={
-                "a1": BetaMO(counters=[Beta(), Beta()]),
-                "a2": BetaMO(counters=[Beta(), Beta()]),
-                "a3": BetaMO(counters=[Beta(), Beta(), Beta()]),
+                "a1": BetaMO(models=[Beta(), Beta()]),
+                "a2": BetaMO(models=[Beta(), Beta()]),
+                "a3": BetaMO(models=[Beta(), Beta(), Beta()]),
             },
         )
 
@@ -602,14 +852,14 @@ def test_smab_mo_get_state(a_list):
 
     actions = {
         "a1": BetaMO(
-            counters=[
+            models=[
                 Beta(n_successes=a, n_failures=b),
                 Beta(n_successes=c, n_failures=d),
                 Beta(n_successes=e, n_failures=f),
             ]
         ),
         "a2": BetaMO(
-            counters=[
+            models=[
                 Beta(n_successes=d, n_failures=a),
                 Beta(n_successes=e, n_failures=b),
                 Beta(n_successes=f, n_failures=c),
@@ -619,7 +869,13 @@ def test_smab_mo_get_state(a_list):
     smab = SmabBernoulliMO(actions=actions)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {},
             "epsilon": None,
             "default_action": None,
@@ -633,36 +889,108 @@ def test_smab_mo_get_state(a_list):
     assert is_serializable(smab_state), "Internal state is not serializable"
 
 
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "counters": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "n_successes": st.integers(min_value=1, max_value=100),
-                                    "n_failures": st.integers(min_value=1, max_value=100),
-                                },
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        )
-                    }
-                ),
-                min_size=2,
+@composite
+def smab_mo_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "models": st.lists(
+                        st.fixed_dictionaries(
+                            {
+                                "n_successes": st.integers(min_value=1, max_value=100),
+                                "n_failures": st.integers(min_value=1, max_value=100),
+                            },
+                        ),
+                        min_size=3,
+                        max_size=3,
+                    )
+                }
             ),
-            "strategy": st.fixed_dictionaries({}),
-        }
+            min_size=2,
+        )
     )
-)
+
+    actions_manager = {"actions": actions}
+    state = {
+        "actions_manager": actions_manager,
+        "strategy": {},
+    }
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum(
+                    [a["models"][0]["n_successes"] + a["models"][0]["n_failures"] - 2 for a in actions.values()]
+                )
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+
+    return state
+
+
+@given(state=smab_mo_state())
 def test_smab_mo_from_state(state):
     smab = SmabBernoulliMO.from_state(state)
     assert isinstance(smab, SmabBernoulliMO)
 
-    expected_actions = state["actions"]
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_smab = SmabBernoulliMO.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        SmabBernoulliMO.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_smab = SmabBernoulliMO.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_smab == memory_less_smab
+
+    expected_actions = state["actions_manager"]["actions"]
     actual_actions = json.loads(json.dumps(smab.actions, default=dict))  # Normalize the dict
     assert expected_actions == actual_actions
 
@@ -684,7 +1012,7 @@ def test_can_init_smab_mo_cc(a_list):
     s = SmabBernoulliMOCC(
         actions={
             "a1": BetaMOCC(
-                counters=[
+                models=[
                     Beta(n_successes=a, n_failures=b),
                     Beta(n_successes=c, n_failures=d),
                     Beta(n_successes=e, n_failures=f),
@@ -692,7 +1020,7 @@ def test_can_init_smab_mo_cc(a_list):
                 cost=g,
             ),
             "a2": BetaMOCC(
-                counters=[
+                models=[
                     Beta(n_successes=d, n_failures=a),
                     Beta(n_successes=e, n_failures=b),
                     Beta(n_successes=f, n_failures=c),
@@ -702,7 +1030,7 @@ def test_can_init_smab_mo_cc(a_list):
         },
     )
     assert s.actions["a1"] == BetaMOCC(
-        counters=[
+        models=[
             Beta(n_successes=a, n_failures=b),
             Beta(n_successes=c, n_failures=d),
             Beta(n_successes=e, n_failures=f),
@@ -710,7 +1038,7 @@ def test_can_init_smab_mo_cc(a_list):
         cost=g,
     )
     assert s.actions["a2"] == BetaMOCC(
-        counters=[
+        models=[
             Beta(n_successes=d, n_failures=a),
             Beta(n_successes=e, n_failures=b),
             Beta(n_successes=f, n_failures=c),
@@ -724,9 +1052,9 @@ def test_all_actions_must_have_same_number_of_objectives_smab_mo_cc():
     with pytest.raises(ValueError):
         SmabBernoulliMOCC(
             actions={
-                "action 1": BetaMOCC(counters=[Beta(), Beta()], cost=1),
-                "action 2": BetaMOCC(counters=[Beta(), Beta()], cost=1),
-                "action 3": BetaMOCC(counters=[Beta(), Beta(), Beta()], cost=1),
+                "action 1": BetaMOCC(models=[Beta(), Beta()], cost=1),
+                "action 2": BetaMOCC(models=[Beta(), Beta()], cost=1),
+                "action 3": BetaMOCC(models=[Beta(), Beta(), Beta()], cost=1),
             },
         )
 
@@ -782,7 +1110,7 @@ def test_smab_mo_cc_get_state(a_list):
 
     actions = {
         "a1": BetaMOCC(
-            counters=[
+            models=[
                 Beta(n_successes=a, n_failures=b),
                 Beta(n_successes=c, n_failures=d),
                 Beta(n_successes=e, n_failures=f),
@@ -790,7 +1118,7 @@ def test_smab_mo_cc_get_state(a_list):
             cost=g,
         ),
         "a2": BetaMOCC(
-            counters=[
+            models=[
                 Beta(n_successes=d, n_failures=a),
                 Beta(n_successes=e, n_failures=b),
                 Beta(n_successes=f, n_failures=c),
@@ -801,7 +1129,13 @@ def test_smab_mo_cc_get_state(a_list):
     smab = SmabBernoulliMOCC(actions=actions)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {},
             "epsilon": None,
             "default_action": None,
@@ -815,37 +1149,108 @@ def test_smab_mo_cc_get_state(a_list):
     assert is_serializable(smab_state), "Internal state is not serializable"
 
 
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "counters": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "n_successes": st.integers(min_value=1, max_value=100),
-                                    "n_failures": st.integers(min_value=1, max_value=100),
-                                },
-                            ),
-                            min_size=3,
-                            max_size=3,
+@composite
+def smab_mocc_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "models": st.lists(
+                        st.fixed_dictionaries(
+                            {
+                                "n_successes": st.integers(min_value=1, max_value=100),
+                                "n_failures": st.integers(min_value=1, max_value=100),
+                            },
                         ),
-                        "cost": st.floats(min_value=0),
-                    }
-                ),
-                min_size=2,
+                        min_size=3,
+                        max_size=3,
+                    ),
+                    "cost": st.floats(min_value=0, max_value=1),
+                }
             ),
-            "strategy": st.fixed_dictionaries({}),
-        }
+            min_size=2,
+        )
     )
-)
+
+    actions_manager = {"actions": actions}
+    state = {
+        "actions_manager": actions_manager,
+        "strategy": {},
+    }
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum(
+                    [a["models"][0]["n_successes"] + a["models"][0]["n_failures"] - 2 for a in actions.values()]
+                )
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+    return state
+
+
+@given(state=smab_mocc_state())
 def test_smab_mo_cc_from_state(state):
     smab = SmabBernoulliMOCC.from_state(state)
     assert isinstance(smab, SmabBernoulliMOCC)
 
-    expected_actions = state["actions"]
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_smab = SmabBernoulliMOCC.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        SmabBernoulliMOCC.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_smab = SmabBernoulliMOCC.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_smab == memory_less_smab
+
+    expected_actions = state["actions_manager"]["actions"]
     actual_actions = to_serializable_dict(smab.actions)  # Normalize the dict
     assert expected_actions == actual_actions
 
@@ -864,7 +1269,7 @@ def test_smab_mo_cc_from_state(state):
     st.integers(min_value=1),
     st.integers(min_value=1),
 )
-def test_can_instantiate_epsilon_greddy_smab_with_params(a, b):
+def test_can_instantiate_epsilon_greedy_smab_with_params(a, b):
     s = SmabBernoulli(
         actions={
             "action1": Beta(n_successes=a, n_failures=b),
@@ -897,13 +1302,13 @@ def test_epsilon_greedy_smab_predict(n_samples: int):
     _, _ = s.predict(n_samples=n_samples, forbidden_actions=forbidden_actions)
 
 
-def test_epsilon_greddy_smabbai_predict(n_samples: int):
+def test_epsilon_greedy_smabbai_predict(n_samples: int):
     n_samples = 1000
     s = SmabBernoulliBAI(actions={"a1": Beta(), "a2": Beta()}, epsilon=0.1, default_action="a1")
     _, _ = s.predict(n_samples=n_samples)
 
 
-def test_epsilon_greddy_smabcc_predict(n_samples: int):
+def test_epsilon_greedy_smabcc_predict(n_samples: int):
     n_samples = 1000
     s = SmabBernoulliCC(
         actions={
@@ -917,7 +1322,7 @@ def test_epsilon_greddy_smabcc_predict(n_samples: int):
     _, _ = s.predict(n_samples=n_samples)
 
 
-def test_epsilon_greddy_smab_mo_predict(n_samples: int):
+def test_epsilon_greedy_smab_mo_predict(n_samples: int):
     n_samples = 1000
 
     s = SmabBernoulliMO.cold_start(action_ids={"a1", "a2"}, n_objectives=3, epsilon=0.1, default_action="a1")
@@ -926,7 +1331,7 @@ def test_epsilon_greddy_smab_mo_predict(n_samples: int):
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)
 
 
-def test_epsilon_greddy_smab_mo_cc_predict(n_samples: int):
+def test_epsilon_greedy_smab_mo_cc_predict(n_samples: int):
     n_samples = 1000
 
     s = SmabBernoulliMOCC.cold_start(
@@ -935,3 +1340,290 @@ def test_epsilon_greddy_smab_mo_cc_predict(n_samples: int):
 
     forbidden = None
     s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.sampled_from([None, 0.1]),
+    st.sampled_from([None, "action1"]),
+)
+def test_epsilon_greedy_smab_get_state(a, b, c, d, epsilon, default_action):
+    if default_action is not None and epsilon is None:
+        with pytest.raises(AttributeError):
+            SmabBernoulli(
+                actions={
+                    "action1": Beta(n_successes=a, n_failures=b),
+                    "action2": Beta(n_successes=c, n_failures=d),
+                },
+                epsilon=epsilon,
+                default_action=default_action,
+            )
+    else:
+        actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
+        smab = SmabBernoulli(actions=actions, epsilon=epsilon, default_action=default_action)
+
+        expected_state = to_serializable_dict(
+            {
+                "actions_manager": {
+                    "actions": actions,
+                    "adaptive_window_size": None,
+                    "delta": None,
+                    "actions_memory": None,
+                    "rewards_memory": None,
+                },
+                "strategy": {},
+                "epsilon": epsilon,
+                "default_action": default_action,
+            }
+        )
+
+        class_name, smab_state = smab.get_state()
+        assert class_name == "SmabBernoulli"
+        assert smab_state == expected_state
+
+
+########################################################################################################################
+
+
+# Smab with adaptive window size
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_can_instantiate_adaptive_window_smab_with_params(a, b, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        with pytest.raises(AttributeError):
+            SmabBernoulli(
+                actions={
+                    "action1": Beta(n_successes=a, n_failures=b),
+                    "action2": Beta(n_successes=a, n_failures=b),
+                },
+                adaptive_window_size=adaptive_window_size,
+                delta=delta,
+                epsilon=epsilon,
+            )
+
+    else:
+        s = SmabBernoulli(
+            actions={
+                "action1": Beta(n_successes=a, n_failures=b),
+                "action2": Beta(n_successes=a, n_failures=b),
+            },
+            adaptive_window_size=adaptive_window_size,
+            delta=delta,
+            epsilon=epsilon,
+        )
+        assert (s.actions["action1"].n_successes == a) and (s.actions["action1"].n_failures == b)
+        assert s.actions["action1"] == s.actions["action2"]
+
+
+@given(
+    st.just(100),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_smab_predict(n_samples, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+    s = SmabBernoulli(
+        actions={
+            "a0": Beta(),
+            "a1": Beta(n_successes=5, n_failures=5),
+            "forb_1": Beta(n_successes=10, n_failures=1),
+            "best": Beta(n_successes=10, n_failures=5),
+            "forb_2": Beta(n_successes=100, n_failures=4),
+            "a5": Beta(),
+        },
+        adaptive_window_size=adaptive_window_size,
+        delta=delta,
+        epsilon=epsilon,
+    )
+    forbidden_actions = set(["forb_1", "forb_2"])
+
+    _, _ = s.predict(n_samples=n_samples, forbidden_actions=forbidden_actions)
+
+
+@settings(deadline=500)
+@given(
+    st.just(100),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_smabbai_predict(n_samples, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+    s = SmabBernoulliBAI(
+        actions={"a1": Beta(), "a2": Beta()}, adaptive_window_size=adaptive_window_size, delta=delta, epsilon=epsilon
+    )
+    _, _ = s.predict(n_samples=n_samples)
+
+
+@settings(deadline=1000)
+@given(
+    st.just(100),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_smabcc_predict(n_samples, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+    s = SmabBernoulliCC(
+        actions={
+            "a1": BetaCC(n_successes=1, n_failures=2, cost=10),
+            "a2": BetaCC(n_successes=3, n_failures=4, cost=20),
+        },
+        subsidy_factor=0.7,
+        adaptive_window_size=adaptive_window_size,
+        delta=delta,
+        epsilon=epsilon,
+    )
+    _, _ = s.predict(n_samples=n_samples)
+
+
+@settings(deadline=500)
+@given(
+    st.just(100),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_smab_mo_predict(n_samples, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+
+    s = SmabBernoulliMO.cold_start(
+        action_ids={"a1", "a2"}, n_objectives=3, adaptive_window_size=adaptive_window_size, delta=delta, epsilon=epsilon
+    )
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+@settings(deadline=1000)
+@given(
+    st.just(100),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_smab_mo_cc_predict(n_samples, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+
+    s = SmabBernoulliMOCC.cold_start(
+        action_ids_cost={"a1": 1, "a2": 2},
+        n_objectives=2,
+        adaptive_window_size=adaptive_window_size,
+        delta=delta,
+        epsilon=epsilon,
+    )
+
+    forbidden = None
+    s.predict(n_samples=n_samples, forbidden_actions=forbidden)
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=200, max_value=1000),
+    st.one_of(
+        st.integers(min_value=200, max_value=1000),
+        st.just("inf"),
+    ),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(3),
+    st.just(0.1),
+)
+def test_adaptive_window_smab_mo_update(n_samples, adaptive_window_size, delta, n_objectives, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        with pytest.raises(AttributeError):
+            SmabBernoulliMO.cold_start(
+                action_ids={"a1", "a2"},
+                n_objectives=n_objectives,
+                adaptive_window_size=adaptive_window_size,
+                delta=delta,
+                epsilon=epsilon,
+            )
+    else:
+        actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
+        rewards = np.random.choice([0, 1], size=(n_samples, n_objectives)).tolist()
+
+        mab = SmabBernoulliMO.cold_start(
+            action_ids={"a1", "a2"},
+            n_objectives=n_objectives,
+            adaptive_window_size=adaptive_window_size,
+            delta=delta,
+            epsilon=epsilon,
+        )
+        mab.update(actions=actions, rewards=rewards)
+        expected_length = adaptive_window_size if adaptive_window_size != "inf" else n_samples
+        assert list(mab.actions_manager.rewards_memory) == rewards[-expected_length:]
+        assert list(mab.actions_manager.actions_memory) == actions[-expected_length:]
+
+        # Change reward statistic, expect to hold only part of the data in the memory
+        new_rewards = np.ones_like(rewards).tolist()
+        mab.update(actions=actions, rewards=new_rewards)
+        assert len(mab.actions_manager.rewards_memory) < expected_length
+        assert len(mab.actions_manager.actions_memory) < expected_length
+
+
+@given(
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.integers(min_value=1),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_smab_get_state(a, b, c, d, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+    elif adaptive_window_size is not None and delta is None:
+        delta = 0.1
+    actions = {"action1": Beta(n_successes=a, n_failures=b), "action2": Beta(n_successes=c, n_failures=d)}
+    smab = SmabBernoulli(actions=actions, adaptive_window_size=adaptive_window_size, delta=delta, epsilon=epsilon)
+    if adaptive_window_size is not None:
+        expected_state = to_serializable_dict(
+            {
+                "actions_manager": {
+                    "actions": actions,
+                    "adaptive_window_size": adaptive_window_size,
+                    "delta": delta,
+                    "actions_memory": [],
+                    "rewards_memory": [],
+                },
+                "strategy": {},
+                "default_action": None,
+                "epsilon": epsilon,
+            }
+        )
+    else:
+        expected_state = to_serializable_dict(
+            {
+                "actions_manager": {
+                    "actions": actions,
+                    "adaptive_window_size": adaptive_window_size,
+                    "delta": None,
+                    "actions_memory": None,
+                    "rewards_memory": None,
+                },
+                "strategy": {},
+                "default_action": None,
+                "epsilon": epsilon,
+            }
+        )
+
+    class_name, smab_state = smab.get_state()
+    assert class_name == "SmabBernoulli"
+    assert smab_state == expected_state

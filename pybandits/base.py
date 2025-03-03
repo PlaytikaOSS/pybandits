@@ -21,7 +21,9 @@
 # SOFTWARE.
 
 
-from typing import Any, Dict, List, NewType, Tuple, Union
+from typing import Any, Dict, List, NewType, Tuple, Union, _GenericAlias, get_args, get_origin
+
+from typing_extensions import Self
 
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
@@ -36,6 +38,7 @@ from pybandits.pydantic_version_compatibility import (
 ActionId = NewType("ActionId", constr(min_length=1))
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
 Probability = NewType("Probability", Float01)
+PositiveProbability = NewType("PositiveProbability", confloat(gt=0, le=1))
 # SmabPredictions is a tuple of two lists: the first list contains the selected action ids,
 # and the second list contains their associated probabilities
 SmabPredictions = NewType("SmabPredictions", Tuple[List[ActionId], List[Dict[ActionId, Probability]]])
@@ -52,6 +55,7 @@ ActionRewardLikelihood = NewType(
     Union[Dict[ActionId, float], Dict[ActionId, Probability], Dict[ActionId, List[Probability]]],
 )
 ACTION_IDS_PREFIX = "action_ids_"
+ACTIONS = "actions"
 
 
 class _classproperty(property):
@@ -92,9 +96,42 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
         else:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
+    def _with_argument(self, argument_name: str, argument_value: Any) -> Self:
+        """
+        Instantiate a mutated model with an altered argument_value for argument_name.
+
+        Parameters
+        ----------
+        argument_name: str
+            The name of the argument.
+        argument_value: Any
+            The value of the argument.
+
+        Returns
+        -------
+        mutated_strategy: PyBanditsBaseModel
+            The mutated model.
+        """
+        mutated_strategy = self._apply_version_adjusted_method(
+            "model_copy", "copy", update={argument_name: argument_value}
+        )
+        return mutated_strategy
+
     @classmethod
     def _get_value_with_default(cls, key: str, values: Dict[str, Any]) -> Any:
         return values.get(key, cls.model_fields[key].default)
+
+    @classmethod
+    def _get_field_type(cls, key: str) -> Any:
+        if pydantic_version == PYDANTIC_VERSION_1:
+            annotation = cls.model_fields[key].type_
+        elif pydantic_version == PYDANTIC_VERSION_2:
+            annotation = cls.model_fields[key].annotation
+            if isinstance(annotation, _GenericAlias) and get_origin(annotation) is dict:
+                annotation = get_args(annotation)[1]  # refer to the type of the Dict values
+        else:
+            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        return annotation
 
     if pydantic_version == PYDANTIC_VERSION_1:
 

@@ -22,15 +22,17 @@
 
 from abc import ABC, abstractmethod
 from random import random
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 from scipy.stats import ttest_ind_from_stats
 from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, Probability, PyBanditsBaseModel
-from pybandits.model import Beta, BetaMOCC, Model
+from pybandits.model import BaseModel, Beta, BetaMOCC, Model
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
+
+StrategyType = TypeVar("StrategyType", bound="Strategy")
 
 
 class Strategy(PyBanditsBaseModel, ABC):
@@ -38,29 +40,8 @@ class Strategy(PyBanditsBaseModel, ABC):
     Strategy to select actions in multi-armed bandits.
     """
 
-    def _with_argument(self, argument_name: str, argument_value: Any) -> Self:
-        """
-        Instantiate a mutated strategy with an altered argument_value for argument_name.
-
-        Parameters
-        ----------
-        argument_name: str
-            The name of the argument.
-        argument_value: Any
-            The value of the argument.
-
-        Returns
-        -------
-        mutated_strategy: Strategy
-            The mutated strategy.
-        """
-        mutated_strategy = self._apply_version_adjusted_method(
-            "model_copy", "copy", update={argument_name: argument_value}
-        )
-        return mutated_strategy
-
     @abstractmethod
-    def select_action(self, p: Dict[ActionId, Probability], actions: Optional[Dict[ActionId, Model]]) -> ActionId:
+    def select_action(self, p: Dict[ActionId, Probability], actions: Optional[Dict[ActionId, BaseModel]]) -> ActionId:
         """
         Select the action.
         """
@@ -245,7 +226,7 @@ class CostControlStrategy(Strategy, ABC):
     def _evaluate_and_select(
         cls,
         p: Union[Dict[ActionId, Probability], Dict[ActionId, List[Probability]]],
-        actions: Dict[ActionId, Model],
+        actions: Dict[ActionId, BaseModel],
         feasible_actions: List[ActionId],
     ) -> ActionId:
         """

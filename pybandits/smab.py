@@ -20,10 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-from collections import defaultdict
+from abc import ABC
 from typing import Dict, List, Optional, Set, Union
 
+from pybandits.actions_manager import SmabActionsManager
 from pybandits.base import (
     ActionId,
     BinaryReward,
@@ -32,7 +32,7 @@ from pybandits.base import (
 )
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO, BetaMOCC
-from pybandits.pydantic_version_compatibility import PositiveInt, field_validator, validate_call
+from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
@@ -43,7 +43,7 @@ from pybandits.strategy import (
 )
 
 
-class BaseSmabBernoulli(BaseMab):
+class BaseSmabBernoulli(BaseMab, ABC):
     """
     Base model for a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
@@ -55,7 +55,7 @@ class BaseSmabBernoulli(BaseMab):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BaseBeta]
+    actions_manager: SmabActionsManager[BaseBeta]
 
     @validate_call
     def predict(
@@ -111,16 +111,7 @@ class BaseSmabBernoulli(BaseMab):
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         """
-
-        self._validate_update_params(actions=actions, rewards=rewards)
-
-        rewards_dict = defaultdict(list)
-
-        for a, r in zip(actions, rewards):
-            rewards_dict[a].append(r)
-
-        for a in set(actions):
-            self.actions[a].update(rewards=rewards_dict[a])
+        super().update(actions=actions, rewards=rewards)
 
 
 class SmabBernoulli(BaseSmabBernoulli):
@@ -138,7 +129,7 @@ class SmabBernoulli(BaseSmabBernoulli):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, Beta]
+    actions_manager: SmabActionsManager[Beta]
     strategy: ClassicBandit
 
 
@@ -157,7 +148,7 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, Beta]
+    actions_manager: SmabActionsManager[Beta]
     strategy: BestActionIdentificationBandit
 
 
@@ -184,7 +175,7 @@ class SmabBernoulliCC(BaseSmabBernoulli):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BetaCC]
+    actions_manager: SmabActionsManager[BetaCC]
     strategy: CostControlBandit
 
 
@@ -201,16 +192,8 @@ class BaseSmabBernoulliMO(BaseSmabBernoulli):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BetaMO]
+    actions_manager: SmabActionsManager[BetaMO]
     strategy: Strategy
-
-    @field_validator("actions", mode="after")
-    @classmethod
-    def all_actions_have_same_number_of_objectives(cls, actions: Dict[ActionId, BetaMO]):
-        n_objs_per_action = [len(beta.counters) for beta in actions.values()]
-        if len(set(n_objs_per_action)) != 1:
-            raise ValueError("All actions should have the same number of objectives")
-        return actions
 
 
 class SmabBernoulliMO(BaseSmabBernoulliMO):
@@ -233,7 +216,7 @@ class SmabBernoulliMO(BaseSmabBernoulliMO):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BetaMO]
+    actions_manager: SmabActionsManager[BetaMO]
     strategy: MultiObjectiveBandit
 
 
@@ -253,5 +236,5 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
         The strategy used to select actions.
     """
 
-    actions: Dict[ActionId, BetaMOCC]
+    actions_manager: SmabActionsManager[BetaMOCC]
     strategy: MultiObjectiveCostControlBandit

@@ -157,6 +157,25 @@ class Simulator(PyBanditsBaseModel, ABC):
         np.random.default_rng(self.random_seed)
         self._initialize_results()
 
+    def with_probs_reward(self, probs_reward: pd.DataFrame) -> "Simulator":
+        """
+        Set the reward probability for the different actions.
+
+        Parameters
+        ----------
+        probs_reward : pd.DataFrame
+            The reward probability for the different actions. The keys of the dict must match the mab actions_ids,
+            and the values are float in the interval [0, 1].
+            e.g. probs_reward=pd.DataFrame({"a1 A": [0.6], "a2 B": [0.5], "a3": [0.8]}).
+            Note that currently only single-objective reward is supported.
+
+        Returns
+        -------
+        Simulator
+            A new instance of the simulator with the specified reward probabilities.
+        """
+        return self._with_argument("probs_reward", probs_reward)
+
     @abstractmethod
     def _initialize_results(self):
         """

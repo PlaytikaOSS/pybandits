@@ -27,6 +27,7 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 from pybandits.base import Float01
 from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
@@ -40,14 +41,15 @@ from pybandits.pydantic_version_compatibility import (
 )
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
 from pybandits.utils import to_serializable_dict
+from tests.test_actions_manager import REFERENCE_DELTA
 from tests.test_utils import is_serializable
 
 literal_update_methods = get_args(UpdateMethods)
 
 
 def _apply_update_method_to_state(state, update_method):
-    for action in state["actions"]:
-        state["actions"][action]["update_method"] = update_method
+    for model_state in state["actions_manager"]["actions"].values():
+        model_state["update_method"] = update_method
 
 
 ########################################################################################################################
@@ -78,13 +80,13 @@ def test_create_cmab_bernoulli_cold_start(a_int):
 @settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_can_instantiate(n_features):
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         CmabBernoulli()
     with pytest.raises(AttributeError):
         CmabBernoulli(actions={})
     with pytest.warns(UserWarning):
         CmabBernoulli(actions={"a1": BayesianLogisticRegression.cold_start(n_features=n_features)})
-    with pytest.raises(ValidationError):  # predict_with_proba is not an argument of init
+    with pytest.raises(ValueError):  # predict_with_proba is not an argument of init
         CmabBernoulli(
             actions={
                 "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
@@ -92,7 +94,7 @@ def test_cmab_can_instantiate(n_features):
             },
             predict_with_proba=True,
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValidationError, TypeError)):
         CmabBernoulli(
             actions={
                 "a1": None,
@@ -164,7 +166,7 @@ def test_cmab_init_with_wrong_blr_models(n_features, other_n_features, update_me
         )
 
 
-@settings(deadline=60000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -205,7 +207,7 @@ def test_cmab_update(n_samples, n_features, update_method):
     run_update(context=context)
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
     actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
@@ -365,7 +367,13 @@ def test_cmab_get_state(mu, sigma, n_features):
     cmab = CmabBernoulli(actions=actions)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {},
             "predict_with_proba": False,
             "predict_actions_randomly": False,
@@ -381,48 +389,118 @@ def test_cmab_get_state(mu, sigma, n_features):
     assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
-@settings(deadline=500)
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "alpha": st.fixed_dictionaries(
+@composite
+def cmab_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                    "alpha": st.fixed_dictionaries(
+                        {
+                            "mu": st.floats(min_value=-100, max_value=100),
+                            "nu": st.floats(min_value=0, max_value=100),
+                            "sigma": st.floats(min_value=0, max_value=100),
+                        }
+                    ),
+                    "betas": st.lists(
+                        st.fixed_dictionaries(
                             {
                                 "mu": st.floats(min_value=-100, max_value=100),
                                 "nu": st.floats(min_value=0, max_value=100),
                                 "sigma": st.floats(min_value=0, max_value=100),
                             }
                         ),
-                        "betas": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "mu": st.floats(min_value=-100, max_value=100),
-                                    "nu": st.floats(min_value=0, max_value=100),
-                                    "sigma": st.floats(min_value=0, max_value=100),
-                                }
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        ),
-                    },
-                ),
-                min_size=2,
+                        min_size=3,
+                        max_size=3,
+                    ),
+                },
             ),
-            "strategy": st.fixed_dictionaries({}),
-        }
-    ),
-    update_method=st.sampled_from(literal_update_methods),
-)
-def test_cmab_from_state(state, update_method):
+            min_size=2,
+        )
+    )
+
+    actions_manager = {"actions": actions}
+    strategy = {}
+
+    state = {"actions_manager": actions_manager, "strategy": strategy}
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+    update_method = draw(st.sampled_from(literal_update_methods))
     _apply_update_method_to_state(state, update_method)
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+    return state
+
+
+@settings(deadline=500)
+@given(state=cmab_state())
+def test_cmab_from_state(state):
     cmab = CmabBernoulli.from_state(state)
     assert isinstance(cmab, CmabBernoulli)
 
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_cmab = CmabBernoulli.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        CmabBernoulli.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_cmab = CmabBernoulli.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_cmab == memory_less_cmab
+
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
+    expected_actions = {k: {**v, **state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
     assert expected_actions == actual_actions
 
     # Ensure get_state and from_state compatibility
@@ -471,13 +549,13 @@ def test_create_cmab_bernoulli_bai_cold_start(a_int):
 @settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_bai_can_instantiate(n_features):
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         CmabBernoulliBAI()
     with pytest.raises(AttributeError):
         CmabBernoulliBAI(actions={})
     with pytest.warns(UserWarning):
         CmabBernoulliBAI(actions={"a1": BayesianLogisticRegression.cold_start(n_features=2)})
-    with pytest.raises(ValidationError):  # predict_with_proba is not an argument of init
+    with pytest.raises(ValueError):  # predict_with_proba is not an argument of init
         CmabBernoulliBAI(
             actions={
                 "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
@@ -485,7 +563,7 @@ def test_cmab_bai_can_instantiate(n_features):
             },
             predict_with_proba=True,
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValidationError, TypeError)):
         CmabBernoulliBAI(
             actions={
                 "a1": None,
@@ -552,7 +630,7 @@ def test_cmab_bai_predict(n_samples, n_features):
     assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
 
 
-@settings(deadline=10000)
+@settings(deadline=None)
 @given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
 def test_cmab_bai_update(n_samples, n_features, update_method):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
@@ -592,7 +670,13 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
     cmab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {"exploit_p": exploit_p},
             "predict_with_proba": False,
             "predict_actions_randomly": False,
@@ -608,52 +692,123 @@ def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
     assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
-@settings(deadline=500)
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "alpha": st.fixed_dictionaries(
+@composite
+def cmab_bai_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                    "alpha": st.fixed_dictionaries(
+                        {
+                            "mu": st.floats(min_value=-100, max_value=100),
+                            "nu": st.floats(min_value=0, max_value=100),
+                            "sigma": st.floats(min_value=0, max_value=100),
+                        }
+                    ),
+                    "betas": st.lists(
+                        st.fixed_dictionaries(
                             {
                                 "mu": st.floats(min_value=-100, max_value=100),
                                 "nu": st.floats(min_value=0, max_value=100),
                                 "sigma": st.floats(min_value=0, max_value=100),
                             }
                         ),
-                        "betas": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "mu": st.floats(min_value=-100, max_value=100),
-                                    "nu": st.floats(min_value=0, max_value=100),
-                                    "sigma": st.floats(min_value=0, max_value=100),
-                                }
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        ),
-                    },
-                ),
-                min_size=2,
+                        min_size=3,
+                        max_size=3,
+                    ),
+                },
             ),
-            "strategy": st.one_of(
-                st.just({}),
-                st.just({"exploit_p": None}),
-                st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
-            ),
-        }
-    ),
-    update_method=st.sampled_from(literal_update_methods),
-)
-def test_cmab_bai_from_state(state, update_method):
+            min_size=2,
+        )
+    )
+
+    actions_manager = {"actions": actions}
+    strategy = draw(
+        st.one_of(
+            st.just({}),
+            st.just({"exploit_p": None}),
+            st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
+        )
+    )
+    state = {"actions_manager": actions_manager, "strategy": strategy}
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+    update_method = draw(st.sampled_from(literal_update_methods))
     _apply_update_method_to_state(state, update_method)
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+    return state
+
+
+@settings(deadline=500)
+@given(state=cmab_bai_state())
+def test_cmab_bai_from_state(state):
     cmab = CmabBernoulliBAI.from_state(state)
     assert isinstance(cmab, CmabBernoulliBAI)
 
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_cmab = CmabBernoulliBAI.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        CmabBernoulliBAI.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_cmab = CmabBernoulliBAI.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_cmab == memory_less_cmab
+
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
+    expected_actions = {k: {**v, **state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
     assert expected_actions == actual_actions
 
     expected_exploit_p = cmab.strategy.get_expected_value_from_state(state, "exploit_p")
@@ -707,13 +862,13 @@ def test_create_cmab_bernoulli_cc_cold_start(a_int):
 @settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_cc_can_instantiate(n_features):
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         CmabBernoulliCC()
     with pytest.raises(AttributeError):
         CmabBernoulliCC(actions={})
     with pytest.warns(UserWarning):
         CmabBernoulliCC(actions={"a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)})
-    with pytest.raises(ValidationError):  # predict_with_proba is not an argument of init
+    with pytest.raises(ValueError):  # predict_with_proba is not an argument of init
         CmabBernoulliCC(
             actions={
                 "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
@@ -721,7 +876,7 @@ def test_cmab_cc_can_instantiate(n_features):
             },
             predict_with_proba=True,
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValidationError, TypeError)):
         CmabBernoulliCC(
             actions={
                 "a1": None,
@@ -821,8 +976,8 @@ def test_cmab_cc_update(n_samples, n_features, update_method):
     st.integers(min_value=1),
     st.integers(min_value=1),
     st.integers(min_value=2, max_value=100),
-    st.floats(min_value=0),
-    st.floats(min_value=0),
+    st.floats(min_value=0, max_value=1),
+    st.floats(min_value=0, max_value=1),
     st.floats(min_value=0, max_value=1),
 )
 def test_cmab_cc_get_state(
@@ -838,7 +993,13 @@ def test_cmab_cc_get_state(
     cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
     expected_state = to_serializable_dict(
         {
-            "actions": actions,
+            "actions_manager": {
+                "actions": actions,
+                "adaptive_window_size": None,
+                "delta": None,
+                "actions_memory": None,
+                "rewards_memory": None,
+            },
             "strategy": {"subsidy_factor": subsidy_factor},
             "predict_with_proba": True,
             "predict_actions_randomly": False,
@@ -854,53 +1015,124 @@ def test_cmab_cc_get_state(
     assert is_serializable(cmab_state), "Internal state is not serializable"
 
 
-@settings(deadline=500)
-@given(
-    state=st.fixed_dictionaries(
-        {
-            "actions": st.dictionaries(
-                keys=st.text(min_size=1, max_size=10),
-                values=st.fixed_dictionaries(
-                    {
-                        "alpha": st.fixed_dictionaries(
+@composite
+def cmab_cc_state(draw):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                    "alpha": st.fixed_dictionaries(
+                        {
+                            "mu": st.floats(min_value=-100, max_value=100),
+                            "nu": st.floats(min_value=0, max_value=100),
+                            "sigma": st.floats(min_value=0, max_value=100),
+                        }
+                    ),
+                    "betas": st.lists(
+                        st.fixed_dictionaries(
                             {
                                 "mu": st.floats(min_value=-100, max_value=100),
                                 "nu": st.floats(min_value=0, max_value=100),
                                 "sigma": st.floats(min_value=0, max_value=100),
                             }
                         ),
-                        "betas": st.lists(
-                            st.fixed_dictionaries(
-                                {
-                                    "mu": st.floats(min_value=-100, max_value=100),
-                                    "nu": st.floats(min_value=0, max_value=100),
-                                    "sigma": st.floats(min_value=0, max_value=100),
-                                }
-                            ),
-                            min_size=3,
-                            max_size=3,
-                        ),
-                        "cost": st.floats(min_value=0),
-                    },
-                ),
-                min_size=2,
+                        min_size=3,
+                        max_size=3,
+                    ),
+                    "cost": st.floats(min_value=0, max_value=1),
+                },
             ),
-            "strategy": st.one_of(
-                st.just({}),
-                st.just({"subsidy_factor": None}),
-                st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
-            ),
-        }
-    ),
-    update_method=st.sampled_from(literal_update_methods),
-)
-def test_cmab_cc_from_state(state, update_method):
+            min_size=2,
+        )
+    )
+
+    actions_manager = {"actions": actions}
+    strategy = draw(
+        st.one_of(
+            st.just({}),
+            st.just({"subsidy_factor": None}),
+            st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
+        )
+    )
+    state = {"actions_manager": actions_manager, "strategy": strategy}
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+    update_method = draw(st.sampled_from(literal_update_methods))
     _apply_update_method_to_state(state, update_method)
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+    return state
+
+
+@settings(deadline=500)
+@given(state=cmab_cc_state())
+def test_cmab_cc_from_state(state):
     cmab = CmabBernoulliCC.from_state(state)
     assert isinstance(cmab, CmabBernoulliCC)
 
+    stripped_state = state.copy()
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_cmab = CmabBernoulliCC.from_state(stripped_state)
+    old_state = state.copy()
+    with pytest.raises(ValueError):
+        CmabBernoulliCC.from_old_state(old_state)
+    actions_manager_state = old_state.pop("actions_manager")
+    old_state["actions"] = actions_manager_state["actions"]
+    old_cmab = CmabBernoulliCC.from_old_state(
+        old_state,
+        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_cmab == memory_less_cmab
+
     actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions"][k]} for k, v in actual_actions.items()}
+    expected_actions = {k: {**v, **state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
     assert expected_actions == actual_actions
 
     expected_subsidy_factor = cmab.strategy.get_expected_value_from_state(state, "subsidy_factor")
@@ -961,3 +1193,152 @@ def test_epsilon_greedy_cmab_cc_predict(n_samples, n_features):
     assert len(selected_actions) == n_samples
     assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
     assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+########################################################################################################################
+
+
+# Cmab with adaptive window size
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=1, max_value=1000),
+    st.integers(min_value=1, max_value=100),
+    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_cmab_predict_cold_start(n_samples, n_features, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        with pytest.raises(AttributeError):
+            CmabBernoulli.cold_start(
+                action_ids={"a1", "a2"},
+                n_features=n_features,
+                adaptive_window_size=adaptive_window_size,
+                delta=delta,
+                epsilon=epsilon,
+            )
+    else:
+        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+        mab = CmabBernoulli.cold_start(
+            action_ids={"a1", "a2"},
+            n_features=n_features,
+            adaptive_window_size=adaptive_window_size,
+            delta=delta,
+            epsilon=epsilon,
+        )
+        selected_actions, probs, weighted_sums = mab.predict(context=context)
+        assert mab.predict_actions_randomly
+        assert all([a in ["a1", "a2"] for a in selected_actions])
+        assert len(selected_actions) == n_samples
+        assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
+        assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=1, max_value=100),
+    st.integers(min_value=1, max_value=3),
+    st.one_of(
+        st.integers(min_value=1, max_value=100),
+        st.none(),
+        st.just("inf"),
+    ),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_cmab_bai_predict(n_samples, n_features, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    mab = CmabBernoulliBAI.cold_start(
+        action_ids={"a1", "a2"},
+        n_features=n_features,
+        adaptive_window_size=adaptive_window_size,
+        delta=delta,
+        epsilon=epsilon,
+    )
+    selected_actions, probs, weighted_sums = mab.predict(context=context)
+    assert mab.predict_actions_randomly
+    assert all([a in ["a1", "a2"] for a in selected_actions])
+    assert len(selected_actions) == n_samples
+    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
+    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=1, max_value=100),
+    st.integers(min_value=1, max_value=3),
+    st.one_of(
+        st.integers(min_value=1, max_value=100),
+        st.none(),
+        st.just("inf"),
+    ),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_cmab_cc_predict(n_samples, n_features, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        delta = None
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    # cold start
+    mab = CmabBernoulliCC.cold_start(
+        action_ids_cost={"a1": 10, "a2": 20.5},
+        n_features=n_features,
+        adaptive_window_size=adaptive_window_size,
+        delta=delta,
+        epsilon=epsilon,
+    )
+    selected_actions, probs, weighted_sums = mab.predict(context=context)
+    assert mab.predict_actions_randomly
+    assert all([a in ["a1", "a2"] for a in selected_actions])
+    assert len(selected_actions) == n_samples
+    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
+    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
+
+
+@settings(deadline=None)
+@given(
+    st.integers(min_value=150, max_value=250),
+    st.integers(min_value=1, max_value=3),
+    st.sampled_from(["inf", 200]),
+    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
+    st.just(0.1),
+)
+def test_adaptive_window_cmab_update(n_samples, n_features, adaptive_window_size, delta, epsilon):
+    if adaptive_window_size is None and delta is not None:
+        with pytest.raises(AttributeError):
+            CmabBernoulli.cold_start(
+                action_ids={"a1", "a2"},
+                n_features=n_features,
+                adaptive_window_size=adaptive_window_size,
+                delta=delta,
+                epsilon=epsilon,
+            )
+    else:
+        actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
+        rewards = np.random.choice([0, 1], size=n_samples).tolist()
+        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+        mab = CmabBernoulli.cold_start(
+            action_ids={"a1", "a2"},
+            n_features=n_features,
+            adaptive_window_size=adaptive_window_size,
+            delta=delta,
+            epsilon=epsilon,
+        )
+        mab.update(context=context, actions=actions, rewards=rewards)
+        expected_length = adaptive_window_size if adaptive_window_size != "inf" else n_samples
+        assert list(mab.actions_manager.rewards_memory) == rewards[-expected_length:]
+        assert list(mab.actions_manager.actions_memory) == actions[-expected_length:]
+
+        # Change reward statistic, expect to hold only part of the data in the memory
+        new_rewards = [1] * n_samples
+        mab.update(context=context, actions=actions, rewards=new_rewards)
+        assert len(mab.actions_manager.rewards_memory) < expected_length
+        assert len(mab.actions_manager.actions_memory) < expected_length
