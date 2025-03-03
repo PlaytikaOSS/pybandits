@@ -29,7 +29,7 @@ import pymc.math as pmath
 import pytensor.tensor as pt
 from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
 from numpy.typing import ArrayLike
-from pymc import Bernoulli, Data, Deterministic, MutableData, fit, math, sample, sample_prior_predictive
+from pymc import Bernoulli, Data, Deterministic, MutableData, fit, math, sample, sample_prior_predictive, Approximation
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
 from pytensor.tensor import TensorVariable, dot
@@ -47,6 +47,7 @@ from pybandits.pydantic_version_compatibility import (
     pydantic_version,
     root_validator,
     validate_call,
+    PrivateAttr,
 )
 
 UpdateMethods = Literal["MCMC", "VI"]
@@ -284,8 +285,8 @@ class StudentTArray(PyBanditsBaseModel):
     shape: Optional[List[PositiveInt]] = None
     params_dict: Optional[Dict[str, Union[List[float], List[List[float]]]]] = None
     mu: confloat(allow_inf_nan=False) = 0.0
-    sigma: confloat(allow_inf_nan=False) = 1.0
-    nu: confloat(allow_inf_nan=False) = 20.0
+    sigma: confloat(allow_inf_nan=False) = 5.0
+    nu: confloat(allow_inf_nan=False) = 5.0
 
     @root_validator(pre=False, skip_on_failure=False)
     def initialize_arrays(cls, values):
@@ -650,7 +651,6 @@ class BayesianNeuralNetwork(Model):
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
 
     posterior_params: List[Dict[str, StudentTArray]]
-    is_fitted: Optional[bool] = False
 
     _default_mcmc_trace_kwargs = dict(
         tune=500,
@@ -665,6 +665,8 @@ class BayesianNeuralNetwork(Model):
 
     _default_variational_inference_fit_kwargs = dict(method="advi")
     _default_variational_inference_trace_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
+
+    _approx : Approximation = PrivateAttr(None) 
     class Config:
         arbitrary_types_allowed = True
 
@@ -722,28 +724,35 @@ class BayesianNeuralNetwork(Model):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def create_posterior_params(cls, dim_list: List[PositiveInt]) -> List[Dict[str, StudentTArray]]:
-        """Create a list of posterior parameters for a neural network.
+    def create_posterior_params(cls, dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]) -> List[Dict[str, StudentTArray]]:
+        """
+        Create posterior parameters for a neural network model.
 
-        This classmethod creates posterior parameters for each layer in a neural network
-        based on the provided dimensions. Each layer's parameters include weights (w) and
-        biases (b) as StudentT distributions.
+        This method generates a list of dictionaries containing the posterior parameters
+        (weights and biases) for each layer of a neural network. The dimensions of the
+        layers are specified by `dim_list`, and the initial distribution parameters for
+        the Student-T distribution are provided by `dist_params_init`.
 
         Parameters
         ----------
+        cls : type
+            The class type (not used in the method but required for class methods).
         dim_list : List[PositiveInt]
-            List of integers representing the dimensions of each layer in the neural
-            network. The output dimension will be automatically appended as 1.
+            A list of positive integers representing the dimensions of each layer in the
+            neural network. The last dimension is assumed to be the output dimension.
+        dist_params_init : Optional[Dict[str, float]]
+            A dictionary containing the initial parameters for the Student-T distribution.
+            Keys should be the parameter names and values should be the corresponding
+            parameter values.
 
         Returns
         -------
         List[Dict[str, StudentTArray]]
-            List of dictionaries containing posterior parameters for each layer.
-            Each dictionary has two keys:
-                - 'w': StudentTArray for weights with shape [input_dim, output_dim]
-                - 'b': StudentTArray for biases with shape [output_dim]
-
+            A list of dictionaries, where each dictionary contains the posterior parameters
+            (weights and biases) for a layer in the neural network. Each dictionary has two
+            keys: 'w' for weights and 'b' for biases, with corresponding `StudentTArray` values.
         """
+
         _dim_list = dim_list.copy()
         _dim_list.append(1)
 
@@ -751,8 +760,8 @@ class BayesianNeuralNetwork(Model):
         for layer_ind in range(len(_dim_list) - 1):
             input_dim = _dim_list[layer_ind]
             output_dim = _dim_list[layer_ind + 1]
-            w_param = StudentTArray(shape=[input_dim, output_dim])
-            b_param = StudentTArray(shape=[output_dim])
+            w_param = StudentTArray(shape=[input_dim, output_dim], **dist_params_init)
+            b_param = StudentTArray(shape=[output_dim], **dist_params_init)
             posterior_params.append(dict(w=w_param, b=b_param))
 
         return posterior_params
@@ -836,24 +845,18 @@ class BayesianNeuralNetwork(Model):
                 w_shape = np.array(layer_params["w"].params_dict["mu"]).shape  # without it n_features = 1 doesn't work
                 b_shape = np.array(layer_params["b"].params_dict["mu"]).shape
 
-                if self.is_fitted:
-                    w_init_val = None
-                else:
-                    w_init_val = np.random.randn(*w_shape)
-                    b_init_val = np.random.randn(*b_shape)
-
                 if is_sampelwise:
                     w = PymcStudentT(
-                        f"w{layer_ind}", **layer_params["w"].params_dict, shape=(n_samples,) + w_shape)
-                      # this create a tensor of shape (n_samples, n_features, n_output)
+                        f"w{layer_ind}", **layer_params["w"].params_dict, shape=(n_samples,) + w_shape
+                    )  # this create a tensor of shape (n_samples, n_features, n_output)
                     b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=(n_samples,) + b_shape)
                     linear_transform = pt.as_tensor_variable(
                         pt.batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
                     )
 
                 else:
-                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape,initval=w_init_val)
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=b_shape ,initval=b_init_val)
+                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape,initval="prior")
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=b_shape ,initval="prior")
                     linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
 
                 if layer_ind < len(self.posterior_params) - 1:
@@ -925,8 +928,8 @@ class BayesianNeuralNetwork(Model):
             if self.update_method == "VI":
                 # variational inference
                 update_kwargs = self.update_kwargs.copy()
-                approx = fit(**update_kwargs["fit"])
-                trace = approx.sample(**update_kwargs["trace"])
+                self._approx = fit(**update_kwargs["fit"])
+                trace = self._approx .sample(**update_kwargs["trace"])
             elif self.update_method == "MCMC":
                 # MCMC
                 trace = sample(**self.update_kwargs["trace"])
@@ -949,38 +952,40 @@ class BayesianNeuralNetwork(Model):
             self.posterior_params[layer_ind]["b"].params_dict["mu"] = b_mu.tolist()
             self.posterior_params[layer_ind]["b"].params_dict["sigma"] = b_sigma.tolist()
 
-        self.is_fitted = True
 
     @classmethod
     def cold_start(
+
         cls,
         dim_list: List[PositiveInt],
         update_method: UpdateMethods = "MCMC",
         update_kwargs: Optional[dict] = None,
+        dist_params_init: Optional[Dict[str, float]] = None,
         **kwargs,
     ) -> "BayesianNeuralNetwork":
-        """Create a new BayesianNeuralNetwork instance with specified architecture with default student-t distribution.
+        """
+        Initialize a Bayesian Neural Network with a cold start.
 
         Parameters
         ----------
         dim_list : List[PositiveInt]
-            List specifying the number of nodes in each layer.
-            Example: [5, 3, 1] means 5 input nodes, 3 hidden nodes, 1 output node
+            List of dimensions for the network.
         update_method : UpdateMethods, optional
-            Method used for posterior inference, by default "MCMC"
+            Method to update the network, by default "MCMC".
         update_kwargs : Optional[dict], optional
-            Additional arguments for the update method, by default None
-        **kwargs : dict
-            Additional keyword arguments to pass to BayesianNeuralNetwork constructor
+            Additional keyword arguments for the update method, by default None.
+        dist_params_init : Optional[Dict[str, float]], optional
+            Initial distribution parameters for the network weights, by default None.
+        **kwargs
+            Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
         Returns
         -------
         BayesianNeuralNetwork
-            A new instance of BayesianNeuralNetwork with the specified architecture
-            and initialization parameters
+            An instance of BayesianNeuralNetwork initialized with the specified parameters.
         """
 
-        posterior_params = cls.create_posterior_params(dim_list)
+        posterior_params = cls.create_posterior_params(dim_list=dim_list, dist_params_init=dist_params_init)
         return cls(
             posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs, **kwargs
         )
