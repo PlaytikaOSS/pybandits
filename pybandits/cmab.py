@@ -60,14 +60,14 @@ class BaseCmabBernoulli(BaseMab):
 
     @field_validator("actions", mode="after")
     @classmethod
-    def check_bayesian_regression_models(cls, v):
+    def check_bayesian_neural_network_models(cls, v):
         action_models = list(v.values())
         first_action = action_models[0]
         first_action_type = type(first_action)
         for action in action_models[1:]:
             if not isinstance(action, first_action_type):
                 raise AttributeError("All actions should follow the same type.")
-            if not action.expected_input == first_action.expected_input:
+            if not action.input_dim == first_action.input_dim:
                 raise AttributeError("All actions should have the same input size.")
             if not action.update_method == first_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
@@ -112,7 +112,7 @@ class BaseCmabBernoulli(BaseMab):
 
         if self.predict_actions_randomly:
             # check that context has the expected number of columns
-            if context.shape[1] != list(self.actions.values())[0].expected_input:
+            if context.shape[1] != list(self.actions.values())[0].input_dim:
                 raise AttributeError("Context must have {n_betas} columns")
 
             selected_actions = choice(list(valid_actions), size=len(context)).tolist()  # predict actions randomly
@@ -214,6 +214,8 @@ class CmabBernoulli(BaseCmabBernoulli):
     predict_actions_randomly: bool = False
 
     def __eq__(self, other: "CmabBernoulli") -> bool:
+        if not isinstance(other, CmabBernoulli):
+            return NotImplemented
         return (
             self.actions == other.actions
             and self.strategy == other.strategy
