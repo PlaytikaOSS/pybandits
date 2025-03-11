@@ -259,36 +259,15 @@ def test_check_context_matrix(n_samples, n_features):
     assert type(context) is np.ndarray
     blr.check_context_matrix(context=context)
 
-    # context is python list
-    context = context.tolist()
-    assert type(context) is list
-    blr.check_context_matrix(context=context)
-
-    # context is pandas DataFrame
-    context = pd.DataFrame(context)
-    assert type(context) is pd.DataFrame
-    blr.check_context_matrix(context=context)
-
     # raise an error if len(context) != len(self.betas)
     with pytest.raises(AttributeError):
         blr.check_context_matrix(context=context.loc[:, 1:])
-
-    blr = BayesianLogisticRegression.cold_start(n_features=2)
-
-    with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=[[1], [2, 3]])  # context has shape mismatch
-    with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=1.0)  # context is a number
-    with pytest.raises(AttributeError):
-        blr.check_context_matrix(context="a")  # context is a string
-    with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=[1.0])  # context is a 1-dim list
 
 
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
 def test_blr_sample_proba(n_samples, n_features):
     def sample_proba(context):
-        prob, weighted_sum = blr.sample_proba(context=context)
+        prob, weighted_sum = blr.sample_proba(context=np.array(context))
 
         assert type(prob) is type(weighted_sum) is np.ndarray  # type of the returns must be np.ndarray
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
@@ -336,16 +315,6 @@ def test_blr_update(n_samples=100, n_features=3):
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
     assert type(context) is np.ndarray
-    update(context=context, rewards=rewards)
-
-    # context is python list
-    context = context.tolist()
-    assert type(context) is list
-    update(context=context, rewards=rewards)
-
-    # context is pandas DataFrame
-    context = pd.DataFrame(context)
-    assert type(context) is pd.DataFrame
     update(context=context, rewards=rewards)
 
     # raise an error if len(context) != len(rewards)

@@ -2,7 +2,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from inspect import isclass
-from typing import Any, Callable, Deque, Dict, Generic, List, Literal, Optional, Set, Union
+from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -21,15 +21,11 @@ from pybandits.pydantic_version_compatibility import (
     GenericModel,
     NonNegativeInt,
     NonPositiveInt,
-    PositiveInt,
     field_validator,
-    model_validator,
     pydantic_version,
     validate_call,
 )
 from pybandits.utils import extract_argument_names_from_function
-
-_NO_CHANGE_POINT = -1
 
 
 class ActionsManager(PyBanditsBaseModel, ABC):
@@ -45,18 +41,15 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     ----------
     actions : Dict[ActionId, Model]
         The list of possible actions, and their associated Model.
-    adaptive_window_size : Optional[Union[PositiveInt, Literal["inf"]]]
-        The size of the adaptive window for action update. If None, no adaptive window is used.
-    delta : Optional[PositiveProbability], 0.1 if not specified.
-        The confidence level for the adaptive window.
+    delta : Optional[PositiveProbability]
+        The confidence level for the adaptive window. None for skipping the change point detection.
     """
 
     actions: Dict[ActionId, BaseModel]
-    adaptive_window_size: Optional[Union[PositiveInt, Literal["inf"]]] = None
     delta: Optional[PositiveProbability] = None
-
-    actions_memory: Optional[Deque] = None
-    rewards_memory: Optional[Deque] = None
+    _no_change_point: ClassVar[NonNegativeInt] = -1
+    _min_adaptive_window_size: ClassVar[NonPositiveInt] = 10000
+    _memory_parameters_suffix: ClassVar[str] = "_memory"
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -69,7 +62,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    @field_validator("actions", mode="before")
+    @field_validator("actions", mode="after")
     @classmethod
     def at_least_one_action_is_defined(cls, v):
         # validate number of actions
@@ -83,136 +76,6 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         if any(not isinstance(action, action_type) for action in action_models):
             raise TypeError(f"All actions should follow {action_type} type.")
         return v
-
-    @field_validator("adaptive_window_size", mode="before")
-    @classmethod
-    def check_window_size(cls, v):
-        if v is not None and isinstance(v, int) and v < 10000:
-            warnings.warn(
-                "The adaptive window size is set to a small value. Consider increasing it for better results."
-            )
-        return v
-
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @model_validator(mode="before")
-        @classmethod
-        def check_delta(cls, values):
-            delta = cls._get_value_with_default("delta", values)
-            adaptive_window_size = cls._get_value_with_default("adaptive_window_size", values)
-            if delta is not None and not adaptive_window_size:
-                raise AttributeError("Delta should only be defined when adaptive_window_size is defined.")
-            if adaptive_window_size and delta is None:
-                values["delta"] = 0.1
-            return values
-
-        @model_validator(mode="before")
-        @classmethod
-        def maybe_initialize_memory(cls, values):
-            reference_memory_len = None
-            expected_memory_length_for_inf = cls._get_expected_memory_length(actions=values["actions"])
-            for memory_name in ["actions_memory", "rewards_memory"]:
-                if values["adaptive_window_size"] is None and values.get(memory_name, None) is not None:
-                    raise AttributeError(f"{memory_name} should only be defined when adaptive_window_size is defined.")
-                if values["adaptive_window_size"] is not None:
-                    if memory_name not in values or values[memory_name] is None:
-                        values[memory_name] = deque(maxlen=cls._get_max_len(values["adaptive_window_size"]))
-                    else:
-                        memory_len = len(values[memory_name])
-                        if reference_memory_len is not None and memory_len != reference_memory_len:
-                            raise AttributeError(f"{memory_name} should have the same length as the other memory.")
-                        else:
-                            reference_memory_len = memory_len
-                        if values["adaptive_window_size"] is int:
-                            if memory_len > values["adaptive_window_size"]:
-                                raise AttributeError(
-                                    f"{memory_name} should have a length less than or equal to adaptive_window_size."
-                                )
-                        else:  # adaptive_window_size == "inf"
-                            if memory_len > expected_memory_length_for_inf:
-                                raise AttributeError(
-                                    f"{memory_name} should have a length less than or equal to the expected memory length."
-                                )
-                        if isinstance(values[memory_name], list):  # serialization from json
-                            maxlen = cls._get_max_len(values["adaptive_window_size"])
-                            values[memory_name] = deque(values[memory_name], maxlen=maxlen)
-
-            return values
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @model_validator(mode="after")
-        def check_delta(self):
-            if self.delta is not None and not self.adaptive_window_size:
-                raise AttributeError("Delta should only be defined when adaptive_window_size is defined.")
-            if self.adaptive_window_size and self.delta is None:
-                self.delta = 0.1
-            return self
-
-        @model_validator(mode="after")
-        def maybe_initialize_memory(self):
-            reference_memory_len = None
-            expected_memory_length_for_inf = self._get_expected_memory_length(actions=self.actions)
-            for memory_name in ["actions_memory", "rewards_memory"]:
-                if self.adaptive_window_size is None and getattr(self, memory_name, None) is not None:
-                    raise AttributeError(f"{memory_name} should only be defined when adaptive_window_size is defined.")
-                if self.adaptive_window_size is not None:
-                    if not hasattr(self, memory_name) or getattr(self, memory_name) is None:
-                        setattr(
-                            self,
-                            memory_name,
-                            deque(maxlen=self.max_len),
-                        )
-                    else:
-                        if reference_memory_len is not None and len(getattr(self, memory_name)) != reference_memory_len:
-                            raise AttributeError(f"{memory_name} should have the same length as the other memory.")
-                        else:
-                            reference_memory_len = len(getattr(self, memory_name))
-                        if self.adaptive_window_size is int:
-                            if len(getattr(self, memory_name)) > self.adaptive_window_size:
-                                raise AttributeError(
-                                    f"{memory_name} should have a length less than or equal to adaptive_window_size."
-                                )
-                        else:  # adaptive_window_size == "inf"
-                            if len(getattr(self, memory_name)) > expected_memory_length_for_inf:
-                                raise AttributeError(
-                                    f"{memory_name} should have a length less than or equal to the expected memory length."
-                                )
-            return self
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
-
-    @classmethod
-    def _get_max_len(cls, adaptive_window_size: Union[PositiveInt, Literal["inf"]]) -> Optional[PositiveInt]:
-        """
-        Get the maximum length for the memory.
-
-        Parameters
-        ----------
-        adaptive_window_size : Union[PositiveInt, Literal["inf"]]
-            The size of the adaptive window for action update.
-
-        Returns
-        -------
-        Optional[PositiveInt]
-            The maximum length for the memory.
-        """
-        if adaptive_window_size == "inf":
-            return None
-        return adaptive_window_size
-
-    @property
-    def max_len(self) -> Optional[PositiveInt]:
-        """
-        Get the maximum length for the memory.
-
-        Returns
-        -------
-        Optional[PositiveInt]
-            The maximum length for the memory.
-        """
-        return self._get_max_len(self.adaptive_window_size)
 
     @classmethod
     def _get_expected_memory_length(cls, actions: Dict[ActionId, BaseModel]) -> NonNegativeInt:
@@ -249,22 +112,13 @@ class ActionsManager(PyBanditsBaseModel, ABC):
 
     def __init__(
         self,
-        adaptive_window_size: Optional[Union[PositiveInt, Literal["inf"]]] = None,
         delta: Optional[PositiveProbability] = None,
         actions: Optional[Dict[ActionId, Model]] = None,
         action_ids: Optional[Set[ActionId]] = None,
-        actions_memory: Optional[Deque] = None,
-        rewards_memory: Optional[Deque] = None,
         kwargs: Optional[Dict[str, Any]] = None,
     ):
         actions = self._instantiate_actions(actions=actions, action_ids=action_ids, kwargs=kwargs)
-        super().__init__(
-            actions=actions,
-            adaptive_window_size=adaptive_window_size,
-            delta=delta,
-            actions_memory=actions_memory,
-            rewards_memory=rewards_memory,
-        )
+        super().__init__(actions=actions, delta=delta)
 
     def _validate_update_params(
         self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs
@@ -283,11 +137,38 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         invalid = set(actions) - set(self.actions.keys())
         if invalid:
             raise AttributeError(f"The following invalid action(s) were specified: {invalid}.")
-        if len(actions) != len(rewards):
-            raise AttributeError(f"Shape mismatch: actions and rewards should have the same length {len(actions)}.")
+        self._validate_params_lengths(actions=actions, rewards=rewards, **kwargs)
 
-    @validate_call
-    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
+    @classmethod
+    def _validate_matching_keys(cls, update_kwargs: Dict[str, Any], memory_kwargs: Dict[str, Any]):
+        """
+        Verify that the keys in the update kwargs and memory kwargs match.
+
+        Parameters
+        ----------
+        update_kwargs : Dict[str, Any]
+            The update kwargs.
+        memory_kwargs : Dict[str, Any]
+            The memory kwargs.
+        """
+        stripped_memory_keys = {k.split(cls._memory_parameters_suffix)[0] for k in memory_kwargs.keys()}
+        update_keys = set(update_kwargs.keys())
+        if stripped_memory_keys != update_keys:
+            raise AttributeError(f"Update and memory kwargs should have the same keys: {update_keys}.")
+
+    @classmethod
+    def _to_memory_key(cls, key: str) -> str:
+        return f"{key}{cls._memory_parameters_suffix}"
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        actions_memory: Optional[List[ActionId]] = None,
+        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        **kwargs,
+    ):
         """
         Update the models associated with the given actions using the provided rewards.
         For adaptive window size, the update by resetting the action models and retraining them on the new data.
@@ -298,62 +179,201 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
+        actions_memory : Optional[List[ActionId]]
+            List of previously selected actions.
+        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+            List of previously collected rewards.
         """
-        self._validate_update_params(actions, rewards, **kwargs)
+        if self.delta is None and (actions_memory or rewards_memory):
+            raise AttributeError("Adaptive window size is not set, so memory should not be provided.")
+        if self.delta is not None and (actions_memory is None or rewards_memory is None):
+            warnings.warn("Adaptive window size is set, but memory was not provided.")
+            actions_memory = []
+            rewards_memory = []
 
-        if self.adaptive_window_size is not None:
-            memory_len = len(self.actions_memory)
-            new_samples_len = len(actions)
-            if type(self.adaptive_window_size) is int:
-                residual_memory_len = max(
-                    0, memory_len - max(memory_len + new_samples_len - self.adaptive_window_size, 0)
-                )
-            else:
-                residual_memory_len = None
-            self.actions_memory.extend(actions)
-            self.rewards_memory.extend(rewards)
+        update_kwargs = {k: v for k, v in kwargs.items() if not k.endswith(self._memory_parameters_suffix)}
+        memory_kwargs = {k: v for k, v in kwargs.items() if k.endswith(self._memory_parameters_suffix)}
+        self._validate_update_params(actions, rewards, **update_kwargs)
+        self._validate_params_lengths(actions_memory=actions_memory, rewards_memory=rewards_memory, **memory_kwargs)
+        update_keys = tuple(update_kwargs.keys())
+
+        if actions_memory is not None:
+            actions_memory, rewards_memory, memory_kwargs = self._maybe_trim_memory(
+                actions_memory, rewards_memory, memory_kwargs
+            )
+            residual_memory_len = len(actions_memory)
+            if residual_memory_len < self._min_adaptive_window_size:
+                warnings.warn("The adaptive window size too small value. Consider increasing it for better results.")
+            actions_memory.extend(actions)
+            rewards_memory.extend(rewards)
+            for key in update_keys:
+                memory_key = self._to_memory_key(key)
+                if isinstance(update_kwargs[key], list):
+                    memory_kwargs[memory_key].extend(update_kwargs[key])
+                elif isinstance(update_kwargs[key], np.ndarray):
+                    memory_kwargs[memory_key] = (
+                        np.concatenate(
+                            (memory_kwargs[f"{key}{self._memory_parameters_suffix}"], update_kwargs[key]), axis=0
+                        )
+                        if memory_kwargs[f"{key}{self._memory_parameters_suffix}"] is not None
+                        else update_kwargs[key]
+                    )
+
             if (
-                memory_len
-                and (last_change_point := self._get_last_change_point(residual_memory_len)) != _NO_CHANGE_POINT
-            ):
-                relative_change_point = self._get_relative_change_point(last_change_point, **kwargs)
-                self.actions_memory = deque(
-                    (self.actions_memory[i] for i in range(relative_change_point, 0)),
-                    maxlen=self.max_len,
-                )
-                self.rewards_memory = deque(
-                    (self.rewards_memory[i] for i in range(relative_change_point, 0)),
-                    maxlen=self.max_len,
+                last_change_point := self._get_last_change_point(residual_memory_len, actions_memory, rewards_memory)
+            ) != self._no_change_point:
+                actions_memory, rewards_memory, memory_kwargs = self._slice_memory(
+                    len(actions_memory) - last_change_point, actions_memory, rewards_memory, memory_kwargs
                 )
 
                 for action_model in self.actions.values():
                     action_model.reset()
-                self._update_actions(self.actions_memory, self.rewards_memory, **kwargs)
+                self._update_actions(actions_memory, rewards_memory, **memory_kwargs)
             else:
-                self._update_actions(actions, rewards, **kwargs)
+                self._update_actions(actions, rewards, **update_kwargs)
         else:
-            self._update_actions(actions, rewards, **kwargs)
+            self._update_actions(actions, rewards, **update_kwargs)
 
-    @abstractmethod
-    def _get_relative_change_point(self, last_change_point: NonNegativeInt, **kwargs) -> NonPositiveInt:
+    @staticmethod
+    def _slice_memory(
+        memory_len: NonNegativeInt,
+        actions_memory: List[ActionId],
+        rewards_memory: List[BinaryReward],
+        memory_kwargs: Dict[str, Any],
+    ) -> Tuple[List[ActionId], List[BinaryReward], Dict[str, Any]]:
         """
-        Refine the last change point for the given action.
+        Slice all memory parameters to memory_len length.
 
         Parameters
         ----------
-        last_change_point : NonNegativeInt
-            The last change point for the given action.
+        memory_len : NonNegativeInt
+            Expected memory length after the slicing.
+        actions_memory : List[ActionId]
+            List of previously selected actions.
+        rewards_memory : List[BinaryReward]
+            List of previously collected rewards.
+        memory_kwargs : Dict[str, Any]
+            The memory kwargs.
+
+        Returns
+        -------
+        actions_memory : List[ActionId]
+            List of previously selected actions with maximum length of memory_len.
+        rewards_memory : List[BinaryReward]
+            List of previously collected rewards with maximum length of memory_len.
+        memory_kwargs : Dict[str, Any]
+            The memory kwargs with values of maximum length of memory_len.
+        """
+        if len(actions_memory) > memory_len:
+            actions_memory = actions_memory[-memory_len:]
+            rewards_memory = rewards_memory[-memory_len:]
+            for memory_key, memory_value in memory_kwargs.items():
+                if memory_value is not None:
+                    memory_kwargs[memory_key] = memory_value[-memory_len:]
+        return actions_memory, rewards_memory, memory_kwargs
+
+    def _maybe_trim_memory(
+        self,
+        actions_memory: List[ActionId],
+        rewards_memory: Union[List[BinaryReward], List[List[BinaryReward]]],
+        memory_kwargs: Dict[str, Any],
+    ) -> Tuple[List[ActionId], List[BinaryReward], Dict[str, Any]]:
+        """
+        Trim the memory to the adaptive window size.
+
+        Parameters
+        ----------
+        actions_memory : List[ActionId]
+            List of previously selected actions.
+        rewards_memory : Union[List[BinaryReward], List[List[BinaryReward]]]
+            List of previously collected rewards.
+        memory_kwargs : Dict[str, Any]
+            The memory kwargs.
+
+        Returns
+        -------
+        actions_memory : List[ActionId]
+            List of previously selected actions with maximum length of memory_len.
+        rewards_memory : List[BinaryReward]
+            List of previously collected rewards with maximum length of memory_len.
+        memory_kwargs : Dict[str, Any]
+            The memory kwargs with values of maximum length of memory_len.
+        """
+        action_stats = self._action_stats
+        maximum_memory_length = self._get_memory_len_from_action_stats(action_stats)
+        if len(actions_memory) > maximum_memory_length:
+            warnings.warn(f"Input memory is longer then expected. Leaving only last {maximum_memory_length} elements.")
+            actions_memory, rewards_memory, memory_kwargs = self._slice_memory(
+                maximum_memory_length, actions_memory, rewards_memory, memory_kwargs
+            )
+        for action_id, (expected_successes, expected_trials) in action_stats.items():
+            actual_trials = np.sum([1 for a in actions_memory if a == action_id])
+            actual_successes = np.sum(
+                np.array([r for a, r in zip(actions_memory, rewards_memory) if a == action_id]).reshape(
+                    (-1, expected_successes.shape[1])
+                ),
+                axis=0,
+                keepdims=True,
+            )
+
+            if np.any(actual_trials > expected_trials):
+                raise ValueError(f"Memory for action {action_id} is larger than expected.")
+            elif actual_trials == expected_trials[0][0]:
+                if not np.array_equal(actual_successes, expected_successes):
+                    raise ValueError(f"Memory for action {action_id} is not consistent with the expected stats.")
+            else:
+                if np.any(actual_successes > expected_successes):
+                    raise ValueError(f"Memory for action {action_id} is not consistent with the expected stats.")
+
+        return actions_memory, rewards_memory, memory_kwargs
+
+    def _get_memory_len_from_action_stats(
+        self, action_stats: Dict[ActionId, Tuple[ArrayLike, ArrayLike]]
+    ) -> NonNegativeInt:
+        """
+        Calculate total memory length from action statistics.
+
+        Parameters
+        ----------
+        action_stats : Dict[ActionId, Tuple[ArrayLike, ArrayLike]]
+            Dictionary mapping action IDs to tuples of (successes, trials) arrays.
 
         Returns
         -------
         NonNegativeInt
-            The refined last change point for the given action.
+            Total number of trials across all actions.
         """
-        pass
+
+        return sum([v[1][0][0] for v in action_stats.values()])
+
+    @property
+    def _action_stats(self) -> Dict[ActionId, Tuple[np.ndarray, np.ndarray]]:
+        """
+        Get current statistics for all actions.
+
+        Returns
+        -------
+        action_stats : Dict[ActionId, Tuple[np.ndarray, np.ndarray]]
+            Dictionary mapping action IDs to tuples of (successes, trials) arrays.
+        """
+        action_stats = {action_id: self._extract_current_stats_for_action(action_id) for action_id in self.actions}
+        return action_stats
+
+    @property
+    def maximum_memory_length(self) -> NonNegativeInt:
+        """
+        Get maximum possible memory length based on current action statistics.
+
+        Returns
+        -------
+        NonNegativeInt
+            Maximum memory length allowed.
+        """
+        return self._get_memory_len_from_action_stats(self._action_stats)
 
     @abstractmethod
     def _update_actions(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], *args, **kwargs
+        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs
     ):
         """
         Update the models associated with the given actions using the provided rewards.
@@ -367,14 +387,23 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         """
         pass
 
-    def _get_last_change_point(self, residual_memory_len: Optional[NonNegativeInt]) -> NonNegativeInt:
+    def _get_last_change_point(
+        self,
+        residual_memory_len: NonNegativeInt,
+        actions_memory: List[ActionId],
+        rewards_memory: Union[List[BinaryReward], List[List[BinaryReward]]],
+    ) -> NonNegativeInt:
         """
         Get the last change point among all actions.
 
         Parameters
         ----------
-        residual_memory_len : Optional[NonNegativeInt]
-            Remaining number of elements from last memory state after current update.
+        residual_memory_len : NonNegativeInt
+            The length of the residual memory.
+        actions_memory : List[ActionId]
+            List of previously selected actions.
+        rewards_memory : List[BinaryReward]
+            List of previously collected rewards.
 
         Returns
         -------
@@ -382,9 +411,15 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The last change point. 0 if no change point is found.
         """
         change_points = [
-            self._get_last_change_point_for_action(action_id=action_id, residual_memory_len=residual_memory_len)
+            self._get_last_change_point_for_action(
+                action_id=action_id,
+                residual_memory_len=residual_memory_len,
+                actions_memory=actions_memory,
+                rewards_memory=rewards_memory,
+            )
             for action_id in self.actions.keys()
         ]
+
         return max(change_points)
 
     def _get_threshold(self, past_trials: np.ndarray, present_trials: np.ndarray) -> np.ndarray:
@@ -409,7 +444,11 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         return threshold
 
     def _get_last_change_point_for_action(
-        self, action_id: ActionId, residual_memory_len: Optional[NonNegativeInt]
+        self,
+        action_id: ActionId,
+        residual_memory_len: NonNegativeInt,
+        actions_memory: List[ActionId],
+        rewards_memory: Union[List[BinaryReward], List[List[BinaryReward]]],
     ) -> int:
         """
         Get the last change point for the given action.
@@ -418,50 +457,35 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         ----------
         action_id : ActionId
             The action ID.
-        residual_memory_len : Optional[NonNegativeInt]
-            Remaining number of elements from last memory state after current update.
+        actions_memory : List[ActionId]
+            List of previously selected actions.
+        rewards_memory : List[BinaryReward]
+            List of previously collected rewards.
 
         Returns
         -------
         NonNegativeInt
             The last change point for the given action. -1 if no change point is found.
         """
-        action_index = np.where([a == action_id for a in self.actions_memory])[0].tolist()
+        action_index = np.nonzero([a == action_id for a in actions_memory])[0].tolist()
 
-        rewards_window = [self.rewards_memory[i] for i in action_index]
+        rewards_window = [rewards_memory[i] for i in action_index]
         window_length = len(rewards_window)
         if window_length < 2:
-            return _NO_CHANGE_POINT
+            return self._no_change_point
         cumulative_reward = np.cumsum(np.array(rewards_window), axis=0)
         if cumulative_reward.ndim == 1:
             cumulative_reward = cumulative_reward[:, np.newaxis]
-        reference_model = self.actions[action_id]
-        if self.adaptive_window_size == "inf" and self._get_expected_memory_length(
-            actions={action_id: reference_model}
-        ) == len(self.actions_memory):
-            current_sum = 0
-            current_trials = 0
-            initial_start_index = 1
-        else:
-            action_model = self.actions[action_id]
-            if isinstance(action_model, Model):
-                current_sum = np.array([action_model.n_successes - 1]).reshape((1, -1))
-                current_trials = np.array([action_model.n_successes + action_model.n_failures - 2]).reshape((1, -1))
 
-            elif isinstance(action_model, ModelMO):
-                current_sum = np.array([model.n_successes - 1 for model in action_model.models]).reshape((1, -1))
-                current_trials = np.array(
-                    [model.n_successes + model.n_failures - 2 for model in action_model.models]
-                ).reshape((1, -1))
-            else:
-                raise TypeError(f"Model type {type(action_model)} not supported.")
-            # n_successes and n_failures already take into account the statistics of remaining elements from last
-            # memory update, so their statistics are removed for consistency.
-            if residual_memory_len:
-                projected_residual_memory_len = len([index for index in action_index if index < residual_memory_len])
-                current_sum -= cumulative_reward[projected_residual_memory_len - 1]
-                current_trials -= projected_residual_memory_len
-            initial_start_index = 0 if np.sum(current_trials) else 1
+        current_sum, current_trials = self._extract_current_stats_for_action(action_id)
+
+        # n_successes and n_failures already take into account the statistics of remaining elements from last
+        # memory update, so their statistics are removed for consistency.
+        if residual_memory_len:
+            projected_residual_memory_len = len([index for index in action_index if index < residual_memory_len])
+            current_sum -= cumulative_reward[projected_residual_memory_len - 1]
+            current_trials -= projected_residual_memory_len
+        initial_start_index = 0 if np.sum(current_trials) else 1
 
         base_range = np.arange(initial_start_index, window_length).reshape(-1, 1)
         past_sums = np.concatenate((current_sum, current_sum + cumulative_reward[:-1]))
@@ -480,7 +504,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             present_trials = window_length - relevant_range
 
             thresholds = self._get_threshold(past_trials, present_trials)
-            change_points = np.where(
+            change_points = np.nonzero(
                 np.any(
                     np.abs(past_sums[start_index:] * present_trials - present_sums[start_index:] * past_trials)
                     > thresholds,
@@ -493,9 +517,41 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             start_index += 1
 
         if start_index == initial_start_index:
-            return _NO_CHANGE_POINT
+            return self._no_change_point
 
         return action_index[min(start_index, window_length - 1)]
+
+    def _extract_current_stats_for_action(self, action_id: ActionId) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Extract the current statistics for the given action.
+        The statistics include the number of successes and the number of trials for each action.
+        Since `n_successes` and `n_failures` are initialized as 1 in Model class,
+        we reduce 1 from `n_successes` to get the actual number of successes.
+        Similarly, we reduce 2 from `count` to get the actual number of trials.
+
+        Parameters
+        ----------
+        action_id : ActionId
+            The action ID.
+
+        Returns
+        -------
+        current_sum : np.ndarray
+            The number of successes for the given action for each of the objectives.
+        current_trials : np.ndarray
+            The number of trials for the given action for each of the objectives.
+        """
+        action_model = self.actions[action_id]
+        if isinstance(action_model, Model):
+            current_sum = np.array([action_model.n_successes - 1]).reshape((1, -1))
+            current_trials = np.array([action_model.count - 2]).reshape((1, -1))
+
+        elif isinstance(action_model, ModelMO):
+            current_sum = np.array([model.n_successes - 1 for model in action_model.models]).reshape((1, -1))
+            current_trials = np.array([model.count - 2 for model in action_model.models]).reshape((1, -1))
+        else:
+            raise TypeError(f"Model type {type(action_model)} not supported.")
+        return current_sum, current_trials
 
     @classmethod
     def _instantiate_actions(
@@ -621,8 +677,6 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
     ----------
     actions : Dict[ActionId, BaseBeta]
         The list of possible actions, and their associated Model.
-    adaptive_window_size : Optional[Union[PositiveInt, Literal["inf"]]]
-        The size of the adaptive window for action update. If None, no adaptive window is used.
     delta : Optional[PositiveProbability], 0.1 if not specified.
         The confidence level for the adaptive window.
     """
@@ -637,21 +691,30 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
             raise ValueError("All actions should have the same number of objectives")
         return actions
 
-    def _get_relative_change_point(self, last_change_point: NonNegativeInt) -> NonPositiveInt:
+    @validate_call
+    def update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        actions_memory: Optional[List[ActionId]] = None,
+        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+    ):
         """
-        Refine the last change point for the given action.
+        Update the models associated with the given actions using the provided rewards.
+        For adaptive window size, the update by resetting the action models and retraining them on the new data.
 
         Parameters
         ----------
-        last_change_point : NonNegativeInt
-            The last change point for the given action.
-
-        Returns
-        -------
-        NonPositiveInt
-            The refined last change point for the given action.
+        actions : List[ActionId]
+            The selected action for each sample.
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+            The reward for each sample.
+        actions_memory : Optional[List[ActionId]]
+            List of previously selected actions.
+        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+            List of previously collected rewards.
         """
-        return last_change_point - len(self.actions_memory)
+        super().update(actions, rewards, actions_memory, rewards_memory)
 
     def _update_actions(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
         """
@@ -683,8 +746,6 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
     ----------
     actions : Dict[ActionId, BayesianLogisticRegression]
         The list of possible actions, and their associated Model.
-    adaptive_window_size : Optional[Union[PositiveInt, Literal["inf"]]]
-        The size of the adaptive window for action update. If None, no adaptive window is used.
     delta : Optional[PositiveProbability], 0.1 if not specified.
         The confidence level for the adaptive window.
     """
@@ -708,12 +769,19 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
                 raise AttributeError("All actions should have the same update kwargs.")
         return v
 
-    def _validate_update_params(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], context: ArrayLike
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        context: ArrayLike,
+        actions_memory: Optional[List[ActionId]] = None,
+        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        context_memory: Optional[ArrayLike] = None,
     ):
         """
-        Verify that the given list of action IDs is a subset of the currently defined actions and that
-         the rewards type matches the strategy type.
+        Update the models associated with the given actions using the provided rewards.
+        For adaptive window size, the update by resetting the action models and retraining them on the new data.
 
         Parameters
         ----------
@@ -723,35 +791,48 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
             The reward for each sample.
         context: ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
+        actions_memory : Optional[List[ActionId]]
+            List of previously selected actions.
+        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+            List of previously collected rewards.
+        context_memory : Optional[ArrayLike] of shape (n_samples, n_features)
+            Matrix of contextual features.
         """
-        super()._validate_update_params(actions, rewards)
-        if len(context) != len(actions):
-            raise AttributeError(f"Shape mismatch: actions and context should have the same length {len(actions)}.")
 
-    def _get_relative_change_point(self, last_change_point: NonNegativeInt, context: ArrayLike) -> NonPositiveInt:
+        context = self._check_context_matrix(context)
+        if context_memory is not None:
+            context_memory = self._check_context_matrix(context_memory)
+            if context.shape[1] != context_memory.shape[1]:
+                raise ValueError("Context memory must have the same number of features as the context.")
+        super().update(actions, rewards, actions_memory, rewards_memory, context=context, context_memory=context_memory)
+
+    @staticmethod
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def _check_context_matrix(context: ArrayLike):
         """
-        Refine the last change point for the given action. Since context memory is not stored, the relative change point
-        shall not exceed the length of the context.
+        Check and cast context matrix.
 
         Parameters
         ----------
-        last_change_point : NonNegativeInt
-            The last change point for the given action.
-        context: ArrayLike of shape (n_samples, n_features)
-            Matrix of contextual features
+        context : np.ndarray of shape (n_samples, n_features)
+            Matrix of contextual features.
 
         Returns
         -------
-        NonPositiveInt
-            The refined last change point for the given action.
+        context : pandas DataFrame of shape (n_samples, n_features)
+            Matrix of contextual features.
         """
-        return max(last_change_point - len(self.actions_memory), -context.shape[0])
+        try:
+            context = np.asarray(context, dtype=float)
+        except Exception as e:
+            raise AttributeError(f"Context must be an ArrayLike that can transform to float numpy array: {e}.")
+        return context
 
     def _update_actions(
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        context: ArrayLike,
+        context: np.ndarray,
     ):
         """
         Update the models associated with the given actions using the provided rewards.
@@ -762,11 +843,11 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
-        context: ArrayLike of shape (n_samples, n_features)
+        context: np.ndarray of shape (n_samples, n_features)
             Matrix of contextual features.
         """
         # cast inputs to numpy arrays to facilitate their manipulation
-        context, actions, rewards = np.array(context), np.array(actions), np.array(rewards)
+        actions, rewards = np.array(actions, dtype=np.object_), np.array(rewards)
         context = context[-len(actions) :]
         for a in set(actions):
             # get context and rewards of the samples associated to action a

@@ -19,207 +19,603 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from typing import get_args
+from copy import deepcopy
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from hypothesis.strategies import composite
+from pydantic.dataclasses import dataclass
 
-from pybandits.base import Float01
-from pybandits.cmab import CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC, StudentT, UpdateMethods
+import pybandits
+from pybandits.base import ActionId, Float01, PositiveProbability
+from pybandits.cmab import BaseCmabBernoulli, CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
+from pybandits.model import (
+    BaseBayesianLogisticRegression,
+    BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
+    StudentT,
+    UpdateMethods,
+)
 from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    NonNegativeFloat,
+    PositiveInt,
     ValidationError,
-    pydantic_version,
 )
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
-from pybandits.utils import to_serializable_dict
-from tests.test_actions_manager import REFERENCE_DELTA
-from tests.test_utils import is_serializable
-
-literal_update_methods = get_args(UpdateMethods)
+from tests.test_utils import FakeApproximation, literal_update_methods
 
 
-def _apply_update_method_to_state(state, update_method):
-    for model_state in state["actions_manager"]["actions"].values():
-        model_state["update_method"] = update_method
+@st.composite
+def diff_strategy(draw):
+    return draw(st.floats(min_value=0.001, max_value=0.5))
 
 
-########################################################################################################################
+@st.composite
+def cost_strategy(draw, n_actions):
+    return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
-# CmabBernoulli with strategy=ClassicBandit()
+@pytest.fixture(scope="module")
+def monkeymodule():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
 
 
-@settings(deadline=500)
-@given(st.integers(max_value=100))
-def test_create_cmab_bernoulli_cold_start(a_int):
-    # n_features must be > 0
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
-    else:
-        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
-        mab2 = CmabBernoulli(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
-                "a2": BayesianLogisticRegression.cold_start(n_features=a_int),
-            }
+def mock_student_t(
+    field_value: StudentT,
+    diff: Any,
+    monkeymodule: Any,
+    label: Union[int, str],
+) -> int:
+    """
+    Update the mu and sigma fields of a StudentT object.
+
+    Args:
+        field_value: StudentT object to update
+        diff: Hypothesis diff object for drawing random values
+        monkeymodule: Module for monkey patching
+        label: Label for the diff draw
+
+    Returns:
+        Updated label value
+    """
+    for sub_field in ("mu", "sigma"):
+        try:
+            new_value = getattr(field_value, sub_field) + diff.draw(diff_strategy(), label=f"{label}")
+            monkeymodule.setattr(field_value, sub_field, new_value)
+            label = int(label) + 1 if isinstance(label, (int, str)) else label + 1
+        except AttributeError as e:
+            raise ValueError(f"Invalid StudentT field: {sub_field}") from e
+    return label
+
+
+def mock_update(
+    models: Union[List[BayesianLogisticRegression], BayesianLogisticRegression], diff, monkeymodule, label=0
+):
+    model_list = [models] if isinstance(models, BayesianLogisticRegression) else models
+    for model in model_list:
+        for field in model.model_fields:
+            field_value = getattr(model, field)
+
+            # Handle StudentT field
+            if isinstance(field_value, StudentT):
+                label = mock_student_t(field_value, diff, monkeymodule, label)
+
+            # Handle list of StudentT objects
+            elif isinstance(field_value, list) and field_value and isinstance(field_value[0], StudentT):
+                for item in field_value:
+                    label = mock_student_t(item, diff, monkeymodule, label)
+
+            # Handle list of BayesianLogisticRegression objects
+            elif (
+                isinstance(field_value, list) and field_value and isinstance(field_value[0], BayesianLogisticRegression)
+            ):
+                mock_update(field_value, diff, monkeymodule, label)
+
+
+@dataclass
+class ModelTestConfig:
+    cmab_class: Type
+    strategy_class: Type
+    model_types: List[Type[BaseBayesianLogisticRegression]]
+
+    def _create_actions(
+        self,
+        action_ids: List[str],
+        costs: Optional[st.SearchStrategy],
+        n_features: PositiveInt,
+        update_method: UpdateMethods,
+        update_kwargs: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        if len(self.model_types) < len(action_ids):
+            indices = np.random.randint(0, len(self.model_types), len(action_ids))
+            self.model_types = [self.model_types[i] for i in indices]
+        if all(model in [BayesianLogisticRegressionCC] for model in self.model_types):
+            # Generate random costs
+            costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
+            costs = [
+                cost if model_type in [BayesianLogisticRegressionCC] else lambda x: x**cost
+                for cost, model_type in zip(costs, self.model_types)
+            ]
+        else:
+            costs = None
+
+        model_cold_start_kwargs = dict(update_method=update_method, update_kwargs=update_kwargs)
+        base_model_cold_start_kwargs = dict(n_features=n_features, **model_cold_start_kwargs)
+        if costs is not None:
+            return {
+                action_id: model_type(
+                    alpha=StudentT(),
+                    betas=[StudentT() for _ in range(n_features)],
+                    **model_cold_start_kwargs,
+                    cost=cost,
+                )
+                for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
+            }, base_model_cold_start_kwargs
+        else:
+            return {
+                action_id: model_type(
+                    alpha=StudentT(), betas=[StudentT() for _ in range(n_features)], **model_cold_start_kwargs
+                )
+                for action_id, model_type in zip(action_ids, self.model_types)
+            }, base_model_cold_start_kwargs
+
+    def create_cmab_and_actions(
+        self,
+        action_ids: List[str],
+        epsilon: Optional[Float01],
+        delta: Optional[PositiveProbability],
+        costs: st.SearchStrategy,
+        exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
+        subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
+        n_features: PositiveInt,
+        update_method: UpdateMethods,
+        update_kwargs: Optional[Dict[str, Any]],
+    ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, BayesianLogisticRegression], Dict[str, Any]]:
+        actions, base_model_cold_start_kwargs = self._create_actions(
+            action_ids, costs, n_features, update_method, update_kwargs
         )
-        mab2.predict_actions_randomly = True
-        assert mab1 == mab2
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=10))
-def test_cmab_can_instantiate(n_features):
-    with pytest.raises(ValueError):
-        CmabBernoulli()
-    with pytest.raises(AttributeError):
-        CmabBernoulli(actions={})
-    with pytest.warns(UserWarning):
-        CmabBernoulli(actions={"a1": BayesianLogisticRegression.cold_start(n_features=n_features)})
-    with pytest.raises(ValueError):  # predict_with_proba is not an argument of init
-        CmabBernoulli(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-            },
-            predict_with_proba=True,
-        )
-    with pytest.raises((ValidationError, TypeError)):
-        CmabBernoulli(
-            actions={
-                "a1": None,
-                "a2": None,
-            },
-        )
-    CmabBernoulli(
-        actions={
-            "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-        },
-        strategy=ClassicBandit(),
-    )
-    mab = CmabBernoulli(
-        actions={
-            "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
+        default_action = action_ids[0] if epsilon and not delta else None
+        epsilon = epsilon if not delta else 0.1
+        kwargs = {
+            k: v
+            for k, v in {
+                "epsilon": epsilon,
+                "default_action": default_action,
+                "delta": delta,
+            }.items()
+            if v is not None
         }
+        for param, classes in zip(["subsidy_factor", "exploit_p"], [[CmabBernoulliCC], [CmabBernoulliBAI]]):
+            if self.cmab_class in classes:
+                actual_param = eval(param)
+                if isinstance(actual_param, float) or actual_param is None:
+                    kwargs[param] = actual_param
+                else:
+                    kwargs[param] = actual_param.draw(st.floats(min_value=0, max_value=1))
+
+        cmab = self.cmab_class(actions=actions, **kwargs)
+        kwargs.update(base_model_cold_start_kwargs)
+
+        return cmab, actions, kwargs
+
+
+TEST_CONFIGS = {
+    "cmab": ModelTestConfig(CmabBernoulli, ClassicBandit, [BayesianLogisticRegression]),
+    "cmab_bai": ModelTestConfig(CmabBernoulliBAI, BestActionIdentificationBandit, [BayesianLogisticRegression]),
+    "cmab_cc": ModelTestConfig(
+        CmabBernoulliCC,
+        CostControlBandit,
+        [BayesianLogisticRegressionCC],
+    ),
+}
+
+
+@settings(deadline=None)
+@pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
+@given(
+    action_ids=st.lists(
+        st.text(
+            min_size=1,
+        ),
+        min_size=2,
+        max_size=5,
+        unique=True,
+    ),
+    epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    delta=st.one_of(st.none(), st.just(0.1)),
+    costs=st.data(),
+    n_features=st.integers(min_value=1, max_value=5),
+    subsidy_factor=st.data(),
+    exploit_p=st.data(),
+    update_method=st.sampled_from(literal_update_methods),
+    update_kwargs=st.sampled_from([None, {"draws": 500}]),
+)
+def test_cold_start(
+    config: ModelTestConfig,
+    action_ids: List[str],
+    epsilon: Optional[float],
+    delta,
+    costs,
+    n_features,
+    exploit_p,
+    subsidy_factor,
+    update_method,
+    update_kwargs,
+):
+    # Create CMAB instance
+    cmab, actions, kwargs = config.create_cmab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        costs,
+        exploit_p,
+        subsidy_factor,
+        n_features,
+        update_method,
+        update_kwargs,
     )
 
-    assert mab.actions["a1"] == BayesianLogisticRegression.cold_start(n_features=n_features)
-    assert mab.actions["a2"] == BayesianLogisticRegression.cold_start(n_features=n_features)
-    assert not mab.predict_actions_randomly
-    assert not mab.predict_with_proba
-    mab.predict_with_proba = True
-    mab.predict_actions_randomly = True
-    assert mab.predict_actions_randomly
-    assert mab.predict_with_proba
+    # Cold start comparison logic (modified for different model types)
+    cold_start_kwargs = {
+        "action_ids": {
+            action
+            for action, model in zip(action_ids, config.model_types)
+            if issubclass(model, (BayesianLogisticRegression))
+        },
+    }
+    if all(model in [BayesianLogisticRegressionCC] for model in config.model_types):
+        cold_start_kwargs["action_ids_cost"] = {
+            action: model.cost for action, model in actions.items() if isinstance(model, (BayesianLogisticRegressionCC))
+        }
+    cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
+    cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
+    cmab.predict_actions_randomly = True
+    assert config.cmab_class.cold_start(**cold_start_kwargs) == cmab
 
 
-@settings(deadline=500)
+@settings(deadline=None)
+@pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
 @given(
-    st.integers(min_value=1, max_value=5),
-    st.integers(min_value=6, max_value=10),
-    st.integers(min_value=0, max_value=1),
-    st.just("draws"),
-    st.just(2),
+    action_ids=st.lists(st.text(min_size=1), min_size=2, max_size=5, unique=True),
+    n_features=st.integers(min_value=1, max_value=5),
+    costs=st.data(),
+    subsidy_factor=st.data(),
+    exploit_p=st.data(),
+    update_method=st.sampled_from(literal_update_methods),
+    update_kwargs=st.sampled_from([None, {"draws": 500}]),
 )
-def test_cmab_init_with_wrong_blr_models(n_features, other_n_features, update_method_index, kwarg_to_alter, factor):
+def test_bad_initialization(
+    config: ModelTestConfig,
+    action_ids: List[str],
+    n_features: int,
+    costs,
+    exploit_p,
+    subsidy_factor,
+    update_method,
+    update_kwargs,
+):
+    """Test various invalid initialization scenarios for CMAB models"""
+    kwargs = {"cost": 1} if config.cmab_class == CmabBernoulliCC else {}
+    # Test empty actions
     with pytest.raises(AttributeError):
-        CmabBernoulli(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-                "a3": BayesianLogisticRegression.cold_start(n_features=other_n_features),
-            }
-        )
-    update_method = literal_update_methods[update_method_index]
-    other_update_method = literal_update_methods[1 - update_method_index]
+        config.cmab_class(actions={})
+
+    # Test single action (should warn)
+    single_action = {action_ids[0]: config.model_types[0].cold_start(n_features=n_features, **kwargs)}
+    with pytest.warns(UserWarning):
+        config.cmab_class(actions=single_action)
+
+    # Test mismatched feature dimensions
+    actions_wrong_dims = {
+        action_ids[0]: config.model_types[0].cold_start(n_features=n_features, **kwargs),
+        action_ids[1]: config.model_types[0].cold_start(n_features=n_features + 1, **kwargs),
+    }
     with pytest.raises(AttributeError):
-        CmabBernoulli(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method),
-                "a2": BayesianLogisticRegression.cold_start(n_features=n_features, update_method=other_update_method),
-            }
-        )
-    model = BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method)
-    altered_kwarg = model.update_kwargs[kwarg_to_alter] // factor
+        config.cmab_class(actions=actions_wrong_dims)
+
+    # Test mismatched update methods
+    actions_wrong_update = {
+        action_ids[0]: config.model_types[0].cold_start(n_features=n_features, update_method="VI", **kwargs),
+        action_ids[1]: config.model_types[0].cold_start(n_features=n_features, update_method="MCMC", **kwargs),
+    }
     with pytest.raises(AttributeError):
-        CmabBernoulli(
-            actions={
-                "a1": model,
-                "a2": BayesianLogisticRegression.cold_start(
-                    n_features=n_features,
-                    update_method=update_method,
-                    update_kwargs={kwarg_to_alter: altered_kwarg},
-                ),
-            }
-        )
+        config.cmab_class(actions=actions_wrong_update)
+
+    # Test mismatched update kwargs
+    base_kwargs = {"draws": 500} if update_kwargs else {"draws": 1000}
+    actions_wrong_kwargs = {
+        action_ids[0]: config.model_types[0].cold_start(
+            n_features=n_features, update_method=update_method, update_kwargs=base_kwargs, **kwargs
+        ),
+        action_ids[1]: config.model_types[0].cold_start(
+            n_features=n_features,
+            update_method=update_method,
+            update_kwargs={"draws": base_kwargs["draws"] // 2},
+            **kwargs,
+        ),
+    }
+    with pytest.raises(AttributeError):
+        config.cmab_class(actions=actions_wrong_kwargs)
+
+    # Test invalid model types
+    actions_wrong_type = {
+        action_ids[0]: BayesianLogisticRegression.cold_start(n_features=n_features),
+        action_ids[1]: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=1.0),
+    }
+    with pytest.raises((ValidationError, TypeError)):
+        config.cmab_class(actions=actions_wrong_type)
+
+    # Test None actions
+    with pytest.raises(ValidationError):
+        config.cmab_class(actions={aid: None for aid in action_ids})
+
+    # Test invalid strategy parameters
+    if config.cmab_class == CmabBernoulliBAI:
+        with pytest.raises(ValidationError):
+            config.create_cmab_and_actions(
+                action_ids,
+                None,
+                None,
+                costs,
+                exploit_p.draw(st.sampled_from([-0.1, 1.1])),
+                subsidy_factor,
+                n_features,
+                update_method,
+                update_kwargs,
+            )
+    elif config.cmab_class == CmabBernoulliCC:
+        with pytest.raises(ValidationError):
+            config.create_cmab_and_actions(
+                action_ids,
+                None,
+                None,
+                costs,
+                exploit_p,
+                subsidy_factor.draw(st.sampled_from([-0.1, 1.1])),
+                n_features,
+                update_method,
+                update_kwargs,
+            )
 
 
 @settings(deadline=None)
-@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
-def test_cmab_update(n_samples, n_features, update_method):
-    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-
-    def run_update(context):
-        mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features, update_method=update_method)
-        assert all(
-            [
-                mab.actions[a]
-                == BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method)
-                for a in set(actions)
-            ]
-        )
-        mab.update(context=context, actions=actions, rewards=rewards)
-        assert all(
-            [
-                mab.actions[a]
-                != BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method)
-                for a in set(actions)
-            ]
-        )
-        assert not mab.predict_actions_randomly
-
-    # context is numpy array
+@pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
+@given(
+    action_ids=st.lists(
+        st.text(
+            min_size=1,
+        ),
+        min_size=2,
+        max_size=5,
+        unique=True,
+    ),
+    n_samples=st.integers(min_value=1, max_value=5),
+    epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    delta=st.one_of(st.none(), st.just(0.1)),
+    costs=st.data(),
+    n_features=st.integers(min_value=1, max_value=3),
+    subsidy_factor=st.data(),
+    exploit_p=st.data(),
+    update_method=st.sampled_from(literal_update_methods),
+    update_kwargs=st.sampled_from([None, {"draws": 10}]),
+    memory_len=st.integers(min_value=1, max_value=5),
+)
+def test_update(
+    config: ModelTestConfig,
+    action_ids: List[str],
+    n_samples: int,
+    epsilon: Optional[float],
+    delta,
+    costs,
+    n_features,
+    exploit_p,
+    subsidy_factor,
+    update_method,
+    update_kwargs,
+    memory_len,
+    monkeymodule,
+):
+    monkeymodule.setattr(
+        pybandits.model,
+        "fit",
+        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+    )
+    monkeymodule.setattr(
+        pybandits.model,
+        "sample",
+        FakeApproximation(n_features=n_features).sample,
+    )
+    # Create CMAB instance
+    cmab, _, kwargs = config.create_cmab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        costs,
+        exploit_p,
+        subsidy_factor,
+        n_features,
+        update_method,
+        update_kwargs,
+    )
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
-    run_update(context=context)
+    # Generate random rewards
+    reward_data = np.random.choice([0, 1], size=n_samples).tolist()
+    # Test updates with generated data
+    actions_to_update = np.random.choice(np.array(action_ids, dtype=np.object_), size=n_samples, replace=True).tolist()
 
-    # context is python list
-    context = context.tolist()
-    assert type(context) is list
-    run_update(context=context)
+    for_update_kwargs = {"actions": actions_to_update, "rewards": reward_data}
 
-    # context is pandas DataFrame
-    context = pd.DataFrame(context)
-    assert type(context) is pd.DataFrame
-    run_update(context=context)
+    old_cmab = deepcopy(cmab)
+    for transform in [lambda x: x, list, pd.DataFrame]:
+        if delta and "actions_memory" not in for_update_kwargs:
+            with pytest.warns(UserWarning):
+                cmab.update(context=transform(context), **for_update_kwargs)
+        else:
+            cmab.update(context=transform(context), **for_update_kwargs)
+        if delta and "actions_memory" not in for_update_kwargs:
+            for_update_kwargs["actions_memory"] = for_update_kwargs["actions"][-memory_len:]
+            for_update_kwargs["rewards_memory"] = for_update_kwargs["rewards"][-memory_len:]
+            for_update_kwargs["context_memory"] = context[-memory_len:]
+        assert cmab != old_cmab
 
 
 @settings(deadline=None)
-@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
-def test_cmab_update_not_all_actions(n_samples, n_feat, update_method):
-    actions = np.random.choice(["a3", "a4"], size=n_samples).tolist()
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_feat))
-    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4"}, n_features=n_feat, update_method=update_method)
+@pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
+@given(
+    action_ids=st.lists(
+        st.text(
+            min_size=1,
+        ),
+        min_size=2,
+        max_size=5,
+        unique=True,
+    ),
+    n_samples=st.integers(min_value=1, max_value=100),
+    epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    delta=st.one_of(st.none(), st.just(0.1)),
+    costs=st.data(),
+    n_features=st.integers(min_value=1, max_value=5),
+    subsidy_factor=st.data(),
+    exploit_p=st.data(),
+    update_method=st.sampled_from(literal_update_methods),
+    update_kwargs=st.sampled_from([None, {"draws": 500}]),
+    diff=st.data(),
+)
+def test_predict(
+    config: ModelTestConfig,
+    action_ids: List[str],
+    n_samples: int,
+    epsilon: Optional[float],
+    delta,
+    costs,
+    n_features,
+    exploit_p,
+    subsidy_factor,
+    update_method,
+    update_kwargs,
+    diff,
+    monkeymodule,
+):
+    # Create CMAB instance
+    cmab = config.create_cmab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        costs,
+        exploit_p,
+        subsidy_factor,
+        n_features,
+        update_method,
+        update_kwargs,
+    )[0]
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    # Test predictions with random forbidden actions
+    forbidden = (
+        set(np.random.choice(np.array(action_ids, dtype=np.object_), size=len(action_ids) // 2, replace=False))
+        if len(action_ids) > 2
+        else None
+    )
+    if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
+        forbidden.remove(cmab.default_action)
 
-    mab.update(context=context, actions=actions, rewards=rewards)
-    assert mab.actions["a1"] == BayesianLogisticRegression.cold_start(n_features=n_feat, update_method=update_method)
-    assert mab.actions["a2"] == BayesianLogisticRegression.cold_start(n_features=n_feat, update_method=update_method)
-    assert mab.actions["a3"] != BayesianLogisticRegression.cold_start(n_features=n_feat, update_method=update_method)
-    assert mab.actions["a4"] != BayesianLogisticRegression.cold_start(n_features=n_feat, update_method=update_method)
+    mock_update(list(cmab.actions.values()), diff, monkeymodule)
+    best_actions, probs, weights = cmab.predict(context=context, forbidden_actions=forbidden)
+    assert len(best_actions) == n_samples
+    assert len(probs) == n_samples
+    assert len(weights) == n_samples
+
+    if forbidden:
+        assert all(
+            len({action[0] if isinstance(action, tuple) else action for action in prob})
+            == len(action_ids) - len(forbidden)
+            for prob in probs
+        )
+        assert all(action[0] if isinstance(action, tuple) else action not in forbidden for action in best_actions)
+        assert all(
+            action[0] if isinstance(action, tuple) else action not in forbidden
+            for prob in probs
+            for action in prob.keys()
+        )
+        assert all(
+            action[0] if isinstance(action, tuple) else action not in forbidden
+            for weight in weights
+            for action in weight.keys()
+        )
+    else:
+        assert all(
+            len({action[0] if isinstance(action, tuple) else action for action in prob}) == len(action_ids)
+            for prob in probs
+        )
+    if isinstance(cmab, CmabBernoulli) and not cmab.epsilon:
+        assert all(prob[best_action] == max(prob.values()) for best_action, prob in zip(best_actions, probs))
+
+
+@settings(deadline=None)
+@pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
+@given(
+    action_ids=st.lists(
+        st.text(
+            min_size=1,
+        ),
+        min_size=2,
+        max_size=5,
+        unique=True,
+    ),
+    epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    delta=st.one_of(st.none(), st.just(0.1)),
+    costs=st.data(),
+    n_features=st.integers(min_value=1, max_value=5),
+    subsidy_factor=st.data(),
+    exploit_p=st.data(),
+    update_method=st.sampled_from(literal_update_methods),
+    update_kwargs=st.sampled_from([None, {"draws": 500}]),
+    diff=st.data(),
+)
+def test_serialization(
+    config: ModelTestConfig,
+    action_ids: List[str],
+    epsilon: Optional[float],
+    delta,
+    costs,
+    n_features,
+    exploit_p,
+    subsidy_factor,
+    update_method,
+    update_kwargs,
+    diff,
+    monkeymodule,
+):
+    # Create CMAB instance
+    cmab = config.create_cmab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        costs,
+        exploit_p,
+        subsidy_factor,
+        n_features,
+        update_method,
+        update_kwargs,
+    )[0]
+
+    pre_update_state = cmab.get_state()
+    mock_update(list(cmab.actions.values()), diff, monkeymodule)
+    post_update_state = cmab.get_state()
+    # Verify model updates
+    assert pre_update_state != post_update_state
+
+    # Test serialization
+    restored_cmab = config.cmab_class.from_state(post_update_state[1])
+    assert restored_cmab == cmab
+
+    # Test serialization from old state
+    old_post_update_state = post_update_state[1]
+    old_post_update_state["actions"] = old_post_update_state.pop("actions_manager")["actions"]
+    restored_cmab = config.cmab_class.from_old_state(old_post_update_state, delta=delta)
+    assert restored_cmab == cmab
 
 
 @settings(deadline=500)
@@ -247,64 +643,6 @@ def test_cmab_update_shape_mismatch(n_samples, n_features, update_method):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_cmab_predict_cold_start(n_samples, n_features):
-    def run_predict(context):
-        mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
-        selected_actions, probs, weighted_sums = mab.predict(context=context)
-        assert mab.predict_actions_randomly
-        assert all([a in ["a1", "a2"] for a in selected_actions])
-        assert len(selected_actions) == n_samples
-        assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-        assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-    # context is numpy array
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
-    run_predict(context=context)
-
-    # context is python list
-    context = context.tolist()
-    assert type(context) is list
-    run_predict(context=context)
-
-    # context is pandas DataFrame
-    context = pd.DataFrame(context)
-    assert type(context) is pd.DataFrame
-    run_predict(context=context)
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_cmab_predict_not_cold_start(n_samples, n_features):
-    def run_predict(context):
-        mab = CmabBernoulli(
-            actions={
-                "a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()]),
-                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-            },
-        )
-        assert not mab.predict_actions_randomly
-        selected_actions, probs, weighted_sums = mab.predict(context=context)
-        assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
-
-    # context is numpy array
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
-    run_predict(context=context)
-
-    # context is python list
-    context = context.tolist()
-    assert type(context) is list
-    run_predict(context=context)
-
-    # context is pandas DataFrame
-    context = pd.DataFrame(context)
-    assert type(context) is pd.DataFrame
-    run_predict(context=context)
-
-
-@settings(deadline=500)
 @given(st.integers(min_value=1, max_value=10))
 def test_cmab_predict_shape_mismatch(a_int):
     context = np.random.uniform(low=-1.0, high=1.0, size=(100, a_int - 1))
@@ -313,1032 +651,3 @@ def test_cmab_predict_shape_mismatch(a_int):
         mab.predict(context=context)
     with pytest.raises(AttributeError):
         mab.predict(context=[])
-
-
-def test_cmab_predict_with_forbidden_actions(n_features=3):
-    def run_predict(mab):
-        context = np.random.uniform(low=-1.0, high=1.0, size=(1000, n_features))
-        assert set(mab.predict(context=context, forbidden_actions={"a2", "a3", "a4", "a5"})[0]) == {"a1"}
-        assert set(mab.predict(context=context, forbidden_actions={"a1", "a3"})[0]) == {"a2", "a4", "a5"}
-        assert set(mab.predict(context=context, forbidden_actions={"a1"})[0]) == {"a2", "a3", "a4", "a5"}
-        assert set(mab.predict(context=context, forbidden_actions=set())[0]) == {"a1", "a2", "a3", "a4", "a5"}
-
-        if pydantic_version == PYDANTIC_VERSION_1:
-            expected_error_type = ValueError
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            expected_error_type = ValidationError
-        else:
-            raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
-        with pytest.raises(expected_error_type):  # not a set
-            assert set(mab.predict(context=context, forbidden_actions={1})[0])
-        with pytest.raises(ValueError):  # invalid action_ids
-            assert set(mab.predict(context=context, forbidden_actions={"a1", "a9999", "a", 5})[0])
-        with pytest.raises(ValueError):  # all actions forbidden
-            assert set(mab.predict(context=context, forbidden_actions={"a1", "a2", "a3", "a4", "a5"})[0])
-        with pytest.raises(ValueError):  # all actions forbidden (unordered)
-            assert set(mab.predict(n_samples=1000, forbidden_actions={"a5", "a4", "a2", "a3", "a1"})[0])
-
-    # cold start mab
-    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, n_features=n_features)
-    run_predict(mab=mab)
-
-    # not cold start mab
-    mab = CmabBernoulli(
-        actions={
-            "a1": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=[StudentT(), StudentT(), StudentT()]),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a3": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a4": BayesianLogisticRegression(alpha=StudentT(mu=4, sigma=5), betas=[StudentT(), StudentT(), StudentT()]),
-            "a5": BayesianLogisticRegression.cold_start(n_features=n_features),
-        },
-    )
-    assert mab != CmabBernoulli.cold_start(action_ids={"a1", "a2", "a3", "a4", "a5"}, n_features=n_features)
-    run_predict(mab=mab)
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=2, max_value=100))
-def test_cmab_get_state(mu, sigma, n_features):
-    actions: dict = {
-        "a1": BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()]),
-        "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-    }
-
-    cmab = CmabBernoulli(actions=actions)
-    expected_state = to_serializable_dict(
-        {
-            "actions_manager": {
-                "actions": actions,
-                "adaptive_window_size": None,
-                "delta": None,
-                "actions_memory": None,
-                "rewards_memory": None,
-            },
-            "strategy": {},
-            "predict_with_proba": False,
-            "predict_actions_randomly": False,
-            "epsilon": None,
-            "default_action": None,
-        }
-    )
-
-    class_name, cmab_state = cmab.get_state()
-    assert class_name == "CmabBernoulli"
-    assert cmab_state == expected_state
-
-    assert is_serializable(cmab_state), "Internal state is not serializable"
-
-
-@composite
-def cmab_state(draw):
-    # Define individual components
-    actions = draw(
-        st.dictionaries(
-            keys=st.text(min_size=1, max_size=10),
-            values=st.fixed_dictionaries(
-                {
-                    "n_successes": st.integers(min_value=1, max_value=100),
-                    "n_failures": st.integers(min_value=1, max_value=100),
-                    "alpha": st.fixed_dictionaries(
-                        {
-                            "mu": st.floats(min_value=-100, max_value=100),
-                            "nu": st.floats(min_value=0, max_value=100),
-                            "sigma": st.floats(min_value=0, max_value=100),
-                        }
-                    ),
-                    "betas": st.lists(
-                        st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0, max_value=100),
-                                "sigma": st.floats(min_value=0, max_value=100),
-                            }
-                        ),
-                        min_size=3,
-                        max_size=3,
-                    ),
-                },
-            ),
-            min_size=2,
-        )
-    )
-
-    actions_manager = {"actions": actions}
-    strategy = {}
-
-    state = {"actions_manager": actions_manager, "strategy": strategy}
-    adaptive_window_indicator = draw(st.booleans())
-    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
-
-    if epsilon_greedy_indicator:
-        if adaptive_window_indicator:
-            epsilon = 0.1
-        else:
-            epsilon = draw(st.sampled_from([None, 0.1]))
-
-        state["epsilon"] = epsilon
-        # Adjust default_action based on epsilon and actions
-        if draw(st.booleans()):
-            if epsilon is None or adaptive_window_indicator:
-                default_action = None
-            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
-                default_action = list(actions.keys())[default_action_index]
-            else:
-                default_action = None
-            state["default_action"] = default_action
-    update_method = draw(st.sampled_from(literal_update_methods))
-    _apply_update_method_to_state(state, update_method)
-    if adaptive_window_indicator:
-        actions_manager_state = state["actions_manager"]
-        actions_manager_state["adaptive_window_size"] = draw(
-            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
-        )
-        if actions_manager_state["adaptive_window_size"] is not None:
-            actions_manager_state["delta"] = draw(
-                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
-            )
-            if draw(st.booleans()):
-                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
-                if actions_manager_state["adaptive_window_size"] != "inf":
-                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
-                else:
-                    max_size = memory_limit
-                actions_manager_state["actions_memory"] = draw(
-                    st.lists(
-                        st.sampled_from(list(actions.keys())),
-                        min_size=0,
-                        max_size=max_size,
-                    )
-                )
-                size = len(actions_manager_state["actions_memory"])
-                actions_manager_state["rewards_memory"] = draw(
-                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
-                )
-    return state
-
-
-@settings(deadline=500)
-@given(state=cmab_state())
-def test_cmab_from_state(state):
-    cmab = CmabBernoulli.from_state(state)
-    assert isinstance(cmab, CmabBernoulli)
-
-    stripped_state = state.copy()
-    stripped_state["actions_manager"].pop("actions_memory", None)
-    stripped_state["actions_manager"].pop("rewards_memory", None)
-    memory_less_cmab = CmabBernoulli.from_state(stripped_state)
-    old_state = state.copy()
-    with pytest.raises(ValueError):
-        CmabBernoulli.from_old_state(old_state)
-    actions_manager_state = old_state.pop("actions_manager")
-    old_state["actions"] = actions_manager_state["actions"]
-    old_cmab = CmabBernoulli.from_old_state(
-        old_state,
-        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
-        delta=actions_manager_state.pop("delta", None),
-    )
-    assert old_cmab == memory_less_cmab
-
-    actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
-    assert expected_actions == actual_actions
-
-    # Ensure get_state and from_state compatibility
-    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
-    assert new_cmab == cmab
-
-
-########################################################################################################################
-
-
-# CmabBernoulli with strategy=BestActionIdentificationBandit()
-
-
-@settings(deadline=500)
-@given(st.integers(max_value=100))
-def test_create_cmab_bernoulli_bai_cold_start(a_int):
-    # n_features must be > 0
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
-    else:
-        # default exploit_p
-        mab1 = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
-        mab2 = CmabBernoulliBAI(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
-                "a2": BayesianLogisticRegression.cold_start(n_features=a_int),
-            }
-        )
-        mab2.predict_actions_randomly = True
-        assert mab1 == mab2
-
-        # set exploit_p
-        mab1 = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=a_int, exploit_p=0.42)
-        mab2 = CmabBernoulliBAI(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
-                "a2": BayesianLogisticRegression.cold_start(n_features=a_int),
-            },
-            exploit_p=0.42,
-        )
-        mab2.predict_actions_randomly = True
-        assert mab1 == mab2
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=10))
-def test_cmab_bai_can_instantiate(n_features):
-    with pytest.raises(ValueError):
-        CmabBernoulliBAI()
-    with pytest.raises(AttributeError):
-        CmabBernoulliBAI(actions={})
-    with pytest.warns(UserWarning):
-        CmabBernoulliBAI(actions={"a1": BayesianLogisticRegression.cold_start(n_features=2)})
-    with pytest.raises(ValueError):  # predict_with_proba is not an argument of init
-        CmabBernoulliBAI(
-            actions={
-                "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-                "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-            },
-            predict_with_proba=True,
-        )
-    with pytest.raises((ValidationError, TypeError)):
-        CmabBernoulliBAI(
-            actions={
-                "a1": None,
-                "a2": None,
-            },
-        )
-    CmabBernoulliBAI(
-        actions={
-            "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-        },
-        strategy=BestActionIdentificationBandit(),
-    )
-    mab = CmabBernoulliBAI(
-        actions={
-            "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-        }
-    )
-    assert mab.actions["a1"] == BayesianLogisticRegression.cold_start(n_features=n_features)
-    assert mab.actions["a2"] == BayesianLogisticRegression.cold_start(n_features=n_features)
-    assert not mab.predict_actions_randomly
-    assert not mab.predict_with_proba
-    assert mab.strategy == BestActionIdentificationBandit()
-
-    mab = CmabBernoulliBAI(
-        actions={
-            "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-        },
-        exploit_p=0.42,
-    )
-    assert mab.actions["a1"] == BayesianLogisticRegression.cold_start(n_features=n_features)
-    assert mab.actions["a2"] == BayesianLogisticRegression.cold_start(n_features=n_features)
-    assert not mab.predict_actions_randomly
-    assert not mab.predict_with_proba
-    assert mab.strategy == BestActionIdentificationBandit(exploit_p=0.42)
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_cmab_bai_predict(n_samples, n_features):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    # cold start
-    mab = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=n_features)
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-    # not cold start
-    mab = CmabBernoulliBAI(
-        actions={
-            "a1": BayesianLogisticRegression.cold_start(n_features=n_features),
-            "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-        },
-        exploit_p=0.42,
-    )
-    assert not mab.predict_actions_randomly
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
-
-
-@settings(deadline=None)
-@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
-def test_cmab_bai_update(n_samples, n_features, update_method):
-    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=n_features, update_method=update_method)
-    assert mab.predict_actions_randomly
-    assert all(
-        [
-            mab.actions[a] == BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method)
-            for a in set(actions)
-        ]
-    )
-    mab.update(context=context, actions=actions, rewards=rewards)
-    assert all(
-        [
-            mab.actions[a] != BayesianLogisticRegression.cold_start(n_features=n_features, update_method=update_method)
-            for a in set(actions)
-        ]
-    )
-    assert not mab.predict_actions_randomly
-
-
-@settings(deadline=500)
-@given(
-    st.integers(min_value=1),
-    st.integers(min_value=1),
-    st.integers(min_value=2, max_value=100),
-    st.floats(min_value=0, max_value=1),
-)
-def test_cmab_bai_get_state(mu, sigma, n_features, exploit_p: Float01):
-    actions: dict = {
-        "a1": BayesianLogisticRegression(alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()]),
-        "a2": BayesianLogisticRegression.cold_start(n_features=n_features),
-    }
-
-    cmab = CmabBernoulliBAI(actions=actions, exploit_p=exploit_p)
-    expected_state = to_serializable_dict(
-        {
-            "actions_manager": {
-                "actions": actions,
-                "adaptive_window_size": None,
-                "delta": None,
-                "actions_memory": None,
-                "rewards_memory": None,
-            },
-            "strategy": {"exploit_p": exploit_p},
-            "predict_with_proba": False,
-            "predict_actions_randomly": False,
-            "epsilon": None,
-            "default_action": None,
-        }
-    )
-
-    class_name, cmab_state = cmab.get_state()
-    assert class_name == "CmabBernoulliBAI"
-    assert cmab_state == expected_state
-
-    assert is_serializable(cmab_state), "Internal state is not serializable"
-
-
-@composite
-def cmab_bai_state(draw):
-    # Define individual components
-    actions = draw(
-        st.dictionaries(
-            keys=st.text(min_size=1, max_size=10),
-            values=st.fixed_dictionaries(
-                {
-                    "n_successes": st.integers(min_value=1, max_value=100),
-                    "n_failures": st.integers(min_value=1, max_value=100),
-                    "alpha": st.fixed_dictionaries(
-                        {
-                            "mu": st.floats(min_value=-100, max_value=100),
-                            "nu": st.floats(min_value=0, max_value=100),
-                            "sigma": st.floats(min_value=0, max_value=100),
-                        }
-                    ),
-                    "betas": st.lists(
-                        st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0, max_value=100),
-                                "sigma": st.floats(min_value=0, max_value=100),
-                            }
-                        ),
-                        min_size=3,
-                        max_size=3,
-                    ),
-                },
-            ),
-            min_size=2,
-        )
-    )
-
-    actions_manager = {"actions": actions}
-    strategy = draw(
-        st.one_of(
-            st.just({}),
-            st.just({"exploit_p": None}),
-            st.builds(lambda x: {"exploit_p": x}, st.floats(min_value=0, max_value=1)),
-        )
-    )
-    state = {"actions_manager": actions_manager, "strategy": strategy}
-    adaptive_window_indicator = draw(st.booleans())
-    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
-
-    if epsilon_greedy_indicator:
-        if adaptive_window_indicator:
-            epsilon = 0.1
-        else:
-            epsilon = draw(st.sampled_from([None, 0.1]))
-
-        state["epsilon"] = epsilon
-        # Adjust default_action based on epsilon and actions
-        if draw(st.booleans()):
-            if epsilon is None or adaptive_window_indicator:
-                default_action = None
-            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
-                default_action = list(actions.keys())[default_action_index]
-            else:
-                default_action = None
-            state["default_action"] = default_action
-    update_method = draw(st.sampled_from(literal_update_methods))
-    _apply_update_method_to_state(state, update_method)
-    if adaptive_window_indicator:
-        actions_manager_state = state["actions_manager"]
-        actions_manager_state["adaptive_window_size"] = draw(
-            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
-        )
-        if actions_manager_state["adaptive_window_size"] is not None:
-            actions_manager_state["delta"] = draw(
-                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
-            )
-            if draw(st.booleans()):
-                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
-                if actions_manager_state["adaptive_window_size"] != "inf":
-                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
-                else:
-                    max_size = memory_limit
-                actions_manager_state["actions_memory"] = draw(
-                    st.lists(
-                        st.sampled_from(list(actions.keys())),
-                        min_size=0,
-                        max_size=max_size,
-                    )
-                )
-                size = len(actions_manager_state["actions_memory"])
-                actions_manager_state["rewards_memory"] = draw(
-                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
-                )
-    return state
-
-
-@settings(deadline=500)
-@given(state=cmab_bai_state())
-def test_cmab_bai_from_state(state):
-    cmab = CmabBernoulliBAI.from_state(state)
-    assert isinstance(cmab, CmabBernoulliBAI)
-
-    stripped_state = state.copy()
-    stripped_state["actions_manager"].pop("actions_memory", None)
-    stripped_state["actions_manager"].pop("rewards_memory", None)
-    memory_less_cmab = CmabBernoulliBAI.from_state(stripped_state)
-    old_state = state.copy()
-    with pytest.raises(ValueError):
-        CmabBernoulliBAI.from_old_state(old_state)
-    actions_manager_state = old_state.pop("actions_manager")
-    old_state["actions"] = actions_manager_state["actions"]
-    old_cmab = CmabBernoulliBAI.from_old_state(
-        old_state,
-        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
-        delta=actions_manager_state.pop("delta", None),
-    )
-    assert old_cmab == memory_less_cmab
-
-    actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
-    assert expected_actions == actual_actions
-
-    expected_exploit_p = cmab.strategy.get_expected_value_from_state(state, "exploit_p")
-    actual_exploit_p = cmab.strategy.exploit_p
-    assert expected_exploit_p == actual_exploit_p
-
-    # Ensure get_state and from_state compatibility
-    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
-    assert new_cmab == cmab
-
-
-########################################################################################################################
-
-
-# CmabBernoulli with strategy=CostControlBandit()
-
-
-@settings(deadline=500)
-@given(st.integers(max_value=100))
-def test_create_cmab_bernoulli_cc_cold_start(a_int):
-    action_ids_cost = {"a1": 10, "a2": 20.5}
-    # n_features must be > 0
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=a_int)
-    else:
-        # default subsidy_factor
-        mab1 = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=a_int)
-        mab2 = CmabBernoulliCC(
-            actions={
-                "a1": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a1"]),
-                "a2": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a2"]),
-            }
-        )
-        mab2.predict_actions_randomly = True
-        assert mab1 == mab2
-
-        # set subsidy_factor
-        mab1 = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=a_int, subsidy_factor=0.42)
-        mab2 = CmabBernoulliCC(
-            actions={
-                "a1": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a1"]),
-                "a2": BayesianLogisticRegressionCC.cold_start(n_features=a_int, cost=action_ids_cost["a2"]),
-            },
-            subsidy_factor=0.42,
-        )
-        mab2.predict_actions_randomly = True
-        assert mab1 == mab2
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=10))
-def test_cmab_cc_can_instantiate(n_features):
-    with pytest.raises(ValueError):
-        CmabBernoulliCC()
-    with pytest.raises(AttributeError):
-        CmabBernoulliCC(actions={})
-    with pytest.warns(UserWarning):
-        CmabBernoulliCC(actions={"a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)})
-    with pytest.raises(ValueError):  # predict_with_proba is not an argument of init
-        CmabBernoulliCC(
-            actions={
-                "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-                "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            },
-            predict_with_proba=True,
-        )
-    with pytest.raises((ValidationError, TypeError)):
-        CmabBernoulliCC(
-            actions={
-                "a1": None,
-                "a2": None,
-            },
-        )
-    CmabBernoulliCC(
-        actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-        },
-        strategy=CostControlBandit(),
-    )
-    mab = CmabBernoulliCC(
-        actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-        }
-    )
-    assert mab.actions["a1"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
-    assert mab.actions["a2"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
-    assert not mab.predict_actions_randomly
-    assert mab.predict_with_proba
-    assert mab.strategy == CostControlBandit()
-
-    mab = CmabBernoulliCC(
-        actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-        },
-        subsidy_factor=0.42,
-    )
-    assert mab.actions["a1"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
-    assert mab.actions["a2"] == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10)
-    assert not mab.predict_actions_randomly
-    assert mab.predict_with_proba
-    assert mab.strategy == CostControlBandit(subsidy_factor=0.42)
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_cmab_cc_predict(n_samples, n_features):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    # cold start
-    mab = CmabBernoulliCC.cold_start(action_ids_cost={"a1": 10, "a2": 20.5}, n_features=n_features)
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-    # not cold start
-    mab = CmabBernoulliCC(
-        actions={
-            "a1": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10),
-            "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=20.5),
-        },
-        subsidy_factor=0.42,
-    )
-    assert not mab.predict_actions_randomly
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert len(selected_actions) == len(probs) == len(weighted_sums) == n_samples
-
-
-@settings(deadline=None)
-@given(st.just(100), st.just(3), st.sampled_from(literal_update_methods))
-def test_cmab_cc_update(n_samples, n_features, update_method):
-    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = CmabBernoulliCC.cold_start(
-        action_ids_cost={"a1": 10, "a2": 10}, n_features=n_features, update_method=update_method
-    )
-    assert mab.predict_actions_randomly
-    assert all(
-        [
-            mab.actions[a]
-            == BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10, update_method=update_method)
-            for a in set(actions)
-        ]
-    )
-    mab.update(context=context, actions=actions, rewards=rewards)
-    assert all(
-        [
-            mab.actions[a]
-            != BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=10, update_method=update_method)
-            for a in set(actions)
-        ]
-    )
-    assert not mab.predict_actions_randomly
-
-
-@settings(deadline=500)
-@given(
-    st.integers(min_value=1),
-    st.integers(min_value=1),
-    st.integers(min_value=2, max_value=100),
-    st.floats(min_value=0, max_value=1),
-    st.floats(min_value=0, max_value=1),
-    st.floats(min_value=0, max_value=1),
-)
-def test_cmab_cc_get_state(
-    mu, sigma, n_features, cost_1: NonNegativeFloat, cost_2: NonNegativeFloat, subsidy_factor: Float01
-):
-    actions: dict = {
-        "a1": BayesianLogisticRegressionCC(
-            alpha=StudentT(mu=mu, sigma=sigma), betas=n_features * [StudentT()], cost=cost_1
-        ),
-        "a2": BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=cost_2),
-    }
-
-    cmab = CmabBernoulliCC(actions=actions, subsidy_factor=subsidy_factor)
-    expected_state = to_serializable_dict(
-        {
-            "actions_manager": {
-                "actions": actions,
-                "adaptive_window_size": None,
-                "delta": None,
-                "actions_memory": None,
-                "rewards_memory": None,
-            },
-            "strategy": {"subsidy_factor": subsidy_factor},
-            "predict_with_proba": True,
-            "predict_actions_randomly": False,
-            "epsilon": None,
-            "default_action": None,
-        }
-    )
-
-    class_name, cmab_state = cmab.get_state()
-    assert class_name == "CmabBernoulliCC"
-    assert cmab_state == expected_state
-
-    assert is_serializable(cmab_state), "Internal state is not serializable"
-
-
-@composite
-def cmab_cc_state(draw):
-    # Define individual components
-    actions = draw(
-        st.dictionaries(
-            keys=st.text(min_size=1, max_size=10),
-            values=st.fixed_dictionaries(
-                {
-                    "n_successes": st.integers(min_value=1, max_value=100),
-                    "n_failures": st.integers(min_value=1, max_value=100),
-                    "alpha": st.fixed_dictionaries(
-                        {
-                            "mu": st.floats(min_value=-100, max_value=100),
-                            "nu": st.floats(min_value=0, max_value=100),
-                            "sigma": st.floats(min_value=0, max_value=100),
-                        }
-                    ),
-                    "betas": st.lists(
-                        st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0, max_value=100),
-                                "sigma": st.floats(min_value=0, max_value=100),
-                            }
-                        ),
-                        min_size=3,
-                        max_size=3,
-                    ),
-                    "cost": st.floats(min_value=0, max_value=1),
-                },
-            ),
-            min_size=2,
-        )
-    )
-
-    actions_manager = {"actions": actions}
-    strategy = draw(
-        st.one_of(
-            st.just({}),
-            st.just({"subsidy_factor": None}),
-            st.builds(lambda x: {"subsidy_factor": x}, st.floats(min_value=0, max_value=1)),
-        )
-    )
-    state = {"actions_manager": actions_manager, "strategy": strategy}
-    adaptive_window_indicator = draw(st.booleans())
-    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
-
-    if epsilon_greedy_indicator:
-        if adaptive_window_indicator:
-            epsilon = 0.1
-        else:
-            epsilon = draw(st.sampled_from([None, 0.1]))
-
-        state["epsilon"] = epsilon
-        # Adjust default_action based on epsilon and actions
-        if draw(st.booleans()):
-            if epsilon is None or adaptive_window_indicator:
-                default_action = None
-            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
-                default_action = list(actions.keys())[default_action_index]
-            else:
-                default_action = None
-            state["default_action"] = default_action
-    update_method = draw(st.sampled_from(literal_update_methods))
-    _apply_update_method_to_state(state, update_method)
-    if adaptive_window_indicator:
-        actions_manager_state = state["actions_manager"]
-        actions_manager_state["adaptive_window_size"] = draw(
-            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
-        )
-        if actions_manager_state["adaptive_window_size"] is not None:
-            actions_manager_state["delta"] = draw(
-                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
-            )
-            if draw(st.booleans()):
-                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
-                if actions_manager_state["adaptive_window_size"] != "inf":
-                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
-                else:
-                    max_size = memory_limit
-                actions_manager_state["actions_memory"] = draw(
-                    st.lists(
-                        st.sampled_from(list(actions.keys())),
-                        min_size=0,
-                        max_size=max_size,
-                    )
-                )
-                size = len(actions_manager_state["actions_memory"])
-                actions_manager_state["rewards_memory"] = draw(
-                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
-                )
-    return state
-
-
-@settings(deadline=500)
-@given(state=cmab_cc_state())
-def test_cmab_cc_from_state(state):
-    cmab = CmabBernoulliCC.from_state(state)
-    assert isinstance(cmab, CmabBernoulliCC)
-
-    stripped_state = state.copy()
-    stripped_state["actions_manager"].pop("actions_memory", None)
-    stripped_state["actions_manager"].pop("rewards_memory", None)
-    memory_less_cmab = CmabBernoulliCC.from_state(stripped_state)
-    old_state = state.copy()
-    with pytest.raises(ValueError):
-        CmabBernoulliCC.from_old_state(old_state)
-    actions_manager_state = old_state.pop("actions_manager")
-    old_state["actions"] = actions_manager_state["actions"]
-    old_cmab = CmabBernoulliCC.from_old_state(
-        old_state,
-        adaptive_window_size=actions_manager_state.pop("adaptive_window_size", None),
-        delta=actions_manager_state.pop("delta", None),
-    )
-    assert old_cmab == memory_less_cmab
-
-    actual_actions = to_serializable_dict(cmab.actions)  # Normalize the dict
-    expected_actions = {k: {**v, **state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
-    assert expected_actions == actual_actions
-
-    expected_subsidy_factor = cmab.strategy.get_expected_value_from_state(state, "subsidy_factor")
-    actual_subsidy_factor = cmab.strategy.subsidy_factor
-    assert expected_subsidy_factor == actual_subsidy_factor
-
-    # Ensure get_state and from_state compatibility
-    new_cmab = globals()[cmab.get_state()[0]].from_state(state=cmab.get_state()[1])
-    assert new_cmab == cmab
-
-
-########################################################################################################################
-
-
-# Cmab with epsilon-greedy super strategy
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_epsilon_greedy_cmab_predict_cold_start(n_samples, n_features):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features, epsilon=0.1, default_action="a1")
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_epsilon_greedy_cmab_bai_predict(n_samples, n_features):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    mab = CmabBernoulliBAI.cold_start(action_ids={"a1", "a2"}, n_features=n_features, epsilon=0.1, default_action="a1")
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-
-@settings(deadline=500)
-@given(st.integers(min_value=1, max_value=100), st.integers(min_value=1, max_value=3))
-def test_epsilon_greedy_cmab_cc_predict(n_samples, n_features):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    # cold start
-    mab = CmabBernoulliCC.cold_start(
-        action_ids_cost={"a1": 10, "a2": 20.5}, n_features=n_features, epsilon=0.1, default_action="a1"
-    )
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-
-########################################################################################################################
-
-
-# Cmab with adaptive window size
-
-
-@settings(deadline=500)
-@given(
-    st.integers(min_value=1, max_value=1000),
-    st.integers(min_value=1, max_value=100),
-    st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf")),
-    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
-    st.just(0.1),
-)
-def test_adaptive_window_cmab_predict_cold_start(n_samples, n_features, adaptive_window_size, delta, epsilon):
-    if adaptive_window_size is None and delta is not None:
-        with pytest.raises(AttributeError):
-            CmabBernoulli.cold_start(
-                action_ids={"a1", "a2"},
-                n_features=n_features,
-                adaptive_window_size=adaptive_window_size,
-                delta=delta,
-                epsilon=epsilon,
-            )
-    else:
-        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-        mab = CmabBernoulli.cold_start(
-            action_ids={"a1", "a2"},
-            n_features=n_features,
-            adaptive_window_size=adaptive_window_size,
-            delta=delta,
-            epsilon=epsilon,
-        )
-        selected_actions, probs, weighted_sums = mab.predict(context=context)
-        assert mab.predict_actions_randomly
-        assert all([a in ["a1", "a2"] for a in selected_actions])
-        assert len(selected_actions) == n_samples
-        assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-        assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-
-@settings(deadline=500)
-@given(
-    st.integers(min_value=1, max_value=100),
-    st.integers(min_value=1, max_value=3),
-    st.one_of(
-        st.integers(min_value=1, max_value=100),
-        st.none(),
-        st.just("inf"),
-    ),
-    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
-    st.just(0.1),
-)
-def test_adaptive_window_cmab_bai_predict(n_samples, n_features, adaptive_window_size, delta, epsilon):
-    if adaptive_window_size is None and delta is not None:
-        delta = None
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    mab = CmabBernoulliBAI.cold_start(
-        action_ids={"a1", "a2"},
-        n_features=n_features,
-        adaptive_window_size=adaptive_window_size,
-        delta=delta,
-        epsilon=epsilon,
-    )
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-
-@settings(deadline=500)
-@given(
-    st.integers(min_value=1, max_value=100),
-    st.integers(min_value=1, max_value=3),
-    st.one_of(
-        st.integers(min_value=1, max_value=100),
-        st.none(),
-        st.just("inf"),
-    ),
-    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
-    st.just(0.1),
-)
-def test_adaptive_window_cmab_cc_predict(n_samples, n_features, adaptive_window_size, delta, epsilon):
-    if adaptive_window_size is None and delta is not None:
-        delta = None
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-    # cold start
-    mab = CmabBernoulliCC.cold_start(
-        action_ids_cost={"a1": 10, "a2": 20.5},
-        n_features=n_features,
-        adaptive_window_size=adaptive_window_size,
-        delta=delta,
-        epsilon=epsilon,
-    )
-    selected_actions, probs, weighted_sums = mab.predict(context=context)
-    assert mab.predict_actions_randomly
-    assert all([a in ["a1", "a2"] for a in selected_actions])
-    assert len(selected_actions) == n_samples
-    assert probs == n_samples * [{"a1": 0.5, "a2": 0.5}]
-    assert weighted_sums == n_samples * [{"a1": 0, "a2": 0}]
-
-
-@settings(deadline=None)
-@given(
-    st.integers(min_value=150, max_value=250),
-    st.integers(min_value=1, max_value=3),
-    st.sampled_from(["inf", 200]),
-    st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none()),
-    st.just(0.1),
-)
-def test_adaptive_window_cmab_update(n_samples, n_features, adaptive_window_size, delta, epsilon):
-    if adaptive_window_size is None and delta is not None:
-        with pytest.raises(AttributeError):
-            CmabBernoulli.cold_start(
-                action_ids={"a1", "a2"},
-                n_features=n_features,
-                adaptive_window_size=adaptive_window_size,
-                delta=delta,
-                epsilon=epsilon,
-            )
-    else:
-        actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
-        rewards = np.random.choice([0, 1], size=n_samples).tolist()
-        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-
-        mab = CmabBernoulli.cold_start(
-            action_ids={"a1", "a2"},
-            n_features=n_features,
-            adaptive_window_size=adaptive_window_size,
-            delta=delta,
-            epsilon=epsilon,
-        )
-        mab.update(context=context, actions=actions, rewards=rewards)
-        expected_length = adaptive_window_size if adaptive_window_size != "inf" else n_samples
-        assert list(mab.actions_manager.rewards_memory) == rewards[-expected_length:]
-        assert list(mab.actions_manager.actions_memory) == actions[-expected_length:]
-
-        # Change reward statistic, expect to hold only part of the data in the memory
-        new_rewards = [1] * n_samples
-        mab.update(context=context, actions=actions, rewards=new_rewards)
-        assert len(mab.actions_manager.rewards_memory) < expected_length
-        assert len(mab.actions_manager.actions_memory) < expected_length

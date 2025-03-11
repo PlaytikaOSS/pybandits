@@ -95,7 +95,13 @@ class BaseSmabBernoulli(BaseMab, ABC):
         return selected_actions, probs
 
     @validate_call
-    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
+    def update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        actions_memory: Optional[List[ActionId]] = None,
+        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+    ):
         """
         Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
         rewards.
@@ -110,8 +116,12 @@ class BaseSmabBernoulli(BaseMab, ABC):
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        actions_memory : Optional[List[ActionId]]
+            List of previously selected actions.
+        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+            List of previously collected rewards.
         """
-        super().update(actions=actions, rewards=rewards)
+        super().update(actions=actions, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory)
 
 
 class SmabBernoulli(BaseSmabBernoulli):

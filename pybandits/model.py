@@ -27,7 +27,6 @@ from typing import List, Literal, Optional, Tuple, TypeVar, Union
 import numpy as np
 import pymc.math as pmath
 from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
-from numpy.typing import ArrayLike
 from pymc import Bernoulli, Data, Deterministic, fit, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
@@ -116,6 +115,13 @@ class Model(BaseModel, ABC):
             A list of binary rewards.
         """
 
+    @property
+    def count(self) -> int:
+        """
+        The total amount of successes and failures collected.
+        """
+        return self.n_successes + self.n_failures
+
     def reset(self):
         """
         Reset the model.
@@ -196,13 +202,6 @@ class BaseBeta(Model):
         if hasattr(values, "n_successes") != hasattr(values, "n_failures"):
             raise ValueError("Either both or neither n_successes and n_failures should be specified.")
         return values
-
-    @property
-    def count(self) -> int:
-        """
-        The total amount of successes and failures collected.
-        """
-        return self.n_successes + self.n_failures
 
     @property
     def mean(self) -> float:
@@ -308,31 +307,26 @@ class BetaMO(ModelMO):
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
         """
-        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
-        with default parameters.
-
-        It is modeled as:
-
-            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-        where the alpha and betas coefficients are Student's t-distributions.
+        Utility function to create a multi-objective Beta model with cold start.
 
         Parameters
         ----------
-        n_betas : PositiveInt
-            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
-            after in the context matrix.
-        kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child model.
+        n_objectives : PositiveInt
+            The number of objectives.
+
+        Parameters
+        ----------
+        n_objectives: PositiveInt
+            The number of objectives.
 
         Returns
         -------
-        blr: BayesianLogisticRegrssion
-            The Bayesian Logistic Regression model.
+        beta_mo: BetaMO
+            The multi-objective Beta model.
         """
         models = n_objectives * [Beta()]
-        blr = cls(models=models, **kwargs)
-        return blr
+        beta_mo = cls(models=models, **kwargs)
+        return beta_mo
 
     def _reset(self):
         for model in self.models:
@@ -376,7 +370,7 @@ class StudentT(PyBanditsBaseModel):
     nu: confloat(allow_inf_nan=False) = 5.0
 
 
-class BayesianLogisticRegression(Model):
+class BaseBayesianLogisticRegression(Model, ABC):
     """
     Base Bayesian Logistic Regression model.
 
@@ -481,13 +475,13 @@ class BayesianLogisticRegression(Model):
         return prob
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def check_context_matrix(self, context: ArrayLike):
+    def check_context_matrix(self, context: np.ndarray):
         """
         Check and cast context matrix.
 
         Parameters
         ----------
-        context : ArrayLike of shape (n_samples, n_features)
+        context : np.ndarray of shape (n_samples, n_features)
             Matrix of contextual features.
 
         Returns
@@ -495,21 +489,17 @@ class BayesianLogisticRegression(Model):
         context : pandas DataFrame of shape (n_samples, n_features)
             Matrix of contextual features.
         """
-        try:
-            n_cols_context = array(context).shape[1]
-        except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {len(self.betas)} columns: {e}.")
-        if n_cols_context != len(self.betas):
+        if context.shape[1] != len(self.betas):
             raise AttributeError(f"Shape mismatch: context must have {len(self.betas)} columns.")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: ArrayLike) -> Tuple[Probability, float]:
+    def sample_proba(self, context: np.ndarray) -> Tuple[Probability, float]:
         """
         Compute the probability of getting a positive reward from the sampled regression coefficients and the context.
 
         Parameters
         ----------
-        context : ArrayLike
+        context : np.ndarray
             Context matrix of shape (n_samples, n_features).
 
         Returns
@@ -547,13 +537,13 @@ class BayesianLogisticRegression(Model):
         return prob, weighted_sum
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _update(self, context: ArrayLike, rewards: List[BinaryReward]):
+    def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        context : ArrayLike
+        context : np.ndarray
             Context matrix of shape (n_samples, n_features).
         rewards: List[BinaryReward]
             A list of binary rewards.
@@ -598,8 +588,8 @@ class BayesianLogisticRegression(Model):
             # compute mean and std of the coefficients distributions
             self.alpha.mu = mean(trace["alpha"])
             self.alpha.sigma = std(trace["alpha"], ddof=1)
-            betas_mu = mean(trace["betas"], axis=0)
-            betas_std = std(trace["betas"], axis=0, ddof=1)
+            betas_mu = mean(trace["betas"], axis=1)
+            betas_std = std(trace["betas"], axis=1, ddof=1)
             self.betas = [
                 StudentT(mu=mu, sigma=sigma, nu=beta.nu) for mu, sigma, beta in zip(betas_mu, betas_std, self.betas)
             ]
@@ -654,7 +644,32 @@ class BayesianLogisticRegression(Model):
         self.betas = [StudentT() for _ in range(len(self.betas))]
 
 
-class BayesianLogisticRegressionCC(BayesianLogisticRegression):
+class BayesianLogisticRegression(BaseBayesianLogisticRegression):
+    """
+    Bayesian Logistic Regression model.
+
+    It is modeled as:
+
+        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+    where the alpha and betas coefficients are Student's t-distributions.
+
+    Parameters
+    ----------
+    alpha: StudentT
+        Student's t-distribution of the alpha coefficient.
+    betas: StudentT
+        Student's t-distributions of the betas coefficients.
+    update_method : UpdateMethods, defaults to "MCMC"
+        The strategy for computing posterior quantities of the Bayesian models in the update function. Such as Markov
+        chain Monte Carlo ("MCMC") or Variational Inference ("VI"). Check UpdateMethods in pybandits.model for the
+        full list.
+    update_kwargs : Optional[dict], uses default values if not specified
+        Additional arguments to pass to the update method.
+    """
+
+
+class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
     """
     Bayesian Logistic Regression model with cost control.
 
@@ -683,4 +698,4 @@ class BayesianLogisticRegressionCC(BayesianLogisticRegression):
     cost: NonNegativeFloat
 
 
-CmabModelType = TypeVar("CmabModelType", bound=BayesianLogisticRegression)
+CmabModelType = TypeVar("CmabModelType", bound=BaseBayesianLogisticRegression)

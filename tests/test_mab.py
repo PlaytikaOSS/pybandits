@@ -153,14 +153,3 @@ def test_adaptive_window_without_epsilon_fails(adaptive_window_size, epsilon):
             epsilon=epsilon,
             default_action="a1",
         )
-
-
-@given(st.integers(min_value=10, max_value=9999), st.just(0.1))
-def test_small_window_size_raises_warning(adaptive_window_size, epsilon):
-    with pytest.warns(UserWarning):
-        DummyMab(
-            actions={"a1": Beta(), "a2": Beta()},
-            strategy=ClassicBandit(),
-            adaptive_window_size=adaptive_window_size,
-            epsilon=epsilon,
-        )
