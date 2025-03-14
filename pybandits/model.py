@@ -43,12 +43,14 @@ from pybandits.pydantic_version_compatibility import (
     Field,
     NonNegativeFloat,
     PositiveInt,
+    PositiveFloat,
+    NonNegativeFloat,
     confloat,
     model_validator,
     pydantic_version,
-    root_validator,
     validate_call,
     PrivateAttr,
+    field_serializer
 )
 
 UpdateMethods = Literal["MCMC", "VI"]
@@ -266,59 +268,39 @@ class StudentT(PyBanditsBaseModel):
 
 
 class StudentTArray(PyBanditsBaseModel):
-    """
-    A model representing an array of Student's t-distributions.
-   
-     Parameters
-    ----------
-    shape: Optional[List[PositiveInt]]
-        The shape of the arrays for the parameters. If not provided, `params_dict` must be specified.
-    params_dict : Optional[Dict[str, Union[List[float], List[List[float]]]]]
-        A dictionary containing the parameters 'mu', 'sigma', and 'nu'. If not provided, `shape` must be specified.
-    mu: confloat(allow_inf_nan=False)
-        The mean of the Student's t-distribution. Default is 0.0.
-    sigma : confloat(allow_inf_nan=False)
-        The scale (standard deviation) of the Student's t-distribution. Default is 10.0.
-    nu: confloat(allow_inf_nan=False)
-        The degrees of freedom of the Student's t-distribution. Default is 5.0.
+    mu: Union[List[float], List[List[float]]]
+    sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
+    nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
-    """
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.mu = np.array(self.mu)
+        self.sigma = np.array(self.sigma)
+        self.nu = np.array(self.nu)
 
-    shape: Optional[List[PositiveInt]] = None
-    params_dict: Optional[Dict[str, Union[List[float], List[List[float]]]]] = None
-    mu: confloat(allow_inf_nan=False) = 0.0
-    sigma: confloat(allow_inf_nan=False) = 10.0
-    nu: confloat(allow_inf_nan=False) = 5.0
+        if (self.mu.shape != self.sigma.shape) or (self.mu.shape != self.nu.shape):
+            raise ValueError("mu, sigma, and nu must have the same shape.")
 
-    @root_validator(pre=False, skip_on_failure=False)
-    def initialize_arrays(cls, values):
-        if values.get("params_dict") is None:
-            if values.get("shape") is None:
-                raise ValueError("either legal 'shape' or 'params_dict' must be specified")
+    @classmethod
+    def cold_start(cls, shape: Tuple[PositiveInt], mu: float = 0.0, sigma: float = 10.0, nu: float = 5.0) -> "StudentTArray":
+        mu = (np.zeros(shape) + mu).tolist()
+        sigma = np.full(shape, sigma).tolist()
+        nu = np.full(shape, nu).tolist()
+        return cls(mu=mu, sigma=sigma, nu=nu)
+    
+    @property
+    def shape(self) -> Tuple[PositiveInt]:
+        return self.mu.shape
 
-            shape = values.get("shape")
-            values["params_dict"] = {}
-            values["params_dict"]["mu"] = (np.zeros(shape) + values.get("mu")).tolist()
-            values["params_dict"]["sigma"] = np.full(shape, values.get("sigma")).tolist()
-            values["params_dict"]["nu"] = np.full(shape, values.get("nu")).tolist()
-        else:
-            if set(values["params_dict"].keys()) != {"mu", "sigma", "nu"}:
-                raise ValueError("params_dict must contain mu, sigma, and nu")
-            
-            mu = values["params_dict"].get("mu")
-            sigma = values["params_dict"].get("sigma")
-            nu = values["params_dict"].get("nu")
-            
-            if not (np.array(mu).shape == np.array(sigma).shape == np.array(nu).shape):
-                raise ValueError("mu, sigma, and nu must have the same sizes")
-
-        return values
-        
     def __eq__(self, other: Self)  -> bool:
-        return all(np.array_equal(self.params_dict[key], other.params_dict[key]) for key in self.params_dict)
+        return self.mu == other.mu and self.sigma == other.sigma and self.nu == other.nu
 
-    class Config:
-        arbitrary_types_allowed = True
+    def __iter__(self):
+        for key, value in self.__dict__.items():
+            yield key, value.tolist()
+
+
+    
 
 
 class BayesianNeuralNetwork(Model):
@@ -455,8 +437,8 @@ class BayesianNeuralNetwork(Model):
         for layer_ind in range(len(_dim_list) - 1):
             input_dim = _dim_list[layer_ind]
             output_dim = _dim_list[layer_ind + 1]
-            w_param = StudentTArray(shape=[input_dim, output_dim], **dist_params_init)
-            b_param = StudentTArray(shape=[output_dim], **dist_params_init)
+            w_param = StudentTArray.cold_start(shape=(input_dim,output_dim), **dist_params_init)
+            b_param = StudentTArray.cold_start(shape=output_dim, **dist_params_init)
             posterior_params.append(dict(w=w_param, b=b_param))
 
         return posterior_params
@@ -537,20 +519,20 @@ class BayesianNeuralNetwork(Model):
             next_layer_input = bnn_input
             for layer_ind in range(len(self.posterior_params)):
                 layer_params = self.posterior_params[layer_ind]
-                w_shape = np.array(layer_params["w"].params_dict["mu"]).shape  # without it n_features = 1 doesn't work
-                b_shape = np.array(layer_params["b"].params_dict["mu"]).shape
+                w_shape = layer_params["w"].shape  # without it n_features = 1 doesn't work
+                b_shape = layer_params["b"].shape
 
                 if is_sampelwise:
                     w = PymcStudentT(
-                        f"w{layer_ind}", **layer_params["w"].params_dict, shape=(n_samples,) + w_shape)  # (n_samples, n_features, n_output)
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=(n_samples,) + b_shape)
+                        f"w{layer_ind}", **layer_params["w"].__dict__, shape=(n_samples,) + w_shape)  # (n_samples, n_features, n_output)
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].__dict__, shape=(n_samples,) + b_shape)
                     linear_transform = pt.as_tensor_variable(
                         pt.batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
                     )
 
                 else:
-                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params_dict, shape=w_shape,initval="prior")
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params_dict, shape=b_shape ,initval="prior")
+                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].__dict__, shape=w_shape,initval="prior")
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].__dict__, shape=b_shape ,initval="prior")
                     linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
 
                 if layer_ind < len(self.posterior_params) - 1:
@@ -636,15 +618,15 @@ class BayesianNeuralNetwork(Model):
             w_mu = np.mean(trace[name], axis=0)
             w_sigma = np.std(trace[name], axis=0)
 
-            self.posterior_params[layer_ind]["w"].params_dict["mu"] = w_mu.tolist()
-            self.posterior_params[layer_ind]["w"].params_dict["sigma"] = w_sigma.tolist()
+            self.posterior_params[layer_ind]["w"].mu = w_mu
+            self.posterior_params[layer_ind]["w"].sigma = w_sigma
 
             name = f"b{layer_ind}"
             b_mu = np.mean(trace[name], axis=0)
             b_sigma = np.std(trace[name], axis=0)
 
-            self.posterior_params[layer_ind]["b"].params_dict["mu"] = b_mu.tolist()
-            self.posterior_params[layer_ind]["b"].params_dict["sigma"] = b_sigma.tolist()
+            self.posterior_params[layer_ind]["b"].mu = b_mu
+            self.posterior_params[layer_ind]["b"].sigma = b_sigma
 
 
     @classmethod
@@ -744,25 +726,25 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
         input_dim = len(values["betas"])
         output_dim = 1
 
-        w_param = StudentTArray(shape=[input_dim, output_dim])
+        w_param = StudentTArray.cold_start(shape=(input_dim, output_dim))
         betas = values["betas"].copy()
 
         for i, beta in enumerate(betas):
             if type(beta) is dict:
                 beta = StudentT(**beta)  # handle from_state
-            w_param.params_dict["mu"][i][0] = beta.mu
-            w_param.params_dict["sigma"][i][0] = beta.sigma
-            w_param.params_dict["nu"][i][0] = beta.nu
+            w_param.mu[i][0] = beta.mu
+            w_param.sigma[i][0] = beta.sigma
+            w_param.nu[i][0] = beta.nu
 
-        b_param = StudentTArray(shape=[output_dim])
+        b_param = StudentTArray.cold_start(shape=output_dim)
         alpha = values["alpha"].copy()
 
         if type(alpha) is dict:
             alpha = StudentT(**alpha)
 
-        b_param.params_dict["mu"][0] = alpha.mu
-        b_param.params_dict["sigma"][0] = alpha.sigma
-        b_param.params_dict["nu"][0] = alpha.nu
+        b_param.mu[0] = alpha.mu
+        b_param.sigma[0] = alpha.sigma
+        b_param.nu[0] = alpha.nu
 
         values["posterior_params"] = [dict(w=w_param, b=b_param)]
         return values
