@@ -47,6 +47,7 @@ from pybandits.pydantic_version_compatibility import (
     NonNegativeFloat,
     confloat,
     model_validator,
+    field_validator,
     pydantic_version,
     validate_call,
     PrivateAttr,
@@ -283,7 +284,7 @@ class StudentTArray(PyBanditsBaseModel):
 
     @classmethod
     def cold_start(cls, shape: Tuple[PositiveInt], mu: float = 0.0, sigma: float = 10.0, nu: float = 5.0) -> "StudentTArray":
-        mu = (np.zeros(shape) + mu).tolist()
+        mu = np.full(shape, mu).tolist()
         sigma = np.full(shape, sigma).tolist()
         nu = np.full(shape, nu).tolist()
         return cls(mu=mu, sigma=sigma, nu=nu)
@@ -300,10 +301,8 @@ class StudentTArray(PyBanditsBaseModel):
             yield key, value.tolist()
 
 
-    
 
-
-class BayesianNeuralNetwork(Model):
+class BaseBayesianNeuralNetwork(Model):
     """Bayesian Neural Network model for binary classification.
     This class implements a Bayesian Neural Network with arbitrary number of fully connected layers 
     using PyMC for binary classification tasks.
@@ -638,7 +637,7 @@ class BayesianNeuralNetwork(Model):
         update_kwargs: Optional[dict] = None,
         dist_params_init: Optional[Dict[str, float]] = None,
         **kwargs,
-    ) -> "BayesianNeuralNetwork":
+    ) -> Self:
         """
         Initialize a Bayesian Neural Network with a cold start.
 
@@ -674,99 +673,49 @@ class BayesianNeuralNetwork(Model):
         return True
 
 
-class BayesianLogisticRegression(BayesianNeuralNetwork):
-    """A Bayesian logistic regression model where the weights (betas) and
-    intercept (alpha) follow Student-T distributions.
-
-    The model output is calculated as follows:
-        y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-    where the alpha and betas coefficients are Student's t-distributions.
-
-    The implementation is based on the Bayesian Neural Network model with a single output node.
+class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):
+    """Bayesian Neural Network model for binary classification.
+    This class implements a Bayesian Neural Network with arbitrary number of fully connected layers 
+    using PyMC for binary classification tasks.
+    It supports both MCMC and Variational Inference methods for posterior inference.
 
     Parameters
     ----------
-    alpha : StudentT
-        The intercept parameter following a Student-T distribution
-    betas : List[StudentT]
-        List of weight parameters, each following a Student-T distribution.
-        Length must be equal to number of features (minimum 1)
-    Attributes
-    ----------
-    posterior_params : list
-        List containing dictionary of posterior parameters for weights (w) and bias (b)
-    Methods
-    -------
-    cold_start(n_features, update_method='MCMC', update_kwargs=None, **kwargs)
-        Creates a new instance with default initialization
-        Parameters:
-            n_features : int
-                Number of input features
-            update_method : str, optional
-                Method for updating parameters (default is 'MCMC')
-            update_kwargs : dict, optional
-                Additional arguments for the update method
-            **kwargs
-                Additional keyword arguments
-        Returns:
-            BayesianLogisticRegression
-                New instance of the model
+    posterior_params : List[Dict[str, StudentTArray]]
+        List of dictionaries containing weight and bias parameters for each layer.
+        Each dictionary should have 'w' and 'b' keys with StudentTArray values.
+    update_method : str, optional
+        Method used for posterior inference, either "MCMC" or "VI" (default is "MCMC")
+    update_kwargs : dict, optional
+        Dictionary of keyword arguments for the update method.
+        For MCMC: Contains 'trace' settings
+        For VI: Contains both 'trace' and 'fit' settings
     """
+    
 
-    alpha: StudentT
-    if pydantic_version == PYDANTIC_VERSION_1:
-        betas: List[StudentT] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        betas: List[StudentT] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
-
-    @model_validator(mode="before")
-    def set_posterior_params(cls, values):
-        input_dim = len(values["betas"])
-        output_dim = 1
-
-        w_param = StudentTArray.cold_start(shape=(input_dim, output_dim))
-        betas = values["betas"].copy()
-
-        for i, beta in enumerate(betas):
-            if type(beta) is dict:
-                beta = StudentT(**beta)  # handle from_state
-            w_param.mu[i][0] = beta.mu
-            w_param.sigma[i][0] = beta.sigma
-            w_param.nu[i][0] = beta.nu
-
-        b_param = StudentTArray.cold_start(shape=output_dim)
-        alpha = values["alpha"].copy()
-
-        if type(alpha) is dict:
-            alpha = StudentT(**alpha)
-
-        b_param.mu[0] = alpha.mu
-        b_param.sigma[0] = alpha.sigma
-        b_param.nu[0] = alpha.nu
-
-        values["posterior_params"] = [dict(w=w_param, b=b_param)]
-        return values
+class BayesianLogisticRegression(BaseBayesianNeuralNetwork): 
+    # @field_validator('posterior_params')
+    # def validate_posterior_params(cls, posterior_params):
+    #     if len(posterior_params) != 1:
+    #         raise ValueError("The BayesianLogisticRegression model should have only one layer.") 
+    #     return posterior_params
 
     @classmethod
     def cold_start(
         cls,
-        n_features,
+        dim_list: List[PositiveInt],
         update_method: UpdateMethods = "MCMC",
         update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None,
         **kwargs,
     ) -> "BayesianLogisticRegression":
-        return cls(
-            alpha=StudentT(),
-            betas=[StudentT() for _ in range(n_features)],
-            update_method=update_method,
-            update_kwargs=update_kwargs,
-            **kwargs,
-        )
+        if len(dim_list) != 1:
+            raise ValueError("The BayesianLogisticRegression model should have only one layer.")   
+        return super().cold_start(dim_list=dim_list, update_method=update_method, update_kwargs=update_kwargs, **kwargs)      
+        
 
 
-class BayesianNeuralNetworkCC(BayesianNeuralNetwork):
+
+class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork):
     """
     Bayesian Neural Network with Cost Constraint.
 
