@@ -34,7 +34,6 @@ from numpy.typing import ArrayLike
 from pymc import Bernoulli, Data, Deterministic, MutableData, fit, math, sample, sample_prior_predictive, Approximation
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
-from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
@@ -276,8 +275,15 @@ class StudentTArray(PyBanditsBaseModel):
     @model_validator(mode="after")
     @classmethod
     def validate_inputs(cls, values):
-        if (np.array(values.mu).shape != np.array(values.sigma).shape) or (np.array(values.mu).shape != np.array(values.nu).shape):
-            raise ValueError("mu, sigma, and nu must have the same shape.")
+        if pydantic_version == PYDANTIC_VERSION_1:
+            if (np.array(values.get("mu")).shape != np.array(values.get("sigma")).shape) or (np.array(values.get("mu")).shape != np.array(values.get("nu")).shape):
+                raise ValueError("mu, sigma, and nu must have the same shape.")
+        elif pydantic_version == PYDANTIC_VERSION_2:
+            if (np.array(values.mu).shape != np.array(values.sigma).shape) or (np.array(values.mu).shape != np.array(values.nu).shape):
+                raise ValueError("mu, sigma, and nu must have the same shape.")
+        else:
+            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
         return values
     
     @classmethod
@@ -321,10 +327,13 @@ class BaseBayesianNeuralNetwork(Model):
         For VI: Contains both 'trace' and 'fit' settings
     """
 
+    _logit_var_name: ClassVar[str] = "logit"
+    _prob_var_name: ClassVar[str] = "prob"
+ 
     update_method: str = "MCMC"
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
 
-    posterior_params: List[Dict[Literal["w","b"], StudentTArray]]
+    posterior_params: List[Dict[Literal["weight","bias"], StudentTArray]]
 
     _default_mcmc_trace_kwargs = dict(
         tune=500,
@@ -341,8 +350,7 @@ class BaseBayesianNeuralNetwork(Model):
     _default_variational_inference_trace_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
 
     _approx : Approximation = PrivateAttr(None) 
-    _logit_var_name: ClassVar[str] = "logit"
-    _prob_var_name: ClassVar[str] = "prob"
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -400,38 +408,43 @@ class BaseBayesianNeuralNetwork(Model):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def create_posterior_params(cls, dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]=None) -> List[Dict[Literal["w","b"], StudentTArray]]:
+    def create_posterior_params(cls, num_features: PositiveInt, hidden_dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]=None) -> List[Dict[Literal["weight","bias"], StudentTArray]]:
         """
         Create posterior parameters for a neural network model.
 
         This method generates a list of dictionaries containing the posterior parameters
         (weights and biases) for each layer of a neural network. The dimensions of the
-        layers are specified by `dim_list`, and the initial distribution parameters for
-        the Student-T distribution are provided by `dist_params_init`.
+        layers are determined by the number of input features, hidden dimensions, and
+        the output layer. The initial distribution parameters for the Student-T distribution
+        can be customized.
 
         Parameters
         ----------
-        cls : type
-            The class type (not used in the method but required for class methods).
-        dim_list : List[PositiveInt]
-            A list of positive integers representing the dimensions of each layer in the
-            neural network. The last dimension is assumed to be the output dimension.
-        dist_params_init : Optional[Dict[str, float]]
+        num_features : PositiveInt
+            The number of input features for the neural network.
+        hidden_dim_list : List[PositiveInt]
+            A list of positive integers representing the dimensions of the hidden layers
+            in the neural network. If empty or None, no hidden layers are added.
+        dist_params_init : Optional[Dict[str, float]], optional
             A dictionary containing the initial parameters for the Student-T distribution.
-            Keys should be the parameter names and values should be the corresponding
-            parameter values.
+            Keys should be the parameter names (e.g., 'mu', 'sigma', 'nu') and values should
+            be the corresponding parameter values. If not provided, default values will be used.
 
         Returns
         -------
-        List[Dict[str, StudentTArray]]
+        List[Dict[Literal["weight", "bias"], StudentTArray]]
             A list of dictionaries, where each dictionary contains the posterior parameters
             (weights and biases) for a layer in the neural network. Each dictionary has two
-            keys: 'w' for weights and 'b' for biases, with corresponding `StudentTArray` values.
+            keys: 'weight' for weights and 'bias' for biases, with corresponding `StudentTArray` values.
         """
         if dist_params_init is None:
             dist_params_init = {}
 
-        _dim_list = dim_list.copy()
+        if hidden_dim_list is None:
+            _dim_list = [num_features]
+        else:
+            _dim_list = [num_features] + hidden_dim_list
+        
         _dim_list.append(1)
 
         posterior_params = []
@@ -440,7 +453,7 @@ class BaseBayesianNeuralNetwork(Model):
             output_dim = _dim_list[layer_ind + 1]
             w_param = StudentTArray.cold_start(shape=(input_dim,output_dim), **dist_params_init)
             b_param = StudentTArray.cold_start(shape=output_dim, **dist_params_init)
-            posterior_params.append(dict(w=w_param, b=b_param))
+            posterior_params.append(dict(weight=w_param, bias=b_param))
 
         return posterior_params
 
@@ -477,7 +490,7 @@ class BaseBayesianNeuralNetwork(Model):
             The number of input features expected by the model, derived from
             the shape of the weight matrix in the first layer's posterior parameters.
         """
-        return self.posterior_params[0]["w"].shape[0]
+        return self.posterior_params[0]["weight"].shape[0]
 
     def create_model(self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], is_sampelwise: bool) -> PymcModel:
         """
@@ -520,20 +533,22 @@ class BaseBayesianNeuralNetwork(Model):
             next_layer_input = bnn_input
             for layer_ind in range(len(self.posterior_params)):
                 layer_params = self.posterior_params[layer_ind]
-                w_shape = layer_params["w"].shape  # without it n_features = 1 doesn't work
-                b_shape = layer_params["b"].shape
+                w_shape = layer_params["weight"].shape  # without it n_features = 1 doesn't work
+                b_shape = layer_params["bias"].shape
 
                 if is_sampelwise:
+                    # in this case we create n_samples different weights and biases - one for each sample
                     w = PymcStudentT(
-                        f"w{layer_ind}", **layer_params["w"].params, shape=(n_samples,) + w_shape)  # (n_samples, n_features, n_output)
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params, shape=(n_samples,) + b_shape)
+                        f"weight_{layer_ind}", **layer_params["weight"].params, shape=(n_samples,) + w_shape)  # (n_samples, n_features, n_output)
+                    b = PymcStudentT(f"bias_{layer_ind}", **layer_params["bias"].params, shape=(n_samples,) + b_shape)
                     linear_transform = pt.as_tensor_variable(
                         pt.batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
                     )
 
                 else:
-                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params, shape=w_shape,initval="prior")
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params, shape=b_shape ,initval="prior")
+                    # in this case we create one weight and bias for all samples
+                    w = PymcStudentT(f"weight_{layer_ind}", **layer_params["weight"].params, shape=w_shape,initval="prior")
+                    b = PymcStudentT(f"bias_{layer_ind}", **layer_params["bias"].params, shape=b_shape ,initval="prior")
                     linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
 
                 if layer_ind < len(self.posterior_params) - 1:
@@ -614,21 +629,22 @@ class BaseBayesianNeuralNetwork(Model):
                 raise ValueError("Invalid update method.")
 
         for layer_ind in range(len(self.posterior_params)):
-            name = f"w{layer_ind}"
+            name = f"weight_{layer_ind}"
 
             w_mu = np.mean(trace[name], axis=0)
             w_sigma = np.std(trace[name], axis=0)
-            self.posterior_params[layer_ind]["w"] = StudentTArray(mu=w_mu.tolist(), sigma=w_sigma.tolist(), nu=self.posterior_params[layer_ind]["w"].nu)
+            self.posterior_params[layer_ind]["weight"] = StudentTArray(mu=w_mu.tolist(), sigma=w_sigma.tolist(), nu=self.posterior_params[layer_ind]["weight"].nu)
 
-            name = f"b{layer_ind}"
+            name = f"bias_{layer_ind}"
             b_mu = np.mean(trace[name], axis=0)
             b_sigma = np.std(trace[name], axis=0)
-            self.posterior_params[layer_ind]["b"] = StudentTArray(mu=b_mu.tolist(), sigma=b_sigma.tolist(), nu=self.posterior_params[layer_ind]["b"].nu)
+            self.posterior_params[layer_ind]["bias"] = StudentTArray(mu=b_mu.tolist(), sigma=b_sigma.tolist(), nu=self.posterior_params[layer_ind]["bias"].nu)
 
     @classmethod
     def cold_start(
         cls,
-        dim_list: List[PositiveInt],
+        num_features: PositiveInt,
+        hidden_dim_list: Optional[List[PositiveInt]] = None,
         update_method: UpdateMethods = "MCMC",
         update_kwargs: Optional[dict] = None,
         dist_params_init: Optional[Dict[str, float]] = None,
@@ -639,31 +655,32 @@ class BaseBayesianNeuralNetwork(Model):
 
         Parameters
         ----------
-        dim_list : List[PositiveInt]
-            List of dimensions for the network.
+        num_features : PositiveInt
+            Number of input features for the network.
+        hidden_dim_list : Optional[List[PositiveInt]], optional
+            List of dimensions for the hidden layers of the network. If None, no hidden layers are added.
         update_method : UpdateMethods, optional
-            Method to update the network, by default "MCMC".
+            Method to update the network, either "MCMC" or "VI". Default is "MCMC".
         update_kwargs : Optional[dict], optional
-            Additional keyword arguments for the update method, by default None.
+            Additional keyword arguments for the update method. Default is None.
         dist_params_init : Optional[Dict[str, float]], optional
-            Initial distribution parameters for the network weights, by default None.
+            Initial distribution parameters for the network weights and biases. Default is None.
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
         Returns
         -------
-        BayesianNeuralNetwork
-            An instance of BayesianNeuralNetwork initialized with the specified parameters.
+        Self
+            An instance of the Bayesian Neural Network initialized with the specified parameters.
         """
-
-        posterior_params = cls.create_posterior_params(dim_list=dim_list, dist_params_init=dist_params_init)
+        posterior_params = cls.create_posterior_params(num_features=num_features, hidden_dim_list=hidden_dim_list, dist_params_init=dist_params_init)
         return cls(
             posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs, **kwargs
         )
 
     def __eq__(self, other: Self) -> bool:
         for self_layer, other_layer in zip(self.posterior_params, other.posterior_params):
-            if not self_layer["w"] == other_layer["w"] or not self_layer["b"] == other_layer["b"]:
+            if not self_layer["weight"] == other_layer["weight"] or not self_layer["bias"] == other_layer["bias"]:
                 return False
         
         return True
@@ -671,27 +688,11 @@ class BaseBayesianNeuralNetwork(Model):
 
 class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     """
+    Bayesian Neural Network class.
+    This class implements a Bayesian Neural Network by extending the 
+    BaseBayesianNeuralNetwork. It provides functionality for probabilistic 
+    modeling and inference using neural networks.
     """
-    
-
-class BayesianLogisticRegression(BaseBayesianNeuralNetwork): 
-    """
-    A Bayesian Logistic Regression model that inherits from BaseBayesianNeuralNetwork.
-    This model is designed to have only one layer, and the posterior parameters
-    are validated to ensure this constraint.
-
-    Parameters
-    ----------
-    posterior_params : list
-        A list of posterior parameters for the model. Must contain exactly one element.
-  
-    """
-
-    @field_validator('posterior_params') # will be enabled in pydantic 2
-    def validate_posterior_params(cls, posterior_params):
-        if len(posterior_params) != 1:
-            raise ValueError("The BayesianLogisticRegression model should have only one layer.") 
-        return posterior_params
 
 class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork):
     """
@@ -703,6 +704,32 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork):
     ----------
     cost : NonNegativeFloat
         The cost associated with the neural network, which must be a non-negative float.
+    """
+
+    cost: NonNegativeFloat
+
+
+class BaseBayesianLogisticRegression(BaseBayesianNeuralNetwork): 
+    """
+    A Bayesian Logistic Regression model that inherits from BaseBayesianNeuralNetwork.
+    This model is a specialized version of a Bayesian Neural Network with a single layer,
+    designed specifically for logistic regression tasks. The posterior parameters are
+    validated to ensure that the model adheres to this single-layer constraint.
+    """
+    @field_validator('posterior_params') # will be enabled in pydantic 2
+    def validate_posterior_params(cls, posterior_params):
+        if len(posterior_params) != 1:
+            raise ValueError("The BayesianLogisticRegression model should have only one layer.") 
+        return posterior_params
+
+class BayesianLogisticRegression(BaseBayesianLogisticRegression):
+    """
+    A Bayesian Logistic Regression model.
+    """
+    
+class BayesianLogisticRegressionCC(BaseBayesianLogisticRegression):
+    """
+    A Bayesian Logistic Regression model with cost control.
     """
 
     cost: NonNegativeFloat

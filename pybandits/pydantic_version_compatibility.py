@@ -39,7 +39,6 @@ from pydantic import (
     confloat,
     conint,
     constr,
-    field_serializer
 )
 from pydantic.version import VERSION as _VERSION
 
@@ -273,6 +272,7 @@ __all__ = [
     "NonNegativeFloat",
     "NonNegativeInt",
     "PositiveInt",
+    "PositiveFloat",
     "BaseModel",
     "ValidationError",
     "confloat",
