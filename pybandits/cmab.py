@@ -28,7 +28,7 @@ from numpy.typing import ArrayLike
 
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BayesianNeuralNetwork, BayesianNeuralNetworkCC
+from pybandits.model import BaseBayesianNeuralNetwork, BayesianNeuralNetworkCC
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -54,7 +54,7 @@ class BaseCmabBernoulli(BaseMab):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianNeuralNetwork]
+    actions: Dict[ActionId, BaseBayesianNeuralNetwork]
     predict_with_proba: bool
     predict_actions_randomly: bool
 
@@ -208,7 +208,7 @@ class CmabBernoulli(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianNeuralNetwork]
+    actions: Dict[ActionId, BaseBayesianNeuralNetwork]
     strategy: ClassicBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -244,7 +244,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions: Dict[ActionId, BayesianNeuralNetwork]
+    actions: Dict[ActionId, BaseBayesianNeuralNetwork]
     strategy: BestActionIdentificationBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False

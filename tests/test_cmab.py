@@ -118,11 +118,11 @@ def test_create_cmab_bernoulli_cold_start(a_int):
     if a_int <= 0:
         with pytest.raises(ValidationError):
             CmabBernoulli.cold_start(
-                action_ids={"a1", "a2"}, action_model_class=BayesianLogisticRegression, n_features=a_int
+                action_ids={"a1", "a2"}, n_features=a_int
             )
     else:
         mab1 = CmabBernoulli.cold_start(
-            action_ids={"a1", "a2"}, action_model_class=BayesianLogisticRegression, n_features=a_int
+            action_ids={"a1", "a2"}, n_features=a_int
         )
         mab2 = CmabBernoulli(
             actions={
@@ -141,11 +141,11 @@ def test_create_cmab_bernoulli_cold_start_bnn(a_int):
     if a_int <= 0:
         with pytest.raises(ValidationError):
             CmabBernoulli.cold_start(
-                action_ids={"a1", "a2"}, action_model_class=BayesianNeuralNetwork, dim_list=[a_int, 10]
+                action_ids={"a1", "a2"}, dim_list=[a_int, 10]
             )
     else:
         mab1 = CmabBernoulli.cold_start(
-            action_ids={"a1", "a2"}, action_model_class=BayesianNeuralNetwork, dim_list=[a_int, 10]
+            action_ids={"a1", "a2"}, dim_list=[a_int, 10]
         )
         mab2 = CmabBernoulli(
             actions={

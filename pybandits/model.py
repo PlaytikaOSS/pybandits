@@ -22,8 +22,9 @@
 import warnings
 from abc import ABC, abstractmethod
 from random import betavariate
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, ClassVar
 from typing_extensions import Self
+from functools import cached_property
 
 import numpy as np
 import pymc.math as pmath
@@ -51,7 +52,6 @@ from pybandits.pydantic_version_compatibility import (
     pydantic_version,
     validate_call,
     PrivateAttr,
-    field_serializer
 )
 
 UpdateMethods = Literal["MCMC", "VI"]
@@ -273,15 +273,13 @@ class StudentTArray(PyBanditsBaseModel):
     sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        self.mu = np.array(self.mu)
-        self.sigma = np.array(self.sigma)
-        self.nu = np.array(self.nu)
-
-        if (self.mu.shape != self.sigma.shape) or (self.mu.shape != self.nu.shape):
+    @model_validator(mode="after")
+    @classmethod
+    def validate_inputs(cls, values):
+        if (np.array(values.mu).shape != np.array(values.sigma).shape) or (np.array(values.mu).shape != np.array(values.nu).shape):
             raise ValueError("mu, sigma, and nu must have the same shape.")
-
+        return values
+    
     @classmethod
     def cold_start(cls, shape: Tuple[PositiveInt], mu: float = 0.0, sigma: float = 10.0, nu: float = 5.0) -> "StudentTArray":
         mu = np.full(shape, mu).tolist()
@@ -289,17 +287,19 @@ class StudentTArray(PyBanditsBaseModel):
         nu = np.full(shape, nu).tolist()
         return cls(mu=mu, sigma=sigma, nu=nu)
     
-    @property
+    @cached_property
     def shape(self) -> Tuple[PositiveInt]:
-        return self.mu.shape
+        return np.array(self.mu).shape
+    
+    @cached_property
+    def params(self):
+        return dict(mu=np.array(self.mu), sigma=np.array(self.sigma), nu=np.array(self.nu))
+    
+    class Config:
+        keep_untouched = (cached_property,)
 
     def __eq__(self, other: Self)  -> bool:
         return self.mu == other.mu and self.sigma == other.sigma and self.nu == other.nu
-
-    def __iter__(self):
-        for key, value in self.__dict__.items():
-            yield key, value.tolist()
-
 
 
 class BaseBayesianNeuralNetwork(Model):
@@ -324,7 +324,7 @@ class BaseBayesianNeuralNetwork(Model):
     update_method: str = "MCMC"
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
 
-    posterior_params: List[Dict[str, StudentTArray]]
+    posterior_params: List[Dict[Literal["w","b"], StudentTArray]]
 
     _default_mcmc_trace_kwargs = dict(
         tune=500,
@@ -341,6 +341,8 @@ class BaseBayesianNeuralNetwork(Model):
     _default_variational_inference_trace_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
 
     _approx : Approximation = PrivateAttr(None) 
+    _logit_var_name: ClassVar[str] = "logit"
+    _prob_var_name: ClassVar[str] = "prob"
     class Config:
         arbitrary_types_allowed = True
 
@@ -398,7 +400,7 @@ class BaseBayesianNeuralNetwork(Model):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def create_posterior_params(cls, dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]=None) -> List[Dict[str, StudentTArray]]:
+    def create_posterior_params(cls, dim_list: List[PositiveInt], dist_params_init: Optional[Dict[str, float]]=None) -> List[Dict[Literal["w","b"], StudentTArray]]:
         """
         Create posterior parameters for a neural network model.
 
@@ -523,22 +525,22 @@ class BaseBayesianNeuralNetwork(Model):
 
                 if is_sampelwise:
                     w = PymcStudentT(
-                        f"w{layer_ind}", **layer_params["w"].__dict__, shape=(n_samples,) + w_shape)  # (n_samples, n_features, n_output)
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].__dict__, shape=(n_samples,) + b_shape)
+                        f"w{layer_ind}", **layer_params["w"].params, shape=(n_samples,) + w_shape)  # (n_samples, n_features, n_output)
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params, shape=(n_samples,) + b_shape)
                     linear_transform = pt.as_tensor_variable(
                         pt.batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
                     )
 
                 else:
-                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].__dict__, shape=w_shape,initval="prior")
-                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].__dict__, shape=b_shape ,initval="prior")
+                    w = PymcStudentT(f"w{layer_ind}", **layer_params["w"].params, shape=w_shape,initval="prior")
+                    b = PymcStudentT(f"b{layer_ind}", **layer_params["b"].params, shape=b_shape ,initval="prior")
                     linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
 
                 if layer_ind < len(self.posterior_params) - 1:
                     next_layer_input = math.tanh(linear_transform)
 
-            logit = Deterministic("logit", linear_transform.squeeze())
-            prob = Deterministic("prob", math.sigmoid(logit))
+            logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
+            prob = Deterministic(self._prob_var_name, math.sigmoid(logit))
 
             Bernoulli("out", p=prob, observed=bnn_output)
         return _model
@@ -567,8 +569,8 @@ class BaseBayesianNeuralNetwork(Model):
         with _model:
             trace = sample_prior_predictive(samples=1)
 
-        prob = trace["prior"]["prob"].values.reshape(-1)
-        weighted_sum = trace["prior"]["logit"].values.reshape(-1)
+        prob = trace["prior"][self._prob_var_name].values.reshape(-1)
+        weighted_sum = trace["prior"][self._logit_var_name].values.reshape(-1)
 
         return prob, weighted_sum
 
@@ -616,21 +618,15 @@ class BaseBayesianNeuralNetwork(Model):
 
             w_mu = np.mean(trace[name], axis=0)
             w_sigma = np.std(trace[name], axis=0)
-
-            self.posterior_params[layer_ind]["w"].mu = w_mu
-            self.posterior_params[layer_ind]["w"].sigma = w_sigma
+            self.posterior_params[layer_ind]["w"] = StudentTArray(mu=w_mu.tolist(), sigma=w_sigma.tolist(), nu=self.posterior_params[layer_ind]["w"].nu)
 
             name = f"b{layer_ind}"
             b_mu = np.mean(trace[name], axis=0)
             b_sigma = np.std(trace[name], axis=0)
-
-            self.posterior_params[layer_ind]["b"].mu = b_mu
-            self.posterior_params[layer_ind]["b"].sigma = b_sigma
-
+            self.posterior_params[layer_ind]["b"] = StudentTArray(mu=b_mu.tolist(), sigma=b_sigma.tolist(), nu=self.posterior_params[layer_ind]["b"].nu)
 
     @classmethod
     def cold_start(
-
         cls,
         dim_list: List[PositiveInt],
         update_method: UpdateMethods = "MCMC",
@@ -674,46 +670,28 @@ class BaseBayesianNeuralNetwork(Model):
 
 
 class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):
-    """Bayesian Neural Network model for binary classification.
-    This class implements a Bayesian Neural Network with arbitrary number of fully connected layers 
-    using PyMC for binary classification tasks.
-    It supports both MCMC and Variational Inference methods for posterior inference.
-
-    Parameters
-    ----------
-    posterior_params : List[Dict[str, StudentTArray]]
-        List of dictionaries containing weight and bias parameters for each layer.
-        Each dictionary should have 'w' and 'b' keys with StudentTArray values.
-    update_method : str, optional
-        Method used for posterior inference, either "MCMC" or "VI" (default is "MCMC")
-    update_kwargs : dict, optional
-        Dictionary of keyword arguments for the update method.
-        For MCMC: Contains 'trace' settings
-        For VI: Contains both 'trace' and 'fit' settings
+    """
     """
     
 
 class BayesianLogisticRegression(BaseBayesianNeuralNetwork): 
-    # @field_validator('posterior_params')
-    # def validate_posterior_params(cls, posterior_params):
-    #     if len(posterior_params) != 1:
-    #         raise ValueError("The BayesianLogisticRegression model should have only one layer.") 
-    #     return posterior_params
+    """
+    A Bayesian Logistic Regression model that inherits from BaseBayesianNeuralNetwork.
+    This model is designed to have only one layer, and the posterior parameters
+    are validated to ensure this constraint.
 
-    @classmethod
-    def cold_start(
-        cls,
-        dim_list: List[PositiveInt],
-        update_method: UpdateMethods = "MCMC",
-        update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None,
-        **kwargs,
-    ) -> "BayesianLogisticRegression":
-        if len(dim_list) != 1:
-            raise ValueError("The BayesianLogisticRegression model should have only one layer.")   
-        return super().cold_start(dim_list=dim_list, update_method=update_method, update_kwargs=update_kwargs, **kwargs)      
-        
+    Parameters
+    ----------
+    posterior_params : list
+        A list of posterior parameters for the model. Must contain exactly one element.
+  
+    """
 
-
+    @field_validator('posterior_params') # will be enabled in pydantic 2
+    def validate_posterior_params(cls, posterior_params):
+        if len(posterior_params) != 1:
+            raise ValueError("The BayesianLogisticRegression model should have only one layer.") 
+        return posterior_params
 
 class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork):
     """
