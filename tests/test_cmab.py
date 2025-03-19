@@ -117,13 +117,9 @@ def test_create_cmab_bernoulli_cold_start(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(
-                action_ids={"a1", "a2"}, n_features=a_int
-            )
+            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
     else:
-        mab1 = CmabBernoulli.cold_start(
-            action_ids={"a1", "a2"}, n_features=a_int
-        )
+        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
         mab2 = CmabBernoulli(
             actions={
                 "a1": BayesianLogisticRegression.cold_start(n_features=a_int),
@@ -140,13 +136,9 @@ def test_create_cmab_bernoulli_cold_start_bnn(a_int):
     # n_features must be > 0
     if a_int <= 0:
         with pytest.raises(ValidationError):
-            CmabBernoulli.cold_start(
-                action_ids={"a1", "a2"}, dim_list=[a_int, 10]
-            )
+            CmabBernoulli.cold_start(action_ids={"a1", "a2"}, dim_list=[a_int, 10])
     else:
-        mab1 = CmabBernoulli.cold_start(
-            action_ids={"a1", "a2"}, dim_list=[a_int, 10]
-        )
+        mab1 = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, dim_list=[a_int, 10])
         mab2 = CmabBernoulli(
             actions={
                 "a1": BayesianNeuralNetwork.cold_start(dim_list=[a_int, 10]),

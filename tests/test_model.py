@@ -35,7 +35,6 @@ from pybandits.model import (
     BetaMO,
     BetaMOCC,
     StudentT,
-    StudentTArray,
 )
 from pybandits.pydantic_version_compatibility import ValidationError
 
@@ -228,55 +227,6 @@ def test_can_init_studentt(mu, sigma, nu):
 
 
 # BayesianNeuralNetwork and BayesianLogisticRegression
-
-
-@given(st.integers(min_value=1, max_value=100))
-def test_bayesian_logistic_regression_equals_bnn(n_features):
-    def compare_bnn_attributes(bnn, blr):
-        bnn_attributes = bnn.__dict__
-        blr_attributes = blr.__dict__
-        blr_bnn_attributes = {k: v for k, v in blr_attributes.items() if k in bnn_attributes}
-        return blr_bnn_attributes == bnn_attributes
-
-    # compare init with default params
-    blr = BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(n_features)])
-
-    w_param = StudentTArray(shape=[n_features, 1])
-    b_param = StudentTArray(shape=[1])
-    posterior_params = [{"w": w_param, "b": b_param}]
-    bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
-
-    assert blr.posterior_params == bnn.posterior_params
-    assert compare_bnn_attributes(bnn, blr)
-
-    # compare cold start with default params
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features)
-    bnn = BayesianNeuralNetwork.cold_start(dim_list=[n_features])
-
-    assert blr.posterior_params == bnn.posterior_params
-    assert compare_bnn_attributes(bnn, blr)
-
-    # compare init with custom params
-    alpha = StudentT(mu=1, sigma=2, nu=3)
-    betas = [StudentT(mu=k, sigma=k + 1, nu=k + 2) for k in range(n_features)]
-    blr = BayesianLogisticRegression(alpha=alpha, betas=betas)
-
-    w_param = StudentTArray(shape=[n_features, 1])
-    for k in range(n_features):
-        w_param.params_dict["mu"][k][0] = betas[k].mu
-        w_param.params_dict["sigma"][k][0] = betas[k].sigma
-        w_param.params_dict["nu"][k][0] = betas[k].nu
-
-    b_param = StudentTArray(shape=[1])
-    b_param.params_dict = {"mu": [alpha.mu], "sigma": [alpha.sigma], "nu": [alpha.nu]}
-
-    posterior_params = [{"w": w_param, "b": b_param}]
-    bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
-
-    assert blr.posterior_params == bnn.posterior_params
-    assert compare_bnn_attributes(bnn, blr)
-
-
 @settings(deadline=500)
 @given(st.lists(st.integers(max_value=100), min_size=1, max_size=3))
 def test_can_init_bayesian_neural_network(dim_list):

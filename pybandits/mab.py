@@ -389,8 +389,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return dict(action_specific_kwargs), kwargs
 
     @classmethod
-    def _extract_action_model_class_and_attributes(
-        cls, **kwargs) -> Tuple[Callable, Dict[str, Dict]]:
+    def _extract_action_model_class_and_attributes(cls, **kwargs) -> Tuple[Callable, Dict[str, Dict]]:
         """
         Utility function to extract kwargs that are specific for each action when constructing the action model.
 
