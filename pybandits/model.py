@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC, abstractmethod
-from functools import cached_property
 from random import betavariate
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
@@ -28,7 +27,6 @@ import numpy as np
 import pytensor.tensor as pt
 from numpy import sqrt
 from numpy.typing import ArrayLike
-from pydantic.dataclasses import dataclass
 from pymc import Approximation, Bernoulli, Deterministic, MutableData, fit, math, sample, sample_prior_predictive
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
@@ -42,7 +40,6 @@ from pybandits.pydantic_version_compatibility import (
     PositiveFloat,
     PositiveInt,
     PrivateAttr,
-    confloat,
     field_validator,
     model_validator,
     pydantic_version,
@@ -256,8 +253,9 @@ class StudentTArray(PyBanditsBaseModel):
         Can be a 1D or 2D list.
     nu : Union[List[PositiveFloat], List[List[PositiveFloat]]]
         The degrees of freedom of the Student's t-distributions. Must be positive.
-        Can be a 1D or 2D list.  
+        Can be a 1D or 2D list.
     """
+
     mu: Union[List[float], List[List[float]]]
     sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
@@ -268,27 +266,30 @@ class StudentTArray(PyBanditsBaseModel):
         if pydantic_version == PYDANTIC_VERSION_1:
             mu_arr = np.array(values.get("mu"))
             sigma_arr = np.array(values.get("sigma"))
-            nu_arr =  np.array(values.get("nu"))
+            nu_arr = np.array(values.get("nu"))
         elif pydantic_version == PYDANTIC_VERSION_2:
             mu_arr = np.array(values.mu)
             sigma_arr = np.array(values.sigma)
             nu_arr = np.array(values.nu)
         else:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
-        
+
         if (mu_arr.shape != sigma_arr.shape) or (mu_arr.shape != nu_arr.shape):
-                raise ValueError("mu, sigma, and nu must have the same shape.")
-        
+            raise ValueError("mu, sigma, and nu must have the same shape.")
+
         if any(dim_len == 0 for dim_len in mu_arr.shape):
             raise ValueError("mu, sigma, and nu must have at least one element in every dimension.")
-       
+
         return values
 
     @classmethod
     def cold_start(
-        cls, shape: Union[PositiveInt, Tuple[PositiveInt]], mu: float = 0.0, sigma: NonNegativeFloat = 10.0, nu: PositiveFloat = 5.0
+        cls,
+        shape: Union[PositiveInt, Tuple[PositiveInt]],
+        mu: float = 0.0,
+        sigma: NonNegativeFloat = 10.0,
+        nu: PositiveFloat = 5.0,
     ) -> "StudentTArray":
-        
         if isinstance(shape, int):
             shape = (shape,)
 
@@ -319,7 +320,7 @@ class BnnLayerParams(PyBanditsBaseModel):
     def __eq__(self, other: Self) -> bool:
         return self.weight == other.weight and self.bias == other.bias
 
-    
+
 class BaseBayesianNeuralNetwork(Model):
     """Bayesian Neural Network model for binary classification.
 
@@ -352,7 +353,6 @@ class BaseBayesianNeuralNetwork(Model):
 
     update_method: str = "MCMC"
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
-
 
     _default_mcmc_trace_kwargs = dict(
         tune=500,

@@ -34,7 +34,7 @@ from pybandits.model import (
     BetaCC,
     BetaMO,
     BetaMOCC,
-    StudentTArray
+    StudentTArray,
 )
 from pybandits.pydantic_version_compatibility import ValidationError
 
@@ -207,20 +207,30 @@ def test_can_init_beta_mo_cc(a_float):
 
 # StudentT
 @settings(deadline=500)
-@given(st.one_of(st.integers(min_value=1,max_value=10), st.tuples(st.integers(min_value=1,max_value=10)), st.tuples(st.integers(min_value=1,max_value=10), st.integers(min_value=1,max_value=10))) , st.floats(allow_nan=False, allow_infinity=False), st.floats(min_value=0,allow_nan=False, allow_infinity=False), st.floats(min_value=0.001,allow_nan=False, allow_infinity=False))
+@given(
+    st.one_of(
+        st.integers(min_value=1, max_value=10),
+        st.tuples(st.integers(min_value=1, max_value=10)),
+        st.tuples(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=10)),
+    ),
+    st.floats(allow_nan=False, allow_infinity=False),
+    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
+    st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
+)
 def test_can_init_studenttarray(shape, mu, sigma, nu):
     # init with default args
-    s =  StudentTArray.cold_start(shape=shape)
+    s = StudentTArray.cold_start(shape=shape)
     assert s.mu == np.full(shape, 0.0).tolist()
     assert s.sigma == np.full(shape, 10.0).tolist()
-    assert s.nu == np.full(shape, 5.0).tolist()    
-    #assert s.shape == shape
+    assert s.nu == np.full(shape, 5.0).tolist()
+    # assert s.shape == shape
 
-    s =  StudentTArray.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
+    s = StudentTArray.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
     assert s.mu == np.full(shape, mu).tolist()
     assert s.sigma == np.full(shape, sigma).tolist()
-    assert s.nu == np.full(shape, nu).tolist()  
-    #assert s.shape == shape
+    assert s.nu == np.full(shape, nu).tolist()
+    # assert s.shape == shape
+
 
 ########################################################################################################################
 
@@ -348,7 +358,6 @@ def test_bnn_update(dim_list):
 
     n_samples = 100
     n_features = dim_list[0]
-    hidden_dim_list = dim_list[1:]
     print(dim_list)
     updated_params = ["mu", "sigma"]  # nu is not updated
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
@@ -400,12 +409,16 @@ def test_can_init_bayesian_neural_network_cc(dim_list, cost):
 def test_create_default_instance_bayesian_logistic_regression_cc(dim_list, cost):
     n_features = dim_list[0]
     hidden_dim_list = dim_list[1:]
-    
+
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
             BayesianNeuralNetworkCC.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost)
     else:
-        bnn_cold_start = BayesianNeuralNetworkCC.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost)
-        posterior_params = BayesianNeuralNetwork.create_posterior_params(n_features=n_features, hidden_dim_list=hidden_dim_list)
+        bnn_cold_start = BayesianNeuralNetworkCC.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost
+        )
+        posterior_params = BayesianNeuralNetwork.create_posterior_params(
+            n_features=n_features, hidden_dim_list=hidden_dim_list
+        )
         bnn_init = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
         assert bnn_cold_start == bnn_init
