@@ -56,7 +56,7 @@ def test_cmab_e2e_simulation_with_default_arguments(
     action_ids=["a1", "a2"], n_features=3, n_updates=2, batch_size=10, num_groups=2
 ):
     mab = CmabBernoulli.cold_start(
-        action_ids=action_ids, action_model_class=BayesianLogisticRegression, n_features=n_features
+        action_ids=action_ids, n_features=n_features
     )
     base_groups = list(range(num_groups))
     group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
@@ -121,7 +121,7 @@ def test_cmab_e2e_simulation_with_non_default_args(
         index=[str(g) for g in effective_base_groups],
     )
     mab = CmabBernoulli.cold_start(
-        action_ids=action_ids, action_model_class=BayesianLogisticRegression, n_features=n_features, update_method="VI"
+        action_ids=action_ids, n_features=n_features, update_method="VI"
     )
     if visualize and not save:
         with pytest.raises(ValueError):

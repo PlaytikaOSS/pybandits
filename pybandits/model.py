@@ -244,26 +244,20 @@ class BetaMOCC(BetaMO):
     cost: NonNegativeFloat
 
 
-class StudentT(PyBanditsBaseModel):
-    """
-    Student's t-distribution.
-
-    Parameters
-    ----------
-    mu: float
-        Mean of the Student's t-distribution.
-    sigma: float
-        Standard deviation of the Student's t-distribution.
-    nu: float
-        Degrees of freedom.
-    """
-
-    mu: confloat(allow_inf_nan=False) = 0.0
-    sigma: confloat(allow_inf_nan=False) = 10.0
-    nu: confloat(allow_inf_nan=False) = 5.0
-
-
 class StudentTArray(PyBanditsBaseModel):
+    """
+    A class representing an array of Student's t-distributions with parameters `mu`, `sigma`, and `nu`.
+    Attributes
+    ----------
+    mu : Union[List[float], List[List[float]]]
+        The mean values of the Student's t-distributions. Can be a 1D or 2D list.
+    sigma : Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
+        The scale (standard deviation) values of the Student's t-distributions. Must be non-negative.
+        Can be a 1D or 2D list.
+    nu : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+        The degrees of freedom of the Student's t-distributions. Must be positive.
+        Can be a 1D or 2D list.  
+    """
     mu: Union[List[float], List[List[float]]]
     sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
@@ -272,50 +266,60 @@ class StudentTArray(PyBanditsBaseModel):
     @classmethod
     def validate_inputs(cls, values):
         if pydantic_version == PYDANTIC_VERSION_1:
-            if (np.array(values.get("mu")).shape != np.array(values.get("sigma")).shape) or (
-                np.array(values.get("mu")).shape != np.array(values.get("nu")).shape
-            ):
-                raise ValueError("mu, sigma, and nu must have the same shape.")
+            mu_arr = np.array(values.get("mu"))
+            sigma_arr = np.array(values.get("sigma"))
+            nu_arr =  np.array(values.get("nu"))
         elif pydantic_version == PYDANTIC_VERSION_2:
-            if (np.array(values.mu).shape != np.array(values.sigma).shape) or (
-                np.array(values.mu).shape != np.array(values.nu).shape
-            ):
-                raise ValueError("mu, sigma, and nu must have the same shape.")
+            mu_arr = np.array(values.mu)
+            sigma_arr = np.array(values.sigma)
+            nu_arr = np.array(values.nu)
         else:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
-
+        
+        if (mu_arr.shape != sigma_arr.shape) or (mu_arr.shape != nu_arr.shape):
+                raise ValueError("mu, sigma, and nu must have the same shape.")
+        
+        if any(dim_len == 0 for dim_len in mu_arr.shape):
+            raise ValueError("mu, sigma, and nu must have at least one element in every dimension.")
+       
         return values
 
     @classmethod
     def cold_start(
-        cls, shape: Tuple[PositiveInt], mu: float = 0.0, sigma: float = 10.0, nu: float = 5.0
+        cls, shape: Union[PositiveInt, Tuple[PositiveInt]], mu: float = 0.0, sigma: NonNegativeFloat = 10.0, nu: PositiveFloat = 5.0
     ) -> "StudentTArray":
+        
+        if isinstance(shape, int):
+            shape = (shape,)
+
+        if any(dim_len == 0 for dim_len in shape):
+            raise ValueError("shape of mu, sigma, and nu must have at least one element in every dimension.")
+
         mu = np.full(shape, mu).tolist()
         sigma = np.full(shape, sigma).tolist()
         nu = np.full(shape, nu).tolist()
         return cls(mu=mu, sigma=sigma, nu=nu)
 
-    @cached_property
+    @property
     def shape(self) -> Tuple[PositiveInt]:
         return np.array(self.mu).shape
 
-    @cached_property
+    @property
     def params(self):
         return dict(mu=np.array(self.mu), sigma=np.array(self.sigma), nu=np.array(self.nu))
-
-    class Config:
-        keep_untouched = (cached_property,)
 
     def __eq__(self, other: Self) -> bool:
         return self.mu == other.mu and self.sigma == other.sigma and self.nu == other.nu
 
 
-@dataclass
-class BnnLayerParams:
+class BnnLayerParams(PyBanditsBaseModel):
     weight: StudentTArray
     bias: StudentTArray
 
+    def __eq__(self, other: Self) -> bool:
+        return self.weight == other.weight and self.bias == other.bias
 
+    
 class BaseBayesianNeuralNetwork(Model):
     """Bayesian Neural Network model for binary classification.
 
@@ -341,13 +345,14 @@ class BaseBayesianNeuralNetwork(Model):
       using a Bernoulli likelihood.
     """
 
+    posterior_params: List[BnnLayerParams]
+
     _logit_var_name: ClassVar[str] = "logit"
     _prob_var_name: ClassVar[str] = "prob"
 
     update_method: str = "MCMC"
     update_kwargs: Optional[Union[Dict[str, Any], dict[str, Dict[str, Any]]]] = None
 
-    posterior_params: List[BnnLayerParams]
 
     _default_mcmc_trace_kwargs = dict(
         tune=500,
@@ -423,7 +428,7 @@ class BaseBayesianNeuralNetwork(Model):
 
     @classmethod
     def create_posterior_params(
-        cls, num_features: PositiveInt, hidden_dim_list: List[PositiveInt], **dist_params_init
+        cls, n_features: PositiveInt, hidden_dim_list: List[PositiveInt], **dist_params_init
     ) -> BnnLayerParams:
         """
         Creates posterior parameters for a Bayesian neural network (BNN) layer.
@@ -432,7 +437,7 @@ class BaseBayesianNeuralNetwork(Model):
         initialization parameters.
         Parameters
         ----------
-        num_features : PositiveInt
+        n_features : PositiveInt
             The number of input features for the BNN.
         hidden_dim_list : List[PositiveInt]
             A list of integers specifying the number of hidden units in each hidden layer.
@@ -447,9 +452,9 @@ class BaseBayesianNeuralNetwork(Model):
         """
 
         if hidden_dim_list is None:
-            _dim_list = [num_features]
+            _dim_list = [n_features]
         else:
-            _dim_list = [num_features] + hidden_dim_list
+            _dim_list = [n_features] + hidden_dim_list
 
         _dim_list.append(1)
 
@@ -656,7 +661,7 @@ class BaseBayesianNeuralNetwork(Model):
     @classmethod
     def cold_start(
         cls,
-        num_features: PositiveInt,
+        n_features: PositiveInt,
         hidden_dim_list: Optional[List[PositiveInt]] = None,
         update_method: UpdateMethods = "MCMC",
         update_kwargs: Optional[dict] = None,
@@ -668,7 +673,7 @@ class BaseBayesianNeuralNetwork(Model):
 
         Parameters
         ----------
-        num_features : PositiveInt
+        n_features : PositiveInt
             Number of input features for the network.
         hidden_dim_list : Optional[List[PositiveInt]], optional
             List of dimensions for the hidden layers of the network. If None, no hidden layers are added.
@@ -691,7 +696,7 @@ class BaseBayesianNeuralNetwork(Model):
             dist_params_init = {}
 
         posterior_params = cls.create_posterior_params(
-            num_features=num_features, hidden_dim_list=hidden_dim_list, **dist_params_init
+            n_features=n_features, hidden_dim_list=hidden_dim_list, **dist_params_init
         )
         return cls(
             posterior_params=posterior_params, update_method=update_method, update_kwargs=update_kwargs, **kwargs

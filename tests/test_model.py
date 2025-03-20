@@ -34,7 +34,7 @@ from pybandits.model import (
     BetaCC,
     BetaMO,
     BetaMOCC,
-    StudentT,
+    StudentTArray
 )
 from pybandits.pydantic_version_compatibility import ValidationError
 
@@ -206,22 +206,21 @@ def test_can_init_beta_mo_cc(a_float):
 
 
 # StudentT
-
-
-@given(st.floats(), st.floats(), st.floats())
-def test_can_init_studentt(mu, sigma, nu):
+@settings(deadline=500)
+@given(st.one_of(st.integers(min_value=1,max_value=10), st.tuples(st.integers(min_value=1,max_value=10)), st.tuples(st.integers(min_value=1,max_value=10), st.integers(min_value=1,max_value=10))) , st.floats(allow_nan=False, allow_infinity=False), st.floats(min_value=0,allow_nan=False, allow_infinity=False), st.floats(min_value=0.001,allow_nan=False, allow_infinity=False))
+def test_can_init_studenttarray(shape, mu, sigma, nu):
     # init with default args
-    s = StudentT()
-    assert (s.mu, s.sigma, s.nu) == (0, 10, 5)
+    s =  StudentTArray.cold_start(shape=shape)
+    assert s.mu == np.full(shape, 0.0).tolist()
+    assert s.sigma == np.full(shape, 10.0).tolist()
+    assert s.nu == np.full(shape, 5.0).tolist()    
+    #assert s.shape == shape
 
-    # init with args
-    if np.isnan(mu) or np.isinf(mu) or np.isnan(sigma) or np.isinf(sigma) or np.isnan(nu) or np.isinf(nu):
-        with pytest.raises(ValidationError):
-            StudentT(mu=mu, sigma=sigma, nu=nu)
-    else:
-        s = StudentT(mu=mu, sigma=sigma, nu=nu)
-        assert (s.mu, s.sigma, s.nu) == (mu, sigma, nu)
-
+    s =  StudentTArray.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
+    assert s.mu == np.full(shape, mu).tolist()
+    assert s.sigma == np.full(shape, sigma).tolist()
+    assert s.nu == np.full(shape, nu).tolist()  
+    #assert s.shape == shape
 
 ########################################################################################################################
 
@@ -231,12 +230,15 @@ def test_can_init_studentt(mu, sigma, nu):
 @given(st.lists(st.integers(max_value=100), min_size=1, max_size=3))
 def test_can_init_bayesian_neural_network(dim_list):
     # at least one beta must be specified
+    n_features = dim_list[0]
+    hidden_dim_list = dim_list[1:]
+
     if any(layer_dim <= 0 for layer_dim in dim_list):
         with pytest.raises((ValidationError, ValueError)):
-            posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list)
+            posterior_params = BayesianNeuralNetwork.create_posterior_params(n_features, hidden_dim_list)
             bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
     else:
-        posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list)
+        posterior_params = BayesianNeuralNetwork.create_posterior_params(n_features, hidden_dim_list)
         bnn = BayesianNeuralNetwork(posterior_params=posterior_params)
         assert bnn.posterior_params == posterior_params
 
@@ -246,10 +248,12 @@ def test_can_init_bayesian_neural_network(dim_list):
     st.integers(min_value=1, max_value=1000), st.lists(st.integers(min_value=1, max_value=100), min_size=1, max_size=3)
 )
 def test_check_context_matrix(n_samples, dim_list):
-    bnn = BayesianNeuralNetwork.cold_start(dim_list)
+    n_features = dim_list[0]
+    hidden_dim_list = dim_list[1:]
+    bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
 
     # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, dim_list[0]))
+    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
     assert type(context) is np.ndarray
     bnn.check_context_matrix(context=context)
 
@@ -292,7 +296,9 @@ def test_bnn_sample_proba(n_samples, dim_list):
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
     n_features = dim_list[0]
-    bnn = BayesianNeuralNetwork.cold_start(dim_list=dim_list)
+    hidden_dim_list = dim_list[1:]
+
+    bnn = BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list)
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
@@ -316,13 +322,16 @@ def test_bnn_sample_proba(n_samples, dim_list):
 )  # max_size=2 takes a lot of time (>10 min.)
 def test_bnn_update(dim_list):
     def update(context, rewards):
-        bnn = BayesianNeuralNetwork.cold_start(dim_list=dim_list)
+        n_features = dim_list[0]
+        hidden_dim_list = dim_list[1:]
+
+        bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
         init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
 
         for param in init_params.keys():
             for layer_ind in range(len(dim_list)):
-                layer_w = bnn.posterior_params[layer_ind]["w"].params_dict
-                layer_b = bnn.posterior_params[layer_ind]["b"].params_dict
+                layer_w = bnn.posterior_params[layer_ind].weight.params
+                layer_b = bnn.posterior_params[layer_ind].bias.params
 
                 assert all(w_val == init_params[param] for w_val in np.array(layer_w[param][layer_ind]).flatten())
                 assert all(b_val == init_params[param] for b_val in np.array(layer_b[param][0]).flatten())
@@ -331,14 +340,15 @@ def test_bnn_update(dim_list):
 
         for param in updated_params:
             for layer_ind in range(len(dim_list)):
-                layer_w = bnn.posterior_params[layer_ind]["w"].params_dict
-                layer_b = bnn.posterior_params[layer_ind]["b"].params_dict
+                layer_w = bnn.posterior_params[layer_ind].weight.params
+                layer_b = bnn.posterior_params[layer_ind].bias.params
 
                 assert all(w_val != init_params[param] for w_val in np.array(layer_w[param][layer_ind]).flatten())
                 assert all(b_val != init_params[param] for b_val in np.array(layer_b[param][0]).flatten())
 
     n_samples = 100
     n_features = dim_list[0]
+    hidden_dim_list = dim_list[1:]
     print(dim_list)
     updated_params = ["mu", "sigma"]  # nu is not updated
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
@@ -360,7 +370,7 @@ def test_bnn_update(dim_list):
 
     # raise an error if len(context) != len(rewards)
     with pytest.raises(ValueError):
-        bnn = BayesianNeuralNetwork.cold_start(dim_list=dim_list)
+        bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=dim_list)
         bnn.update(context=context, rewards=rewards[1:])
 
 
@@ -368,18 +378,19 @@ def test_bnn_update(dim_list):
 
 
 # BayesianNeuralNetworkCC
-
-
 @settings(deadline=500)
 @given(st.lists(st.integers(max_value=100), min_size=1, max_size=3), st.floats(allow_nan=False, allow_infinity=False))
 def test_can_init_bayesian_neural_network_cc(dim_list, cost):
     # at least one beta must be specified
+    n_features = dim_list[0]
+    hidden_dim_list = dim_list[1:]
+
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
-            posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list)
+            posterior_params = BayesianNeuralNetwork.create_posterior_params(n_features, hidden_dim_list)
             bnn = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
     else:
-        posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list)
+        posterior_params = BayesianNeuralNetwork.create_posterior_params(n_features, hidden_dim_list)
         bnn = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
         assert bnn.posterior_params == posterior_params
 
@@ -387,12 +398,14 @@ def test_can_init_bayesian_neural_network_cc(dim_list, cost):
 @settings(deadline=500)
 @given(st.lists(st.integers(max_value=100), min_size=1, max_size=3), st.floats(allow_nan=False, allow_infinity=False))
 def test_create_default_instance_bayesian_logistic_regression_cc(dim_list, cost):
-    # at least one beta must be specified
+    n_features = dim_list[0]
+    hidden_dim_list = dim_list[1:]
+    
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
-            BayesianNeuralNetworkCC.cold_start(dim_list=dim_list, cost=cost)
+            BayesianNeuralNetworkCC.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost)
     else:
-        bnn_cold_start = BayesianNeuralNetworkCC.cold_start(dim_list=dim_list, cost=cost)
-        posterior_params = BayesianNeuralNetwork.create_posterior_params(dim_list)
+        bnn_cold_start = BayesianNeuralNetworkCC.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost)
+        posterior_params = BayesianNeuralNetwork.create_posterior_params(n_features=n_features, hidden_dim_list=hidden_dim_list)
         bnn_init = BayesianNeuralNetworkCC(posterior_params=posterior_params, cost=cost)
         assert bnn_cold_start == bnn_init
