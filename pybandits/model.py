@@ -25,6 +25,7 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pytensor.tensor as pt
+
 from numpy import sqrt
 from numpy.typing import ArrayLike
 from pymc import Approximation, Bernoulli, Deterministic, MutableData, fit, math, sample, sample_prior_predictive
@@ -503,7 +504,7 @@ class BaseBayesianNeuralNetwork(Model):
         """
         return self.posterior_params[0].weight.shape[0]
 
-    def create_model(self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], is_sampelwise: bool) -> PymcModel:
+    def create_model(self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], is_samplewise: bool) -> PymcModel:
         """
         Create a PyMC model for Bayesian Neural Network.
 
@@ -547,7 +548,7 @@ class BaseBayesianNeuralNetwork(Model):
                 w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
                 b_shape = layer_params.bias.shape
 
-                if is_sampelwise:
+                if is_samplewise:
                     # in this case we create n_samples different weights and biases - one for each sample
                     w = PymcStudentT(
                         f"weight_{layer_ind}", **layer_params.weight.params, shape=(n_samples,) + w_shape
@@ -570,8 +571,8 @@ class BaseBayesianNeuralNetwork(Model):
 
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
             prob = Deterministic(self._prob_var_name, math.sigmoid(logit))
-
-            Bernoulli("out", p=prob, observed=bnn_output)
+            
+            Bernoulli("out", logit_p=logit, observed=bnn_output)
         return _model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -593,7 +594,7 @@ class BaseBayesianNeuralNetwork(Model):
 
         _context = np.array(context, ndmin=2)
         dummy_y = np.zeros(len(context), dtype=np.int64)
-        _model = self.create_model(_context, dummy_y, is_sampelwise=True)
+        _model = self.create_model(_context, dummy_y, is_samplewise=True)
 
         with _model:
             trace = sample_prior_predictive(samples=1)
@@ -628,7 +629,7 @@ class BaseBayesianNeuralNetwork(Model):
             AttributeError("Shape mismatch: context and rewards must have the same length.")
 
         _context = np.array(context, ndmin=2)
-        _model = self.create_model(x=_context, y=rewards, is_sampelwise=False)
+        _model = self.create_model(x=_context, y=rewards, is_samplewise=False)
         with _model:
             # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
