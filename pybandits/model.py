@@ -25,7 +25,6 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pytensor.tensor as pt
-
 from numpy import sqrt
 from numpy.typing import ArrayLike
 from pymc import Approximation, Bernoulli, Deterministic, MutableData, fit, math, sample, sample_prior_predictive
@@ -570,8 +569,8 @@ class BaseBayesianNeuralNetwork(Model):
                     next_layer_input = math.tanh(linear_transform)
 
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
-            prob = Deterministic(self._prob_var_name, math.sigmoid(logit))
-            
+            Deterministic(self._prob_var_name, math.sigmoid(logit))
+
             Bernoulli("out", logit_p=logit, observed=bnn_output)
         return _model
 
