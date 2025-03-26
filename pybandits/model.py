@@ -321,7 +321,7 @@ class BnnLayerParams(PyBanditsBaseModel):
         return self.weight == other.weight and self.bias == other.bias
 
 
-class BaseBayesianNeuralNetwork(Model):
+class BaseBayesianNeuralNetwork(Model, ABC):
     """Bayesian Neural Network model for binary classification.
 
     This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
@@ -734,7 +734,7 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork):
     cost: NonNegativeFloat
 
 
-class BaseBayesianLogisticRegression(BaseBayesianNeuralNetwork):
+class BaseBayesianLogisticRegression(BaseBayesianNeuralNetwork, ABC):
     """
     A Bayesian Logistic Regression model that inherits from BaseBayesianNeuralNetwork.
     This model is a specialized version of a Bayesian Neural Network with a single layer,
