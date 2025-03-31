@@ -1,5 +1,7 @@
+from collections import defaultdict
 from typing import List, Union
 
+import numpy as np
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -8,36 +10,112 @@ from pytest_mock import MockerFixture
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
 from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward
 from pybandits.model import BayesianLogisticRegression, Beta
-from pybandits.pydantic_version_compatibility import NonNegativeInt, ValidationError
+from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
+    ValidationError,
+    pydantic_version,
+)
 
 REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
     def _update_actions(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], *args, **kwargs
+        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs
     ):
-        pass
+        rewards_dict = defaultdict(list)
 
-    def _get_relative_change_point(self, last_change_point: NonNegativeInt) -> NonNegativeInt:
-        return len(self.actions_memory) - last_change_point
+        for a, r in zip(actions, rewards):
+            rewards_dict[a].append(r)
+
+        for a in set(actions):
+            self.actions[a].update(rewards=rewards_dict[a])
+
+
+@pytest.fixture(scope="module")
+def monkeymodule():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
+
+
+@given(
+    data_len=st.integers(min_value=1, max_value=100),
+)
+def test_update_with_invalid_memory_delta_none(data_len):
+    """Test update validation when delta is None but memory is provided"""
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    action_list = np.random.choice(["action1", "action2"], size=data_len).tolist()
+    rewards = np.random.randint(0, 2, size=data_len).tolist()
+    with pytest.raises(ValueError):
+        manager.update(actions=action_list, rewards=rewards, actions_memory=action_list, rewards_memory=rewards)
+
+
+@given(
+    action_list=st.lists(st.sampled_from(["action1", "action2"]), min_size=1),
+)
+def test_update_with_missing_memory_delta_set(action_list):
+    """Test update validation when delta is set but memory is not provided"""
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    with pytest.warns(UserWarning):
+        manager.update(actions=action_list, rewards=[1] * len(action_list), actions_memory=None, rewards_memory=None)
+
+
+@given(
+    data_len=st.integers(min_value=1, max_value=200),
+    regular_kwargs=st.dictionaries(st.text().filter(lambda x: not x.endswith("_memory")), st.integers(), min_size=1),
+    memory_kwargs=st.dictionaries(st.text().map(lambda x: x + "_memory"), st.integers(), min_size=1),
+)
+def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monkeymodule):
+    """Test proper separation of regular and memory kwargs"""
+    action_list = np.random.choice(["action1", "action2"], size=data_len).tolist()
+    rewards = np.random.randint(0, 2, size=data_len).tolist()
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    all_kwargs = {**regular_kwargs, **memory_kwargs}
+
+    # Keep track of captured kwargs
+    captured_regular_kwargs = {}
+    captured_memory_kwargs = {}
+
+    def validate_params(*args, **kwargs):
+        captured_regular_kwargs.update(kwargs)
+
+    def validate_lengths(**kwargs):
+        captured_memory_kwargs.update(kwargs)
+
+    # Mock validation methods to capture kwargs
+    if pydantic_version == PYDANTIC_VERSION_1:
+        manager.__dict__["_validate_update_params"] = validate_params
+        manager.__dict__["_validate_params_lengths"] = validate_lengths
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        monkeymodule.setattr(manager, "_validate_update_params", validate_params)
+        monkeymodule.setattr(manager, "_validate_params_lengths", validate_lengths)
+    else:
+        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+
+    manager.update(actions=action_list, rewards=rewards, **all_kwargs)
+
+    # Verify regular kwargs went to _validate_update_params
+    assert all(k in regular_kwargs for k in captured_regular_kwargs)
+
+    # Verify memory kwargs went to _validate_params_lengths
+    assert all(k.endswith("_memory") for k in captured_memory_kwargs if k != "actions_memory" and k != "rewards_memory")
 
 
 def test_init_with_valid_actions():
     actions = {"action1": Beta(), "action2": Beta()}
     manager = DummyActionsManager(actions=actions)
     assert len(manager.actions) == 2
-    assert manager.adaptive_window_size is None
     assert manager.delta is None
 
 
 def test_update_with_valid_inputs(action_list=("action1", "action2", "action1"), rewards=(1, 0, 1)):
     actions = {"action1": Beta(), "action2": Beta()}
-    manager = DummyActionsManager(actions=actions, adaptive_window_size="inf")
-
+    manager = DummyActionsManager(actions=actions)
     manager.update(actions=list(action_list), rewards=list(rewards))
-    assert list(manager.actions_memory) == list(action_list)
-    assert list(manager.rewards_memory) == list(rewards)
 
 
 def test_empty_actions_raises_error():
@@ -60,42 +138,28 @@ def test_mixed_action_types_error(n_features=1):
         CmabActionsManager[BayesianLogisticRegression](actions=actions)
 
 
-def test_invalid_memory_initialization(n_actions=1, int_adaptive_window_size=5):
-    actions = {f"action{i}": Beta() for i in range(n_actions)}
-    with pytest.raises(AttributeError):
-        DummyActionsManager(actions=actions, adaptive_window_size="inf", actions_memory=["action1"], rewards_memory=[])
-    with pytest.raises(AttributeError):
-        DummyActionsManager(actions=actions, adaptive_window_size="inf", actions_memory=[], rewards_memory=[0])
-
-    with pytest.raises(AttributeError):  # memory length should be 0 as action models are cold started
-        DummyActionsManager(actions=actions, adaptive_window_size="inf", actions_memory=[0], rewards_memory=[0])
-
-    with pytest.raises(AttributeError):
-        DummyActionsManager(
-            actions=actions,
-            adaptive_window_size=int_adaptive_window_size,
-            actions_memory=[0] * (int_adaptive_window_size + 1),
-            rewards_memory=[0] * (int_adaptive_window_size + 1),
-        )
-
-
 @given(
     n_successes=st.just(100),
     n_failures=st.just(1),
-    adaptive_window_size=st.sampled_from([100]),
     delta=st.just(REFERENCE_DELTA),
-    reference=st.just(100),
+    reference=st.just(28),
 )
-def test_change_detection(n_successes, n_failures, adaptive_window_size, delta, reference):
+def test_change_detection(n_successes, n_failures, delta, reference):
     actions = {"action1": Beta(), "action2": Beta()}
-    manager = SmabActionsManager[Beta](actions=actions, adaptive_window_size=adaptive_window_size, delta=delta)
-    manager.update(actions=["action1"] * (n_successes - 1), rewards=[1] * (n_successes - 1))
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    actions_memory = ["action1"] * (n_successes - 1)
+    rewards_memory = [1] * (n_successes - 1)
+    manager.update(actions=actions_memory, rewards=rewards_memory, actions_memory=[], rewards_memory=[])
     assert manager.actions["action1"].n_successes == n_successes
     assert manager.actions["action1"].n_failures == n_failures
-    manager.update(actions=["action1"] * 100, rewards=[0] * 100)
+    manager.update(
+        actions=["action1"] * 100,
+        rewards=[0] * 100,
+        actions_memory=actions_memory * 2,
+        rewards_memory=rewards_memory * 2,
+    )
     assert manager.actions["action1"].n_successes == 1
     assert manager.actions["action1"].n_failures == reference
-    assert list(manager.actions_memory) == ["action1"] * (reference - 1)
 
 
 ########################################################################################################################
@@ -180,3 +244,258 @@ def test_handles_kwargs_with_no_matching_action_model_attributes(mocker: MockerF
     action_general_kwargs = ActionsManager._extract_action_model_class_and_attributes(kwargs, MockActionModel.__init__)
 
     assert action_general_kwargs == {}
+
+
+########################################################################################################################
+
+
+# CmabActionsManager
+@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
+def test_check_context_matrix(n_samples, n_features):
+    # context is numpy array
+    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    CmabActionsManager._check_context_matrix(context=context)
+
+    # raise an error if len(context) != len(self.betas)
+    with pytest.raises(AttributeError):
+        CmabActionsManager._check_context_matrix(context=context.loc[:, 1:])
+    with pytest.raises(AttributeError):
+        CmabActionsManager._check_context_matrix(context=[[1], [2, 3]])  # context has shape mismatch
+    with pytest.raises(AttributeError):
+        CmabActionsManager._check_context_matrix(context="a")  # context is a string
+
+
+# Handle context and context_memory with non matching feature dimensions
+@given(
+    context=st.lists(st.lists(st.floats(), min_size=3, max_size=3), min_size=1),
+    context_memory=st.lists(st.lists(st.floats(), min_size=4, max_size=4), min_size=1),
+    n_features=st.integers(min_value=1, max_value=10),
+)
+def test_context_memory_matching_dimensions(context, context_memory, n_features):
+    actions = {
+        "action1": BayesianLogisticRegression.cold_start(n_features=n_features),
+        "action2": BayesianLogisticRegression.cold_start(n_features=n_features),
+    }
+    manager = CmabActionsManager[BayesianLogisticRegression](actions=actions)
+    actions = ["action1"] * len(context)
+    rewards = [1] * len(context)
+    actions_memory = ["action1"] * len(context_memory)
+    rewards_memory = [1] * len(context_memory)
+    if len(context[0]) == len(context_memory[0]):
+        manager.update(actions, rewards, context, actions_memory, rewards_memory, context_memory=context_memory)
+    else:
+        with pytest.raises(ValueError):
+            manager.update(actions, rewards, context, actions_memory, rewards_memory, context_memory=context_memory)
+
+
+#######################################################################################################################
+
+
+# ActionsManager._slice_memory functionality tests
+@given(
+    memory_len=st.integers(min_value=1, max_value=100),
+    data_len=st.integers(min_value=1, max_value=200),
+)
+def test_slice_memory_with_longer_data(memory_len, data_len):
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    # Generate test data longer than memory_len
+    data_len = max(memory_len + 1, data_len)
+    actions_memory = ["action1"] * data_len
+    rewards_memory = [1] * data_len
+    memory_kwargs = {"context_memory": list(range(data_len)), "empty_memory": []}
+
+    actions_memory, rewards_memory, memory_kwargs = manager._slice_memory(
+        memory_len=memory_len, actions_memory=actions_memory, rewards_memory=rewards_memory, memory_kwargs=memory_kwargs
+    )
+
+    assert len(actions_memory) == memory_len
+    assert len(rewards_memory) == memory_len
+    assert len(memory_kwargs["context_memory"]) == memory_len
+    assert len(memory_kwargs["empty_memory"]) == 0
+
+
+@given(
+    memory_len=st.integers(min_value=1, max_value=100),
+    data_len=st.integers(min_value=1, max_value=100),
+)
+def test_slice_memory_with_shorter_data(memory_len, data_len):
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    # Generate test data shorter than memory_len
+    data_len = min(memory_len - 1, data_len)
+    actions_memory = ["action1"] * data_len
+    rewards_memory = [1] * data_len
+    memory_kwargs = {"context_memory": list(range(data_len)), "empty_memory": []}
+
+    original_lengths = (len(actions_memory), len(rewards_memory), len(memory_kwargs["context_memory"]))
+
+    actions_memory, rewards_memory, memory_kwargs = manager._slice_memory(
+        memory_len=memory_len, actions_memory=actions_memory, rewards_memory=rewards_memory, memory_kwargs=memory_kwargs
+    )
+
+    # Verify nothing changed when data is shorter than memory_len
+    assert len(actions_memory) == original_lengths[0]
+    assert len(rewards_memory) == original_lengths[1]
+    assert len(memory_kwargs["context_memory"]) == original_lengths[2]
+    assert len(memory_kwargs["empty_memory"]) == 0
+
+
+def test_slice_memory_empty_data():
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    actions_memory = []
+    rewards_memory = []
+    memory_kwargs = {"context_memory": [], "empty_memory": []}
+
+    actions_memory, rewards_memory, memory_kwargs = manager._slice_memory(
+        memory_len=10, actions_memory=actions_memory, rewards_memory=rewards_memory, memory_kwargs=memory_kwargs
+    )
+
+    assert len(actions_memory) == 0
+    assert len(rewards_memory) == 0
+    assert len(memory_kwargs["context_memory"]) == 0
+    assert len(memory_kwargs["empty_memory"]) == 0
+
+
+@given(data_len=st.integers(min_value=101, max_value=200), memory_len=st.integers(min_value=1, max_value=100))
+def test_slice_memory_maintains_last_elements(data_len, memory_len):
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    actions_backup = np.random.choice(list(actions.keys()), size=data_len).tolist()
+    rewards_backup = np.random.randint(0, 2, size=data_len).tolist()  # Use range to verify order preservation
+    context_backup = list(range(data_len))
+    memory_kwargs = {"context_memory": context_backup.copy()}
+
+    actions_memory = actions_backup.copy()
+    rewards_memory = rewards_backup.copy()
+
+    actions_memory, rewards_memory, memory_kwargs = manager._slice_memory(
+        memory_len=memory_len, actions_memory=actions_memory, rewards_memory=rewards_memory, memory_kwargs=memory_kwargs
+    )
+
+    # Verify we kept the last memory_len elements
+    assert actions_memory == actions_backup[-memory_len:]
+    assert rewards_memory == rewards_backup[-memory_len:]
+    assert memory_kwargs["context_memory"] == context_backup[-memory_len:]
+
+
+########################################################################################################################
+
+
+# ActionsManager._maybe_trim_memory functionality tests
+def test_memory_trim_when_too_long(mocker: MockerFixture, trials=(3, 3), successes=(2, 1), extra_len=5):
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+    # Mock _extract_current_stats_for_action to return known values
+    mocker.patch.object(
+        ActionsManager,
+        "_extract_current_stats_for_action",
+        side_effect=[
+            (np.array([[successes[0]]]), np.array([[trials[0]]])),  # action1: 2 successes, 3 trials
+            (np.array([[successes[1]]]), np.array([[trials[1]]])),  # action2: 1 success, 3 trials
+        ],
+    )
+
+    actions_memory = (
+        np.random.choice(["action1", "action2"], size=extra_len).tolist()
+        + ["action1"] * trials[0]
+        + ["action2"] * trials[1]
+    )
+    rewards_memory = (
+        np.random.randint(0, 2, size=extra_len).tolist()
+        + [1] * successes[0]
+        + [0] * (trials[0] - successes[0])
+        + [1] * successes[1]
+        + [0] * (trials[1] - successes[1])
+    )
+    shuffled_indexes = list(range(-sum(trials), 0))
+    np.random.shuffle(shuffled_indexes)
+    temp_actions = [actions_memory[i] for i in shuffled_indexes]
+    temp_rewards = [rewards_memory[i] for i in shuffled_indexes]
+    actions_memory[-sum(trials) :] = temp_actions
+    rewards_memory[-sum(trials) :] = temp_rewards
+
+    memory_kwargs = {"context_memory": list(range(8))}
+
+    with pytest.warns(UserWarning):
+        manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
+
+
+def test_valid_memory_stats(mocker: MockerFixture):
+    actions = {"action1": Beta()}
+    manager = DummyActionsManager(actions=actions)
+
+    # Mock expected stats: 2 successes out of 3 trials
+    mocker.patch.object(
+        ActionsManager, "_extract_current_stats_for_action", return_value=(np.array([[2]]), np.array([[3]]))
+    )
+
+    # Valid data matching expected stats
+    actions_memory = ["action1"] * 3
+    rewards_memory = [1, 1, 0]  # 2 successes in 3 trials
+    memory_kwargs = {"context_memory": list(range(3))}
+
+    # Should not raise any exceptions
+    manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
+
+
+def test_invalid_trials_count(mocker: MockerFixture):
+    actions = {"action1": Beta()}
+    manager = DummyActionsManager(actions=actions)
+
+    mocker.patch.object(
+        ActionsManager, "_extract_current_stats_for_action", return_value=(np.array([[2]]), np.array([[3]]))
+    )
+
+    # Too many trials
+    actions_memory = ["action1"] * 4  # 4 trials > expected 3
+    rewards_memory = [1, 1, 1, 1]
+    memory_kwargs = {"context_memory": list(range(4))}
+
+    with pytest.raises(ValueError):
+        manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
+
+
+def test_invalid_success_count(mocker: MockerFixture):
+    actions = {"action1": Beta()}
+    manager = DummyActionsManager(actions=actions)
+
+    mocker.patch.object(
+        ActionsManager, "_extract_current_stats_for_action", return_value=(np.array([[2]]), np.array([[3]]))
+    )
+
+    # Wrong number of successes for expected trials
+    actions_memory = ["action1"] * 3
+    rewards_memory = [1, 1, 1]  # 3 successes != expected 2
+    memory_kwargs = {"context_memory": list(range(3))}
+
+    with pytest.raises(ValueError, match="Memory for action action1 is not consistent"):
+        manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
+
+
+@given(n_actions=st.integers(min_value=1, max_value=5), trials_per_action=st.integers(min_value=1, max_value=10))
+def test_hypothesis_memory_trim(n_actions: int, trials_per_action: int, monkeymodule):
+    # Mock stats for each action
+    successes_per_action = trials_per_action - 1  # Ensure successes < trials
+    monkeymodule.setattr(
+        ActionsManager,
+        "_extract_current_stats_for_action",
+        lambda *args, **kwargs: (np.array([[successes_per_action]]), np.array([[trials_per_action]])),
+    )
+
+    actions = {f"action{i}": Beta() for i in range(n_actions)}
+    manager = DummyActionsManager(actions=actions)
+
+    total_trials = n_actions * trials_per_action
+    actions_memory = [f"action{i}" for _ in range(trials_per_action) for i in range(n_actions)]
+    rewards_memory = [0] * n_actions + [1] * (total_trials - n_actions)  # Match expected successes
+    memory_kwargs = {"context_memory": list(range(total_trials))}
+
+    # Should not raise any exceptions
+    manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
+
+    # Verify lengths remain unchanged since data matches expectations
+    assert len(actions_memory) == total_trials
+    assert len(rewards_memory) == total_trials
+    assert len(memory_kwargs["context_memory"]) == total_trials

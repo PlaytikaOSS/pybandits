@@ -22,7 +22,7 @@
 import json
 from abc import ABC, abstractmethod
 from inspect import isclass
-from typing import Any, Dict, List, Literal, Optional, Set, Union, get_origin
+from typing import Any, Dict, List, Optional, Set, Union, get_origin
 
 import numpy as np
 
@@ -40,7 +40,6 @@ from pybandits.model import BaseModel, Model
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
-    PositiveInt,
     model_validator,
     pydantic_version,
     validate_call,
@@ -167,17 +166,22 @@ class BaseMab(PyBanditsBaseModel, ABC):
     ####################################################################################################################
 
     def model_post_init(self, __context: Any) -> None:
-        if self.actions_manager.adaptive_window_size is not None and (
-            not self.epsilon or self.default_action is not None
-        ):
-            raise ValueError("Adaptive window size requires epsilon greedy super strategy with not default action.")
+        if self.actions_manager.delta is not None and (not self.epsilon or self.default_action is not None):
+            raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
 
     @property
     def actions(self) -> Dict[ActionId, Model]:
         return self.actions_manager.actions
 
     @validate_call
-    def update(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
+    def update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        actions_memory: Optional[List[ActionId]] = None,
+        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        **kwargs,
+    ):
         """
         Update the multi-armed bandit model.
 
@@ -185,14 +189,20 @@ class BaseMab(PyBanditsBaseModel, ABC):
         ----------
         actions: List[ActionId]
             The selected action for each sample.
-        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : Union[List[BinaryReward], List[List[BinaryReward]]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        actions_memory : Optional[List[ActionId]]
+            List of previously selected actions.
+        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+            List of previously collected rewards.
         """
-        self.actions_manager.update(actions=actions, rewards=rewards, **kwargs)
+        self.actions_manager.update(
+            actions=actions, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory, **kwargs
+        )
 
     @abstractmethod
     @validate_call
@@ -315,7 +325,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def from_old_state(
         cls,
         state: dict,
-        adaptive_window_size: Optional[Union[PositiveInt, Literal["inf"]]] = None,
         delta: Optional[PositiveProbability] = None,
     ) -> "BaseMab":
         """
@@ -338,7 +347,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise ValueError("The state is expected to be in the old format of PyBandits < 2.0.0.")
         state["actions_manager"] = {}
         state["actions_manager"]["actions"] = state.pop("actions")
-        state["actions_manager"]["adaptive_window_size"] = adaptive_window_size
         state["actions_manager"]["delta"] = delta
 
         return cls.from_state(state)

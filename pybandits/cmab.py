@@ -30,7 +30,7 @@ from numpy.typing import ArrayLike
 from pybandits.actions_manager import CmabActionsManager
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BayesianLogisticRegression, BayesianLogisticRegressionCC
+from pybandits.model import BaseBayesianLogisticRegression, BayesianLogisticRegression, BayesianLogisticRegressionCC
 from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -56,7 +56,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
         bandit strategy.
     """
 
-    actions_manager: CmabActionsManager[BayesianLogisticRegression]
+    actions_manager: CmabActionsManager[BaseBayesianLogisticRegression]
     predict_with_proba: bool
     predict_actions_randomly: bool
 
@@ -135,7 +135,13 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(
-        self, context: ArrayLike, actions: List[ActionId], rewards: List[Union[BinaryReward, List[BinaryReward]]]
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        context: ArrayLike,
+        actions_memory: Optional[List[ActionId]] = None,
+        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        context_memory: Optional[ArrayLike] = None,
     ):
         """
         Update the contextual Bernoulli bandit given the list of selected actions and their corresponding binary
@@ -153,8 +159,21 @@ class BaseCmabBernoulli(BaseMab, ABC):
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        actions_memory : Optional[List[ActionId]]
+            List of previously selected actions.
+        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+            List of previously collected rewards.
+        context_memory : Optional[ArrayLike] of shape (n_samples, n_features)
+            Matrix of contextual features.
         """
-        super().update(actions=actions, rewards=rewards, context=context)
+        super().update(
+            actions=actions,
+            rewards=rewards,
+            context=context,
+            actions_memory=actions_memory,
+            rewards_memory=rewards_memory,
+            context_memory=context_memory,
+        )
 
         # always set predict_actions_randomly after update
         self.predict_actions_randomly = False

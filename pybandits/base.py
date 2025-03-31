@@ -78,6 +78,24 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
         def model_post_init(self, __context: Any) -> None:
             pass
 
+    def _validate_params_lengths(
+        self,
+        force_values: bool = False,
+        **kwargs,
+    ):
+        """
+        Verify that the given keyword arguments have the same length.
+        """
+        reference = None
+        for val in kwargs.values():
+            if val is not None:
+                reference = len(val)
+                break
+        if reference is not None:
+            for k, v in kwargs.items():
+                if (v is None or len(v) != reference) if force_values else (v is not None and len(v) != reference):
+                    raise AttributeError(f"Shape mismatch: {k} should have the same length as the other parameters.")
+
     def _apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
         """
         Apply the method with the given name, adjusting for the pydantic version.
