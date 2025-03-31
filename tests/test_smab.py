@@ -346,7 +346,7 @@ def test_update(
     )
     reward_data = reward_data.tolist()
     # Test updates with generated data
-    actions_to_update = np.random.choice(np.array(action_ids, dtype=np.object_), size=n_samples, replace=True).tolist()
+    actions_to_update = np.random.choice(np.array(action_ids, dtype=str), size=n_samples, replace=True).tolist()
 
     [smab.update(actions=[action], rewards=[reward]) for action, reward in zip(actions_to_update, reward_data)]
     if delta:
@@ -421,7 +421,7 @@ def test_predict(
 
     # Test predictions with random forbidden actions
     forbidden = (
-        set(np.random.choice(np.array(action_ids, dtype=np.object_), size=len(action_ids) // 2, replace=False))
+        set(np.random.choice(np.array(action_ids, dtype=str), size=len(action_ids) // 2, replace=False))
         if len(action_ids) > 2
         else None
     )
