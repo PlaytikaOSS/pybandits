@@ -847,7 +847,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
             Matrix of contextual features.
         """
         # cast inputs to numpy arrays to facilitate their manipulation
-        actions, rewards = np.array(actions, dtype=np.object_), np.array(rewards)
+        actions, rewards = np.array(actions, dtype=str), np.array(rewards)
         context = context[-len(actions) :]
         for a in set(actions):
             # get context and rewards of the samples associated to action a

@@ -444,13 +444,13 @@ def test_update(
     # Generate random rewards
     reward_data = np.random.choice([0, 1], size=n_samples).tolist()
     # Test updates with generated data
-    actions_to_update = np.random.choice(np.array(action_ids, dtype=np.object_), size=n_samples, replace=True).tolist()
+    actions_to_update = np.random.choice(np.array(action_ids, dtype=str), size=n_samples, replace=True).tolist()
 
     for_update_kwargs = {"actions": actions_to_update, "rewards": reward_data}
 
     old_cmab = deepcopy(cmab)
-    for transform in [lambda x: x, list, pd.DataFrame]:
-        if delta and "actions_memory" not in for_update_kwargs:
+    for k, transform in enumerate([lambda x: x, list, pd.DataFrame]):
+        if k and delta and "actions_memory" not in for_update_kwargs:
             with pytest.warns(UserWarning):
                 cmab.update(context=transform(context), **for_update_kwargs)
         else:
@@ -514,7 +514,7 @@ def test_predict(
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     # Test predictions with random forbidden actions
     forbidden = (
-        set(np.random.choice(np.array(action_ids, dtype=np.object_), size=len(action_ids) // 2, replace=False))
+        set(np.random.choice(np.array(action_ids, dtype=str), size=len(action_ids) // 2, replace=False))
         if len(action_ids) > 2
         else None
     )
