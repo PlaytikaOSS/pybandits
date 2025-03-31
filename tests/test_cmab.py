@@ -44,7 +44,7 @@ from pybandits.pydantic_version_compatibility import (
     ValidationError,
 )
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
-from tests.test_utils import FakeApproximation, literal_update_methods
+from tests.test_utils import FakeApproximation, literal_update_methods, sample_with_replacement
 
 
 @st.composite
@@ -444,7 +444,7 @@ def test_update(
     # Generate random rewards
     reward_data = np.random.choice([0, 1], size=n_samples).tolist()
     # Test updates with generated data
-    actions_to_update = np.random.choice(np.array(action_ids, dtype=str), size=n_samples, replace=True).tolist()
+    actions_to_update = sample_with_replacement(action_ids, n_samples)
 
     for_update_kwargs = {"actions": actions_to_update, "rewards": reward_data}
 
@@ -513,11 +513,7 @@ def test_predict(
     )[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     # Test predictions with random forbidden actions
-    forbidden = (
-        set(np.random.choice(np.array(action_ids, dtype=str), size=len(action_ids) // 2, replace=False))
-        if len(action_ids) > 2
-        else None
-    )
+    forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
     if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
         forbidden.remove(cmab.default_action)
 

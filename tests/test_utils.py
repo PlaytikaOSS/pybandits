@@ -1,3 +1,4 @@
+import random
 from typing import Dict, get_args
 
 import numpy as np
@@ -7,6 +8,10 @@ from pybandits.model import UpdateMethods
 from pybandits.pydantic_version_compatibility import PositiveInt
 
 literal_update_methods = get_args(UpdateMethods)
+
+
+def sample_with_replacement(source: list, length: PositiveInt):
+    return [random.choice(source) for _ in range(length)]
 
 
 class FakeApproximation(PyBanditsBaseModel):
