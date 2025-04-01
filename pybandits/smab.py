@@ -23,7 +23,13 @@
 from abc import ABC
 from typing import Dict, List, Optional, Set, Union
 
-from pybandits.actions_manager import SmabActionsManager
+from pybandits.actions_manager import (
+    SmabActionsManager,
+    SmabActionsManagerCC,
+    SmabActionsManagerMO,
+    SmabActionsManagerMOCC,
+    SmabActionsManagerSO,
+)
 from pybandits.base import (
     ActionId,
     BinaryReward,
@@ -31,7 +37,7 @@ from pybandits.base import (
     SmabPredictions,
 )
 from pybandits.mab import BaseMab
-from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO, BetaMOCC
+from pybandits.model import BaseBeta
 from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -39,7 +45,6 @@ from pybandits.strategy import (
     CostControlBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
-    Strategy,
 )
 
 
@@ -133,13 +138,13 @@ class SmabBernoulli(BaseSmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, Beta]
-        The list of possible actions, and their associated Model.
+    actions_manager: SmabActionsManagerSO
+        The manager for actions and their associated models.
     strategy: ClassicBandit
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[Beta]
+    actions_manager: SmabActionsManagerSO
     strategy: ClassicBandit
 
 
@@ -152,13 +157,13 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, Beta]
-        The list of possible actions, and their associated Model.
+    actions_manager: SmabActionsManagerSO
+        The manager for actions and their associated models.
     strategy: BestActionIdentificationBandit
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[Beta]
+    actions_manager: SmabActionsManagerSO
     strategy: BestActionIdentificationBandit
 
 
@@ -179,34 +184,17 @@ class SmabBernoulliCC(BaseSmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BetaCC]
-        The list of possible actions, and their associated Model.
+    actions_manager: SmabActionsManagerCC
+        The manager for actions and their associated models.
     strategy: CostControlBandit
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[BetaCC]
+    actions_manager: SmabActionsManagerCC
     strategy: CostControlBandit
 
 
-class BaseSmabBernoulliMO(BaseSmabBernoulli):
-    """
-    Base model for a Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation, and Multi-Objectives
-    strategy.
-
-    Parameters
-    ----------
-    actions: Dict[ActionId, BetaMO]
-        The list of possible actions, and their associated Model.
-    strategy: Strategy
-        The strategy used to select actions.
-    """
-
-    actions_manager: SmabActionsManager[BetaMO]
-    strategy: Strategy
-
-
-class SmabBernoulliMO(BaseSmabBernoulliMO):
+class SmabBernoulliMO(BaseSmabBernoulli):
     """
     Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Multi-Objectives strategy.
 
@@ -220,17 +208,17 @@ class SmabBernoulliMO(BaseSmabBernoulliMO):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BetaMO]
-        The list of possible actions, and their associated Model.
+    actions_manager: SmabActionsManagerMO
+        The manager for actions and their associated models.
     strategy: MultiObjectiveBandit
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[BetaMO]
+    actions_manager: SmabActionsManagerMO
     strategy: MultiObjectiveBandit
 
 
-class SmabBernoulliMOCC(BaseSmabBernoulliMO):
+class SmabBernoulliMOCC(BaseSmabBernoulli):
     """
     Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling implementation for Multi-Objective (MO) with Cost
     Control (CC) strategy.
@@ -240,11 +228,11 @@ class SmabBernoulliMOCC(BaseSmabBernoulliMO):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BetaMOCC]
-        The list of possible actions, and their associated Model.
+    actions_manager: SmabActionsManagerMOCC
+        The manager for actions and their associated models.
     strategy: MultiObjectiveCostControlBandit
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[BetaMOCC]
+    actions_manager: SmabActionsManagerMOCC
     strategy: MultiObjectiveCostControlBandit

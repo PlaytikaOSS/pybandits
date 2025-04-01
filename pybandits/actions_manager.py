@@ -10,6 +10,12 @@ from numpy.typing import ArrayLike
 from pybandits.base import ACTION_IDS_PREFIX, ACTIONS, ActionId, BinaryReward, PositiveProbability, PyBanditsBaseModel
 from pybandits.model import (
     BaseModel,
+    BayesianLogisticRegression,
+    BayesianLogisticRegressionCC,
+    Beta,
+    BetaCC,
+    BetaMO,
+    BetaMOCC,
     CmabModelType,
     Model,
     ModelMO,
@@ -857,3 +863,13 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
         for a in set(actions):
             self.actions[a].update(rewards=rewards_dict[a], context=np.array(context_dict[a]))
+
+
+# For pickling purposes
+SmabActionsManagerSO = SmabActionsManager[Beta]
+SmabActionsManagerCC = SmabActionsManager[BetaCC]
+SmabActionsManagerMO = SmabActionsManager[BetaMO]
+SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
+
+CmabActionsManagerSO = CmabActionsManager[BayesianLogisticRegression]
+CmabActionsManagerCC = CmabActionsManager[BayesianLogisticRegressionCC]

@@ -1,4 +1,6 @@
+import pickle
 import random
+from tempfile import NamedTemporaryFile
 from typing import Dict, get_args
 
 import numpy as np
@@ -12,6 +14,11 @@ literal_update_methods = get_args(UpdateMethods)
 
 def sample_with_replacement(source: list, length: PositiveInt):
     return [random.choice(source) for _ in range(length)]
+
+
+def to_temporary_pickle(model: PyBanditsBaseModel):
+    with NamedTemporaryFile("wb") as file:
+        pickle.dump(model, file)
 
 
 class FakeApproximation(PyBanditsBaseModel):

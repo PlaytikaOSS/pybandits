@@ -27,10 +27,10 @@ from numpy import array
 from numpy.random import choice
 from numpy.typing import ArrayLike
 
-from pybandits.actions_manager import CmabActionsManager
+from pybandits.actions_manager import CmabActionsManager, CmabActionsManagerCC, CmabActionsManagerSO
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BaseBayesianLogisticRegression, BayesianLogisticRegression, BayesianLogisticRegressionCC
+from pybandits.model import BaseBayesianLogisticRegression
 from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -188,8 +188,8 @@ class CmabBernoulli(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
-        The list of possible actions, and their associated Model.
+    actions_manager: CmabActionsManagerSO
+        The manager for actions and their associated models.
     strategy: ClassicBandit
         The strategy used to select actions.
     predict_with_proba: bool
@@ -199,7 +199,7 @@ class CmabBernoulli(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions_manager: CmabActionsManager[BayesianLogisticRegression]
+    actions_manager: CmabActionsManagerSO
     strategy: ClassicBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -214,8 +214,8 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
-        The list of possible actions, and their associated Model.
+    actions_manager: CmabActionsManagerSO
+        The manager for actions and their associated models.
     strategy: BestActionIdentificationBandit
         The strategy used to select actions.
     predict_with_proba: bool
@@ -225,7 +225,7 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions_manager: CmabActionsManager[BayesianLogisticRegression]
+    actions_manager: CmabActionsManagerSO
     strategy: BestActionIdentificationBandit
     predict_with_proba: bool = False
     predict_actions_randomly: bool = False
@@ -248,8 +248,8 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegressionCC]
-        The list of possible actions, and their associated Model.
+    actions_manager: CmabActionsManagerCC
+        The manager for actions and their associated models.
     strategy: CostControlBandit
         The strategy used to select actions.
     predict_with_proba: bool
@@ -259,7 +259,7 @@ class CmabBernoulliCC(BaseCmabBernoulli):
         bandit strategy.
     """
 
-    actions_manager: CmabActionsManager[BayesianLogisticRegressionCC]
+    actions_manager: CmabActionsManagerCC
     strategy: CostControlBandit
     predict_with_proba: bool = True
     predict_actions_randomly: bool = False
