@@ -44,7 +44,7 @@ from pybandits.pydantic_version_compatibility import (
     ValidationError,
 )
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
-from tests.test_utils import FakeApproximation, literal_update_methods, sample_with_replacement
+from tests.test_utils import FakeApproximation, literal_update_methods, sample_with_replacement, to_temporary_pickle
 
 
 @st.composite
@@ -612,6 +612,58 @@ def test_serialization(
     old_post_update_state["actions"] = old_post_update_state.pop("actions_manager")["actions"]
     restored_cmab = config.cmab_class.from_old_state(old_post_update_state, delta=delta)
     assert restored_cmab == cmab
+
+
+@settings(deadline=None)
+@pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
+@given(
+    action_ids=st.lists(
+        st.text(
+            min_size=1,
+        ),
+        min_size=2,
+        max_size=5,
+        unique=True,
+    ),
+    epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    delta=st.one_of(st.none(), st.just(0.1)),
+    costs=st.data(),
+    n_features=st.integers(min_value=1, max_value=5),
+    subsidy_factor=st.data(),
+    exploit_p=st.data(),
+    update_method=st.sampled_from(literal_update_methods),
+    update_kwargs=st.sampled_from([None, {"draws": 500}]),
+    diff=st.data(),
+)
+def test_pickling(
+    config: ModelTestConfig,
+    action_ids: List[str],
+    epsilon: Optional[float],
+    delta,
+    costs,
+    n_features,
+    exploit_p,
+    subsidy_factor,
+    update_method,
+    update_kwargs,
+    diff,
+    monkeymodule,
+):
+    # Create CMAB instance
+    cmab = config.create_cmab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        costs,
+        exploit_p,
+        subsidy_factor,
+        n_features,
+        update_method,
+        update_kwargs,
+    )[0]
+    to_temporary_pickle(cmab)
+    mock_update(list(cmab.actions.values()), diff, monkeymodule)
+    to_temporary_pickle(cmab)
 
 
 @settings(deadline=500)
