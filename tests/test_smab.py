@@ -47,6 +47,7 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
+from tests.test_utils import sample_with_replacement
 
 
 @st.composite
@@ -346,7 +347,7 @@ def test_update(
     )
     reward_data = reward_data.tolist()
     # Test updates with generated data
-    actions_to_update = np.random.choice(np.array(action_ids, dtype=str), size=n_samples, replace=True).tolist()
+    actions_to_update = sample_with_replacement(action_ids, n_samples)
 
     [smab.update(actions=[action], rewards=[reward]) for action, reward in zip(actions_to_update, reward_data)]
     if delta:
@@ -420,11 +421,7 @@ def test_predict(
     smab = config.create_smab_and_actions(action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor)[0]
 
     # Test predictions with random forbidden actions
-    forbidden = (
-        set(np.random.choice(np.array(action_ids, dtype=str), size=len(action_ids) // 2, replace=False))
-        if len(action_ids) > 2
-        else None
-    )
+    forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
     if smab.default_action is not None and forbidden is not None and smab.default_action in forbidden:
         forbidden.remove(smab.default_action)
 
