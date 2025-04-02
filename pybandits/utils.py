@@ -74,7 +74,9 @@ def in_jupyter_notebook() -> bool:
     """
     Check if the code is running in a Jupyter notebook.
 
-    Reference: https://stackoverflow.com/a/39662359
+    References
+    ----------
+    https://stackoverflow.com/a/39662359
 
     Returns
     -------

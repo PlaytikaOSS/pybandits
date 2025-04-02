@@ -57,19 +57,3 @@
     :show-inheritance:
 
 ```
-
-[//]: # (## pybandits.offline_policy_evaluation)
-
-[//]: # ()
-[//]: # (```{eval-rst})
-
-[//]: # (.. automodule:: pybandits.offline_policy_evaluation)
-
-[//]: # (    :members:)
-
-[//]: # (    :undoc-members:)
-
-[//]: # (    :show-inheritance:)
-
-[//]: # ()
-[//]: # (```)

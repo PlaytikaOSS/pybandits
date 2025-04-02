@@ -254,8 +254,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
         and with probability 1-epsilon the select_action function is triggered to choose action.
         If no default_action is provided, a random action is selected.
 
-        Reference: Reinforcement Learning: An Introduction, Ch. 2 (Sutton and Burto, 2018)
-               https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf&ved=2ahUKEwjMy8WV9N2HAxVe0gIHHVjjG5sQFnoECEMQAQ&usg=AOvVaw3bKK-Y_1kf6XQVwR-UYrBY
+        References
+        ----------
+        Reinforcement Learning: An Introduction, Ch. 2 (Sutton and Burto, 2018)
+        https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf&ved=2ahUKEwjMy8WV9N2HAxVe0gIHHVjjG5sQFnoECEMQAQ&usg=AOvVaw3bKK-Y_1kf6XQVwR-UYrBY
 
         Parameters
         ----------

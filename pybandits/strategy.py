@@ -61,11 +61,13 @@ class ClassicBandit(Strategy):
     """
     Classic multi-armed bandits strategy.
 
-    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
-               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+    References
+    ----------
+    Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+    http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
 
-    Reference: Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
-               https://arxiv.org/pdf/1209.3352.pdf
+    Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
+    https://arxiv.org/pdf/1209.3352.pdf
     """
 
     @validate_call
@@ -96,8 +98,10 @@ class BestActionIdentificationBandit(Strategy):
     """
     Best-Action Identification (BAI) strategy for multi-armed bandits.
 
-    Reference: Simple Bayesian Algorithms for Best-Arm Identification (Russo, 2018)
-               https://arxiv.org/pdf/1602.08448.pdf
+    References
+    ----------
+    Simple Bayesian Algorithms for Best-Arm Identification (Russo, 2018)
+    https://arxiv.org/pdf/1602.08448.pdf
 
     Parameters
     ----------
@@ -105,9 +109,9 @@ class BestActionIdentificationBandit(Strategy):
         Tuning parameter taking value in [0, 1] which specifies the probability of selecting the best or an alternative
         action.
         If exploit_p is 1, the bandit always selects the action with the highest probability of
-            getting a positive reward. That is, it behaves as a Greedy strategy.
+        getting a positive reward. That is, it behaves as a Greedy strategy.
         If exploit_p is 0, the bandit always select the action with 2nd highest probability of getting a positive
-            reward.
+        reward.
     """
 
     exploit_p: Optional[Float01] = 0.5
@@ -128,9 +132,9 @@ class BestActionIdentificationBandit(Strategy):
             Tuning parameter taking value in [0, 1] which specifies the probability of selecting the best or an alternative
             action.
             If exploit_p is 1, the bandit always selects the action with the highest probability of
-                getting a positive reward. That is, it behaves as a Greedy strategy.
+            getting a positive reward. That is, it behaves as a Greedy strategy.
             If exploit_p is 0, the bandit always select the action with 2nd highest probability of getting a positive
-                reward.
+            reward.
 
         Returns
         -------
@@ -268,11 +272,13 @@ class CostControlBandit(CostControlStrategy):
     feasible actions is defined as [(1-subsidy_factor)*max_p, max_p], where max_p is the highest expected reward sampled
     value.
 
-    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
-               https://arxiv.org/abs/1911.00638
+    References
+    ----------
+    Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+    https://arxiv.org/abs/1911.00638
 
-               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
-               https://arxiv.org/abs/2011.01488
+    Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+    https://arxiv.org/abs/2011.01488
 
     Parameters
     ----------
@@ -280,7 +286,7 @@ class CostControlBandit(CostControlStrategy):
         Number in [0, 1] to define smallest tolerated probability reward, hence the set of feasible actions.
         If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
         If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
-            reward (it behaves as a classic Bernoulli bandit).
+        reward (it behaves as a classic Bernoulli bandit).
     """
 
     subsidy_factor: Optional[Float01] = 0.5
@@ -301,7 +307,7 @@ class CostControlBandit(CostControlStrategy):
             Number in [0, 1] to define smallest tolerated probability reward, hence the set of feasible actions.
             If subsidy_factor is 1, the bandits always selects the action with the minimum cost.
             If subsidy_factor is 0, the bandits always selects the action with highest probability of getting a positive
-                reward (it behaves as a classic Bernoulli bandit).
+            reward (it behaves as a classic Bernoulli bandit).
 
         Returns
         -------
@@ -401,8 +407,10 @@ class MultiObjectiveBandit(MultiObjectiveStrategy):
     whose expected rewards are not inferior to that of any other actions are called Pareto optimal actions, all of which
     constitute the Pareto front.
 
-    Reference: Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
-               https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+    References
+    ----------
+    Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+    https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
     """
 
     @validate_call

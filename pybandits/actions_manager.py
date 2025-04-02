@@ -40,8 +40,10 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     The class allows to account for non-stationarity by providing an adaptive window scheme for action update.
     The change point detection is based on the adaptive windowing scheme.
 
-    Reference: Scaling Multi-Armed Bandit Algorithms (Fouché et al., 2019)
-               https://edouardfouche.com/publications/S-MAB_FOUCHE_KDD19.pdf
+    References
+    ----------
+    Scaling Multi-Armed Bandit Algorithms (Fouché et al., 2019)
+    https://edouardfouche.com/publications/S-MAB_FOUCHE_KDD19.pdf
 
     Parameters
     ----------
