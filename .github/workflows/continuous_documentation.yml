@@ -13,20 +13,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.8
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8'  # Specify the Python version needed for your environment
+          python-version: '3.10'  # Specify the Python version needed for your environment
 
       - name: Install Poetry
         run: |
-          if [[ "${{ matrix.python-version }}" == "3.8" ]]; then
-            curl -sSL https://install.python-poetry.org | python3 - --version 1.8.0
-            export PATH="$HOME/.poetry/bin:$PATH"
-          else
-            curl -sSL https://install.python-poetry.org | python3 -
-            export PATH="$HOME/.poetry/bin:$PATH"
-          fi
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.poetry/bin:$PATH"
       - name: Install project dependencies with Poetry
         run: |
           poetry install
