@@ -1,9 +1,5 @@
 # Multi-Armed Bandit Library
 
-```{eval-rst}
-.. include:: badges.md
-```
-
 PyBandits is a Python library for Multi-Armed Bandit (MAB) developed by the Playtika AI lab. We developed this tool in order to provide personalised recommendation. It provides an implementation of stochastic Multi-Armed Bandit (sMAB) and contextual Multi-Armed Bandit (cMAB) based on Thompson sampling.
 
 In a bandit problem, a learner recommends an action to a user and observes a reward from the user for the chosen action. Information is then used to improve learner prediction for the next user.
@@ -20,9 +16,9 @@ the implementation of a large variety of models for prior and likelihood distrib
 is less sensitive to outliers since Student’s T for prior distributions have wider tails than Normal distributions.
 Despite binary reward is very common, the package will be updated in order to extend to other reward definitions.
 However, as an open-source package, modification can easily be applied to our functions in order to modify priors
-and/or likelihood distributions as described in [PyMC3] documentation for the cMAB.
+and/or likelihood distributions as described in [PyMC] documentation for the cMAB.
 In order to observed bandit behaviours based on different assumptions (sample size, reward probabilities,
 number of actions, context dimension …) or validate modifications, a simulation process is available. One can
 simulate data using different parameters setting, apply sMAB or cMAB and observe recommendation efficiency.
 
-[pymc3]: https://docs.pymc.io/
+[pymc]: https://docs.pymc.io/
