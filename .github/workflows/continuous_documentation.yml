@@ -3,7 +3,12 @@ name: Build Documentation
 on:
   push:
     branches:
-      - main  # Rebuild docs on changes to the main branch
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
 
 jobs:
   build-docs:
@@ -26,12 +31,18 @@ jobs:
         run: |
           poetry install
 
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
       - name: Build HTML docs
         run: |
           cd docs/src
-          make html  # Build the HTML documentation
+          poetry run make html  # Build the HTML documentation
 
       - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

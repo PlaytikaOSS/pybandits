@@ -61,6 +61,7 @@ sphinx = "^7.1"
 sphinx_rtd_theme = "^2.0"
 nbsphinx = "^0.9"
 myst-parser = "^3.0"
+pandoc = "^2.4"
 
 
 [build-system]

@@ -183,8 +183,10 @@ class CmabBernoulli(BaseCmabBernoulli):
     """
     Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
-    Reference: Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
-               https://arxiv.org/pdf/1209.3352.pdf
+    References
+    ----------
+    Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
+    https://arxiv.org/pdf/1209.3352.pdf
 
     Parameters
     ----------
@@ -209,8 +211,10 @@ class CmabBernoulliBAI(BaseCmabBernoulli):
     """
     Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action Identification strategy.
 
-    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
-               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+    References
+    ----------
+    Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+    http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
 
     Parameters
     ----------
@@ -240,11 +244,13 @@ class CmabBernoulliCC(BaseCmabBernoulli):
     these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
     actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
 
-    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
-               https://arxiv.org/abs/1911.00638
+    References
+    ----------
+    Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+    https://arxiv.org/abs/1911.00638
 
-               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
-               https://arxiv.org/abs/2011.01488
+    Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+    https://arxiv.org/abs/2011.01488
 
     Parameters
     ----------

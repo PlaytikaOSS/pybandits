@@ -133,8 +133,10 @@ class SmabBernoulli(BaseSmabBernoulli):
     """
     Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling.
 
-    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
-               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+    References
+    ----------
+    Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+    http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
 
     Parameters
     ----------
@@ -152,8 +154,10 @@ class SmabBernoulliBAI(BaseSmabBernoulli):
     """
     Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Best Action Identification strategy.
 
-    Reference: Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
-               http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
+    References
+    ----------
+    Analysis of Thompson Sampling for the Multi-armed Bandit Problem (Agrawal and Goyal, 2012)
+    http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf
 
     Parameters
     ----------
@@ -176,11 +180,13 @@ class SmabBernoulliCC(BaseSmabBernoulli):
     these actions, the one with the lowest associated cost is recommended. The expected reward interval for feasible
     actions is defined as [(1-subsidy_factor) * max_p, max_p], where max_p is the highest expected reward sampled value.
 
-    Reference: Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
-               https://arxiv.org/abs/1911.00638
+    References
+    ----------
+    Thompson Sampling for Contextual Bandit Problems with Auxiliary Safety Constraints (Daulton et al., 2019)
+    https://arxiv.org/abs/1911.00638
 
-               Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
-               https://arxiv.org/abs/2011.01488
+    Multi-Armed Bandits with Cost Subsidy (Sinha et al., 2021)
+    https://arxiv.org/abs/2011.01488
 
     Parameters
     ----------
@@ -203,8 +209,10 @@ class SmabBernoulliMO(BaseSmabBernoulli):
     whose expected rewards are not inferior to that of any other actions are called Pareto optimal actions, all of which
     constitute the Pareto front.
 
-    Reference: Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
-               https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+    References
+    ----------
+    Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+    https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
 
     Parameters
     ----------

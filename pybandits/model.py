@@ -168,6 +168,7 @@ class ModelMO(BaseModel, ABC):
     def update(self, rewards: List[List[BinaryReward]], **kwargs):
         """
         Update the Beta model using the provided rewards.
+
         Parameters
         ----------
         rewards: List[List[BinaryReward]]

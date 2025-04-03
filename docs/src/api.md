@@ -11,16 +11,12 @@
 
   > - {mod}`pybandits.model`
   > - {mod}`pybandits.strategy`
+  > - {mod}`pybandits.actions_manager`
 
 - `pybandits` provides a simulation environment framework.
 
   > - {mod}`pybandits.smab_simulator`
   > - {mod}`pybandits.cmab_simulator`
-
-[//]: # (- `pybandits` provides an offline policy evaluation module.)
-
-[//]: # ()
-[//]: # (  > - {mod}`pybandits.offline_policy_evaluation`)
 
 ## API
 
