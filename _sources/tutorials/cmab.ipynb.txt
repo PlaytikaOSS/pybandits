@@ -1,0 +1,201 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "pycharm": {
+     "name": "#%% md\n"
+    }
+   },
+   "source": [
+    "# Contextual Multi-Armed Bandit"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm ([Agrawal and Goyal, 2014](https://arxiv.org/pdf/1209.3352.pdf)) based on PyMC3."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "![title](img/cmab.png)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The following notebook contains an example of usage of the class Cmab, which implements the algorithm above."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "pycharm": {
+     "is_executing": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "\n",
+    "from pybandits.cmab import CmabBernoulli\n",
+    "from pybandits.model import BayesianLogisticRegression, StudentT"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "n_samples = 1000\n",
+    "n_features = 5"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "First, we need to define the input context matrix $X$ of size ($n\\_samples, n\\_features$) and the mapping of possible actions $a_i \\in A$ to their associated model."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "pycharm": {
+     "is_executing": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "# context\n",
+    "X = 2 * np.random.random_sample((n_samples, n_features)) - 1  # random float in the interval (-1, 1)\n",
+    "print(\"X: context matrix of shape (n_samples, n_features)\")\n",
+    "print(X[:10])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# define action model\n",
+    "actions = {\n",
+    "    \"a1\": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()]),\n",
+    "    \"a2\": BayesianLogisticRegression(alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()]),\n",
+    "}"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We can now init the bandit given the mapping of actions $a_i$ to their model."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# init contextual Multi-Armed Bandit model\n",
+    "cmab = CmabBernoulli(actions=actions)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The predict function below returns the action selected by the bandit at time $t$: $a_t = argmax_k P(r=1|\\beta_k, x_t)$. The bandit selects one action per each sample of the contect matrix $X$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# predict action\n",
+    "pred_actions, _, _ = cmab.predict(X)\n",
+    "print(\"Recommended action: {}\".format(pred_actions[:10]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now, we observe the rewards from the environment. In this example rewards are randomly simulated. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# simulate reward from environment\n",
+    "simulated_rewards = np.random.randint(2, size=n_samples)\n",
+    "print(\"Simulated rewards: {}\".format(simulated_rewards[:10]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Finally, we update the model providing per each action sample: (i) its context $x_t$ (ii) the action $a_t$ selected by the bandit, (iii) the corresponding reward $r_t$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# update model\n",
+    "cmab.update(X, actions=pred_actions, rewards=simulated_rewards)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "hide_input": false,
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.5"
+  },
+  "pycharm": {
+   "stem_cell": {
+    "cell_type": "raw",
+    "metadata": {
+     "collapsed": false
+    },
+    "source": []
+   }
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
