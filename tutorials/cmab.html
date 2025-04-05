@@ -142,16 +142,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.74465219 -0.53193614  0.12224044 -0.99015673 -0.76294607]
- [-0.62016335 -0.40783978  0.2985217  -0.15183202  0.32562301]
- [-0.92291768  0.53431878 -0.70327439  0.72208905  0.46444789]
- [ 0.9140948   0.95587127 -0.21460164 -0.96328873  0.41088823]
- [-0.26554623  0.4253337   0.94301153 -0.80679341 -0.66928817]
- [ 0.80680645 -0.44555922  0.79170955  0.07494193 -0.30577365]
- [ 0.82771898  0.53267479 -0.87455816 -0.54132801 -0.66074041]
- [-0.92482328  0.42384482 -0.21613338 -0.34342146 -0.74884546]
- [ 0.73971091  0.69507845  0.71346875  0.35909516  0.25966928]
- [-0.62895072  0.13145971  0.30552868 -0.06931829 -0.2342116 ]]
+[[ 0.78068905  0.36552521  0.87686354  0.66933622 -0.58435374]
+ [-0.42857405  0.94130083  0.22606379 -0.80299161 -0.71982247]
+ [-0.98863965 -0.74037394 -0.22390461  0.85065     0.29363735]
+ [ 0.28518366 -0.67014001 -0.82599151  0.41206398  0.21418783]
+ [-0.89372586 -0.90426786 -0.66031751 -0.6194975  -0.22380608]
+ [ 0.04298105 -0.04145425 -0.02789239  0.46834553  0.73136129]
+ [-0.84627289 -0.07691493 -0.88140788  0.43073769  0.04886003]
+ [ 0.93003108 -0.17940002 -0.74544174  0.22119454  0.438719  ]
+ [ 0.81392962 -0.25748923  0.14460285  0.64185257 -0.02067909]
+ [ 0.67976259 -0.11702144 -0.04751126 -0.12117445  0.53711729]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -192,16 +192,18 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
-<p>Now, we observe the rewards from the environment. In this example rewards are randomly simulated.</p>
+<p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># simulate reward from environment</span>
 <span class="n">simulated_rewards</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n_samples</span><span class="p">)</span>
+<span class="c1"># simulate context from environment</span>
+<span class="n">simulated_context</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random_sample</span><span class="p">((</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># random float in the interval (-1, 1)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Simulated rewards: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">simulated_rewards</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
 </pre></div>
 </div>
@@ -211,7 +213,7 @@ Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0 0 1 0 0 0 0 0 1 1]
+Simulated rewards: [1 0 1 1 0 1 0 1 1 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -249,10 +251,10 @@ File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-mi
 
 <span class="ansi-red-fg">ValidationError</span>: 2 validation errors for BaseCmabBernoulli.update
 actions
-  Got multiple values for argument [type=multiple_argument_values, input_value=[&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, ... &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;], input_type=list]
+  Got multiple values for argument [type=multiple_argument_values, input_value=[&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, ... &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;], input_type=list]
     For further information visit https://errors.pydantic.dev/2.11/v/multiple_argument_values
 context
-  Missing required argument [type=missing_argument, input_value=ArgsKwargs((CmabBernoulli... 0, 0, 0, 0, 1, 0, 1])}), input_type=ArgsKwargs]
+  Missing required argument [type=missing_argument, input_value=ArgsKwargs((CmabBernoulli... 0, 0, 1, 0, 1, 1, 0])}), input_type=ArgsKwargs]
     For further information visit https://errors.pydantic.dev/2.11/v/missing_argument
 </pre></div></div>
 </div>
