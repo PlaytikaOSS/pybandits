@@ -20,10 +20,10 @@ This library is distributed on [PyPI](https://pypi.org/project/pybandits/) and c
 pip install pybandits
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Based on the guidelines of ``pymc3`` authors, it is highly recommended to install the library in a conda environment via the following.
+Based on the guidelines of ``pymc`` authors, it is highly recommended to install the library in a conda environment via the following.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~bash
-conda install -c conda-forge pymc3
+conda install -c conda-forge pymc
 pip install pybandits
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

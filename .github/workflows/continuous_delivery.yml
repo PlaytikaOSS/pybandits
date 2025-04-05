@@ -54,7 +54,7 @@ jobs:
       - name: Verify if version has changed
         id: version_check
         run: |
-          if [ $(git tag -l "${{ env.PACKAGE_VERSION }}") ]; then
+          if git rev-parse "${{ env.PACKAGE_VERSION }}" >/dev/null 2>&1; then
             echo "Version ${{ env.PACKAGE_VERSION }} already exists."
             echo "VERSION_CHANGED=false" >> $GITHUB_ENV
           else
