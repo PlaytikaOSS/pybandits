@@ -7,5 +7,7 @@ In the following, a list of acronyms used in the project is provided along with 
 - **cMAB**: Contextual Multi-Armed Bandit
 - **MC**: Monte Carlo
 - **MCMC**: Markov Chain Monte Carlo
+- **MO**: Multi-Objective
+- **SO**: Single-Objective
 - **VI**: Variational Inference
 - **OPE**: Offline Policy Evaluation

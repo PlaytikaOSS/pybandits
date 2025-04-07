@@ -142,16 +142,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.78068905  0.36552521  0.87686354  0.66933622 -0.58435374]
- [-0.42857405  0.94130083  0.22606379 -0.80299161 -0.71982247]
- [-0.98863965 -0.74037394 -0.22390461  0.85065     0.29363735]
- [ 0.28518366 -0.67014001 -0.82599151  0.41206398  0.21418783]
- [-0.89372586 -0.90426786 -0.66031751 -0.6194975  -0.22380608]
- [ 0.04298105 -0.04145425 -0.02789239  0.46834553  0.73136129]
- [-0.84627289 -0.07691493 -0.88140788  0.43073769  0.04886003]
- [ 0.93003108 -0.17940002 -0.74544174  0.22119454  0.438719  ]
- [ 0.81392962 -0.25748923  0.14460285  0.64185257 -0.02067909]
- [ 0.67976259 -0.11702144 -0.04751126 -0.12117445  0.53711729]]
+[[-0.84034969 -0.59831669  0.6392715   0.30722533 -0.4245163 ]
+ [ 0.40766234 -0.49807851 -0.06348167  0.23952391  0.07073432]
+ [-0.84969966 -0.20693643  0.66135451  0.84212723  0.54997871]
+ [-0.53567168  0.63875539  0.96800611 -0.68354104  0.71656939]
+ [-0.22889405 -0.94156225  0.70493328 -0.72860734 -0.04978435]
+ [ 0.81714103 -0.69277925 -0.26154951 -0.60598108  0.20978091]
+ [ 0.44035919 -0.53029698 -0.71293366 -0.08895991  0.15462355]
+ [ 0.61652992 -0.32978673 -0.39855388 -0.03958147 -0.79147488]
+ [-0.9732085   0.8455257  -0.88511933  0.93988586  0.34559936]
+ [-0.35192094  0.92883006  0.14610748 -0.50557544 -0.74057922]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -192,7 +192,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -213,7 +213,7 @@ Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1 0 1 1 0 1 0 1 1 0]
+Simulated rewards: [1 0 1 0 1 0 0 0 1 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -222,40 +222,34 @@ Simulated rewards: [1 0 1 1 0 1 0 1 1 0]
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># update model</span>
-<span class="n">cmab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">actions</span><span class="o">=</span><span class="n">pred_actions</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">simulated_rewards</span><span class="p">)</span>
+<span class="n">cmab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">actions</span><span class="o">=</span><span class="n">pred_actions</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">simulated_rewards</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area docutils container">
+<div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">ValidationError</span>                           Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[8], line 2</span>
-<span class="ansi-green-intense-fg ansi-bold">      1</span> <span style="color: rgb(95,135,135)"># update model</span>
-<span class="ansi-green-fg">----&gt; 2</span> <span class="ansi-yellow-bg">cmab</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">update</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">X</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">actions</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">pred_actions</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">rewards</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">simulated_rewards</span><span class="ansi-yellow-bg">)</span>
-
-File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pydantic/_internal/_validate_call.py:39</span>, in <span class="ansi-cyan-fg">update_wrapper_attributes.&lt;locals&gt;.wrapper_function</span><span class="ansi-blue-fg">(*args, **kwargs)</span>
-<span class="ansi-green-intense-fg ansi-bold">     37</span> <span style="color: rgb(175,0,255)">@functools</span><span style="color: rgb(98,98,98)">.</span>wraps(wrapped)
-<span class="ansi-green-intense-fg ansi-bold">     38</span> <span class="ansi-bold" style="color: rgb(0,135,0)">def</span><span style="color: rgb(188,188,188)"> </span><span style="color: rgb(0,0,255)">wrapper_function</span>(<span style="color: rgb(98,98,98)">*</span>args, <span style="color: rgb(98,98,98)">*</span><span style="color: rgb(98,98,98)">*</span>kwargs):
-<span class="ansi-green-fg">---&gt; 39</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> <span class="ansi-yellow-bg">wrapper</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">*</span><span class="ansi-yellow-bg">args</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">*</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">*</span><span class="ansi-yellow-bg">kwargs</span><span class="ansi-yellow-bg">)</span>
-
-File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pydantic/_internal/_validate_call.py:136</span>, in <span class="ansi-cyan-fg">ValidateCallWrapper.__call__</span><span class="ansi-blue-fg">(self, *args, **kwargs)</span>
-<span class="ansi-green-intense-fg ansi-bold">    133</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>__pydantic_complete__:
-<span class="ansi-green-intense-fg ansi-bold">    134</span>     <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_create_validators()
-<span class="ansi-green-fg">--&gt; 136</span> res <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">__pydantic_validator__</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">validate_python</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">pydantic_core</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">ArgsKwargs</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">args</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">kwargs</span><span class="ansi-yellow-bg">)</span><span class="ansi-yellow-bg">)</span>
-<span class="ansi-green-intense-fg ansi-bold">    137</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>__return_pydantic_validator__:
-<span class="ansi-green-intense-fg ansi-bold">    138</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>__return_pydantic_validator__(res)
-
-<span class="ansi-red-fg">ValidationError</span>: 2 validation errors for BaseCmabBernoulli.update
-actions
-  Got multiple values for argument [type=multiple_argument_values, input_value=[&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, ... &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/multiple_argument_values
-context
-  Missing required argument [type=missing_argument, input_value=ArgsKwargs((CmabBernoulli... 0, 0, 1, 0, 1, 1, 0])}), input_type=ArgsKwargs]
-    For further information visit https://errors.pydantic.dev/2.11/v/missing_argument
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+  warnings.warn(
+Initializing NUTS using adapt_diag...
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2959: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
+Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
+For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
+  warnings.warn(
+Sequential sampling (2 chains in 1 job)
+NUTS: [alpha, betas]
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+  warnings.warn(
+Initializing NUTS using adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [alpha, betas]
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">

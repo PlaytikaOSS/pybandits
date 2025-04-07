@@ -13,7 +13,7 @@ The command above will automatically install all the dependencies listed in `pyp
 The source code of the project is available on [GitHub].
 
 ```console
-$ git clone https://github.com/PlaytikaResearch/pybandits.git
+$ git clone https://github.com/PlaytikaOSS/pybandits.git
 ```
 
 You can install the library and the dependencies from the source code with one of the following commands:

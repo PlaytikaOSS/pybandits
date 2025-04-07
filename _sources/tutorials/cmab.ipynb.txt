@@ -163,7 +163,7 @@
    "outputs": [],
    "source": [
     "# update model\n",
-    "cmab.update(X, actions=pred_actions, rewards=simulated_rewards)"
+    "cmab.update(context=X, actions=pred_actions, rewards=simulated_rewards)"
    ]
   },
   {

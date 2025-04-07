@@ -39,6 +39,16 @@
 
 ```
 
+## pybandits.actions_manager
+
+```{eval-rst}
+.. automodule:: pybandits.actions_manager
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+```
+
 ## pybandits.smab_simulator
 
 ```{eval-rst}

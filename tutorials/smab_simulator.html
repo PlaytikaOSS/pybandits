@@ -158,12 +158,12 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># init probability of rewards from the environment</span>
-<span class="n">prob_rewards</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+<span class="n">probs_reward</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
     <span class="p">[[</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">]],</span>
     <span class="n">columns</span><span class="o">=</span><span class="n">actions</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
 <span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Probability of positive reward for each action:&quot;</span><span class="p">)</span>
-<span class="n">prob_rewards</span>
+<span class="n">probs_reward</span>
 </pre></div>
 </div>
 </div>
@@ -224,57 +224,20 @@ Probability of positive reward for each action:
     <span class="n">mab</span><span class="o">=</span><span class="n">smab</span><span class="p">,</span>
     <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
     <span class="n">n_updates</span><span class="o">=</span><span class="n">n_updates</span><span class="p">,</span>
-    <span class="n">prob_rewards</span><span class="o">=</span><span class="n">prob_rewards</span><span class="p">,</span>
+    <span class="n">probs_reward</span><span class="o">=</span><span class="n">probs_reward</span><span class="p">,</span>
     <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
     <span class="n">visualize</span><span class="o">=</span><span class="n">visualize</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:124: FutureWarning: DataFrame.applymap has been deprecated. Use DataFrame.map instead.
   if not value.applymap(lambda x: 0 &lt;= x &lt;= 1).all().all():
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">ValidationError</span>                           Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[5], line 2</span>
-<span class="ansi-green-intense-fg ansi-bold">      1</span> <span style="color: rgb(95,135,135)"># init simulation</span>
-<span class="ansi-green-fg">----&gt; 2</span> smab_simulator <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg">SmabSimulator</span><span class="ansi-yellow-bg">(</span>
-<span class="ansi-green-intense-fg ansi-bold">      3</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">mab</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">smab</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      4</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">batch_size</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">batch_size</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      5</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">n_updates</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">n_updates</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      6</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">prob_rewards</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">prob_rewards</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      7</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">verbose</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">verbose</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      8</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">visualize</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">visualize</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      9</span> <span class="ansi-yellow-bg">)</span>
-
-File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pydantic/main.py:253</span>, in <span class="ansi-cyan-fg">BaseModel.__init__</span><span class="ansi-blue-fg">(self, **data)</span>
-<span class="ansi-green-intense-fg ansi-bold">    251</span> <span style="color: rgb(95,135,135)"># `__tracebackhide__` tells pytest and some other tools to omit this function from tracebacks</span>
-<span class="ansi-green-intense-fg ansi-bold">    252</span> __tracebackhide__ <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">True</span>
-<span class="ansi-green-fg">--&gt; 253</span> validated_self <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">__pydantic_validator__</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">validate_python</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">data</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">self_instance</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg">)</span>
-<span class="ansi-green-intense-fg ansi-bold">    254</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span style="color: rgb(0,135,0)">self</span> <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> validated_self:
-<span class="ansi-green-intense-fg ansi-bold">    255</span>     warnings<span style="color: rgb(98,98,98)">.</span>warn(
-<span class="ansi-green-intense-fg ansi-bold">    256</span>         <span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">A custom validator is returning a value other than `self`.</span><span class="ansi-bold" style="color: rgb(175,95,0)">\n</span><span style="color: rgb(175,0,0)">&#39;</span>
-<span class="ansi-green-intense-fg ansi-bold">    257</span>         <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">Returning anything other than `self` from a top level model validator isn</span><span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">t supported when validating via `__init__`.</span><span class="ansi-bold" style="color: rgb(175,95,0)">\n</span><span style="color: rgb(175,0,0)">&#34;</span>
-<span class="ansi-green-intense-fg ansi-bold">    258</span>         <span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">See the `model_validator` docs (https://docs.pydantic.dev/latest/concepts/validators/#model-validators) for more details.</span><span style="color: rgb(175,0,0)">&#39;</span>,
-<span class="ansi-green-intense-fg ansi-bold">    259</span>         stacklevel<span style="color: rgb(98,98,98)">=</span><span style="color: rgb(98,98,98)">2</span>,
-<span class="ansi-green-intense-fg ansi-bold">    260</span>     )
-
-<span class="ansi-red-fg">ValidationError</span>: 1 validation error for SmabSimulator
-prob_rewards
-  Extra inputs are not permitted [type=extra_forbidden, input_value=     a1   a2    a3
-0  0.05  0.8  0.05, input_type=DataFrame]
-    For further information visit https://errors.pydantic.dev/2.11/v/extra_forbidden
 </pre></div></div>
 </div>
 <p>Now, we can start simulation process by executing run() which performs the following steps:</p>
@@ -293,18 +256,395 @@ prob_rewards
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+2025-04-07 10:38:02.613 | INFO     | pybandits.simulator:_print_results:445 - Simulation results (first 10 observations):
+
+2025-04-07 10:38:02.630 | INFO     | pybandits.simulator:_print_results:446 - Count of actions selected by the bandit:
+
+2025-04-07 10:38:02.633 | INFO     | pybandits.simulator:_print_results:447 - Observed proportion of positive rewards for each action:
+
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<style>
+    .bk-notebook-logo {
+        display: block;
+        width: 20px;
+        height: 20px;
+        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEgAACxIB0t1+/AAAABx0RVh0U29mdHdhcmUAQWRvYmUgRmlyZXdvcmtzIENTNui8sowAAAOkSURBVDiNjZRtaJVlGMd/1/08zzln5zjP1LWcU9N0NkN8m2CYjpgQYQXqSs0I84OLIC0hkEKoPtiH3gmKoiJDU7QpLgoLjLIQCpEsNJ1vqUOdO7ppbuec5+V+rj4ctwzd8IIbbi6u+8f1539dt3A78eXC7QizUF7gyV1fD1Yqg4JWz84yffhm0qkFqBogB9rM8tZdtwVsPUhWhGcFJngGeWrPzHm5oaMmkfEg1usvLFyc8jLRqDOMru7AyC8saQr7GG7f5fvDeH7Ej8CM66nIF+8yngt6HWaKh7k49Soy9nXurCi1o3qUbS3zWfrYeQDTB/Qj6kX6Ybhw4B+bOYoLKCC9H3Nu/leUTZ1JdRWkkn2ldcCamzrcf47KKXdAJllSlxAOkRgyHsGC/zRday5Qld9DyoM4/q/rUoy/CXh3jzOu3bHUVZeU+DEn8FInkPBFlu3+nW3Nw0mk6vCDiWg8CeJaxEwuHS3+z5RgY+YBR6V1Z1nxSOfoaPa4LASWxxdNp+VWTk7+4vzaou8v8PN+xo+KY2xsw6une2frhw05CTYOmQvsEhjhWjn0bmXPjpE1+kplmmkP3suftwTubK9Vq22qKmrBhpY4jvd5afdRA3wGjFAgcnTK2s4hY0/GPNIb0nErGMCRxWOOX64Z8RAC4oCXdklmEvcL8o0BfkNK4lUg9HTl+oPlQxdNo3Mg4Nv175e/1LDGzZen30MEjRUtmXSfiTVu1kK8W4txyV6BMKlbgk3lMwYCiusNy9fVfvvwMxv8Ynl6vxoByANLTWplvuj/nF9m2+PDtt1eiHPBr1oIfhCChQMBw6Aw0UulqTKZdfVvfG7VcfIqLG9bcldL/+pdWTLxLUy8Qq38heUIjh4XlzZxzQm19lLFlr8vdQ97rjZVOLf8nclzckbcD4wxXMidpX30sFd37Fv/GtwwhzhxGVAprjbg0gCAEeIgwCZyTV2Z1REEW8O4py0wsjeloKoMr6iCY6dP92H6Vw/oTyICIthibxjm/DfN9lVz8IqtqKYLUXfoKVMVQVVJOElGjrnnUt9T9wbgp8AyYKaGlqingHZU/uG2NTZSVqwHQTWkx9hxjkpWDaCg6Ckj5qebgBVbT3V3NNXMSiWSDdGV3hrtzla7J+duwPOToIg42ChPQOQjspnSlp1V+Gjdged7+8UN5CRAV7a5EdFNwCjEaBR27b3W890TE7g24NAP/mMDXRWrGoFPQI9ls/MWO2dWFAar/xcOIImbbpA3zgAAAABJRU5ErkJggg==);
+    }
+</style>
+<div>
+    <a href="https://bokeh.org" target="_blank" class="bk-notebook-logo"></a>
+    <span id="f2ba9d98-8832-45cd-b7f9-f14b2b949c1f">Loading BokehJS ...</span>
+</div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="output_javascript"></div>
+<script type="text/javascript">
+var element = document.currentScript.previousSibling.previousSibling;
+'use strict';
+(function(root) {
+  function now() {
+    return new Date();
+  }
+
+  const force = true;
+
+  if (typeof root._bokeh_onload_callbacks === "undefined" || force === true) {
+    root._bokeh_onload_callbacks = [];
+    root._bokeh_is_loading = undefined;
+  }
+
+const JS_MIME_TYPE = 'application/javascript';
+  const HTML_MIME_TYPE = 'text/html';
+  const EXEC_MIME_TYPE = 'application/vnd.bokehjs_exec.v0+json';
+  const CLASS_NAME = 'output_bokeh rendered_html';
+
+  /**
+   * Render data to the DOM node
+   */
+  function render(props, node) {
+    const script = document.createElement("script");
+    node.appendChild(script);
+  }
+
+  /**
+   * Handle when an output is cleared or removed
+   */
+  function handleClearOutput(event, handle) {
+    function drop(id) {
+      const view = Bokeh.index.get_by_id(id)
+      if (view != null) {
+        view.model.document.clear()
+        Bokeh.index.delete(view)
+      }
+    }
+
+    const cell = handle.cell;
+
+    const id = cell.output_area._bokeh_element_id;
+    const server_id = cell.output_area._bokeh_server_id;
+
+    // Clean up Bokeh references
+    if (id != null) {
+      drop(id)
+    }
+
+    if (server_id !== undefined) {
+      // Clean up Bokeh references
+      const cmd_clean = "from bokeh.io.state import curstate; print(curstate().uuid_to_server['" + server_id + "'].get_sessions()[0].document.roots[0]._id)";
+      cell.notebook.kernel.execute(cmd_clean, {
+        iopub: {
+          output: function(msg) {
+            const id = msg.content.text.trim()
+            drop(id)
+          }
+        }
+      });
+      // Destroy server and session
+      const cmd_destroy = "import bokeh.io.notebook as ion; ion.destroy_server('" + server_id + "')";
+      cell.notebook.kernel.execute(cmd_destroy);
+    }
+  }
+
+  /**
+   * Handle when a new output is added
+   */
+  function handleAddOutput(event, handle) {
+    const output_area = handle.output_area;
+    const output = handle.output;
+
+    // limit handleAddOutput to display_data with EXEC_MIME_TYPE content only
+    if ((output.output_type != "display_data") || (!Object.prototype.hasOwnProperty.call(output.data, EXEC_MIME_TYPE))) {
+      return
+    }
+
+    const toinsert = output_area.element.find("." + CLASS_NAME.split(' ')[0]);
+
+    if (output.metadata[EXEC_MIME_TYPE]["id"] !== undefined) {
+      toinsert[toinsert.length - 1].firstChild.textContent = output.data[JS_MIME_TYPE];
+      // store reference to embed id on output_area
+      output_area._bokeh_element_id = output.metadata[EXEC_MIME_TYPE]["id"];
+    }
+    if (output.metadata[EXEC_MIME_TYPE]["server_id"] !== undefined) {
+      const bk_div = document.createElement("div");
+      bk_div.innerHTML = output.data[HTML_MIME_TYPE];
+      const script_attrs = bk_div.children[0].attributes;
+      for (let i = 0; i < script_attrs.length; i++) {
+        toinsert[toinsert.length - 1].firstChild.setAttribute(script_attrs[i].name, script_attrs[i].value);
+        toinsert[toinsert.length - 1].firstChild.textContent = bk_div.children[0].textContent
+      }
+      // store reference to server id on output_area
+      output_area._bokeh_server_id = output.metadata[EXEC_MIME_TYPE]["server_id"];
+    }
+  }
+
+  function register_renderer(events, OutputArea) {
+
+    function append_mime(data, metadata, element) {
+      // create a DOM node to render to
+      const toinsert = this.create_output_subarea(
+        metadata,
+        CLASS_NAME,
+        EXEC_MIME_TYPE
+      );
+      this.keyboard_manager.register_events(toinsert);
+      // Render to node
+      const props = {data: data, metadata: metadata[EXEC_MIME_TYPE]};
+      render(props, toinsert[toinsert.length - 1]);
+      element.append(toinsert);
+      return toinsert
+    }
+
+    /* Handle when an output is cleared or removed */
+    events.on('clear_output.CodeCell', handleClearOutput);
+    events.on('delete.Cell', handleClearOutput);
+
+    /* Handle when a new output is added */
+    events.on('output_added.OutputArea', handleAddOutput);
+
+    /**
+     * Register the mime type and append_mime function with output_area
+     */
+    OutputArea.prototype.register_mime_type(EXEC_MIME_TYPE, append_mime, {
+      /* Is output safe? */
+      safe: true,
+      /* Index of renderer in `output_area.display_order` */
+      index: 0
+    });
+  }
+
+  // register the mime type if in Jupyter Notebook environment and previously unregistered
+  if (root.Jupyter !== undefined) {
+    const events = require('base/js/events');
+    const OutputArea = require('notebook/js/outputarea').OutputArea;
+
+    if (OutputArea.prototype.mime_types().indexOf(EXEC_MIME_TYPE) == -1) {
+      register_renderer(events, OutputArea);
+    }
+  }
+  if (typeof (root._bokeh_timeout) === "undefined" || force === true) {
+    root._bokeh_timeout = Date.now() + 5000;
+    root._bokeh_failed_load = false;
+  }
+
+  const NB_LOAD_WARNING = {'data': {'text/html':
+     "<div style='background-color: #fdd'>\n"+
+     "<p>\n"+
+     "BokehJS does not appear to have successfully loaded. If loading BokehJS from CDN, this \n"+
+     "may be due to a slow or bad network connection. Possible fixes:\n"+
+     "</p>\n"+
+     "<ul>\n"+
+     "<li>re-rerun `output_notebook()` to attempt to load from CDN again, or</li>\n"+
+     "<li>use INLINE resources instead, as so:</li>\n"+
+     "</ul>\n"+
+     "<code>\n"+
+     "from bokeh.resources import INLINE\n"+
+     "output_notebook(resources=INLINE)\n"+
+     "</code>\n"+
+     "</div>"}};
+
+  function display_loaded(error = null) {
+    const el = document.getElementById("f2ba9d98-8832-45cd-b7f9-f14b2b949c1f");
+    if (el != null) {
+      const html = (() => {
+        if (typeof root.Bokeh === "undefined") {
+          if (error == null) {
+            return "BokehJS is loading ...";
+          } else {
+            return "BokehJS failed to load.";
+          }
+        } else {
+          const prefix = `BokehJS ${root.Bokeh.version}`;
+          if (error == null) {
+            return `${prefix} successfully loaded.`;
+          } else {
+            return `${prefix} <b>encountered errors</b> while loading and may not function as expected.`;
+          }
+        }
+      })();
+      el.innerHTML = html;
+
+      if (error != null) {
+        const wrapper = document.createElement("div");
+        wrapper.style.overflow = "auto";
+        wrapper.style.height = "5em";
+        wrapper.style.resize = "vertical";
+        const content = document.createElement("div");
+        content.style.fontFamily = "monospace";
+        content.style.whiteSpace = "pre-wrap";
+        content.style.backgroundColor = "rgb(255, 221, 221)";
+        content.textContent = error.stack ?? error.toString();
+        wrapper.append(content);
+        el.append(wrapper);
+      }
+    } else if (Date.now() < root._bokeh_timeout) {
+      setTimeout(() => display_loaded(error), 100);
+    }
+  }
+
+  function run_callbacks() {
+    try {
+      root._bokeh_onload_callbacks.forEach(function(callback) {
+        if (callback != null)
+          callback();
+      });
+    } finally {
+      delete root._bokeh_onload_callbacks
+    }
+    console.debug("Bokeh: all callbacks have finished");
+  }
+
+  function load_libs(css_urls, js_urls, callback) {
+    if (css_urls == null) css_urls = [];
+    if (js_urls == null) js_urls = [];
+
+    root._bokeh_onload_callbacks.push(callback);
+    if (root._bokeh_is_loading > 0) {
+      console.debug("Bokeh: BokehJS is being loaded, scheduling callback at", now());
+      return null;
+    }
+    if (js_urls == null || js_urls.length === 0) {
+      run_callbacks();
+      return null;
+    }
+    console.debug("Bokeh: BokehJS not loaded, scheduling load and callback at", now());
+    root._bokeh_is_loading = css_urls.length + js_urls.length;
+
+    function on_load() {
+      root._bokeh_is_loading--;
+      if (root._bokeh_is_loading === 0) {
+        console.debug("Bokeh: all BokehJS libraries/stylesheets loaded");
+        run_callbacks()
+      }
+    }
+
+    function on_error(url) {
+      console.error("failed to load " + url);
+    }
+
+    for (let i = 0; i < css_urls.length; i++) {
+      const url = css_urls[i];
+      const element = document.createElement("link");
+      element.onload = on_load;
+      element.onerror = on_error.bind(null, url);
+      element.rel = "stylesheet";
+      element.type = "text/css";
+      element.href = url;
+      console.debug("Bokeh: injecting link tag for BokehJS stylesheet: ", url);
+      document.body.appendChild(element);
+    }
+
+    for (let i = 0; i < js_urls.length; i++) {
+      const url = js_urls[i];
+      const element = document.createElement('script');
+      element.onload = on_load;
+      element.onerror = on_error.bind(null, url);
+      element.async = false;
+      element.src = url;
+      console.debug("Bokeh: injecting script tag for BokehJS library: ", url);
+      document.head.appendChild(element);
+    }
+  };
+
+  function inject_raw_css(css) {
+    const element = document.createElement("style");
+    element.appendChild(document.createTextNode(css));
+    document.body.appendChild(element);
+  }
+
+  const js_urls = ["https://cdn.bokeh.org/bokeh/release/bokeh-3.7.2.min.js", "https://cdn.bokeh.org/bokeh/release/bokeh-gl-3.7.2.min.js", "https://cdn.bokeh.org/bokeh/release/bokeh-widgets-3.7.2.min.js", "https://cdn.bokeh.org/bokeh/release/bokeh-tables-3.7.2.min.js", "https://cdn.bokeh.org/bokeh/release/bokeh-mathjax-3.7.2.min.js"];
+  const css_urls = [];
+
+  const inline_js = [    function(Bokeh) {
+      Bokeh.set_log_level("info");
+    },
+function(Bokeh) {
+    }
+  ];
+
+  function run_inline_js() {
+    if (root.Bokeh !== undefined || force === true) {
+      try {
+            for (let i = 0; i < inline_js.length; i++) {
+      inline_js[i].call(root, root.Bokeh);
+    }
+
+      } catch (error) {display_loaded(error);throw error;
+      }if (force === true) {
+        display_loaded();
+      }} else if (Date.now() < root._bokeh_timeout) {
+      setTimeout(run_inline_js, 100);
+    } else if (!root._bokeh_failed_load) {
+      console.log("Bokeh: BokehJS failed to load within specified timeout.");
+      root._bokeh_failed_load = true;
+    } else if (force !== true) {
+      const cell = $(document.getElementById("f2ba9d98-8832-45cd-b7f9-f14b2b949c1f")).parents('.cell').data().cell;
+      cell.output_area.append_execute_result(NB_LOAD_WARNING)
+    }
+  }
+
+  if (root._bokeh_is_loading === 0) {
+    console.debug("Bokeh: BokehJS loaded, going straight to plotting");
+    run_inline_js();
+  } else {
+    load_libs(css_urls, js_urls, function() {
+      console.debug("Bokeh: BokehJS plotting callback run at", now());
+      run_inline_js();
+    });
+  }
+}(window));
+</script></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<div id="c9c60ba1-3767-4af0-b32e-5ee7cadd284e" data-root-id="p1261" style="display: contents;"></div></div>
+</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[6], line 1</span>
-<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">smab_simulator</span><span style="color: rgb(98,98,98)">.</span>run()
-
-<span class="ansi-red-fg">NameError</span>: name &#39;smab_simulator&#39; is not defined
-</pre></div></div>
+<div class="output_javascript"></div>
+<script type="text/javascript">
+var element = document.currentScript.previousSibling.previousSibling;
+(function(root) {
+  function embed_document(root) {
+  const docs_json = {"54f8ca35-3402-4352-800e-fd8b40ac5017":{"version":"3.7.2","title":"Bokeh Application","roots":[{"type":"object","name":"Tabs","id":"p1261","attributes":{"stylesheets":[{"type":"object","name":"InlineStyleSheet","id":"p1260","attributes":{"css":"\n                 :host(.bk-Tabs) .bk-header {\n                     flex-wrap: wrap !important;\n                 }\n             "}}],"sizing_mode":"stretch_both","tabs":[{"type":"object","name":"TabPanel","id":"p1259","attributes":{"child":{"type":"object","name":"Column","id":"p1258","attributes":{"children":[{"type":"object","name":"Row","id":"p1256","attributes":{"children":[{"type":"object","name":"Figure","id":"p1001","attributes":{"x_range":{"type":"object","name":"DataRange1d","id":"p1002"},"y_range":{"type":"object","name":"DataRange1d","id":"p1003"},"x_scale":{"type":"object","name":"LinearScale","id":"p1011"},"y_scale":{"type":"object","name":"LinearScale","id":"p1012"},"title":{"type":"object","name":"Title","id":"p1004","attributes":{"text":"Selected actions rate across steps"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1045","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1036","attributes":{"selected":{"type":"object","name":"Selection","id":"p1037","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1038"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["a1","a1","a1","a1","a1","a1","a1","a1","a1","a1"],"shape":[10],"dtype":"object","order":"little"}],["batch",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAACAQkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},"shape":[10],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1046","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1047"}}},"glyph":{"type":"object","name":"Line","id":"p1042","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#1f77b4","line_width":2}},"nonselection_glyph":{"type":"object","name":"Line","id":"p1043","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#1f77b4","line_alpha":0.1,"line_width":2}},"muted_glyph":{"type":"object","name":"Line","id":"p1044","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#1f77b4","line_alpha":0.2,"line_width":2}}}},{"type":"object","name":"GlyphRenderer","id":"p1054","attributes":{"data_source":{"id":"p1036"},"view":{"type":"object","name":"CDSView","id":"p1055","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1056"}}},"glyph":{"type":"object","name":"Scatter","id":"p1051","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"},"hatch_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"Scatter","id":"p1052","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_color":{"type":"value","value":"#1f77b4"},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"Scatter","id":"p1053","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_color":{"type":"value","value":"#1f77b4"},"hatch_alpha":{"type":"value","value":0.2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1066","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1057","attributes":{"selected":{"type":"object","name":"Selection","id":"p1058","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1059"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"CgAAAAsAAAAMAAAADQAAAA4AAAAPAAAAEAAAABEAAAASAAAAEwAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["a2","a2","a2","a2","a2","a2","a2","a2","a2","a2"],"shape":[10],"dtype":"object","order":"little"}],["batch",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAAAQEAAAAAAAABZQAAAAAAAAFlAAAAAAAAAWUAAAAAAAABZQAAAAAAAAFlAAAAAAAAAWUAAAAAAAABZQAAAAAAAAFlAAAAAAAAAWUA="},"shape":[10],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1067","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1068"}}},"glyph":{"type":"object","name":"Line","id":"p1063","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#ff7f0e","line_width":2,"line_dash":[6]}},"nonselection_glyph":{"type":"object","name":"Line","id":"p1064","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#ff7f0e","line_alpha":0.1,"line_width":2,"line_dash":[6]}},"muted_glyph":{"type":"object","name":"Line","id":"p1065","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#ff7f0e","line_alpha":0.2,"line_width":2,"line_dash":[6]}}}},{"type":"object","name":"GlyphRenderer","id":"p1075","attributes":{"data_source":{"id":"p1057"},"view":{"type":"object","name":"CDSView","id":"p1076","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1077"}}},"glyph":{"type":"object","name":"Scatter","id":"p1072","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#ff7f0e"},"fill_color":{"type":"value","value":"#ff7f0e"},"hatch_color":{"type":"value","value":"#ff7f0e"},"marker":{"type":"value","value":"square"}}},"nonselection_glyph":{"type":"object","name":"Scatter","id":"p1073","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#ff7f0e"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#ff7f0e"},"fill_alpha":{"type":"value","value":0.1},"hatch_color":{"type":"value","value":"#ff7f0e"},"hatch_alpha":{"type":"value","value":0.1},"marker":{"type":"value","value":"square"}}},"muted_glyph":{"type":"object","name":"Scatter","id":"p1074","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#ff7f0e"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#ff7f0e"},"fill_alpha":{"type":"value","value":0.2},"hatch_color":{"type":"value","value":"#ff7f0e"},"hatch_alpha":{"type":"value","value":0.2},"marker":{"type":"value","value":"square"}}}}},{"type":"object","name":"GlyphRenderer","id":"p1087","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1078","attributes":{"selected":{"type":"object","name":"Selection","id":"p1079","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1080"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"FAAAABUAAAAWAAAAFwAAABgAAAAZAAAAGgAAABsAAAAcAAAAHQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["a3","a3","a3","a3","a3","a3","a3","a3","a3","a3"],"shape":[10],"dtype":"object","order":"little"}],["batch",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAAAP0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},"shape":[10],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1088","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1089"}}},"glyph":{"type":"object","name":"Line","id":"p1084","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#2ca02c","line_width":2,"line_dash":[2,4]}},"nonselection_glyph":{"type":"object","name":"Line","id":"p1085","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#2ca02c","line_alpha":0.1,"line_width":2,"line_dash":[2,4]}},"muted_glyph":{"type":"object","name":"Line","id":"p1086","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#2ca02c","line_alpha":0.2,"line_width":2,"line_dash":[2,4]}}}},{"type":"object","name":"GlyphRenderer","id":"p1096","attributes":{"data_source":{"id":"p1078"},"view":{"type":"object","name":"CDSView","id":"p1097","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1098"}}},"glyph":{"type":"object","name":"Scatter","id":"p1093","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#2ca02c"},"fill_color":{"type":"value","value":"#2ca02c"},"hatch_color":{"type":"value","value":"#2ca02c"},"marker":{"type":"value","value":"triangle"}}},"nonselection_glyph":{"type":"object","name":"Scatter","id":"p1094","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#2ca02c"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#2ca02c"},"fill_alpha":{"type":"value","value":0.1},"hatch_color":{"type":"value","value":"#2ca02c"},"hatch_alpha":{"type":"value","value":0.1},"marker":{"type":"value","value":"triangle"}}},"muted_glyph":{"type":"object","name":"Scatter","id":"p1095","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#2ca02c"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#2ca02c"},"fill_alpha":{"type":"value","value":0.2},"hatch_color":{"type":"value","value":"#2ca02c"},"hatch_alpha":{"type":"value","value":0.2},"marker":{"type":"value","value":"triangle"}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1010","attributes":{"tools":[{"type":"object","name":"PanTool","id":"p1023"},{"type":"object","name":"WheelZoomTool","id":"p1024","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1025","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1026","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1032","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1031","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"SaveTool","id":"p1033"},{"type":"object","name":"ResetTool","id":"p1034"},{"type":"object","name":"HelpTool","id":"p1035"},{"type":"object","name":"HoverTool","id":"p1103","attributes":{"renderers":"auto","tooltips":[["batch","@batch"],["action","@action"],["value","@value"]]}}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1018","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1019","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1020"},"axis_label":"Rate [%]","major_label_policy":{"type":"object","name":"AllLabels","id":"p1021"}}}],"right":[{"type":"object","name":"Legend","id":"p1099","attributes":{"location":"right","title":"Actions","click_policy":"hide","items":[{"type":"object","name":"LegendItem","id":"p1100","attributes":{"label":{"type":"value","value":"a1"},"renderers":[{"id":"p1045"},{"id":"p1054"}]}},{"type":"object","name":"LegendItem","id":"p1101","attributes":{"label":{"type":"value","value":"a2"},"renderers":[{"id":"p1066"},{"id":"p1075"}]}},{"type":"object","name":"LegendItem","id":"p1102","attributes":{"label":{"type":"value","value":"a3"},"renderers":[{"id":"p1087"},{"id":"p1096"}]}}]}}],"below":[{"type":"object","name":"LinearAxis","id":"p1013","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1014","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1015"},"axis_label":"Batch index","major_label_policy":{"type":"object","name":"AllLabels","id":"p1016"}}}],"center":[{"type":"object","name":"Grid","id":"p1017","attributes":{"axis":{"id":"p1013"}}},{"type":"object","name":"Grid","id":"p1022","attributes":{"dimension":1,"axis":{"id":"p1018"}}}]}},{"type":"object","name":"Figure","id":"p1104","attributes":{"x_range":{"type":"object","name":"FactorRange","id":"p1114","attributes":{"factors":["a1","a2","a3"]}},"y_range":{"type":"object","name":"DataRange1d","id":"p1106"},"x_scale":{"type":"object","name":"CategoricalScale","id":"p1115"},"y_scale":{"type":"object","name":"LinearScale","id":"p1116"},"title":{"type":"object","name":"Title","id":"p1107","attributes":{"text":"Overall selected actions rate"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1149","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1140","attributes":{"selected":{"type":"object","name":"Selection","id":"p1141","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1142"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAA"},"shape":[3],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["a1","a2","a3"],"shape":[3],"dtype":"object","order":"little"}],["total",{"type":"ndarray","array":{"type":"bytes","data":"mZmZmZmZDUDNzMzMzExXQM3MzMzMzAhA"},"shape":[3],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1150","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1151"}}},"glyph":{"type":"object","name":"VBar","id":"p1146","attributes":{"x":{"type":"field","field":"action"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"total"},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1147","attributes":{"x":{"type":"field","field":"action"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"total"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1148","attributes":{"x":{"type":"field","field":"action"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"total"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1113","attributes":{"tools":[{"type":"object","name":"PanTool","id":"p1127"},{"type":"object","name":"WheelZoomTool","id":"p1128","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1129","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1130","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1136","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1135","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"SaveTool","id":"p1137"},{"type":"object","name":"ResetTool","id":"p1138"},{"type":"object","name":"HelpTool","id":"p1139"},{"type":"object","name":"HoverTool","id":"p1152","attributes":{"renderers":"auto","tooltips":[["action","@action"],["rate","@total"]]}}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1122","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1123","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1124"},"axis_label":"Rate [%]","major_label_policy":{"type":"object","name":"AllLabels","id":"p1125"}}}],"below":[{"type":"object","name":"CategoricalAxis","id":"p1117","attributes":{"ticker":{"type":"object","name":"CategoricalTicker","id":"p1118"},"formatter":{"type":"object","name":"CategoricalTickFormatter","id":"p1119"},"axis_label":"Action","major_label_policy":{"type":"object","name":"AllLabels","id":"p1120"}}}],"center":[{"type":"object","name":"Grid","id":"p1121","attributes":{"axis":{"id":"p1117"},"grid_line_color":null}},{"type":"object","name":"Grid","id":"p1126","attributes":{"dimension":1,"axis":{"id":"p1122"}}}]}}]}},{"type":"object","name":"Row","id":"p1257","attributes":{"children":[{"type":"object","name":"Figure","id":"p1153","attributes":{"x_range":{"type":"object","name":"DataRange1d","id":"p1154"},"y_range":{"type":"object","name":"DataRange1d","id":"p1155"},"x_scale":{"type":"object","name":"LinearScale","id":"p1163"},"y_scale":{"type":"object","name":"LinearScale","id":"p1164"},"title":{"type":"object","name":"Title","id":"p1156","attributes":{"text":"Cumulative selected actions rate across steps"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1197","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1188","attributes":{"selected":{"type":"object","name":"Selection","id":"p1189","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1190"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"HgAAAB8AAAAgAAAAIQAAACIAAAAjAAAAJAAAACUAAAAmAAAAJwAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["cum_a1","cum_a1","cum_a1","cum_a1","cum_a1","cum_a1","cum_a1","cum_a1","cum_a1","cum_a1"],"shape":[10],"dtype":"object","order":"little"}],["batch",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAACAQkAAAAAAAIAyQKuqqqqqqihAAAAAAACAIkCZmZmZmZkdQKuqqqqqqhhASZIkSZIkFUAAAAAAAIASQB3HcRzHcRBAmZmZmZmZDUA="},"shape":[10],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1198","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1199"}}},"glyph":{"type":"object","name":"Line","id":"p1194","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#1f77b4","line_width":2}},"nonselection_glyph":{"type":"object","name":"Line","id":"p1195","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#1f77b4","line_alpha":0.1,"line_width":2}},"muted_glyph":{"type":"object","name":"Line","id":"p1196","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#1f77b4","line_alpha":0.2,"line_width":2}}}},{"type":"object","name":"GlyphRenderer","id":"p1206","attributes":{"data_source":{"id":"p1188"},"view":{"type":"object","name":"CDSView","id":"p1207","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1208"}}},"glyph":{"type":"object","name":"Scatter","id":"p1203","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"},"hatch_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"Scatter","id":"p1204","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_color":{"type":"value","value":"#1f77b4"},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"Scatter","id":"p1205","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_color":{"type":"value","value":"#1f77b4"},"hatch_alpha":{"type":"value","value":0.2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1218","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1209","attributes":{"selected":{"type":"object","name":"Selection","id":"p1210","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1211"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"KAAAACkAAAAqAAAAKwAAACwAAAAtAAAALgAAAC8AAAAwAAAAMQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["cum_a2","cum_a2","cum_a2","cum_a2","cum_a2","cum_a2","cum_a2","cum_a2","cum_a2","cum_a2"],"shape":[10],"dtype":"object","order":"little"}],["batch",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAAAQEAAAAAAAIBQQFVVVVVVVVNAAAAAAADAVECamZmZmZlVQKuqqqqqKlZAJEmSJEmSVkAAAAAAAOBWQMdxHMdxHFdAzczMzMxMV0A="},"shape":[10],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1219","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1220"}}},"glyph":{"type":"object","name":"Line","id":"p1215","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#ff7f0e","line_width":2,"line_dash":[6]}},"nonselection_glyph":{"type":"object","name":"Line","id":"p1216","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#ff7f0e","line_alpha":0.1,"line_width":2,"line_dash":[6]}},"muted_glyph":{"type":"object","name":"Line","id":"p1217","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#ff7f0e","line_alpha":0.2,"line_width":2,"line_dash":[6]}}}},{"type":"object","name":"GlyphRenderer","id":"p1227","attributes":{"data_source":{"id":"p1209"},"view":{"type":"object","name":"CDSView","id":"p1228","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1229"}}},"glyph":{"type":"object","name":"Scatter","id":"p1224","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#ff7f0e"},"fill_color":{"type":"value","value":"#ff7f0e"},"hatch_color":{"type":"value","value":"#ff7f0e"},"marker":{"type":"value","value":"square"}}},"nonselection_glyph":{"type":"object","name":"Scatter","id":"p1225","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#ff7f0e"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#ff7f0e"},"fill_alpha":{"type":"value","value":0.1},"hatch_color":{"type":"value","value":"#ff7f0e"},"hatch_alpha":{"type":"value","value":0.1},"marker":{"type":"value","value":"square"}}},"muted_glyph":{"type":"object","name":"Scatter","id":"p1226","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#ff7f0e"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#ff7f0e"},"fill_alpha":{"type":"value","value":0.2},"hatch_color":{"type":"value","value":"#ff7f0e"},"hatch_alpha":{"type":"value","value":0.2},"marker":{"type":"value","value":"square"}}}}},{"type":"object","name":"GlyphRenderer","id":"p1239","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1230","attributes":{"selected":{"type":"object","name":"Selection","id":"p1231","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1232"},"data":{"type":"map","entries":[["index",{"type":"ndarray","array":{"type":"bytes","data":"MgAAADMAAAA0AAAANQAAADYAAAA3AAAAOAAAADkAAAA6AAAAOwAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["action",{"type":"ndarray","array":["cum_a3","cum_a3","cum_a3","cum_a3","cum_a3","cum_a3","cum_a3","cum_a3","cum_a3","cum_a3"],"shape":[10],"dtype":"object","order":"little"}],["batch",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAEAAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAA=="},"shape":[10],"dtype":"int32","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"AAAAAAAAP0AAAAAAAAAvQKuqqqqqqiRAAAAAAAAAH0DNzMzMzMwYQKuqqqqqqhRAbdu2bdu2EUAAAAAAAAAPQOQ4juM4jgtAzczMzMzMCEA="},"shape":[10],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1240","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1241"}}},"glyph":{"type":"object","name":"Line","id":"p1236","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#2ca02c","line_width":2,"line_dash":[2,4]}},"nonselection_glyph":{"type":"object","name":"Line","id":"p1237","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#2ca02c","line_alpha":0.1,"line_width":2,"line_dash":[2,4]}},"muted_glyph":{"type":"object","name":"Line","id":"p1238","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"line_color":"#2ca02c","line_alpha":0.2,"line_width":2,"line_dash":[2,4]}}}},{"type":"object","name":"GlyphRenderer","id":"p1248","attributes":{"data_source":{"id":"p1230"},"view":{"type":"object","name":"CDSView","id":"p1249","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1250"}}},"glyph":{"type":"object","name":"Scatter","id":"p1245","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#2ca02c"},"fill_color":{"type":"value","value":"#2ca02c"},"hatch_color":{"type":"value","value":"#2ca02c"},"marker":{"type":"value","value":"triangle"}}},"nonselection_glyph":{"type":"object","name":"Scatter","id":"p1246","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#2ca02c"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#2ca02c"},"fill_alpha":{"type":"value","value":0.1},"hatch_color":{"type":"value","value":"#2ca02c"},"hatch_alpha":{"type":"value","value":0.1},"marker":{"type":"value","value":"triangle"}}},"muted_glyph":{"type":"object","name":"Scatter","id":"p1247","attributes":{"x":{"type":"field","field":"batch"},"y":{"type":"field","field":"value"},"size":{"type":"value","value":8},"line_color":{"type":"value","value":"#2ca02c"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#2ca02c"},"fill_alpha":{"type":"value","value":0.2},"hatch_color":{"type":"value","value":"#2ca02c"},"hatch_alpha":{"type":"value","value":0.2},"marker":{"type":"value","value":"triangle"}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1162","attributes":{"tools":[{"type":"object","name":"PanTool","id":"p1175"},{"type":"object","name":"WheelZoomTool","id":"p1176","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1177","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1178","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1184","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1183","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"SaveTool","id":"p1185"},{"type":"object","name":"ResetTool","id":"p1186"},{"type":"object","name":"HelpTool","id":"p1187"},{"type":"object","name":"HoverTool","id":"p1255","attributes":{"renderers":"auto","tooltips":[["batch","@batch"],["action","@action"],["value","@value"]]}}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1170","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1171","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1172"},"axis_label":"Rate [%]","major_label_policy":{"type":"object","name":"AllLabels","id":"p1173"}}}],"right":[{"type":"object","name":"Legend","id":"p1251","attributes":{"location":"right","title":"Actions","click_policy":"hide","items":[{"type":"object","name":"LegendItem","id":"p1252","attributes":{"label":{"type":"value","value":"a1"},"renderers":[{"id":"p1197"},{"id":"p1206"}]}},{"type":"object","name":"LegendItem","id":"p1253","attributes":{"label":{"type":"value","value":"a2"},"renderers":[{"id":"p1218"},{"id":"p1227"}]}},{"type":"object","name":"LegendItem","id":"p1254","attributes":{"label":{"type":"value","value":"a3"},"renderers":[{"id":"p1239"},{"id":"p1248"}]}}]}}],"below":[{"type":"object","name":"LinearAxis","id":"p1165","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1166","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1167"},"axis_label":"Batch index","major_label_policy":{"type":"object","name":"AllLabels","id":"p1168"}}}],"center":[{"type":"object","name":"Grid","id":"p1169","attributes":{"axis":{"id":"p1165"}}},{"type":"object","name":"Grid","id":"p1174","attributes":{"dimension":1,"axis":{"id":"p1170"}}}]}}]}}]}}}}]}}]}};
+  const render_items = [{"docid":"54f8ca35-3402-4352-800e-fd8b40ac5017","roots":{"p1261":"c9c60ba1-3767-4af0-b32e-5ee7cadd284e"},"root_ids":["p1261"]}];
+  void root.Bokeh.embed.embed_items_notebook(docs_json, render_items);
+  }
+  if (root.Bokeh !== undefined) {
+    embed_document(root);
+  } else {
+    let attempts = 0;
+    const timer = setInterval(function(root) {
+      if (root.Bokeh !== undefined) {
+        clearInterval(timer);
+        embed_document(root);
+      } else {
+        attempts++;
+        if (attempts > 100) {
+          clearInterval(timer);
+          console.log("Bokeh: ERROR: Unable to run BokehJS code because BokehJS library is missing");
+        }
+      }
+    }, 10, root)
+  }
+})(window);
+</script></div>
 </div>
 <p>Furthermore, we can examine the number of times each action was selected and the proportion of positive rewards for each action.</p>
 <div class="nbinput docutils container">
@@ -316,17 +656,148 @@ Cell <span class="ansi-green-fg">In[6], line 1</span>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
 </div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[7], line 1</span>
-<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">smab_simulator</span><span style="color: rgb(98,98,98)">.</span>selected_actions_count
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
 
-<span class="ansi-red-fg">NameError</span>: name &#39;smab_simulator&#39; is not defined
-</pre></div></div>
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>action</th>
+      <th>a1</th>
+      <th>a2</th>
+      <th>a3</th>
+      <th>cum_a1</th>
+      <th>cum_a2</th>
+      <th>cum_a3</th>
+    </tr>
+    <tr>
+      <th>batch</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>37</td>
+      <td>32</td>
+      <td>31</td>
+      <td>37</td>
+      <td>32</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>132</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>232</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>332</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>432</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>532</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>632</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>732</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>8</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>832</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>9</th>
+      <td>0</td>
+      <td>100</td>
+      <td>0</td>
+      <td>37</td>
+      <td>932</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>total</th>
+      <td>37</td>
+      <td>932</td>
+      <td>31</td>
+      <td>37</td>
+      <td>932</td>
+      <td>31</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
@@ -337,17 +808,51 @@ Cell <span class="ansi-green-fg">In[7], line 1</span>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
 </div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[8], line 1</span>
-<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">smab_simulator</span><span style="color: rgb(98,98,98)">.</span>positive_reward_proportion
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
 
-<span class="ansi-red-fg">NameError</span>: name &#39;smab_simulator&#39; is not defined
-</pre></div></div>
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>proportion</th>
+    </tr>
+    <tr>
+      <th>action</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>a1</th>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <th>a2</th>
+      <td>0.786481</td>
+    </tr>
+    <tr>
+      <th>a3</th>
+      <td>0.129032</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
 </div>
 </section>
 

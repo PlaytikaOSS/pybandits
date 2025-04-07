@@ -185,11 +185,11 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># init probability of rewards from the environment</span>
-<span class="n">prob_rewards</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+<span class="n">probs_reward</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
     <span class="p">[[</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">]],</span> <span class="n">columns</span><span class="o">=</span><span class="n">actions</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="n">index</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="n">n_groups</span><span class="p">)</span>
 <span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Probability of positive reward for each group/action:&quot;</span><span class="p">)</span>
-<span class="n">prob_rewards</span>
+<span class="n">probs_reward</span>
 </pre></div>
 </div>
 </div>
@@ -263,59 +263,20 @@ Probability of positive reward for each group/action:
     <span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">,</span>
     <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
     <span class="n">n_updates</span><span class="o">=</span><span class="n">n_updates</span><span class="p">,</span>
-    <span class="n">prob_rewards</span><span class="o">=</span><span class="n">prob_rewards</span><span class="p">,</span>
+    <span class="n">probs_reward</span><span class="o">=</span><span class="n">probs_reward</span><span class="p">,</span>
     <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
     <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:124: FutureWarning: DataFrame.applymap has been deprecated. Use DataFrame.map instead.
   if not value.applymap(lambda x: 0 &lt;= x &lt;= 1).all().all():
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">ValidationError</span>                           Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[7], line 2</span>
-<span class="ansi-green-intense-fg ansi-bold">      1</span> <span style="color: rgb(95,135,135)"># init simulation</span>
-<span class="ansi-green-fg">----&gt; 2</span> cmab_simulator <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg">CmabSimulator</span><span class="ansi-yellow-bg">(</span>
-<span class="ansi-green-intense-fg ansi-bold">      3</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">mab</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">cmab</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      4</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">group</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">group</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      5</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">batch_size</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">batch_size</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      6</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">n_updates</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">n_updates</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      7</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">prob_rewards</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">prob_rewards</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      8</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">context</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">context</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">      9</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">verbose</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">verbose</span><span class="ansi-yellow-bg">,</span>
-<span class="ansi-green-intense-fg ansi-bold">     10</span> <span class="ansi-yellow-bg">)</span>
-
-File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pydantic/main.py:253</span>, in <span class="ansi-cyan-fg">BaseModel.__init__</span><span class="ansi-blue-fg">(self, **data)</span>
-<span class="ansi-green-intense-fg ansi-bold">    251</span> <span style="color: rgb(95,135,135)"># `__tracebackhide__` tells pytest and some other tools to omit this function from tracebacks</span>
-<span class="ansi-green-intense-fg ansi-bold">    252</span> __tracebackhide__ <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">True</span>
-<span class="ansi-green-fg">--&gt; 253</span> validated_self <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">__pydantic_validator__</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">validate_python</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">data</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">self_instance</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg">)</span>
-<span class="ansi-green-intense-fg ansi-bold">    254</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span style="color: rgb(0,135,0)">self</span> <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> validated_self:
-<span class="ansi-green-intense-fg ansi-bold">    255</span>     warnings<span style="color: rgb(98,98,98)">.</span>warn(
-<span class="ansi-green-intense-fg ansi-bold">    256</span>         <span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">A custom validator is returning a value other than `self`.</span><span class="ansi-bold" style="color: rgb(175,95,0)">\n</span><span style="color: rgb(175,0,0)">&#39;</span>
-<span class="ansi-green-intense-fg ansi-bold">    257</span>         <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">Returning anything other than `self` from a top level model validator isn</span><span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">t supported when validating via `__init__`.</span><span class="ansi-bold" style="color: rgb(175,95,0)">\n</span><span style="color: rgb(175,0,0)">&#34;</span>
-<span class="ansi-green-intense-fg ansi-bold">    258</span>         <span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">See the `model_validator` docs (https://docs.pydantic.dev/latest/concepts/validators/#model-validators) for more details.</span><span style="color: rgb(175,0,0)">&#39;</span>,
-<span class="ansi-green-intense-fg ansi-bold">    259</span>         stacklevel<span style="color: rgb(98,98,98)">=</span><span style="color: rgb(98,98,98)">2</span>,
-<span class="ansi-green-intense-fg ansi-bold">    260</span>     )
-
-<span class="ansi-red-fg">ValidationError</span>: 1 validation error for CmabSimulator
-prob_rewards
-  Extra inputs are not permitted [type=extra_forbidden, input_value=     a1    a2    a3
-0  0....0.05
-2  0.80  0.05  0.80, input_type=DataFrame]
-    For further information visit https://errors.pydantic.dev/2.11/v/extra_forbidden
 </pre></div></div>
 </div>
 <p>Now, we can start simulation process by executing run() which performs the following steps:</p>
@@ -340,11 +301,73 @@ prob_rewards
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 <span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
+<span class="ansi-red-fg">KeyError</span>                                  Traceback (most recent call last)
 Cell <span class="ansi-green-fg">In[8], line 1</span>
-<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">cmab_simulator</span><span style="color: rgb(98,98,98)">.</span>run()
+<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">cmab_simulator</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">run</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">)</span>
 
-<span class="ansi-red-fg">NameError</span>: name &#39;cmab_simulator&#39; is not defined
+File <span class="ansi-green-fg">~/work/pybandits/pybandits/pybandits/simulator.py:202</span>, in <span class="ansi-cyan-fg">Simulator.run</span><span class="ansi-blue-fg">(self)</span>
+<span class="ansi-green-intense-fg ansi-bold">    200</span> <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> batch_index <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">range</span>(<span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>n_updates):
+<span class="ansi-green-intense-fg ansi-bold">    201</span>     predict_kwargs, update_kwargs, metadata <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_get_batch_step_kwargs_and_metadata(batch_index)
+<span class="ansi-green-fg">--&gt; 202</span>     <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">_step</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">batch_index</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">metadata</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">predict_kwargs</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">update_kwargs</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    204</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_finalize_results()
+<span class="ansi-green-intense-fg ansi-bold">    206</span> <span style="color: rgb(95,135,135)"># print results</span>
+
+File <span class="ansi-green-fg">~/work/pybandits/pybandits/pybandits/simulator.py:247</span>, in <span class="ansi-cyan-fg">Simulator._step</span><span class="ansi-blue-fg">(self, batch_index, metadata, predict_kwargs, update_kwargs)</span>
+<span class="ansi-green-intense-fg ansi-bold">    245</span> predictions <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>mab<span style="color: rgb(98,98,98)">.</span>predict(<span style="color: rgb(98,98,98)">*</span><span style="color: rgb(98,98,98)">*</span>predict_kwargs)
+<span class="ansi-green-intense-fg ansi-bold">    246</span> actions <span style="color: rgb(98,98,98)">=</span> predictions[<span style="color: rgb(98,98,98)">0</span>]  <span style="color: rgb(95,135,135)"># location 0 is the actions for both SmabPredictions and CmabPredictions</span>
+<span class="ansi-green-fg">--&gt; 247</span> rewards <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">_draw_rewards</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">actions</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">metadata</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    248</span> <span style="color: rgb(95,135,135)"># write the selected actions for batch #i in the results matrix</span>
+<span class="ansi-green-intense-fg ansi-bold">    249</span> batch_results <span style="color: rgb(98,98,98)">=</span> pd<span style="color: rgb(98,98,98)">.</span>DataFrame({<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">action</span><span style="color: rgb(175,0,0)">&#34;</span>: actions, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">reward</span><span style="color: rgb(175,0,0)">&#34;</span>: rewards, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">batch</span><span style="color: rgb(175,0,0)">&#34;</span>: batch_index, <span style="color: rgb(98,98,98)">*</span><span style="color: rgb(98,98,98)">*</span>metadata})
+
+File <span class="ansi-green-fg">~/work/pybandits/pybandits/pybandits/cmab_simulator.py:112</span>, in <span class="ansi-cyan-fg">CmabSimulator._draw_rewards</span><span class="ansi-blue-fg">(self, actions, metadata)</span>
+<span class="ansi-green-intense-fg ansi-bold">     96</span> <span class="ansi-bold" style="color: rgb(0,135,0)">def</span><span style="color: rgb(188,188,188)"> </span><span style="color: rgb(0,0,255)">_draw_rewards</span>(<span style="color: rgb(0,135,0)">self</span>, actions: List[ActionId], metadata: Dict[<span style="color: rgb(0,135,0)">str</span>, List]) <span style="color: rgb(98,98,98)">-</span><span style="color: rgb(98,98,98)">&gt;</span> List[BinaryReward]:
+<span class="ansi-green-intense-fg ansi-bold">     97</span> <span style="color: rgb(188,188,188)">    </span><span style="color: rgb(175,0,0)">&#34;&#34;&#34;</span>
+<span class="ansi-green-intense-fg ansi-bold">     98</span> <span style="color: rgb(175,0,0)">    Draw rewards for the selected actions based on metadata according to probs_reward</span>
+<span class="ansi-green-intense-fg ansi-bold">     99</span>
+<span class="ansi-green-fg">   (...)</span>
+<span class="ansi-green-intense-fg ansi-bold">    110</span> <span style="color: rgb(175,0,0)">        A list of binary rewards.</span>
+<span class="ansi-green-intense-fg ansi-bold">    111</span> <span style="color: rgb(175,0,0)">    &#34;&#34;&#34;</span>
+<span class="ansi-green-fg">--&gt; 112</span>     rewards <span style="color: rgb(98,98,98)">=</span> [<span style="color: rgb(0,135,0)">int</span>(random<span style="color: rgb(98,98,98)">.</span>random() <span style="color: rgb(98,98,98)">&lt;</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>probs_reward<span style="color: rgb(98,98,98)">.</span>loc[g, a]) <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> g, a <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">zip</span>(metadata[<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">group</span><span style="color: rgb(175,0,0)">&#34;</span>], actions)]
+<span class="ansi-green-intense-fg ansi-bold">    113</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> rewards
+
+File <span class="ansi-green-fg">~/work/pybandits/pybandits/pybandits/cmab_simulator.py:112</span>, in <span class="ansi-cyan-fg">&lt;listcomp&gt;</span><span class="ansi-blue-fg">(.0)</span>
+<span class="ansi-green-intense-fg ansi-bold">     96</span> <span class="ansi-bold" style="color: rgb(0,135,0)">def</span><span style="color: rgb(188,188,188)"> </span><span style="color: rgb(0,0,255)">_draw_rewards</span>(<span style="color: rgb(0,135,0)">self</span>, actions: List[ActionId], metadata: Dict[<span style="color: rgb(0,135,0)">str</span>, List]) <span style="color: rgb(98,98,98)">-</span><span style="color: rgb(98,98,98)">&gt;</span> List[BinaryReward]:
+<span class="ansi-green-intense-fg ansi-bold">     97</span> <span style="color: rgb(188,188,188)">    </span><span style="color: rgb(175,0,0)">&#34;&#34;&#34;</span>
+<span class="ansi-green-intense-fg ansi-bold">     98</span> <span style="color: rgb(175,0,0)">    Draw rewards for the selected actions based on metadata according to probs_reward</span>
+<span class="ansi-green-intense-fg ansi-bold">     99</span>
+<span class="ansi-green-fg">   (...)</span>
+<span class="ansi-green-intense-fg ansi-bold">    110</span> <span style="color: rgb(175,0,0)">        A list of binary rewards.</span>
+<span class="ansi-green-intense-fg ansi-bold">    111</span> <span style="color: rgb(175,0,0)">    &#34;&#34;&#34;</span>
+<span class="ansi-green-fg">--&gt; 112</span>     rewards <span style="color: rgb(98,98,98)">=</span> [<span style="color: rgb(0,135,0)">int</span>(random<span style="color: rgb(98,98,98)">.</span>random() <span style="color: rgb(98,98,98)">&lt;</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">probs_reward</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">loc</span><span class="ansi-yellow-bg">[</span><span class="ansi-yellow-bg">g</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">a</span><span class="ansi-yellow-bg">]</span>) <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> g, a <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">zip</span>(metadata[<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">group</span><span style="color: rgb(175,0,0)">&#34;</span>], actions)]
+<span class="ansi-green-intense-fg ansi-bold">    113</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> rewards
+
+File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pandas/core/indexing.py:1183</span>, in <span class="ansi-cyan-fg">_LocationIndexer.__getitem__</span><span class="ansi-blue-fg">(self, key)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1181</span>     key <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">tuple</span>(com<span style="color: rgb(98,98,98)">.</span>apply_if_callable(x, <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>obj) <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> x <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> key)
+<span class="ansi-green-intense-fg ansi-bold">   1182</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_is_scalar_access(key):
+<span class="ansi-green-fg">-&gt; 1183</span>         <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">obj</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">_get_value</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">*</span><span class="ansi-yellow-bg">key</span><span class="ansi-yellow-bg">,</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">takeable</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">_takeable</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1184</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_getitem_tuple(key)
+<span class="ansi-green-intense-fg ansi-bold">   1185</span> <span class="ansi-bold" style="color: rgb(0,135,0)">else</span>:
+<span class="ansi-green-intense-fg ansi-bold">   1186</span>     <span style="color: rgb(95,135,135)"># we by definition only have the 0th axis</span>
+
+File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pandas/core/frame.py:4221</span>, in <span class="ansi-cyan-fg">DataFrame._get_value</span><span class="ansi-blue-fg">(self, index, col, takeable)</span>
+<span class="ansi-green-intense-fg ansi-bold">   4215</span> engine <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>index<span style="color: rgb(98,98,98)">.</span>_engine
+<span class="ansi-green-intense-fg ansi-bold">   4217</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> <span style="color: rgb(0,135,0)">isinstance</span>(<span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>index, MultiIndex):
+<span class="ansi-green-intense-fg ansi-bold">   4218</span>     <span style="color: rgb(95,135,135)"># CategoricalIndex: Trying to use the engine fastpath may give incorrect</span>
+<span class="ansi-green-intense-fg ansi-bold">   4219</span>     <span style="color: rgb(95,135,135)">#  results if our categories are integers that dont match our codes</span>
+<span class="ansi-green-intense-fg ansi-bold">   4220</span>     <span style="color: rgb(95,135,135)"># IntervalIndex: IntervalTree has no get_loc</span>
+<span class="ansi-green-fg">-&gt; 4221</span>     row <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">index</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">get_loc</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">index</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">   4222</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> series<span style="color: rgb(98,98,98)">.</span>_values[row]
+<span class="ansi-green-intense-fg ansi-bold">   4224</span> <span style="color: rgb(95,135,135)"># For MultiIndex going through engine effectively restricts us to</span>
+<span class="ansi-green-intense-fg ansi-bold">   4225</span> <span style="color: rgb(95,135,135)">#  same-length tuples; see test_get_set_value_no_partial_indexing</span>
+
+File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pandas/core/indexes/range.py:417</span>, in <span class="ansi-cyan-fg">RangeIndex.get_loc</span><span class="ansi-blue-fg">(self, key)</span>
+<span class="ansi-green-intense-fg ansi-bold">    415</span>         <span class="ansi-bold" style="color: rgb(0,135,0)">raise</span> <span class="ansi-bold" style="color: rgb(215,95,95)">KeyError</span>(key) <span class="ansi-bold" style="color: rgb(0,135,0)">from</span><span style="color: rgb(188,188,188)"> </span><span class="ansi-bold" style="color: rgb(0,0,255)">err</span>
+<span class="ansi-green-intense-fg ansi-bold">    416</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span style="color: rgb(0,135,0)">isinstance</span>(key, Hashable):
+<span class="ansi-green-fg">--&gt; 417</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">raise</span> <span class="ansi-bold" style="color: rgb(215,95,95)">KeyError</span>(key)
+<span class="ansi-green-intense-fg ansi-bold">    418</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_check_indexing_error(key)
+<span class="ansi-green-intense-fg ansi-bold">    419</span> <span class="ansi-bold" style="color: rgb(0,135,0)">raise</span> <span class="ansi-bold" style="color: rgb(215,95,95)">KeyError</span>(key)
+
+<span class="ansi-red-fg">KeyError</span>: &#39;0&#39;
 </pre></div></div>
 </div>
 <p>Furthermore, we can examine the number of times each action was selected and the proportion of positive rewards for each action.</p>
@@ -362,11 +385,61 @@ Cell <span class="ansi-green-fg">In[8], line 1</span>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 <span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
+<span class="ansi-red-fg">KeyError</span>                                  Traceback (most recent call last)
 Cell <span class="ansi-green-fg">In[9], line 1</span>
-<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">cmab_simulator</span><span style="color: rgb(98,98,98)">.</span>selected_actions_count
+<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">cmab_simulator</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">selected_actions_count</span>
 
-<span class="ansi-red-fg">NameError</span>: name &#39;cmab_simulator&#39; is not defined
+File <span class="ansi-green-fg">~/work/pybandits/pybandits/pybandits/simulator.py:400</span>, in <span class="ansi-cyan-fg">Simulator.selected_actions_count</span><span class="ansi-blue-fg">(self)</span>
+<span class="ansi-green-intense-fg ansi-bold">    389</span> <span style="color: rgb(175,0,0)">&#34;&#34;&#34;</span>
+<span class="ansi-green-intense-fg ansi-bold">    390</span> <span style="color: rgb(175,0,0)">Get the count of actions selected by the bandit on each batch and</span>
+<span class="ansi-green-intense-fg ansi-bold">    391</span> <span style="color: rgb(175,0,0)">at the end of the simulation process.</span>
+<span class="ansi-green-fg">   (...)</span>
+<span class="ansi-green-intense-fg ansi-bold">    397</span> <span style="color: rgb(175,0,0)">    and count of recommended actions as values</span>
+<span class="ansi-green-intense-fg ansi-bold">    398</span> <span style="color: rgb(175,0,0)">&#34;&#34;&#34;</span>
+<span class="ansi-green-intense-fg ansi-bold">    399</span> groupby_cols <span style="color: rgb(98,98,98)">=</span> [col <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> col <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_base_columns <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> col <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> [<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">reward</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">action</span><span style="color: rgb(175,0,0)">&#34;</span>]]
+<span class="ansi-green-fg">--&gt; 400</span> counts_df <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">_results</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">groupby</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">groupby_cols</span><span class="ansi-yellow-bg">)</span>[<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">action</span><span style="color: rgb(175,0,0)">&#34;</span>]<span style="color: rgb(98,98,98)">.</span>value_counts()<span style="color: rgb(98,98,98)">.</span>unstack(fill_value<span style="color: rgb(98,98,98)">=</span><span style="color: rgb(98,98,98)">0</span>)<span style="color: rgb(98,98,98)">.</span>reset_index()
+<span class="ansi-green-intense-fg ansi-bold">    401</span> action_ids <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_action_ids
+<span class="ansi-green-intense-fg ansi-bold">    402</span> counts_df <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>_impute_missing_counts(counts_df, action_ids)
+
+File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pandas/core/frame.py:9183</span>, in <span class="ansi-cyan-fg">DataFrame.groupby</span><span class="ansi-blue-fg">(self, by, axis, level, as_index, sort, group_keys, observed, dropna)</span>
+<span class="ansi-green-intense-fg ansi-bold">   9180</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> level <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span> <span class="ansi-bold" style="color: rgb(175,0,255)">and</span> by <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>:
+<span class="ansi-green-intense-fg ansi-bold">   9181</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">raise</span> <span class="ansi-bold" style="color: rgb(215,95,95)">TypeError</span>(<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">You have to supply one of </span><span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">by</span><span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)"> and </span><span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">level</span><span style="color: rgb(175,0,0)">&#39;</span><span style="color: rgb(175,0,0)">&#34;</span>)
+<span class="ansi-green-fg">-&gt; 9183</span> <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> <span class="ansi-yellow-bg">DataFrameGroupBy</span><span class="ansi-yellow-bg">(</span>
+<span class="ansi-green-intense-fg ansi-bold">   9184</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">obj</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9185</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">keys</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">by</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9186</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">axis</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">axis</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9187</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">level</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">level</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9188</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">as_index</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">as_index</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9189</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">sort</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">sort</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9190</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">group_keys</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">group_keys</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9191</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">observed</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">observed</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9192</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">dropna</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">dropna</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   9193</span> <span class="ansi-yellow-bg">)</span>
+
+File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pandas/core/groupby/groupby.py:1329</span>, in <span class="ansi-cyan-fg">GroupBy.__init__</span><span class="ansi-blue-fg">(self, obj, keys, axis, level, grouper, exclusions, selection, as_index, sort, group_keys, observed, dropna)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1326</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>dropna <span style="color: rgb(98,98,98)">=</span> dropna
+<span class="ansi-green-intense-fg ansi-bold">   1328</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> grouper <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>:
+<span class="ansi-green-fg">-&gt; 1329</span>     grouper, exclusions, obj <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg">get_grouper</span><span class="ansi-yellow-bg">(</span>
+<span class="ansi-green-intense-fg ansi-bold">   1330</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">obj</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1331</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">keys</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1332</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">axis</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">axis</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1333</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">level</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">level</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1334</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">sort</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg">sort</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1335</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">observed</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg ansi-bold" style="color: rgb(0,135,0)">False</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg ansi-bold" style="color: rgb(0,135,0)">if</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">observed</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg ansi-bold" style="color: rgb(175,0,255)">is</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">lib</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">no_default</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg ansi-bold" style="color: rgb(0,135,0)">else</span><span class="ansi-yellow-bg"> </span><span class="ansi-yellow-bg">observed</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1336</span> <span class="ansi-yellow-bg">        </span><span class="ansi-yellow-bg">dropna</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg" style="color: rgb(0,135,0)">self</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">.</span><span class="ansi-yellow-bg">dropna</span><span class="ansi-yellow-bg">,</span>
+<span class="ansi-green-intense-fg ansi-bold">   1337</span> <span class="ansi-yellow-bg">    </span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1339</span> <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> observed <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> lib<span style="color: rgb(98,98,98)">.</span>no_default:
+<span class="ansi-green-intense-fg ansi-bold">   1340</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> <span style="color: rgb(0,135,0)">any</span>(ping<span style="color: rgb(98,98,98)">.</span>_passed_categorical <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> ping <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> grouper<span style="color: rgb(98,98,98)">.</span>groupings):
+
+File <span class="ansi-green-fg">~/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pandas/core/groupby/grouper.py:1043</span>, in <span class="ansi-cyan-fg">get_grouper</span><span class="ansi-blue-fg">(obj, key, axis, level, sort, observed, validate, dropna)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1041</span>         in_axis, level, gpr <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">False</span>, gpr, <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>
+<span class="ansi-green-intense-fg ansi-bold">   1042</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">else</span>:
+<span class="ansi-green-fg">-&gt; 1043</span>         <span class="ansi-bold" style="color: rgb(0,135,0)">raise</span> <span class="ansi-bold" style="color: rgb(215,95,95)">KeyError</span>(gpr)
+<span class="ansi-green-intense-fg ansi-bold">   1044</span> <span class="ansi-bold" style="color: rgb(0,135,0)">elif</span> <span style="color: rgb(0,135,0)">isinstance</span>(gpr, Grouper) <span class="ansi-bold" style="color: rgb(175,0,255)">and</span> gpr<span style="color: rgb(98,98,98)">.</span>key <span class="ansi-bold" style="color: rgb(175,0,255)">is</span> <span class="ansi-bold" style="color: rgb(175,0,255)">not</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>:
+<span class="ansi-green-intense-fg ansi-bold">   1045</span>     <span style="color: rgb(95,135,135)"># Add key to exclusions</span>
+<span class="ansi-green-intense-fg ansi-bold">   1046</span>     exclusions<span style="color: rgb(98,98,98)">.</span>add(gpr<span style="color: rgb(98,98,98)">.</span>key)
+
+<span class="ansi-red-fg">KeyError</span>: &#39;batch&#39;
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
@@ -378,17 +451,41 @@ Cell <span class="ansi-green-fg">In[9], line 1</span>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
 </div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
-Cell <span class="ansi-green-fg">In[10], line 1</span>
-<span class="ansi-green-fg">----&gt; 1</span> <span class="ansi-yellow-bg">cmab_simulator</span><span style="color: rgb(98,98,98)">.</span>positive_reward_proportion
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
 
-<span class="ansi-red-fg">NameError</span>: name &#39;cmab_simulator&#39; is not defined
-</pre></div></div>
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th></th>
+      <th>proportion</th>
+    </tr>
+    <tr>
+      <th>action</th>
+      <th>group</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  </tbody>
+</table>
+</div></div>
 </div>
 </section>
 
