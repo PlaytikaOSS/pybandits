@@ -51,10 +51,7 @@ jobs:
         run: |
           VERSION=v$(poetry version -s)
           echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_ENV
-      - name: Verify if version has changed
-        id: version_check
-        run: |
-          if git rev-parse "${{ env.PACKAGE_VERSION }}" >/dev/null 2>&1; then
+          if git ls-remote --tags origin "refs/tags/${{ env.PACKAGE_VERSION }}" || git rev-parse "${{ env.PACKAGE_VERSION }}" >/dev/null 2>&1; then
             echo "Version ${{ env.PACKAGE_VERSION }} already exists."
             echo "VERSION_CHANGED=false" >> $GITHUB_ENV
           else
