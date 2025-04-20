@@ -64,4 +64,4 @@ html_static_path = ["_static"]
 # A list of ignored prefixes for module index sorting.
 modindex_common_prefix = ["pybandits."]
 
-nbsphinx_allow_errors = True
+nbsphinx_allow_errors = False
