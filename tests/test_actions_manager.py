@@ -3,10 +3,11 @@ from typing import List, Union
 
 import numpy as np
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
+import pybandits
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
 from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward
 from pybandits.model import BayesianLogisticRegression, Beta
@@ -16,6 +17,7 @@ from pybandits.pydantic_version_compatibility import (
     ValidationError,
     pydantic_version,
 )
+from tests.test_utils import FakeApproximation
 
 REFERENCE_DELTA = 0.0001
 
@@ -249,7 +251,75 @@ def test_handles_kwargs_with_no_matching_action_model_attributes(mocker: MockerF
 ########################################################################################################################
 
 
+# SmabActionsManager
+# Handle actions_memory and rewards_memory with non-matching lengths
+@settings(deadline=None)
+@given(
+    data_len=st.integers(min_value=1, max_value=10000),
+    other_reward=st.integers(min_value=0, max_value=1),
+)
+def test_smab_manager_update(data_len, other_reward):
+    actions_dict = {
+        "action1": Beta(),
+        "action2": Beta(),
+    }
+    manager = SmabActionsManager[Beta](actions=actions_dict, delta=REFERENCE_DELTA)
+    actions = ["action1"] * data_len
+    rewards = [1] * data_len
+    actions_memory = ["action1"] * data_len
+    rewards_memory = [other_reward] * data_len
+    manager.update(actions_memory, rewards_memory)
+    manager.update(actions, rewards, actions_memory=actions_memory, rewards_memory=rewards_memory)
+
+
+########################################################################################################################
+
+
 # CmabActionsManager
+# Handle context and context_memory with non matching feature dimensions
+@settings(deadline=None)
+@given(
+    context=st.lists(
+        st.lists(st.floats(min_value=-1, max_value=1), min_size=3, max_size=3), min_size=1, max_size=10000
+    ),
+    context_memory=st.lists(
+        st.lists(st.floats(min_value=-1, max_value=1), min_size=3, max_size=3), min_size=1, max_size=10000
+    ),
+    n_features=st.just(3),
+    other_reward=st.integers(min_value=0, max_value=1),
+)
+def test_cmab_manager_update(context, context_memory, n_features, other_reward, monkeymodule):
+    monkeymodule.setattr(
+        pybandits.model,
+        "fit",
+        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+    )
+    monkeymodule.setattr(
+        pybandits.model,
+        "sample",
+        FakeApproximation(n_features=n_features).sample,
+    )
+
+    actions = {
+        "action1": BayesianLogisticRegression.cold_start(n_features=n_features),
+        "action2": BayesianLogisticRegression.cold_start(n_features=n_features),
+    }
+    manager = CmabActionsManager[BayesianLogisticRegression](actions=actions, delta=REFERENCE_DELTA)
+    actions = ["action1"] * len(context)
+    rewards = [1] * len(context)
+    actions_memory = ["action1"] * len(context_memory)
+    rewards_memory = [other_reward] * len(context_memory)
+    manager.update(actions_memory, rewards_memory, context=context_memory)
+    manager.update(
+        actions,
+        rewards,
+        context=context,
+        actions_memory=actions_memory,
+        rewards_memory=rewards_memory,
+        context_memory=context_memory,
+    )
+
+
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
 def test_check_context_matrix(n_samples, n_features):
     # context is numpy array
@@ -267,25 +337,46 @@ def test_check_context_matrix(n_samples, n_features):
 
 # Handle context and context_memory with non matching feature dimensions
 @given(
-    context=st.lists(st.lists(st.floats(), min_size=3, max_size=3), min_size=1),
-    context_memory=st.lists(st.lists(st.floats(), min_size=4, max_size=4), min_size=1),
-    n_features=st.integers(min_value=1, max_value=10),
+    context=st.lists(
+        st.lists(st.floats(min_value=-1, max_value=1), min_size=4, max_size=4), min_size=1, max_size=10000
+    ),
+    context_memory=st.lists(
+        st.lists(st.floats(min_value=-1, max_value=1), min_size=3, max_size=3), min_size=1, max_size=10000
+    ),
+    n_features=st.just(3),
+    other_reward=st.integers(min_value=0, max_value=1),
 )
-def test_context_memory_matching_dimensions(context, context_memory, n_features):
+def test_cmab_context_memory_matching_dimensions(context, context_memory, n_features, other_reward, monkeymodule):
+    monkeymodule.setattr(
+        pybandits.model,
+        "fit",
+        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+    )
+    monkeymodule.setattr(
+        pybandits.model,
+        "sample",
+        FakeApproximation(n_features=n_features).sample,
+    )
     actions = {
         "action1": BayesianLogisticRegression.cold_start(n_features=n_features),
         "action2": BayesianLogisticRegression.cold_start(n_features=n_features),
     }
-    manager = CmabActionsManager[BayesianLogisticRegression](actions=actions)
+    manager = CmabActionsManager[BayesianLogisticRegression](actions=actions, delta=REFERENCE_DELTA)
     actions = ["action1"] * len(context)
     rewards = [1] * len(context)
     actions_memory = ["action1"] * len(context_memory)
-    rewards_memory = [1] * len(context_memory)
-    if len(context[0]) == len(context_memory[0]):
-        manager.update(actions, rewards, context, actions_memory, rewards_memory, context_memory=context_memory)
-    else:
-        with pytest.raises(ValueError):
-            manager.update(actions, rewards, context, actions_memory, rewards_memory, context_memory=context_memory)
+    rewards_memory = [other_reward] * len(context_memory)
+    manager.update(actions_memory, rewards_memory, context=context_memory)
+
+    with pytest.raises(ValueError):
+        manager.update(
+            actions,
+            rewards,
+            context=context,
+            actions_memory=actions_memory,
+            rewards_memory=rewards_memory,
+            context_memory=context_memory,
+        )
 
 
 #######################################################################################################################

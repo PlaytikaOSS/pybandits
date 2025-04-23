@@ -236,7 +236,10 @@ class ActionsManager(PyBanditsBaseModel, ABC):
 
                 for action_model in self.actions.values():
                     action_model.reset()
-                self._update_actions(actions_memory, rewards_memory, **memory_kwargs)
+                stripped_memory_kwargs = {
+                    k[: -len(self._memory_parameters_suffix)]: v for k, v in memory_kwargs.items()
+                }
+                self._update_actions(actions_memory, rewards_memory, **stripped_memory_kwargs)
             else:
                 self._update_actions(actions, rewards, **update_kwargs)
         else:
