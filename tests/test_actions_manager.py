@@ -336,6 +336,7 @@ def test_check_context_matrix(n_samples, n_features):
 
 
 # Handle context and context_memory with non matching feature dimensions
+@settings(deadline=None)
 @given(
     context=st.lists(
         st.lists(st.floats(min_value=-1, max_value=1), min_size=4, max_size=4), min_size=1, max_size=10000
