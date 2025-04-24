@@ -25,6 +25,10 @@ from inspect import isclass
 from typing import Any, Dict, List, Optional, Set, Union, get_origin
 
 import numpy as np
+from pydantic import (
+    model_validator,
+    validate_call,
+)
 
 from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
@@ -37,13 +41,6 @@ from pybandits.base import (
     PyBanditsBaseModel,
 )
 from pybandits.model import BaseModel, Model
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    model_validator,
-    pydantic_version,
-    validate_call,
-)
 from pybandits.strategy import Strategy
 from pybandits.utils import extract_argument_names_from_function
 
@@ -108,31 +105,13 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     ############################################ Instance Input Validators #############################################
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @model_validator(mode="before")
-        @classmethod
-        def check_default_action(cls, values):
-            epsilon = cls._get_value_with_default("epsilon", values)
-            default_action = cls._get_value_with_default("default_action", values)
-            if not epsilon and default_action:
-                raise AttributeError("A default action should only be defined when epsilon is defined.")
-            if default_action and default_action not in values["actions_manager"].actions:
-                raise AttributeError("The default action must be valid action defined in the actions set.")
-            return values
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @model_validator(mode="after")
-        def check_default_action(self):
-            if not self.epsilon and self.default_action:
-                raise AttributeError("A default action should only be defined when epsilon is defined.")
-            if self.default_action and self.default_action not in self.actions:
-                raise AttributeError("The default action must be valid action defined in the actions set.")
-            return self
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    @model_validator(mode="after")
+    def check_default_action(self):
+        if not self.epsilon and self.default_action:
+            raise AttributeError("A default action should only be defined when epsilon is defined.")
+        if self.default_action and self.default_action not in self.actions:
+            raise AttributeError("The default action must be valid action defined in the actions set.")
+        return self
 
     ############################################# Method Input Validators ##############################################
 
@@ -238,7 +217,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The internal state of the model (actions, scores, etc.).
         """
         model_name = self.__class__.__name__
-        json_state = self._apply_version_adjusted_method("model_dump_json", "json")
+        json_state = self.model_dump_json()
         state = json.loads(json_state)
         return model_name, state
 

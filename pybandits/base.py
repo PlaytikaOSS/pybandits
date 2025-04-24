@@ -23,17 +23,13 @@
 
 from typing import Any, Dict, List, NewType, Tuple, Union, _GenericAlias, get_args, get_origin
 
-from typing_extensions import Self
-
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
+from pydantic import (
     BaseModel,
     confloat,
     conint,
     constr,
-    pydantic_version,
 )
+from typing_extensions import Self
 
 ActionId = NewType("ActionId", constr(min_length=1))
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
@@ -63,20 +59,12 @@ class _classproperty(property):
         return self.fget(owner)
 
 
-class PyBanditsBaseModel(BaseModel, extra="forbid"):
+class PyBanditsBaseModel(BaseModel):
     """
     BaseModel of the PyBandits library.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        def __init__(self, **data):
-            super().__init__(**data)
-
-            self.model_post_init(None)
-
-        def model_post_init(self, __context: Any) -> None:
-            pass
+    model_config = {"extra": "forbid"}
 
     def _validate_params_lengths(
         self,
@@ -96,24 +84,6 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
                 if (v is None or len(v) != reference) if force_values else (v is not None and len(v) != reference):
                     raise AttributeError(f"Shape mismatch: {k} should have the same length as the other parameters.")
 
-    def _apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
-        """
-        Apply the method with the given name, adjusting for the pydantic version.
-
-        Parameters
-        ----------
-        v2_method_name : str
-            The method name for pydantic v2.
-        v1_method_name : str
-            The method name for pydantic v1.
-        """
-        if pydantic_version == PYDANTIC_VERSION_1:
-            return getattr(self, v1_method_name)(**kwargs)
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            return getattr(self, v2_method_name)(**kwargs)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
-
     def _with_argument(self, argument_name: str, argument_value: Any) -> Self:
         """
         Instantiate a mutated model with an altered argument_value for argument_name.
@@ -130,9 +100,7 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
         mutated_strategy: PyBanditsBaseModel
             The mutated model.
         """
-        mutated_strategy = self._apply_version_adjusted_method(
-            "model_copy", "copy", update={argument_name: argument_value}
-        )
+        mutated_strategy = self.model_copy(update={argument_name: argument_value})
         return mutated_strategy
 
     @classmethod
@@ -141,26 +109,9 @@ class PyBanditsBaseModel(BaseModel, extra="forbid"):
 
     @classmethod
     def _get_field_type(cls, key: str) -> Any:
-        if pydantic_version == PYDANTIC_VERSION_1:
-            annotation = cls.model_fields[key].type_
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            annotation = cls.model_fields[key].annotation
-            if isinstance(annotation, _GenericAlias) and get_origin(annotation) is dict:
-                annotation = get_args(annotation)[1]  # refer to the type of the Dict values
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        annotation = cls.model_fields[key].annotation
+        if isinstance(annotation, _GenericAlias) and get_origin(annotation) is dict:
+            annotation = get_args(annotation)[1]  # refer to the type of the Dict values
+        if get_origin(annotation) is Union:
+            annotation = get_args(annotation)
         return annotation
-
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @_classproperty
-        def model_fields(cls) -> Dict[str, Any]:
-            """
-            Get the model fields.
-
-            Returns
-            -------
-            List[str]
-                The model fields.
-            """
-            return cls.__fields__

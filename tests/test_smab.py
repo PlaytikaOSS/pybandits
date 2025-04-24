@@ -27,11 +27,11 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import PositiveInt, ValidationError
 from pydantic.dataclasses import dataclass
 
 from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO, BetaMOCC
-from pybandits.pydantic_version_compatibility import PositiveInt, ValidationError
 from pybandits.smab import (
     BaseSmabBernoulli,
     SmabBernoulli,

@@ -25,6 +25,7 @@ import pandas as pd
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from pybandits.model import (
     BayesianLogisticRegression,
@@ -35,7 +36,6 @@ from pybandits.model import (
     BetaMOCC,
     StudentT,
 )
-from pybandits.pydantic_version_compatibility import ValidationError
 
 ########################################################################################################################
 

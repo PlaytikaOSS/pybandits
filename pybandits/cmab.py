@@ -26,12 +26,12 @@ from typing import List, Optional, Set, Union
 from numpy import array
 from numpy.random import choice
 from numpy.typing import ArrayLike
+from pydantic import validate_call
 
 from pybandits.actions_manager import CmabActionsManager, CmabActionsManagerCC, CmabActionsManagerSO
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBayesianLogisticRegression
-from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,

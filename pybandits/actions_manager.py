@@ -6,6 +6,12 @@ from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Set, 
 
 import numpy as np
 from numpy.typing import ArrayLike
+from pydantic import (
+    NonNegativeInt,
+    NonPositiveInt,
+    field_validator,
+    validate_call,
+)
 
 from pybandits.base import ACTION_IDS_PREFIX, ACTIONS, ActionId, BinaryReward, PositiveProbability, PyBanditsBaseModel
 from pybandits.model import (
@@ -20,16 +26,6 @@ from pybandits.model import (
     Model,
     ModelMO,
     SmabModelType,
-)
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    GenericModel,
-    NonNegativeInt,
-    NonPositiveInt,
-    field_validator,
-    pydantic_version,
-    validate_call,
 )
 from pybandits.utils import extract_argument_names_from_function
 
@@ -59,16 +55,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     _min_adaptive_window_size: ClassVar[NonPositiveInt] = 10000
     _memory_parameters_suffix: ClassVar[str] = "_memory"
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        class Config:
-            arbitrary_types_allowed = True
-            json_encoders = {deque: list}
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        model_config = {"arbitrary_types_allowed": True, "json_encoders": {deque: list}}
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    model_config = {"arbitrary_types_allowed": True, "json_encoders": {deque: list}}
 
     @field_validator("actions", mode="after")
     @classmethod
@@ -679,7 +666,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         return action_model_start
 
 
-class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
+class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
     """
     Manages actions and their associated models for sMAB models.
     The class allows to account for non-stationarity by providing an adaptive window scheme for action update.
@@ -748,7 +735,7 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
             self.actions[a].update(rewards=rewards_dict[a])
 
 
-class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
+class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
     """
     Manages actions and their associated models for cMAB models.
     The class allows to account for non-stationarity by providing an adaptive window scheme for action update.

@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: [ "3.8", "3.9", "3.10" ]
-        pydantic-version: [ "1.10.*", "2.*" ]
+        pydantic-version: [ "2.*" ]
 
     steps:
       - name: Checkout repository
@@ -51,8 +51,10 @@ jobs:
         run: |
           VERSION=v$(poetry version -s)
           echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_ENV
-          if git ls-remote --tags origin "refs/tags/${{ env.PACKAGE_VERSION }}" || git rev-parse "${{ env.PACKAGE_VERSION }}" >/dev/null 2>&1; then
-            echo "Version ${{ env.PACKAGE_VERSION }} already exists."
+          REMOTE_VERSION=$(git ls-remote --tags origin "refs/tags/${VERSION}" 2>/dev/null)
+          LOCAL_VERSION=$(git tag -l "${VERSION}" 2>/dev/null)
+          if [ -n "$REMOTE_VERSION" ] || [ -n "$LOCAL_VERSION" ]; then
+            echo "Version ${VERSION} already exists."
             echo "VERSION_CHANGED=false" >> $GITHUB_ENV
           else
             echo "VERSION_CHANGED=true" >> $GITHUB_ENV
@@ -64,31 +66,6 @@ jobs:
           git config --global user.name "GitHub Actions"
           git tag "${{ env.PACKAGE_VERSION }}"
           git push origin "${{ env.PACKAGE_VERSION }}"
-      - name: Publish Draft Release
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { data: releases } = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-
-            const draftRelease = releases.find(r => r.draft && r.name === 'Draft');
-
-            if (draftRelease) {
-              await github.rest.repos.updateRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: draftRelease.id,
-                tag_name: process.env.PACKAGE_VERSION,
-                name: process.env.PACKAGE_VERSION,
-                draft: false
-              });
-            } else {
-              core.setFailed(`Draft release named "Draft" not found.`);
-            };
       - name: Build and publish to pypi
         if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
         run: |

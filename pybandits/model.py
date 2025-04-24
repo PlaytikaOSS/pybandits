@@ -27,6 +27,14 @@ from typing import List, Literal, Optional, Tuple, TypeVar, Union
 import numpy as np
 import pymc.math as pmath
 from numpy import array, c_, insert, mean, multiply, ones, sqrt, std
+from pydantic import (
+    Field,
+    NonNegativeFloat,
+    PositiveInt,
+    confloat,
+    model_validator,
+    validate_call,
+)
 from pymc import Bernoulli, Data, Deterministic, fit, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
@@ -34,17 +42,6 @@ from pytensor.tensor import TensorVariable, dot
 from scipy.stats import t
 
 from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    Field,
-    NonNegativeFloat,
-    PositiveInt,
-    confloat,
-    model_validator,
-    pydantic_version,
-    validate_call,
-)
 
 UpdateMethods = Literal["MCMC", "VI"]
 
@@ -146,12 +143,7 @@ class ModelMO(BaseModel, ABC):
         List of models.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        models: List[Model] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        models: List[Model] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
+    models: List[Model] = Field(..., min_length=1)
 
     @validate_call
     def sample_proba(self, **kwargs) -> List[Probability]:
@@ -396,12 +388,7 @@ class BaseBayesianLogisticRegression(Model, ABC):
     """
 
     alpha: StudentT
-    if pydantic_version == PYDANTIC_VERSION_1:
-        betas: List[StudentT] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        betas: List[StudentT] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
+    betas: List[StudentT] = Field(..., min_length=1)
     update_method: UpdateMethods = "MCMC"
     update_kwargs: Optional[dict] = None
     _default_update_kwargs = dict(draws=1000, progressbar=False, return_inferencedata=False)
@@ -417,41 +404,17 @@ class BaseBayesianLogisticRegression(Model, ABC):
     )
     _default_variational_inference_kwargs = dict(method="advi")
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @model_validator(mode="before")
-        @classmethod
-        def arrange_update_kwargs(cls, values):
-            update_kwargs = cls._get_value_with_default("update_kwargs", values)
-            update_method = cls._get_value_with_default("update_method", values)
-            if update_kwargs is None:
-                update_kwargs = cls._default_update_kwargs
-            if update_method == "VI":
-                update_kwargs = {**cls._default_variational_inference_kwargs, **update_kwargs}
-            elif update_method == "MCMC":
-                update_kwargs = {**cls._default_mcmc_kwargs, **update_kwargs}
-            else:
-                raise ValueError("Invalid update method.")
-            values["update_kwargs"] = update_kwargs
-            values["update_method"] = update_method
-            return values
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @model_validator(mode="after")
-        def arrange_update_kwargs(self):
-            if self.update_kwargs is None:
-                self.update_kwargs = self._default_update_kwargs
-            if self.update_method == "VI":
-                self.update_kwargs = {**self._default_variational_inference_kwargs, **self.update_kwargs}
-            elif self.update_method == "MCMC":
-                self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
-            else:
-                raise ValueError("Invalid update method.")
-            return self
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    @model_validator(mode="after")
+    def arrange_update_kwargs(self):
+        if self.update_kwargs is None:
+            self.update_kwargs = self._default_update_kwargs
+        if self.update_method == "VI":
+            self.update_kwargs = {**self._default_variational_inference_kwargs, **self.update_kwargs}
+        elif self.update_method == "MCMC":
+            self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
+        else:
+            raise ValueError("Invalid update method.")
+        return self
 
     @classmethod
     def _stable_sigmoid(cls, x: Union[np.ndarray, TensorVariable]) -> Union[np.ndarray, TensorVariable]:

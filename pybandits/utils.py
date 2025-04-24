@@ -26,8 +26,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from bokeh.io import curdoc, output_file, output_notebook, save, show
 from bokeh.models import InlineStyleSheet, TabPanel, Tabs
 from IPython import get_ipython
-
-from pybandits.pydantic_version_compatibility import validate_call
+from pydantic import validate_call
 
 JSONSerializable = Union[str, int, float, bool, None, List["JSONSerializable"], Dict[str, "JSONSerializable"]]
 

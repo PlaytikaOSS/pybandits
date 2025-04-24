@@ -34,19 +34,16 @@ from bokeh.models import ColumnDataSource, HoverTool, Legend, Plot, TabPanel
 from bokeh.palettes import Category10, Turbo256
 from bokeh.plotting import figure
 from loguru import logger
-
-from pybandits.base import ActionId, BinaryReward, PyBanditsBaseModel
-from pybandits.mab import BaseMab
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
+from pydantic import (
     NonNegativeInt,
     PositiveInt,
     PrivateAttr,
     field_validator,
     model_validator,
-    pydantic_version,
 )
+
+from pybandits.base import ActionId, BinaryReward, PyBanditsBaseModel
+from pybandits.mab import BaseMab
 from pybandits.utils import in_jupyter_notebook, visualize_via_bokeh
 
 
@@ -104,16 +101,7 @@ class Simulator(PyBanditsBaseModel, ABC):
 
     ############################################ Instance Input Validators #############################################
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        class Config:
-            arbitrary_types_allowed = True
-            allow_population_by_field_name = True
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
 
     @field_validator("probs_reward", mode="before")
     @classmethod

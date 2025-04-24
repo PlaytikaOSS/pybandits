@@ -25,12 +25,12 @@ from random import random
 from typing import Any, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
+from pydantic import field_validator, validate_call
 from scipy.stats import ttest_ind_from_stats
 from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, Probability, PyBanditsBaseModel
 from pybandits.model import BaseModel, Beta, BetaMOCC, Model
-from pybandits.pydantic_version_compatibility import field_validator, validate_call
 
 StrategyType = TypeVar("StrategyType", bound="Strategy")
 

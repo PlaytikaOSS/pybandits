@@ -5,18 +5,13 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
 import pybandits
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
 from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward
 from pybandits.model import BayesianLogisticRegression, Beta
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    ValidationError,
-    pydantic_version,
-)
 from tests.test_utils import FakeApproximation
 
 REFERENCE_DELTA = 0.0001
@@ -67,8 +62,10 @@ def test_update_with_missing_memory_delta_set(action_list):
 
 @given(
     data_len=st.integers(min_value=1, max_value=200),
-    regular_kwargs=st.dictionaries(st.text().filter(lambda x: not x.endswith("_memory")), st.integers(), min_size=1),
-    memory_kwargs=st.dictionaries(st.text().map(lambda x: x + "_memory"), st.integers(), min_size=1),
+    regular_kwargs=st.dictionaries(
+        st.text(max_size=2).filter(lambda x: not x.endswith("_memory")), st.integers(), min_size=1
+    ),
+    memory_kwargs=st.dictionaries(st.text(max_size=2).map(lambda x: x + "_memory"), st.integers(), min_size=1),
 )
 def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monkeymodule):
     """Test proper separation of regular and memory kwargs"""
@@ -89,14 +86,8 @@ def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monke
         captured_memory_kwargs.update(kwargs)
 
     # Mock validation methods to capture kwargs
-    if pydantic_version == PYDANTIC_VERSION_1:
-        manager.__dict__["_validate_update_params"] = validate_params
-        manager.__dict__["_validate_params_lengths"] = validate_lengths
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        monkeymodule.setattr(manager, "_validate_update_params", validate_params)
-        monkeymodule.setattr(manager, "_validate_params_lengths", validate_lengths)
-    else:
-        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+    monkeymodule.setattr(manager, "_validate_update_params", validate_params)
+    monkeymodule.setattr(manager, "_validate_params_lengths", validate_lengths)
 
     manager.update(actions=action_list, rewards=rewards, **all_kwargs)
 

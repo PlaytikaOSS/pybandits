@@ -25,10 +25,10 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from pydantic import Field, model_validator
 
 from pybandits.base import ActionId, BinaryReward
 from pybandits.cmab import BaseCmabBernoulli
-from pybandits.pydantic_version_compatibility import Field, model_validator
 from pybandits.simulator import Simulator
 
 
