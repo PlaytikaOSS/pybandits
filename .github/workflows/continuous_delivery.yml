@@ -51,8 +51,10 @@ jobs:
         run: |
           VERSION=v$(poetry version -s)
           echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_ENV
-          if git ls-remote --tags origin "refs/tags/${{ env.PACKAGE_VERSION }}" || git rev-parse "${{ env.PACKAGE_VERSION }}" >/dev/null 2>&1; then
-            echo "Version ${{ env.PACKAGE_VERSION }} already exists."
+          REMOTE_VERSION=$(git ls-remote --tags origin "refs/tags/${VERSION}" 2>/dev/null)
+          LOCAL_VERSION=$(git tag -l "${VERSION}" 2>/dev/null)
+          if [ -n "$REMOTE_VERSION" ] || [ -n "$LOCAL_VERSION" ]; then
+            echo "Version ${VERSION} already exists."
             echo "VERSION_CHANGED=false" >> $GITHUB_ENV
           else
             echo "VERSION_CHANGED=true" >> $GITHUB_ENV
