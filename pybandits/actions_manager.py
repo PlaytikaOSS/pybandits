@@ -10,8 +10,8 @@ from numpy.typing import ArrayLike
 from pybandits.base import ACTION_IDS_PREFIX, ACTIONS, ActionId, BinaryReward, PositiveProbability, PyBanditsBaseModel
 from pybandits.model import (
     BaseModel,
-    BayesianLogisticRegression,
-    BayesianLogisticRegressionCC,
+    BayesianNeuralNetwork,
+    BayesianNeuralNetworkCC,
     Beta,
     BetaCC,
     BetaMO,
@@ -765,15 +765,15 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
     @field_validator("actions", mode="after")
     @classmethod
-    def check_bayesian_logistic_regression_models(cls, v):
+    def check_bayesian_neural_network_models(cls, v):
         action_models = list(v.values())
         first_action = action_models[0]
         first_action_type = type(first_action)
         for action in action_models[1:]:
             if not isinstance(action, first_action_type):
                 raise TypeError("All actions should follow the same type.")
-            if not len(action.betas) == len(first_action.betas):
-                raise AttributeError("All actions should have the same number of betas.")
+            if not action.input_dim == first_action.input_dim:
+                raise AttributeError("All actions should have the same input size.")
             if not action.update_method == first_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
             if not action.update_kwargs == first_action.update_kwargs:
@@ -876,5 +876,5 @@ SmabActionsManagerCC = SmabActionsManager[BetaCC]
 SmabActionsManagerMO = SmabActionsManager[BetaMO]
 SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
-CmabActionsManagerSO = CmabActionsManager[BayesianLogisticRegression]
-CmabActionsManagerCC = CmabActionsManager[BayesianLogisticRegressionCC]
+CmabActionsManagerSO = CmabActionsManager[BayesianNeuralNetwork]
+CmabActionsManagerCC = CmabActionsManager[BayesianNeuralNetworkCC]

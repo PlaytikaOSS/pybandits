@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.8", "3.9", "3.10" ]
+        python-version: [ "3.9", "3.10" ]
         pydantic-version: [ "1.10.*", "2.*" ]
 
     steps:
@@ -25,13 +25,8 @@ jobs:
 
       - name: Install Poetry
         run: |
-          if [[ "${{ matrix.python-version }}" == "3.8" ]]; then
-            curl -sSL https://install.python-poetry.org | python3 - --version 1.8.0
-            export PATH="$HOME/.poetry/bin:$PATH"
-          else
-            curl -sSL https://install.python-poetry.org | python3 -
-            export PATH="$HOME/.poetry/bin:$PATH"
-          fi
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.poetry/bin:$PATH"
       - name: Backup pyproject.toml
         run: cp pyproject.toml pyproject.toml.bak
       - name: Install project dependencies with Poetry
