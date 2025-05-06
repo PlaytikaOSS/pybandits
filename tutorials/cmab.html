@@ -102,7 +102,7 @@
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabBernoulli</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">StudentT</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
 </div>
@@ -142,16 +142,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.1613841  -0.49794167 -0.33376438  0.94778933 -0.30614152]
- [-0.4496147   0.60884007  0.9585795   0.20389095 -0.48560358]
- [-0.42225609 -0.65629762  0.8063207   0.16104495 -0.33538967]
- [-0.30597128 -0.13308005  0.97772063  0.6193355   0.3049692 ]
- [-0.72070883 -0.05191547 -0.58054673 -0.91069608  0.63320628]
- [-0.93996399 -0.72082382  0.4136631   0.38261984  0.32162887]
- [-0.48978556 -0.77543961 -0.95728434 -0.68990959  0.72228253]
- [-0.35171887  0.06042878 -0.86312631  0.93927125  0.68654729]
- [ 0.69956398 -0.47079873  0.53818873  0.37612796  0.29317551]
- [-0.7198139  -0.86793186  0.67701877 -0.76653332  0.30504903]]
+[[ 0.66655568 -0.88113439 -0.59831926  0.25039362  0.07729304]
+ [-0.90222675  0.25845939 -0.9723686  -0.89547826  0.03354615]
+ [-0.39370417  0.11611448 -0.36536067 -0.02023693 -0.35039291]
+ [-0.06165848 -0.24177997  0.11843506 -0.51964413  0.6138449 ]
+ [-0.74464413  0.21878726  0.77890832 -0.36981686 -0.58629978]
+ [ 0.17928799  0.50689728  0.62503428  0.43653923  0.74294926]
+ [-0.44867891 -0.92115178 -0.26238032  0.17944278  0.81598385]
+ [ 0.05323595 -0.89514656 -0.33302139  0.38320132  0.20740376]
+ [-0.75839716  0.38328984  0.75784486  0.19675045 -0.64032362]
+ [ 0.24997187  0.45781512  0.9670396   0.77702189 -0.44178261]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -159,9 +159,14 @@ X: context matrix of shape (n_samples, n_features)
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># define action model</span>
+<span class="n">bias</span> <span class="o">=</span> <span class="n">StudentTArray</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">weight</span> <span class="o">=</span> <span class="n">StudentTArray</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">layer_params</span> <span class="o">=</span> <span class="n">BnnLayerParams</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="n">weight</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
+<span class="n">model_params</span> <span class="o">=</span> <span class="n">BnnParams</span><span class="p">(</span><span class="n">bnn_layer_params</span><span class="o">=</span><span class="p">[</span><span class="n">layer_params</span><span class="p">])</span>
+
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="n">StudentT</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">betas</span><span class="o">=</span><span class="n">n_features</span> <span class="o">*</span> <span class="p">[</span><span class="n">StudentT</span><span class="p">()]),</span>
-    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="n">StudentT</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">betas</span><span class="o">=</span><span class="n">n_features</span> <span class="o">*</span> <span class="p">[</span><span class="n">StudentT</span><span class="p">()]),</span>
+    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span><span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">),</span>
+    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span><span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">),</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -187,12 +192,34 @@ X: context matrix of shape (n_samples, n_features)
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2959: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
+Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
+For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+</pre></div></div>
+</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -201,9 +228,7 @@ Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#3
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># simulate reward from environment</span>
-<span class="n">simulated_rewards</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n_samples</span><span class="p">)</span>
-<span class="c1"># simulate context from environment</span>
-<span class="n">simulated_context</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random_sample</span><span class="p">((</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># random float in the interval (-1, 1)</span>
+<span class="n">simulated_rewards</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n_samples</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Simulated rewards: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">simulated_rewards</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
 </pre></div>
 </div>
@@ -213,7 +238,7 @@ Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0 1 0 1 0 0 0 0 1 0]
+Simulated rewards: [0, 1, 1, 1, 0, 0, 0, 0, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -231,34 +256,27 @@ Simulated rewards: [0 1 0 1 0 0 0 0 1 0]
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-Initializing NUTS using adapt_diag...
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2959: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
-Sequential sampling (2 chains in 1 job)
-NUTS: [alpha, betas]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
-NUTS: [alpha, betas]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
+NUTS: [weight_0, bias_0]
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 2 seconds.
+There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+Initializing NUTS using adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [weight_0, bias_0]
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 2 seconds.
+There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 </pre></div></div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
-</pre></div>
-</div>
 </div>
 </section>
 

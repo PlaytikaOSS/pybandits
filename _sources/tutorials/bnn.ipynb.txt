@@ -1,0 +1,495 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Introduction\n",
+    "\n",
+    "This notebook demonstrates the use of Bayesian models for classification tasks, focusing on Bayesian Logistic Regression and Bayesian Neural Networks. Bayesian methods provide a probabilistic approach to machine learning, allowing for uncertainty quantification in predictions, which is particularly useful in decision-making under uncertainty.\n",
+    "The notebook is based on the example in https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html\n",
+    "\n",
+    "### Objectives\n",
+    "\n",
+    "#### Train Bayesian models, including:\n",
+    "Bayesian Logistic Regression: A probabilistic version of logistic regression.\n",
+    "Bayesian Neural Networks: Neural networks with Bayesian inference for parameter estimation.\n",
+    "\n",
+    "#### Evaluation:\n",
+    "\n",
+    "Evaluate the performance of the models using metrics such as:\n",
+    "Accuracy: To measure the proportion of correct predictions.\n",
+    "ROC-AUC: To assess the model's ability to distinguish between classes.\n",
+    "Visualization:\n",
+    "\n",
+    "Visualize the results, including decision boundaries and uncertainty estimates, to better understand the behavior of Bayesian models."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import matplotlib.pyplot as plt\n",
+    "import numpy as np\n",
+    "import pymc as pm\n",
+    "from sklearn.datasets import make_moons\n",
+    "from sklearn.metrics import accuracy_score, roc_auc_score\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.preprocessing import scale\n",
+    "\n",
+    "from pybandits.model import BayesianLogisticRegression, BayesianNeuralNetwork\n",
+    "\n",
+    "%load_ext autoreload\n",
+    "%autoreload 2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def plot_map(value, grid, x_test, pred, metric):\n",
+    "    cmap = plt.get_cmap(\"coolwarm\")\n",
+    "\n",
+    "    fig, ax = plt.subplots(figsize=(10, 6))\n",
+    "\n",
+    "    # Create the contour plot\n",
+    "    contour = ax.contourf(*grid, value.reshape(100, 100), cmap=cmap)\n",
+    "\n",
+    "    # Scatter plot for the test points\n",
+    "    ax.scatter(x_test[pred == 0, 0], x_test[pred == 0, 1], label=\"Class 0\")\n",
+    "    ax.scatter(x_test[pred == 1, 0], x_test[pred == 1, 1], color=\"r\", label=\"Class 1\")\n",
+    "\n",
+    "    # Add a colorbar\n",
+    "    cbar = plt.colorbar(contour, ax=ax)\n",
+    "    cbar.ax.set_ylabel(f\"{metric} of Output\")\n",
+    "\n",
+    "    # Set axis limits and labels\n",
+    "    ax.set(xlim=(-3, 3), ylim=(-3, 3), xlabel=\"X1\", ylabel=\"X2\")\n",
+    "\n",
+    "    # Add a legend\n",
+    "    ax.legend()\n",
+    "\n",
+    "    plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Generate data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We first generate a binarly labeled data set, with a two dimensional feature space, and is not lineraly seprabale.\n",
+    "We then split the data set to a training data setm and a test data set."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "X, Y = make_moons(noise=0.2, random_state=0, n_samples=1000)\n",
+    "X = scale(X)\n",
+    "x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.5)\n",
+    "y_train = y_train.tolist()\n",
+    "y_test = y_test.tolist()\n",
+    "fig, ax = plt.subplots()\n",
+    "ax.scatter(X[Y == 0, 0], X[Y == 0, 1], label=\"Class 0\")\n",
+    "ax.scatter(X[Y == 1, 0], X[Y == 1, 1], color=\"r\", label=\"Class 1\")\n",
+    "ax.set(xlabel=\"X1\", ylabel=\"X2\", title=\"Data set\")\n",
+    "ax.legend()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Using Bayesian logistic regression"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Using the cold_start method of BayesianLogisticRegression we can create a Bayesian Logistic Regresion model with default Student-T parameters.\n",
+    "Default parameters values are mu (mean) = 0, sigma (standard deviation) = 10, nu (degrees of freedom) = 5.\n",
+    "\n",
+    "In this case we define the model to run with Variational inference which is usually faster than MCMC."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "blr = BayesianLogisticRegression.cold_start(n_features=2, update_method=\"VI\", update_kwargs={\"fit\": {\"n\": 40000}})"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Applying the update method will calculate the approximated posterior of the parameters, and update the model. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "blr.update(context=x_train, rewards=y_train)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In order to sample from the posterior distribution, we are creating the model with the new updated parameters, and generate samples using pm.sample_prior_predictive.\n",
+    "\n",
+    "We consider a point to belong to Class 1, if more than half of the samples belong to Class 1 is higher than 0.5."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "_model = blr.create_model(x=x_test, is_predict=True)\n",
+    "with _model:\n",
+    "    samples = pm.sample_prior_predictive(samples=500)\n",
+    "\n",
+    "pred_proba = samples[\"prior_predictive\"][\"out\"].squeeze().values.mean(axis=0)\n",
+    "pred = pred_proba > 0.5"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Since the Bayesian Logistic Regression model is linear, it's not able do separate the space accurately."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "fig, ax = plt.subplots()\n",
+    "ax.scatter(x_test[pred == 0, 0], x_test[pred == 0, 1], label=\"Class 0\")\n",
+    "ax.scatter(x_test[pred == 1, 0], x_test[pred == 1, 1], color=\"r\", label=\"Class 1\")\n",
+    "ax.set(title=\"Predicted labels in testing set\", xlabel=\"X1\", ylabel=\"X2\")\n",
+    "ax.legend()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Here we calculate the accuracy and AUC score of the model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Calculate accuracy\n",
+    "accuracy = accuracy_score(y_test, pred)\n",
+    "print(f\"Accuracy: {accuracy}\")\n",
+    "\n",
+    "# Calculate AUC\n",
+    "auc = roc_auc_score(y_test, pred_proba)\n",
+    "print(f\"AUC: {auc}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations.\n",
+    "ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior.\n",
+    "A higher ELBO indicates a better approximation.\n",
+    "https://en.wikipedia.org/wiki/Evidence_lower_bound\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.plot(blr._approx.hist)\n",
+    "plt.ylabel(\"ELBO\")\n",
+    "plt.xlabel(\"iteration\")\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Predictions + uncertainty map"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In order to visualize the posterior predictive distribution, we can create a grid of points in the input space and evaluate the model at those points."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "grid = np.mgrid[-3:3:100j, -3:3:100j].astype(float)\n",
+    "grid_2d = grid.reshape(2, -1).T\n",
+    "\n",
+    "_model = blr.create_model(grid_2d, is_predict=True)\n",
+    "with _model:\n",
+    "    samples = pm.sample_prior_predictive(samples=500)\n",
+    "\n",
+    "prob = samples[\"prior_predictive\"][\"out\"].squeeze().values.mean(axis=0)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is the average of the output of the model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plot_map(prob, grid, x_test, pred, \"Mean\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is the standard deviation of the output of the model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "std = samples[\"prior_predictive\"][\"out\"].squeeze().values.std(axis=0)\n",
+    "plot_map(std, grid, x_test, pred, \"Standard Deviation\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Using Bayesian Neural Network"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In the following section we will demonstrate how a bayesian neural network (BNN) can capture complex patterns and relationships in data through multiple layers of abstraction, leading to better performance on tasks with high-dimensional features. In contrast, bayesian logistic regression is limited to linear relationships and may not effectively model intricate dependencies within the data."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In order to define the model structure, we set the hidden_dim_list=[5, 5], which means that the model structure will have a 2 layers network - with first and second layers having five neurons.\n",
+    "\n",
+    "The neurons' Student-T distribution are initialized with mu = 0, sigma = 1 and nu = 5"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dist_params_init = {\"mu\": 0, \"sigma\": 1, \"nu\": 5}\n",
+    "bnn = BayesianNeuralNetwork.cold_start(\n",
+    "    n_features=2,\n",
+    "    hidden_dim_list=[5, 5],\n",
+    "    update_method=\"VI\",\n",
+    "    dist_params_init=dist_params_init,\n",
+    "    update_kwargs={\"fit\": {\"n\": 100000}},\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Applying the update method will calculate the approximated posterior of the parameters, and update the model. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bnn.update(context=x_train, rewards=y_train)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We can see that the separation is much better than the bayesian logistic model."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "_model = bnn.create_model(x_test, is_predict=True)\n",
+    "with _model:\n",
+    "    samples = pm.sample_prior_predictive(samples=500)\n",
+    "\n",
+    "pred_proba = samples[\"prior_predictive\"][\"out\"].squeeze().values.mean(axis=0)\n",
+    "pred = pred_proba > 0.5\n",
+    "\n",
+    "fig, ax = plt.subplots()\n",
+    "ax.scatter(x_test[pred == 0, 0], x_test[pred == 0, 1])\n",
+    "ax.scatter(x_test[pred == 1, 0], x_test[pred == 1, 1], color=\"r\")\n",
+    "ax.set(title=\"Predicted labels in testing set\", xlabel=\"X\", ylabel=\"Y\");"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Calculate accuracy\n",
+    "accuracy = accuracy_score(y_test, pred)\n",
+    "print(f\"Accuracy: {accuracy}\")\n",
+    "\n",
+    "# Calculate AUC\n",
+    "auc = roc_auc_score(y_test, pred_proba)\n",
+    "print(f\"AUC: {auc}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Plotting the ELBO convergence"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.plot(bnn._approx.hist)\n",
+    "plt.ylabel(\"ELBO\")\n",
+    "plt.xlabel(\"iteration\")\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Predictions + uncertainty map"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We now visualize the posterior predictive distribution of output of the bayesian neural network model\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "grid = np.mgrid[-3:3:100j, -3:3:100j].astype(float)\n",
+    "grid_2d = grid.reshape(2, -1).T\n",
+    "_model = bnn.create_model(grid_2d, is_predict=True)\n",
+    "with _model:\n",
+    "    samples = pm.sample_prior_predictive(samples=500)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is the average of the output of the model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "mean = samples[\"prior_predictive\"][\"out\"].squeeze().values.mean(axis=0)\n",
+    "plot_map(mean, grid, x_test, pred, \"Mean\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is the standard deviation of the output of the model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "std = samples[\"prior_predictive\"][\"out\"].squeeze().values.std(axis=0)\n",
+    "plot_map(std, grid, x_test, pred, \"Standard Deviation\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}

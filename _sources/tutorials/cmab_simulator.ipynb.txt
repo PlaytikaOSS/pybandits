@@ -25,7 +25,7 @@
     "\n",
     "from pybandits.cmab import CmabBernoulli\n",
     "from pybandits.cmab_simulator import CmabSimulator\n",
-    "from pybandits.model import BayesianLogisticRegression, StudentT"
+    "from pybandits.model import BayesianLogisticRegression, BnnLayerParams, BnnParams, StudentTArray"
    ]
   },
   {
@@ -86,6 +86,7 @@
    "outputs": [],
    "source": [
     "# init context matrix and groups\n",
+    "\n",
     "context, group = make_classification(\n",
     "    n_samples=batch_size * n_updates, n_features=n_features, n_informative=n_features, n_redundant=0, n_classes=n_groups\n",
     ")\n",
@@ -99,15 +100,27 @@
    "outputs": [],
    "source": [
     "# define action model\n",
+    "\n",
+    "\n",
+    "def create_model_params(n_features, bias_mu, bias_sigma):\n",
+    "    \"\"\"Create model parameters for Bayesian Logistic Regression.\"\"\"\n",
+    "\n",
+    "    bias = StudentTArray.cold_start(mu=bias_mu, sigma=bias_sigma, shape=1)\n",
+    "    weight = StudentTArray.cold_start(shape=(n_features, 1))\n",
+    "    layer_params = BnnLayerParams(weight=weight, bias=bias)\n",
+    "    model_params = BnnParams(bnn_layer_params=[layer_params])\n",
+    "    return model_params\n",
+    "\n",
+    "\n",
     "actions = {\n",
     "    \"a1\": BayesianLogisticRegression(\n",
-    "        alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()], update_method=\"VI\"\n",
+    "        model_params=create_model_params(n_features=n_features, bias_mu=1, bias_sigma=2), update_method=\"VI\"\n",
     "    ),\n",
     "    \"a2\": BayesianLogisticRegression(\n",
-    "        alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()], update_method=\"VI\"\n",
+    "        model_params=create_model_params(n_features=n_features, bias_mu=1, bias_sigma=2), update_method=\"VI\"\n",
     "    ),\n",
     "    \"a3\": BayesianLogisticRegression(\n",
-    "        alpha=StudentT(mu=1, sigma=2), betas=n_features * [StudentT()], update_method=\"VI\"\n",
+    "        model_params=create_model_params(n_features=n_features, bias_mu=1, bias_sigma=2), update_method=\"VI\"\n",
     "    ),\n",
     "}\n",
     "# init contextual Multi-Armed Bandit model\n",
@@ -215,18 +228,6 @@
  ],
  "metadata": {
   "hide_input": false,
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.9.5"
-  },
   "pycharm": {
    "stem_cell": {
     "cell_type": "raw",

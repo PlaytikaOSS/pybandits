@@ -102,7 +102,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabBernoulli</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab_simulator</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabSimulator</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">StudentT</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
 </div>
@@ -158,6 +158,7 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># init context matrix and groups</span>
+
 <span class="n">context</span><span class="p">,</span> <span class="n">group</span> <span class="o">=</span> <span class="n">make_classification</span><span class="p">(</span>
     <span class="n">n_samples</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">*</span> <span class="n">n_updates</span><span class="p">,</span> <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">n_informative</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">n_redundant</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_classes</span><span class="o">=</span><span class="n">n_groups</span>
 <span class="p">)</span>
@@ -170,15 +171,27 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># define action model</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create model parameters for Bayesian Logistic Regression.&quot;&quot;&quot;</span>
+
+    <span class="n">bias</span> <span class="o">=</span> <span class="n">StudentTArray</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="n">bias_mu</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">bias_sigma</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">weight</span> <span class="o">=</span> <span class="n">StudentTArray</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">layer_params</span> <span class="o">=</span> <span class="n">BnnLayerParams</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="n">weight</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
+    <span class="n">model_params</span> <span class="o">=</span> <span class="n">BnnParams</span><span class="p">(</span><span class="n">bnn_layer_params</span><span class="o">=</span><span class="p">[</span><span class="n">layer_params</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">model_params</span>
+
+
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
-        <span class="n">alpha</span><span class="o">=</span><span class="n">StudentT</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">betas</span><span class="o">=</span><span class="n">n_features</span> <span class="o">*</span> <span class="p">[</span><span class="n">StudentT</span><span class="p">()],</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span>
+        <span class="n">model_params</span><span class="o">=</span><span class="n">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span>
     <span class="p">),</span>
     <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
-        <span class="n">alpha</span><span class="o">=</span><span class="n">StudentT</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">betas</span><span class="o">=</span><span class="n">n_features</span> <span class="o">*</span> <span class="p">[</span><span class="n">StudentT</span><span class="p">()],</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span>
+        <span class="n">model_params</span><span class="o">=</span><span class="n">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span>
     <span class="p">),</span>
     <span class="s2">&quot;a3&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
-        <span class="n">alpha</span><span class="o">=</span><span class="n">StudentT</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">betas</span><span class="o">=</span><span class="n">n_features</span> <span class="o">*</span> <span class="p">[</span><span class="n">StudentT</span><span class="p">()],</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span>
+        <span class="n">model_params</span><span class="o">=</span><span class="n">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span>
     <span class="p">),</span>
 <span class="p">}</span>
 <span class="c1"># init contextual Multi-Armed Bandit model</span>
@@ -309,39 +322,29 @@ Probability of positive reward for each group/action:
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:253: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
-  self._results = pd.concat((self._results, batch_results), ignore_index=True)
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2959: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
 For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
   warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-Finished [100%]: Average Loss = 33.267
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:253: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  self._results = pd.concat((self._results, batch_results), ignore_index=True)
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -365,8 +368,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 30.971
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 292.6
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -390,8 +393,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 38.129
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 465.1
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -415,8 +418,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 19.452
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 327.56
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -440,8 +458,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 22.386
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 111.36
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -465,8 +483,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 16.68
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 187.82
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -490,8 +508,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 31.685
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 478.83
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -515,8 +548,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 13.629
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 128.55
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -540,8 +573,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 17.605
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 108.66
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -565,8 +598,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 45.793
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 186.42
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -590,8 +638,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 4.2216
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 99.38
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -615,8 +663,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 13.919
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 21.114
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -640,8 +688,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 42.125
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 67.939
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -665,8 +728,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 14.138
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 79.545
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -690,8 +753,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 14.728
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 52.288
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -715,8 +778,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 38.606
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 50.319
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -740,8 +818,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 10.798
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 88.981
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -765,8 +843,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 21.266
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 27.291
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -790,8 +868,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 41.168
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 60.486
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -815,8 +908,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 12.342
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 147.13
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -840,8 +933,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 14.621
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 33.454
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -865,8 +958,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 43.111
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 41.852
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -890,8 +998,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 9.1649
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 146.12
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -915,8 +1023,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 14.266
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 28.841
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -940,8 +1048,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 39.692
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 43.432
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -965,8 +1088,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 7.0376
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 150.07
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -990,8 +1113,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 22.742
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 18.956
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -1015,8 +1138,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 58.131
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 77.188
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+  warnings.warn(
+Sampling: [bias_0, out, weight_0]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -1040,8 +1178,33 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 5.685
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+Finished [100%]: Average Loss = 44.889
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+  warnings.warn(
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Finished [100%]: Average Loss = 34.875
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 </pre></div></div>
 </div>
@@ -1065,12 +1228,12 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 7.2235
-2025-04-24 08:28:44.420 | INFO     | pybandits.simulator:_print_results:445 - Simulation results (first 10 observations):
+Finished [100%]: Average Loss = 38.024
+2025-05-06 11:17:54.563 | INFO     | pybandits.simulator:_print_results:445 - Simulation results (first 10 observations):
 
-2025-04-24 08:28:44.440 | INFO     | pybandits.simulator:_print_results:446 - Count of actions selected by the bandit:
+2025-05-06 11:17:54.583 | INFO     | pybandits.simulator:_print_results:446 - Count of actions selected by the bandit:
 
-2025-04-24 08:28:44.443 | INFO     | pybandits.simulator:_print_results:447 - Observed proportion of positive rewards for each action:
+2025-05-06 11:17:54.586 | INFO     | pybandits.simulator:_print_results:447 - Observed proportion of positive rewards for each action:
 
 </pre></div></div>
 </div>
@@ -1129,342 +1292,342 @@ Finished [100%]: Average Loss = 7.2235
     <tr>
       <th>0</th>
       <th>0.0</th>
-      <td>20</td>
-      <td>6</td>
+      <td>8</td>
+      <td>21</td>
       <td>11</td>
-      <td>20</td>
-      <td>6</td>
+      <td>8</td>
+      <td>21</td>
       <td>11</td>
     </tr>
     <tr>
       <th>1</th>
       <th>0.0</th>
       <td>13</td>
-      <td>8</td>
-      <td>12</td>
+      <td>6</td>
+      <td>7</td>
       <td>13</td>
-      <td>8</td>
-      <td>12</td>
+      <td>6</td>
+      <td>7</td>
     </tr>
     <tr>
       <th>2</th>
       <th>0.0</th>
-      <td>2</td>
-      <td>13</td>
-      <td>15</td>
-      <td>2</td>
-      <td>13</td>
-      <td>15</td>
+      <td>8</td>
+      <td>10</td>
+      <td>16</td>
+      <td>8</td>
+      <td>10</td>
+      <td>16</td>
     </tr>
     <tr>
       <th>0</th>
       <th>1.0</th>
-      <td>11</td>
-      <td>14</td>
+      <td>1</td>
+      <td>32</td>
+      <td>2</td>
+      <td>9</td>
+      <td>53</td>
       <td>13</td>
-      <td>31</td>
-      <td>20</td>
-      <td>24</td>
     </tr>
     <tr>
       <th>1</th>
       <th>1.0</th>
-      <td>11</td>
-      <td>19</td>
       <td>10</td>
-      <td>24</td>
-      <td>27</td>
-      <td>22</td>
+      <td>13</td>
+      <td>6</td>
+      <td>23</td>
+      <td>19</td>
+      <td>13</td>
     </tr>
     <tr>
       <th>2</th>
       <th>1.0</th>
+      <td>15</td>
+      <td>16</td>
+      <td>5</td>
+      <td>23</td>
+      <td>26</td>
+      <td>21</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>2.0</th>
+      <td>0</td>
+      <td>28</td>
       <td>4</td>
+      <td>9</td>
+      <td>81</td>
+      <td>17</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>2.0</th>
+      <td>14</td>
+      <td>15</td>
       <td>7</td>
-      <td>11</td>
-      <td>6</td>
+      <td>37</td>
+      <td>34</td>
       <td>20</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>2.0</th>
+      <td>16</td>
+      <td>9</td>
+      <td>7</td>
+      <td>39</td>
+      <td>35</td>
+      <td>28</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>3.0</th>
+      <td>2</td>
+      <td>20</td>
+      <td>6</td>
+      <td>11</td>
+      <td>101</td>
+      <td>23</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>3.0</th>
+      <td>22</td>
+      <td>10</td>
+      <td>6</td>
+      <td>59</td>
+      <td>44</td>
       <td>26</td>
     </tr>
     <tr>
-      <th>0</th>
-      <th>2.0</th>
-      <td>11</td>
-      <td>5</td>
-      <td>10</td>
-      <td>42</td>
-      <td>25</td>
-      <td>34</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>2.0</th>
-      <td>18</td>
-      <td>15</td>
-      <td>12</td>
-      <td>42</td>
-      <td>42</td>
-      <td>34</td>
-    </tr>
-    <tr>
       <th>2</th>
-      <th>2.0</th>
-      <td>10</td>
-      <td>7</td>
-      <td>12</td>
-      <td>16</td>
-      <td>27</td>
-      <td>38</td>
-    </tr>
-    <tr>
-      <th>0</th>
       <th>3.0</th>
-      <td>24</td>
+      <td>14</td>
+      <td>17</td>
       <td>3</td>
-      <td>10</td>
-      <td>66</td>
-      <td>28</td>
-      <td>44</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>3.0</th>
-      <td>21</td>
-      <td>2</td>
-      <td>4</td>
-      <td>63</td>
-      <td>44</td>
-      <td>38</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>3.0</th>
-      <td>22</td>
-      <td>5</td>
-      <td>9</td>
-      <td>38</td>
-      <td>32</td>
-      <td>47</td>
+      <td>53</td>
+      <td>52</td>
+      <td>31</td>
     </tr>
     <tr>
       <th>0</th>
       <th>4.0</th>
-      <td>15</td>
-      <td>7</td>
-      <td>7</td>
-      <td>81</td>
-      <td>35</td>
-      <td>51</td>
+      <td>3</td>
+      <td>21</td>
+      <td>10</td>
+      <td>14</td>
+      <td>122</td>
+      <td>33</td>
     </tr>
     <tr>
       <th>1</th>
       <th>4.0</th>
-      <td>23</td>
+      <td>20</td>
+      <td>10</td>
+      <td>4</td>
+      <td>79</td>
+      <td>54</td>
+      <td>30</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>4.0</th>
+      <td>19</td>
+      <td>6</td>
+      <td>7</td>
+      <td>72</td>
+      <td>58</td>
+      <td>38</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>5.0</th>
+      <td>3</td>
+      <td>18</td>
+      <td>6</td>
+      <td>17</td>
+      <td>140</td>
+      <td>39</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>5.0</th>
+      <td>18</td>
       <td>7</td>
       <td>6</td>
-      <td>86</td>
-      <td>51</td>
-      <td>44</td>
+      <td>97</td>
+      <td>61</td>
+      <td>36</td>
     </tr>
     <tr>
       <th>2</th>
-      <th>4.0</th>
-      <td>21</td>
-      <td>5</td>
-      <td>9</td>
-      <td>59</td>
-      <td>37</td>
+      <th>5.0</th>
+      <td>26</td>
+      <td>8</td>
+      <td>8</td>
+      <td>98</td>
+      <td>66</td>
+      <td>46</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>6.0</th>
+      <td>6</td>
+      <td>19</td>
+      <td>6</td>
+      <td>23</td>
+      <td>159</td>
+      <td>45</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>6.0</th>
+      <td>24</td>
+      <td>8</td>
+      <td>4</td>
+      <td>121</td>
+      <td>69</td>
+      <td>40</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>6.0</th>
+      <td>16</td>
+      <td>7</td>
+      <td>10</td>
+      <td>114</td>
+      <td>73</td>
       <td>56</td>
     </tr>
     <tr>
       <th>0</th>
-      <th>5.0</th>
-      <td>17</td>
-      <td>6</td>
-      <td>11</td>
-      <td>98</td>
-      <td>41</td>
-      <td>62</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>5.0</th>
-      <td>22</td>
+      <th>7.0</th>
       <td>3</td>
-      <td>11</td>
-      <td>108</td>
-      <td>54</td>
-      <td>55</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>5.0</th>
-      <td>18</td>
-      <td>2</td>
-      <td>10</td>
-      <td>77</td>
-      <td>39</td>
-      <td>66</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>6.0</th>
-      <td>22</td>
-      <td>11</td>
-      <td>2</td>
-      <td>120</td>
+      <td>32</td>
+      <td>7</td>
+      <td>26</td>
+      <td>191</td>
       <td>52</td>
-      <td>64</td>
     </tr>
     <tr>
       <th>1</th>
-      <th>6.0</th>
-      <td>19</td>
-      <td>4</td>
-      <td>8</td>
-      <td>127</td>
-      <td>58</td>
-      <td>63</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>6.0</th>
-      <td>18</td>
-      <td>2</td>
-      <td>14</td>
-      <td>95</td>
+      <th>7.0</th>
+      <td>16</td>
+      <td>12</td>
+      <td>1</td>
+      <td>137</td>
+      <td>81</td>
       <td>41</td>
-      <td>80</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>7.0</th>
-      <td>27</td>
-      <td>5</td>
-      <td>7</td>
-      <td>147</td>
-      <td>57</td>
-      <td>71</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>7.0</th>
-      <td>16</td>
-      <td>4</td>
-      <td>6</td>
-      <td>143</td>
-      <td>62</td>
-      <td>69</td>
     </tr>
     <tr>
       <th>2</th>
       <th>7.0</th>
-      <td>18</td>
-      <td>4</td>
-      <td>13</td>
-      <td>113</td>
-      <td>45</td>
-      <td>93</td>
+      <td>17</td>
+      <td>1</td>
+      <td>11</td>
+      <td>131</td>
+      <td>74</td>
+      <td>67</td>
     </tr>
     <tr>
       <th>0</th>
       <th>8.0</th>
-      <td>16</td>
-      <td>3</td>
-      <td>9</td>
-      <td>163</td>
-      <td>60</td>
-      <td>80</td>
+      <td>2</td>
+      <td>26</td>
+      <td>4</td>
+      <td>28</td>
+      <td>217</td>
+      <td>56</td>
     </tr>
     <tr>
       <th>1</th>
       <th>8.0</th>
-      <td>19</td>
+      <td>27</td>
+      <td>10</td>
       <td>2</td>
-      <td>7</td>
-      <td>162</td>
-      <td>64</td>
+      <td>164</td>
+      <td>91</td>
+      <td>43</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>8.0</th>
+      <td>15</td>
+      <td>5</td>
+      <td>9</td>
+      <td>146</td>
+      <td>79</td>
       <td>76</td>
     </tr>
     <tr>
-      <th>2</th>
-      <th>8.0</th>
-      <td>23</td>
-      <td>3</td>
-      <td>18</td>
-      <td>136</td>
-      <td>48</td>
-      <td>111</td>
-    </tr>
-    <tr>
       <th>0</th>
       <th>9.0</th>
-      <td>26</td>
-      <td>2</td>
-      <td>4</td>
-      <td>189</td>
-      <td>62</td>
-      <td>84</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>9.0</th>
+      <td>3</td>
       <td>22</td>
-      <td>3</td>
-      <td>6</td>
-      <td>184</td>
-      <td>67</td>
-      <td>82</td>
+      <td>8</td>
+      <td>31</td>
+      <td>239</td>
+      <td>64</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>9.0</th>
+      <td>21</td>
+      <td>11</td>
+      <td>4</td>
+      <td>185</td>
+      <td>102</td>
+      <td>47</td>
     </tr>
     <tr>
       <th>2</th>
       <th>9.0</th>
-      <td>32</td>
-      <td>4</td>
-      <td>1</td>
-      <td>168</td>
-      <td>52</td>
-      <td>112</td>
+      <td>12</td>
+      <td>9</td>
+      <td>10</td>
+      <td>158</td>
+      <td>88</td>
+      <td>86</td>
     </tr>
     <tr>
       <th>0</th>
       <th>total</th>
-      <td>189</td>
-      <td>62</td>
-      <td>84</td>
-      <td>189</td>
-      <td>62</td>
-      <td>84</td>
+      <td>31</td>
+      <td>239</td>
+      <td>64</td>
+      <td>31</td>
+      <td>239</td>
+      <td>64</td>
     </tr>
     <tr>
       <th>1</th>
       <th>total</th>
-      <td>184</td>
-      <td>67</td>
-      <td>82</td>
-      <td>184</td>
-      <td>67</td>
-      <td>82</td>
+      <td>185</td>
+      <td>102</td>
+      <td>47</td>
+      <td>185</td>
+      <td>102</td>
+      <td>47</td>
     </tr>
     <tr>
       <th>2</th>
       <th>total</th>
-      <td>168</td>
-      <td>52</td>
-      <td>112</td>
-      <td>168</td>
-      <td>52</td>
-      <td>112</td>
+      <td>158</td>
+      <td>88</td>
+      <td>86</td>
+      <td>158</td>
+      <td>88</td>
+      <td>86</td>
     </tr>
     <tr>
       <th>total</th>
       <th>total</th>
-      <td>541</td>
-      <td>181</td>
-      <td>278</td>
-      <td>541</td>
-      <td>181</td>
-      <td>278</td>
+      <td>374</td>
+      <td>429</td>
+      <td>197</td>
+      <td>374</td>
+      <td>429</td>
+      <td>197</td>
     </tr>
   </tbody>
 </table>
@@ -1514,41 +1677,41 @@ Finished [100%]: Average Loss = 7.2235
     <tr>
       <th rowspan="3" valign="top">a1</th>
       <th>0</th>
-      <td>0.047619</td>
+      <td>0.064516</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.836957</td>
+      <td>0.832432</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.85119</td>
+      <td>0.78481</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a2</th>
       <th>0</th>
-      <td>0.693548</td>
+      <td>0.832636</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.014925</td>
+      <td>0.019608</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.076923</td>
+      <td>0.045455</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a3</th>
       <th>0</th>
-      <td>0.011905</td>
+      <td>0.078125</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.085366</td>
+      <td>0.06383</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.785714</td>
+      <td>0.72093</td>
     </tr>
   </tbody>
 </table>
