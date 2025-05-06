@@ -10,7 +10,7 @@ from pytest_mock import MockerFixture
 import pybandits
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
 from pybandits.base import ACTION_IDS_PREFIX, ActionId, BinaryReward
-from pybandits.model import BayesianLogisticRegression, Beta
+from pybandits.model import BayesianLogisticRegression, BayesianNeuralNetwork, Beta
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -133,11 +133,11 @@ def test_single_action_warning():
 
 
 def test_mixed_action_types_error(n_features=1):
-    actions = {"action1": BayesianLogisticRegression.cold_start(n_features=n_features), "action2": Beta()}
+    actions = {"action1": BayesianNeuralNetwork.cold_start(n_features=n_features), "action2": Beta()}
     with pytest.raises((ValidationError, TypeError)):
         SmabActionsManager[Beta](actions=actions)
     with pytest.raises((ValidationError, TypeError)):
-        CmabActionsManager[BayesianLogisticRegression](actions=actions)
+        CmabActionsManager[BayesianNeuralNetwork](actions=actions)
 
 
 @given(

@@ -23,17 +23,17 @@
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pybandits.model import (
-    BayesianLogisticRegression,
-    BayesianLogisticRegressionCC,
+    BayesianNeuralNetwork,
+    BayesianNeuralNetworkCC,
     Beta,
     BetaCC,
     BetaMO,
     BetaMOCC,
-    StudentT,
+    StudentTArray,
 )
 from pybandits.pydantic_version_compatibility import ValidationError
 
@@ -205,75 +205,87 @@ def test_can_init_beta_mo_cc(a_float):
 
 
 # StudentT
-
-
-@given(st.floats(), st.floats(), st.floats())
-def test_can_init_studentt(mu, sigma, nu):
+@settings(deadline=500)
+@given(
+    st.one_of(
+        st.integers(min_value=1, max_value=10),
+        st.tuples(st.integers(min_value=1, max_value=10)),
+        st.tuples(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=10)),
+    ),
+    st.floats(allow_nan=False, allow_infinity=False),
+    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
+    st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
+)
+def test_can_init_studenttarray(shape, mu, sigma, nu):
     # init with default args
-    s = StudentT()
-    assert (s.mu, s.sigma, s.nu) == (0, 10, 5)
+    s = StudentTArray.cold_start(shape=shape)
+    assert s.mu == np.full(shape, 0.0).tolist()
+    assert s.sigma == np.full(shape, 10.0).tolist()
+    assert s.nu == np.full(shape, 5.0).tolist()
+    # assert s.shape == shape
 
-    # init with args
-    if np.isnan(mu) or np.isinf(mu) or np.isnan(sigma) or np.isinf(sigma) or np.isnan(nu) or np.isinf(nu):
-        with pytest.raises(ValidationError):
-            StudentT(mu=mu, sigma=sigma, nu=nu)
-    else:
-        s = StudentT(mu=mu, sigma=sigma, nu=nu)
-        assert (s.mu, s.sigma, s.nu) == (mu, sigma, nu)
+    s = StudentTArray.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
+    assert s.mu == np.full(shape, mu).tolist()
+    assert s.sigma == np.full(shape, sigma).tolist()
+    assert s.nu == np.full(shape, nu).tolist()
+    # assert s.shape == shape
 
 
 ########################################################################################################################
 
 
-# BayesianLogisticRegression
-
-
-@given(st.integers(max_value=100))
-def test_can_init_bayesian_logistic_regression(a_int):
-    # at least one beta must be specified
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(a_int)])
+# BayesianNeuralNetwork and BayesianLogisticRegression
+@settings(deadline=500)
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+)
+def test_can_init_bayesian_neural_network(n_features, hidden_dim_list):
+    dim_list = [n_features] + hidden_dim_list
+    if any(layer_dim <= 0 for layer_dim in dim_list):
+        with pytest.raises((ValidationError, ValueError)):
+            model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
+            bnn = BayesianNeuralNetwork(model_params=model_params)
     else:
-        blr = BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(a_int)])
-        assert (blr.alpha, blr.betas) == (StudentT(), [StudentT() for _ in range(a_int)])
+        model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
+        bnn = BayesianNeuralNetwork(model_params=model_params)
+        assert bnn.model_params == model_params
 
 
-@given(st.integers(max_value=100))
-def test_create_default_instance_bayesian_logistic_regression(a_int):
-    # at least one beta must be specified
-    if a_int <= 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegression.cold_start(n_features=a_int)
-    else:
-        blr = BayesianLogisticRegression.cold_start(n_features=a_int)
-        assert blr == BayesianLogisticRegression(alpha=StudentT(), betas=[StudentT() for _ in range(a_int)])
-
-
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_check_context_matrix(n_samples, n_features):
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features)
+@settings(deadline=500)
+@given(
+    n_samples=st.integers(min_value=1, max_value=1000),
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+)
+def test_check_context_matrix(n_samples, n_features, hidden_dim_list):
+    bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
     assert type(context) is np.ndarray
-    blr.check_context_matrix(context=context)
+    bnn.check_context_matrix(context=context)
 
     # raise an error if len(context) != len(self.betas)
     with pytest.raises(AttributeError):
-        blr.check_context_matrix(context=context.loc[:, 1:])
+        bnn.check_context_matrix(context=context.loc[:, 1:])
 
 
-@given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_blr_sample_proba(n_samples, n_features):
+@settings(deadline=20000)
+@given(
+    n_samples=st.integers(min_value=1, max_value=1000),
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+)
+def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
     def sample_proba(context):
-        prob, weighted_sum = blr.sample_proba(context=np.array(context))
+        prob, weighted_sum = bnn.sample_proba(context=np.array(context))
 
         assert type(prob) is type(weighted_sum) is np.ndarray  # type of the returns must be np.ndarray
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features)
+    bnn = BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list)
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
@@ -291,25 +303,37 @@ def test_blr_sample_proba(n_samples, n_features):
     sample_proba(context=context)
 
 
-def test_blr_update(n_samples=100, n_features=3):
+@settings(deadline=None)
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=1),
+)  # max_size=2 takes a lot of time (>10 min.)
+def test_bnn_update(n_features, hidden_dim_list):
     def update(context, rewards):
-        blr = BayesianLogisticRegression.cold_start(n_features=n_features)
-        assert blr.alpha == StudentT(mu=0.0, sigma=10.0, nu=5.0)
-        assert blr.betas == [
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-        ]
+        bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
+        init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
+        dim_list = [n_features] + hidden_dim_list
+        for param in init_params.keys():
+            for layer_ind in range(len(dim_list)):
+                layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+                layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
 
-        blr.update(context=context, rewards=rewards)
+                assert all(w_val == init_params[param] for w_val in np.array(layer_w[param]).flatten())
+                assert all(b_val == init_params[param] for b_val in np.array(layer_b[param]).flatten())
 
-        assert blr.alpha != StudentT(mu=0.0, sigma=10.0, nu=5.0)
-        assert blr.betas != [
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-            StudentT(mu=0.0, sigma=10.0, nu=5.0),
-        ]
+        bnn.update(context=context, rewards=rewards)
 
+        for param in updated_params:
+            for layer_ind in range(len(dim_list)):
+                layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+                layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+
+                assert all(w_val != init_params[param] for w_val in np.array(layer_w[param]).flatten())
+                assert all(b_val != init_params[param] for b_val in np.array(layer_b[param]).flatten())
+
+    n_samples = 100
+
+    updated_params = ["mu", "sigma"]  # nu is not updated
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
     # context is numpy array
@@ -318,36 +342,49 @@ def test_blr_update(n_samples=100, n_features=3):
     update(context=context, rewards=rewards)
 
     # raise an error if len(context) != len(rewards)
-    with pytest.raises(ValueError):
-        blr = BayesianLogisticRegression.cold_start(n_features=n_features)
-        blr.update(context=context, rewards=rewards[1:])
+    with pytest.raises(AttributeError):
+        bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
+        bnn.update(context=context, rewards=rewards[1:])
 
 
 ########################################################################################################################
 
 
-# BayesianLogisticRegressionCC
-
-
-@given(st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
-def test_can_init_bayesian_logistic_regression_cc(n_betas, cost):
+# BayesianNeuralNetworkCC
+@settings(deadline=500)
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    cost=st.floats(allow_nan=False, allow_infinity=False),
+)
+def test_can_init_bayesian_neural_network_cc(n_features, hidden_dim_list, cost):
     # at least one beta must be specified
-    if n_betas <= 0 or cost < 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
+    dim_list = [n_features] + hidden_dim_list
+    if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
+        with pytest.raises((ValidationError, ValueError)):
+            model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
+            bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
     else:
-        blr = BayesianLogisticRegressionCC(alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost)
-        assert (blr.alpha, blr.betas) == (StudentT(), [StudentT() for _ in range(n_betas)])
+        model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
+        bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
+        assert bnn.model_params == model_params
 
 
-@given(st.integers(max_value=100), st.floats(allow_nan=False, allow_infinity=False))
-def test_create_default_instance_bayesian_logistic_regression_cc(n_betas, cost):
-    # at least one beta must be specified
-    if n_betas <= 0 or cost < 0:
-        with pytest.raises(ValidationError):
-            BayesianLogisticRegressionCC.cold_start(n_features=n_betas, cost=cost)
+@settings(deadline=500)
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    cost=st.floats(allow_nan=False, allow_infinity=False),
+)
+def test_create_default_instance_bayesian_neural_network_cc(n_features, hidden_dim_list, cost):
+    dim_list = [n_features] + hidden_dim_list
+    if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
+        with pytest.raises((ValidationError, ValueError)):
+            BayesianNeuralNetworkCC.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost)
     else:
-        blr = BayesianLogisticRegressionCC.cold_start(n_features=n_betas, cost=cost)
-        assert blr == BayesianLogisticRegressionCC(
-            alpha=StudentT(), betas=[StudentT() for _ in range(n_betas)], cost=cost
+        bnn_cold_start = BayesianNeuralNetworkCC.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost
         )
+        model_params = BayesianNeuralNetwork.create_model_params(n_features=n_features, hidden_dim_list=hidden_dim_list)
+        bnn_init = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
+        assert bnn_cold_start == bnn_init

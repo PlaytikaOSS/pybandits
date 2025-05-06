@@ -33,10 +33,11 @@ import pybandits
 from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.cmab import BaseCmabBernoulli, CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
 from pybandits.model import (
-    BaseBayesianLogisticRegression,
+    BaseBayesianNeuralNetwork,
     BayesianLogisticRegression,
-    BayesianLogisticRegressionCC,
-    StudentT,
+    BayesianNeuralNetwork,
+    BayesianNeuralNetworkCC,
+    StudentTArray,
     UpdateMethods,
 )
 from pybandits.pydantic_version_compatibility import (
@@ -63,17 +64,17 @@ def monkeymodule():
         yield mp
 
 
-def mock_student_t(
-    field_value: StudentT,
+def mock_student_t_array(
+    field_value: StudentTArray,
     diff: Any,
     monkeymodule: Any,
     label: Union[int, str],
 ) -> int:
     """
-    Update the mu and sigma fields of a StudentT object.
+    Update the mu and sigma fields of a StudentTArray object.
 
     Args:
-        field_value: StudentT object to update
+        field_value: StudentTArray object to update
         diff: Hypothesis diff object for drawing random values
         monkeymodule: Module for monkey patching
         label: Label for the diff draw
@@ -83,11 +84,44 @@ def mock_student_t(
     """
     for sub_field in ("mu", "sigma"):
         try:
-            new_value = getattr(field_value, sub_field) + diff.draw(diff_strategy(), label=f"{label}")
-            monkeymodule.setattr(field_value, sub_field, new_value)
+            orig_value = getattr(field_value, sub_field)
+            if isinstance(orig_value, list) and isinstance(orig_value[0], float):
+                # StudentTArray with a list of floats
+                new_value = [value + diff.draw(diff_strategy(), label=f"{label}") for value in orig_value]
+                monkeymodule.setattr(field_value, sub_field, new_value)
+
+            elif isinstance(orig_value, list) and isinstance(orig_value[0], list):
+                # StudentTArray with a list of lists of floats
+                new_value = [
+                    [value + diff.draw(diff_strategy(), label=f"{label}") for value in sublist]
+                    for sublist in orig_value
+                ]
+                monkeymodule.setattr(field_value, sub_field, new_value)
+
             label = int(label) + 1 if isinstance(label, (int, str)) else label + 1
         except AttributeError as e:
-            raise ValueError(f"Invalid StudentT field: {sub_field}") from e
+            raise ValueError(f"Invalid StudentTArray field: {sub_field}") from e
+    return label
+
+
+def find_and_update_parameters(obj, diff, monkeymodule, label):
+    if isinstance(obj, StudentTArray):
+        label = mock_student_t_array(obj, diff, monkeymodule, label)
+        return label
+
+    for attr in dir(obj):
+        if attr.startswith("__"):
+            continue
+        member = getattr(obj, attr)
+
+        if isinstance(member, list):
+            for item in member:
+                if hasattr(item, "__dict__"):
+                    label = find_and_update_parameters(item, diff, monkeymodule, label)
+
+        if hasattr(member, "__dict__"):
+            label = find_and_update_parameters(member, diff, monkeymodule, label)
+
     return label
 
 
@@ -96,59 +130,49 @@ def mock_update(
 ):
     model_list = [models] if isinstance(models, BayesianLogisticRegression) else models
     for model in model_list:
-        for field in model.model_fields:
-            field_value = getattr(model, field)
-
-            # Handle StudentT field
-            if isinstance(field_value, StudentT):
-                label = mock_student_t(field_value, diff, monkeymodule, label)
-
-            # Handle list of StudentT objects
-            elif isinstance(field_value, list) and field_value and isinstance(field_value[0], StudentT):
-                for item in field_value:
-                    label = mock_student_t(item, diff, monkeymodule, label)
-
-            # Handle list of BayesianLogisticRegression objects
-            elif (
-                isinstance(field_value, list) and field_value and isinstance(field_value[0], BayesianLogisticRegression)
-            ):
-                mock_update(field_value, diff, monkeymodule, label)
+        label = find_and_update_parameters(model, diff, monkeymodule, label)
 
 
 @dataclass
 class ModelTestConfig:
     cmab_class: Type
     strategy_class: Type
-    model_types: List[Type[BaseBayesianLogisticRegression]]
+    model_types: List[Type[BaseBayesianNeuralNetwork]]
 
     def _create_actions(
         self,
         action_ids: List[str],
         costs: Optional[st.SearchStrategy],
         n_features: PositiveInt,
+        hidden_dim_list: List[int],
         update_method: UpdateMethods,
         update_kwargs: Optional[Dict[str, Any]],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         if len(self.model_types) < len(action_ids):
             indices = np.random.randint(0, len(self.model_types), len(action_ids))
             self.model_types = [self.model_types[i] for i in indices]
-        if all(model in [BayesianLogisticRegressionCC] for model in self.model_types):
+        if all(model in [BayesianNeuralNetworkCC] for model in self.model_types):
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
-                cost if model_type in [BayesianLogisticRegressionCC] else lambda x: x**cost
+                cost if model_type in [BayesianNeuralNetworkCC] else lambda x: x**cost
                 for cost, model_type in zip(costs, self.model_types)
             ]
         else:
             costs = None
 
         model_cold_start_kwargs = dict(update_method=update_method, update_kwargs=update_kwargs)
-        base_model_cold_start_kwargs = dict(n_features=n_features, **model_cold_start_kwargs)
+        base_model_cold_start_kwargs = dict(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs
+        )
+        model_params = BaseBayesianNeuralNetwork.create_model_params(
+            n_features=n_features, hidden_dim_list=hidden_dim_list
+        )
+
         if costs is not None:
             return {
                 action_id: model_type(
-                    alpha=StudentT(),
-                    betas=[StudentT() for _ in range(n_features)],
+                    model_params=model_params,
                     **model_cold_start_kwargs,
                     cost=cost,
                 )
@@ -156,9 +180,7 @@ class ModelTestConfig:
             }, base_model_cold_start_kwargs
         else:
             return {
-                action_id: model_type(
-                    alpha=StudentT(), betas=[StudentT() for _ in range(n_features)], **model_cold_start_kwargs
-                )
+                action_id: model_type(model_params=model_params, **model_cold_start_kwargs)
                 for action_id, model_type in zip(action_ids, self.model_types)
             }, base_model_cold_start_kwargs
 
@@ -171,11 +193,12 @@ class ModelTestConfig:
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         n_features: PositiveInt,
+        hidden_dim_list: List[int],
         update_method: UpdateMethods,
         update_kwargs: Optional[Dict[str, Any]],
     ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, BayesianLogisticRegression], Dict[str, Any]]:
         actions, base_model_cold_start_kwargs = self._create_actions(
-            action_ids, costs, n_features, update_method, update_kwargs
+            action_ids, costs, n_features, hidden_dim_list, update_method, update_kwargs
         )
         default_action = action_ids[0] if epsilon and not delta else None
         epsilon = epsilon if not delta else 0.1
@@ -203,12 +226,12 @@ class ModelTestConfig:
 
 
 TEST_CONFIGS = {
-    "cmab": ModelTestConfig(CmabBernoulli, ClassicBandit, [BayesianLogisticRegression]),
-    "cmab_bai": ModelTestConfig(CmabBernoulliBAI, BestActionIdentificationBandit, [BayesianLogisticRegression]),
+    "cmab": ModelTestConfig(CmabBernoulli, ClassicBandit, [BayesianNeuralNetwork]),
+    "cmab_bai": ModelTestConfig(CmabBernoulliBAI, BestActionIdentificationBandit, [BayesianNeuralNetwork]),
     "cmab_cc": ModelTestConfig(
         CmabBernoulliCC,
         CostControlBandit,
-        [BayesianLogisticRegressionCC],
+        [BayesianNeuralNetworkCC],
     ),
 }
 
@@ -228,6 +251,7 @@ TEST_CONFIGS = {
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
@@ -240,8 +264,9 @@ def test_cold_start(
     delta,
     costs,
     n_features,
-    exploit_p,
+    hidden_dim_list,
     subsidy_factor,
+    exploit_p,
     update_method,
     update_kwargs,
 ):
@@ -254,6 +279,7 @@ def test_cold_start(
         exploit_p,
         subsidy_factor,
         n_features,
+        hidden_dim_list,
         update_method,
         update_kwargs,
     )
@@ -263,12 +289,12 @@ def test_cold_start(
         "action_ids": {
             action
             for action, model in zip(action_ids, config.model_types)
-            if issubclass(model, (BayesianLogisticRegression))
+            if issubclass(model, (BayesianNeuralNetwork))
         },
     }
-    if all(model in [BayesianLogisticRegressionCC] for model in config.model_types):
+    if all(model in [BayesianNeuralNetworkCC] for model in config.model_types):
         cold_start_kwargs["action_ids_cost"] = {
-            action: model.cost for action, model in actions.items() if isinstance(model, (BayesianLogisticRegressionCC))
+            action: model.cost for action, model in actions.items() if isinstance(model, (BayesianNeuralNetworkCC))
         }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
@@ -281,6 +307,7 @@ def test_cold_start(
 @given(
     action_ids=st.lists(st.text(min_size=1), min_size=2, max_size=5, unique=True),
     n_features=st.integers(min_value=1, max_value=5),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     costs=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -291,6 +318,7 @@ def test_bad_initialization(
     config: ModelTestConfig,
     action_ids: List[str],
     n_features: int,
+    hidden_dim_list: List[PositiveInt],
     costs,
     exploit_p,
     subsidy_factor,
@@ -304,22 +332,34 @@ def test_bad_initialization(
         config.cmab_class(actions={})
 
     # Test single action (should warn)
-    single_action = {action_ids[0]: config.model_types[0].cold_start(n_features=n_features, **kwargs)}
+    single_action = {
+        action_ids[0]: config.model_types[0].cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, **kwargs
+        )
+    }
     with pytest.warns(UserWarning):
         config.cmab_class(actions=single_action)
 
     # Test mismatched feature dimensions
     actions_wrong_dims = {
-        action_ids[0]: config.model_types[0].cold_start(n_features=n_features, **kwargs),
-        action_ids[1]: config.model_types[0].cold_start(n_features=n_features + 1, **kwargs),
+        action_ids[0]: config.model_types[0].cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, **kwargs
+        ),
+        action_ids[1]: config.model_types[0].cold_start(
+            n_features=n_features + 1, hidden_dim_list=hidden_dim_list, **kwargs
+        ),
     }
     with pytest.raises(AttributeError):
         config.cmab_class(actions=actions_wrong_dims)
 
     # Test mismatched update methods
     actions_wrong_update = {
-        action_ids[0]: config.model_types[0].cold_start(n_features=n_features, update_method="VI", **kwargs),
-        action_ids[1]: config.model_types[0].cold_start(n_features=n_features, update_method="MCMC", **kwargs),
+        action_ids[0]: config.model_types[0].cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method="VI", **kwargs
+        ),
+        action_ids[1]: config.model_types[0].cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method="MCMC", **kwargs
+        ),
     }
     with pytest.raises(AttributeError):
         config.cmab_class(actions=actions_wrong_update)
@@ -328,10 +368,15 @@ def test_bad_initialization(
     base_kwargs = {"draws": 500} if update_kwargs else {"draws": 1000}
     actions_wrong_kwargs = {
         action_ids[0]: config.model_types[0].cold_start(
-            n_features=n_features, update_method=update_method, update_kwargs=base_kwargs, **kwargs
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            update_kwargs=base_kwargs,
+            **kwargs,
         ),
         action_ids[1]: config.model_types[0].cold_start(
             n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
             update_method=update_method,
             update_kwargs={"draws": base_kwargs["draws"] // 2},
             **kwargs,
@@ -342,8 +387,10 @@ def test_bad_initialization(
 
     # Test invalid model types
     actions_wrong_type = {
-        action_ids[0]: BayesianLogisticRegression.cold_start(n_features=n_features),
-        action_ids[1]: BayesianLogisticRegressionCC.cold_start(n_features=n_features, cost=1.0),
+        action_ids[0]: BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list),
+        action_ids[1]: BayesianNeuralNetworkCC.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, cost=1.0
+        ),
     }
     with pytest.raises((ValidationError, TypeError)):
         config.cmab_class(actions=actions_wrong_type)
@@ -363,6 +410,7 @@ def test_bad_initialization(
                 exploit_p.draw(st.sampled_from([-0.1, 1.1])),
                 subsidy_factor,
                 n_features,
+                hidden_dim_list,
                 update_method,
                 update_kwargs,
             )
@@ -376,6 +424,7 @@ def test_bad_initialization(
                 exploit_p,
                 subsidy_factor.draw(st.sampled_from([-0.1, 1.1])),
                 n_features,
+                hidden_dim_list,
                 update_method,
                 update_kwargs,
             )
@@ -397,6 +446,7 @@ def test_bad_initialization(
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
     n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
@@ -411,6 +461,7 @@ def test_update(
     delta,
     costs,
     n_features,
+    hidden_dim_list,
     exploit_p,
     subsidy_factor,
     update_method,
@@ -421,12 +472,12 @@ def test_update(
     monkeymodule.setattr(
         pybandits.model,
         "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+        lambda *args, **kwargs: FakeApproximation(n_features=n_features, hidden_dim_list=hidden_dim_list),
     )
     monkeymodule.setattr(
         pybandits.model,
         "sample",
-        FakeApproximation(n_features=n_features).sample,
+        FakeApproximation(n_features=n_features, hidden_dim_list=hidden_dim_list).sample,
     )
     # Create CMAB instance
     cmab, _, kwargs = config.create_cmab_and_actions(
@@ -437,6 +488,7 @@ def test_update(
         exploit_p,
         subsidy_factor,
         n_features,
+        hidden_dim_list,
         update_method,
         update_kwargs,
     )
@@ -478,6 +530,7 @@ def test_update(
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
@@ -492,6 +545,7 @@ def test_predict(
     delta,
     costs,
     n_features,
+    hidden_dim_list,
     exploit_p,
     subsidy_factor,
     update_method,
@@ -508,6 +562,7 @@ def test_predict(
         exploit_p,
         subsidy_factor,
         n_features,
+        hidden_dim_list,
         update_method,
         update_kwargs,
     )[0]
@@ -564,6 +619,7 @@ def test_predict(
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
@@ -577,6 +633,7 @@ def test_serialization(
     delta,
     costs,
     n_features,
+    hidden_dim_list,
     exploit_p,
     subsidy_factor,
     update_method,
@@ -593,6 +650,7 @@ def test_serialization(
         exploit_p,
         subsidy_factor,
         n_features,
+        hidden_dim_list,
         update_method,
         update_kwargs,
     )[0]
@@ -629,6 +687,7 @@ def test_serialization(
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
@@ -642,6 +701,7 @@ def test_pickling(
     delta,
     costs,
     n_features,
+    hidden_dim_list,
     exploit_p,
     subsidy_factor,
     update_method,
@@ -658,6 +718,7 @@ def test_pickling(
         exploit_p,
         subsidy_factor,
         n_features,
+        hidden_dim_list,
         update_method,
         update_kwargs,
     )[0]
@@ -673,10 +734,13 @@ def test_pickling(
     st.sampled_from(literal_update_methods),
 )
 def test_cmab_update_shape_mismatch(n_samples, n_features, update_method):
+    hidden_dim_list = [3]
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features, update_method=update_method)
+    mab = CmabBernoulli.cold_start(
+        action_ids={"a1", "a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+    )
 
     with pytest.raises(AttributeError):  # actions shape mismatch
         mab.update(context=context, actions=actions[1:], rewards=rewards)
@@ -691,10 +755,13 @@ def test_cmab_update_shape_mismatch(n_samples, n_features, update_method):
 
 
 @settings(deadline=500)
-@given(st.integers(min_value=1, max_value=10))
-def test_cmab_predict_shape_mismatch(a_int):
-    context = np.random.uniform(low=-1.0, high=1.0, size=(100, a_int - 1))
-    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=a_int)
+@given(st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=2))
+def test_cmab_predict_shape_mismatch(dim_list):
+    n_features = dim_list[0]
+    hidden_dim_list = dim_list[1:]
+    n_features = dim_list[0]
+    context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features - 1))
+    mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list)
     with pytest.raises(AttributeError):
         mab.predict(context=context)
     with pytest.raises(AttributeError):

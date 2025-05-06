@@ -30,7 +30,7 @@ from numpy.typing import ArrayLike
 from pybandits.actions_manager import CmabActionsManager, CmabActionsManagerCC, CmabActionsManagerSO
 from pybandits.base import ActionId, BinaryReward, CmabPredictions
 from pybandits.mab import BaseMab
-from pybandits.model import BaseBayesianLogisticRegression
+from pybandits.model import BaseBayesianNeuralNetwork
 from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -45,7 +45,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BayesianLogisticRegression]
+    actions: Dict[ActionId, BaseBayesianNeuralNetwork]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
@@ -56,7 +56,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
         bandit strategy.
     """
 
-    actions_manager: CmabActionsManager[BaseBayesianLogisticRegression]
+    actions_manager: CmabActionsManager[BaseBayesianNeuralNetwork]
     predict_with_proba: bool
     predict_actions_randomly: bool
 
@@ -97,7 +97,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
         if self.predict_actions_randomly:
             # check that context has the expected number of columns
-            if context.shape[1] != len(list(self.actions.values())[0].betas):
+            if context.shape[1] != list(self.actions.values())[0].input_dim:
                 raise AttributeError("Context must have {n_betas} columns")
 
             selected_actions = choice(list(valid_actions), size=len(context)).tolist()  # predict actions randomly
