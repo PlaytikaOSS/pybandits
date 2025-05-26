@@ -18,6 +18,10 @@
   > - {mod}`pybandits.smab_simulator`
   > - {mod}`pybandits.cmab_simulator`
 
+- `pybandits` provides an OPE framework.
+  > - {mod}`pybandits.offline_policy_evaluator`
+  > - {mod}`pybandits.offline_policy_estimator`
+
 ## API
 
 Please visit the full [API](fullapi.md) for details.

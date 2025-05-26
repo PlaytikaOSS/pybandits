@@ -7,4 +7,6 @@ tutorials/smab
 tutorials/cmab
 tutorials/smab_simulator
 tutorials/cmab_simulator
+tutorials/bnn
+tutorials/ope
 ```

@@ -36,7 +36,7 @@ from pybandits.base import (
     Predictions,
     PyBanditsBaseModel,
 )
-from pybandits.model import BaseModel, Model
+from pybandits.model import BaseModel
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -170,7 +170,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
 
     @property
-    def actions(self) -> Dict[ActionId, Model]:
+    def actions(self) -> Dict[ActionId, BaseModel]:
         return self.actions_manager.actions
 
     @validate_call

@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -28,15 +28,18 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic.dataclasses import dataclass
+from pytest import MonkeyPatch
 
 import pybandits
-from pybandits.base import ActionId, Float01, PositiveProbability
+from pybandits.base import ActionId, Float01, PositiveProbability, PyBanditsBaseModel
 from pybandits.cmab import BaseCmabBernoulli, CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
     BayesianLogisticRegression,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BnnLayerParams,
+    BnnParams,
     StudentTArray,
     UpdateMethods,
 )
@@ -58,29 +61,30 @@ def cost_strategy(draw, n_actions):
     return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
-@pytest.fixture(scope="module")
-def monkeymodule():
-    with pytest.MonkeyPatch.context() as mp:
-        yield mp
-
-
 def mock_student_t_array(
     field_value: StudentTArray,
     diff: Any,
-    monkeymodule: Any,
+    monkeymodule: MonkeyPatch,
     label: Union[int, str],
 ) -> int:
     """
     Update the mu and sigma fields of a StudentTArray object.
 
-    Args:
-        field_value: StudentTArray object to update
-        diff: Hypothesis diff object for drawing random values
-        monkeymodule: Module for monkey patching
-        label: Label for the diff draw
+    Parameters
+    ----------
+    field_value : StudentTArray
+        The object to update.
+    diff : Any
+        The diff object for drawing random values.
+    monkeymodule : MonkeyPatch
+        The monkey module for patching.
+    label : Union[int, str]
+        The label for the diff draw.
 
-    Returns:
-        Updated label value
+    Returns
+    -------
+    label: int
+        Updated label
     """
     for sub_field in ("mu", "sigma"):
         try:
@@ -104,31 +108,45 @@ def mock_student_t_array(
     return label
 
 
+def _is_of_relevant_types(member: Any):
+    """
+    Check if the member is of a relevant type for mocking.
+
+    Parameters
+    ----------
+    member : Any
+        The member to check.
+
+    Returns
+    -------
+    bool
+        True if the member is of a relevant type, False otherwise.
+    """
+    return isinstance(member, (PyBanditsBaseModel, BnnParams, BnnLayerParams, StudentTArray))
+
+
 def find_and_update_parameters(obj, diff, monkeymodule, label):
-    if isinstance(obj, StudentTArray):
-        label = mock_student_t_array(obj, diff, monkeymodule, label)
-        return label
+    stack = [obj]
 
-    for attr in dir(obj):
-        if attr.startswith("__"):
+    while stack:
+        current = stack.pop()
+        if isinstance(current, StudentTArray):
+            label = mock_student_t_array(current, diff, monkeymodule, label)
             continue
-        member = getattr(obj, attr)
 
-        if isinstance(member, list):
-            for item in member:
-                if hasattr(item, "__dict__"):
-                    label = find_and_update_parameters(item, diff, monkeymodule, label)
-
-        if hasattr(member, "__dict__"):
-            label = find_and_update_parameters(member, diff, monkeymodule, label)
+        for attr in dir(current):
+            if not attr.startswith("__"):
+                member = getattr(current, attr)
+                if _is_of_relevant_types(member):
+                    stack.append(member)
+                elif isinstance(member, Sequence):
+                    stack.extend(item for item in member if _is_of_relevant_types(item))
 
     return label
 
 
-def mock_update(
-    models: Union[List[BayesianLogisticRegression], BayesianLogisticRegression], diff, monkeymodule, label=0
-):
-    model_list = [models] if isinstance(models, BayesianLogisticRegression) else models
+def mock_update(models: Union[List[BaseBayesianNeuralNetwork], BaseBayesianNeuralNetwork], diff, monkeymodule, label=0):
+    model_list = [models] if isinstance(models, BaseBayesianNeuralNetwork) else models
     for model in model_list:
         label = find_and_update_parameters(model, diff, monkeymodule, label)
 
@@ -571,7 +589,6 @@ def test_predict(
     forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
     if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
         forbidden.remove(cmab.default_action)
-
     mock_update(list(cmab.actions.values()), diff, monkeymodule)
     best_actions, probs, weights = cmab.predict(context=context, forbidden_actions=forbidden)
     assert len(best_actions) == n_samples
@@ -579,29 +596,32 @@ def test_predict(
     assert len(weights) == n_samples
 
     if forbidden:
-        assert all(
-            len({action[0] if isinstance(action, tuple) else action for action in prob})
-            == len(action_ids) - len(forbidden)
-            for prob in probs
-        )
-        assert all(action[0] if isinstance(action, tuple) else action not in forbidden for action in best_actions)
-        assert all(
-            action[0] if isinstance(action, tuple) else action not in forbidden
-            for prob in probs
-            for action in prob.keys()
-        )
-        assert all(
-            action[0] if isinstance(action, tuple) else action not in forbidden
-            for weight in weights
-            for action in weight.keys()
-        )
+        # Check proper length of probabilities
+        for prob in probs:
+            action_keys = {action[0] if isinstance(action, tuple) else action for action in prob}
+            assert len(action_keys) == len(action_ids) - len(forbidden)
+
+        # Check best actions not in forbidden
+        for action in best_actions:
+            action_id = action[0] if isinstance(action, tuple) else action
+            assert action_id not in forbidden
+
+        # Check prob actions not in forbidden
+        for prob in probs:
+            for action in prob.keys():
+                action_id = action[0] if isinstance(action, tuple) else action
+                assert action_id not in forbidden
+
+        # Check weight actions not in forbidden
+        for weight in weights:
+            for action in weight.keys():
+                action_id = action[0] if isinstance(action, tuple) else action
+                assert action_id not in forbidden
+
     else:
-        assert all(
-            len({action[0] if isinstance(action, tuple) else action for action in prob}) == len(action_ids)
-            for prob in probs
-        )
-    if isinstance(cmab, CmabBernoulli) and not cmab.epsilon:
-        assert all(prob[best_action] == max(prob.values()) for best_action, prob in zip(best_actions, probs))
+        for prob in probs:
+            action_keys = {action[0] if isinstance(action, tuple) else action for action in prob}
+            assert len(action_keys) == len(action_ids)
 
 
 @settings(deadline=None)

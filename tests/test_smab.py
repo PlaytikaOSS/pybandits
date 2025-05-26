@@ -60,12 +60,6 @@ def cost_strategy(draw, n_actions):
     return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
-@pytest.fixture(scope="module")
-def monkeymodule():
-    with pytest.MonkeyPatch.context() as mp:
-        yield mp
-
-
 def mock_update(models: List[BaseBeta], diff, monkeymodule, label=0):
     for model in models:
         for field in model.model_fields:

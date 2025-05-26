@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.9", "3.10" ]
+        python-version: [ "3.9", "3.10", "3.11", "3.12" ]
         pydantic-version: [ "1.10.*", "2.*" ]
 
     steps:
@@ -29,10 +29,23 @@ jobs:
           export PATH="$HOME/.poetry/bin:$PATH"
       - name: Backup pyproject.toml
         run: cp pyproject.toml pyproject.toml.bak
+      - name: Change pydantic version
+        run: |
+          poetry add pydantic@${{ matrix.pydantic-version }} --lock
+      - name: Cache Poetry virtualenv and dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.local/share/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ matrix.pydantic-version }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ matrix.pydantic-version }}-
       - name: Install project dependencies with Poetry
         run: |
-          poetry add pydantic@${{ matrix.pydantic-version }}
           poetry install
+      - name: Restore pyproject.toml
+        run: |
           mv pyproject.toml.bak pyproject.toml
       - name: Style check
         run: |
@@ -62,7 +75,7 @@ jobs:
           git tag "${{ env.PACKAGE_VERSION }}"
           git push origin "${{ env.PACKAGE_VERSION }}"
       - name: Publish Draft Release
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
