@@ -57,6 +57,12 @@
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bnn.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bnn.html#Objectives">Objectives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bnn.html#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bnn.html#id1">Predictions + uncertainty map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ope.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ope.html#Objectives">Objectives</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../api.html">API documentation</a></li>
@@ -142,16 +148,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.66655568 -0.88113439 -0.59831926  0.25039362  0.07729304]
- [-0.90222675  0.25845939 -0.9723686  -0.89547826  0.03354615]
- [-0.39370417  0.11611448 -0.36536067 -0.02023693 -0.35039291]
- [-0.06165848 -0.24177997  0.11843506 -0.51964413  0.6138449 ]
- [-0.74464413  0.21878726  0.77890832 -0.36981686 -0.58629978]
- [ 0.17928799  0.50689728  0.62503428  0.43653923  0.74294926]
- [-0.44867891 -0.92115178 -0.26238032  0.17944278  0.81598385]
- [ 0.05323595 -0.89514656 -0.33302139  0.38320132  0.20740376]
- [-0.75839716  0.38328984  0.75784486  0.19675045 -0.64032362]
- [ 0.24997187  0.45781512  0.9670396   0.77702189 -0.44178261]]
+[[-0.18730083 -0.27367885 -0.26901958 -0.43026932  0.38938563]
+ [-0.02941649  0.54144287  0.34254096  0.80048601 -0.40754959]
+ [ 0.19659102 -0.04024541 -0.97014599 -0.4488626   0.51790059]
+ [-0.09423098  0.15408444  0.17915607 -0.96039263 -0.66300856]
+ [-0.14247619 -0.72992103  0.24232003 -0.58296306  0.08531849]
+ [-0.29948914 -0.40008444  0.86224922 -0.49121899  0.22727749]
+ [ 0.57902369 -0.24472164  0.16847738 -0.04742026  0.20132522]
+ [ 0.0955097   0.66830073  0.50515276  0.85143765 -0.936136  ]
+ [-0.65290302 -0.02521972 -0.12857212  0.88872108  0.18495478]
+ [-0.22402918  0.29914395 -0.67718286  0.4363225   0.64089309]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -219,7 +225,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -238,7 +244,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 1, 1, 1, 0, 0, 0, 0, 1, 0]
+Simulated rewards: [0, 0, 0, 0, 0, 1, 1, 1, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -261,8 +267,10 @@ Simulated rewards: [0, 1, 1, 1, 0, 0, 0, 0, 1, 0]
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
 NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 2 seconds.
-There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 1 seconds.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details

@@ -85,6 +85,7 @@
  | <a href="#C"><strong>C</strong></a>
  | <a href="#D"><strong>D</strong></a>
  | <a href="#E"><strong>E</strong></a>
+ | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
  | <a href="#I"><strong>I</strong></a>
  | <a href="#M"><strong>M</strong></a>
@@ -136,6 +137,8 @@
 </li>
       <li><a href="fullapi.html#id14">all_actions_have_same_number_of_objectives() (pybandits.actions_manager.SmabActionsManager class method)</a>, <a href="fullapi.html#id19">[1]</a>, <a href="fullapi.html#id25">[2]</a>, <a href="fullapi.html#id31">[3]</a>, <a href="fullapi.html#pybandits.actions_manager.SmabActionsManager.all_actions_have_same_number_of_objectives">[4]</a>
 </li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.alpha">alpha (pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.Config.arbitrary_types_allowed">arbitrary_types_allowed (pybandits.model.BaseBayesianNeuralNetwork.Config attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.arrange_update_kwargs">arrange_update_kwargs() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
@@ -148,6 +151,8 @@
 <h2 id="B">B</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting">BalancedInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork">BaseBayesianNeuralNetwork (class in pybandits.model)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.Config">BaseBayesianNeuralNetwork.Config (class in pybandits.model)</a>
@@ -158,7 +163,11 @@
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseModel">BaseModel (class in pybandits.model)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator">BaseOfflinePolicyEstimator (class in pybandits.offline_policy_estimator)</a>
+</li>
       <li><a href="fullapi.html#pybandits.smab.BaseSmabBernoulli">BaseSmabBernoulli (class in pybandits.smab)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.batch_size">batch_size (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BayesianLogisticRegression">BayesianLogisticRegression (class in pybandits.model)</a>
 </li>
@@ -166,10 +175,10 @@
 </li>
       <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetwork">BayesianNeuralNetwork (class in pybandits.model)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkCC">BayesianNeuralNetworkCC (class in pybandits.model)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkCC">BayesianNeuralNetworkCC (class in pybandits.model)</a>
+</li>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit">BestActionIdentificationBandit (class in pybandits.strategy)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.Beta">Beta (class in pybandits.model)</a>
@@ -218,7 +227,7 @@
 </li>
       <li><a href="fullapi.html#pybandits.cmab.CmabBernoulliCC">CmabBernoulliCC (class in pybandits.cmab)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">CmabSimulator (class in pybandits.cmab_simulator)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">CmabSimulator (class in pybandits.cmab_simulator)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">[1]</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.cold_start">cold_start() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
 
@@ -232,7 +241,7 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.compare_best_actions">compare_best_actions() (pybandits.strategy.BestActionIdentificationBandit method)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">context (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">context (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">[1]</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.StudentTArray.convert_list_to_array">convert_list_to_array() (pybandits.model.StudentTArray static method)</a>
 </li>
@@ -269,12 +278,52 @@
 </li>
       </ul></li>
   </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.DirectMethod">DirectMethod (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobust">DoublyRobust (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage">DoublyRobustWithOptimisticShrinkage (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage">DoublyRobustWithPessimisticShrinkage (class in pybandits.offline_policy_estimator)</a>
+</li>
+  </ul></td>
 </tr></table>
 
 <h2 id="E">E</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_policy_value_with_confidence_interval">estimate_policy_value_with_confidence_interval() (pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.estimate_sample_rewards">estimate_sample_rewards() (pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting method)</a>
+
+      <ul>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_sample_rewards">(pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DirectMethod.estimate_sample_rewards">(pybandits.offline_policy_estimator.DirectMethod method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedDoublyRobust.estimate_sample_rewards">(pybandits.offline_policy_estimator.GeneralizedDoublyRobust method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting.estimate_sample_rewards">(pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.InverseProbabilityWeighting.estimate_sample_rewards">(pybandits.offline_policy_estimator.InverseProbabilityWeighting method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.ReplayMethod.estimate_sample_rewards">(pybandits.offline_policy_estimator.ReplayMethod method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.estimate_sample_rewards">(pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.exploit_p">exploit_p (pybandits.strategy.BestActionIdentificationBandit attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="F">F</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.file_prefix">file_prefix (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -282,15 +331,19 @@
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="fullapi.html#pybandits.strategy.Strategy.get_expected_value_from_state">get_expected_value_from_state() (pybandits.strategy.Strategy class method)</a>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedDoublyRobust">GeneralizedDoublyRobust (class in pybandits.offline_policy_estimator)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.get_layer_params_name">get_layer_params_name() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting">GeneralizedInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.strategy.Strategy.get_expected_value_from_state">get_expected_value_from_state() (pybandits.strategy.Strategy class method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.get_layer_params_name">get_layer_params_name() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveStrategy.get_pareto_front">get_pareto_front() (pybandits.strategy.MultiObjectiveStrategy class method)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">group (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">group (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">[1]</a>
 </li>
   </ul></td>
 </tr></table>
@@ -301,12 +354,16 @@
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.input_dim">input_dim (pybandits.model.BaseBayesianNeuralNetwork property)</a>
 </li>
   </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.InverseProbabilityWeighting">InverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
+</li>
+  </ul></td>
 </tr></table>
 
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.mab">mab (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.mab">mab (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.mab">[1]</a>
 
       <ul>
         <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.mab">(pybandits.smab_simulator.SmabSimulator attribute)</a>
@@ -333,7 +390,7 @@
 </li>
         <li><a href="fullapi.html#pybandits.cmab.CmabBernoulliCC.model_config">(pybandits.cmab.CmabBernoulliCC attribute)</a>
 </li>
-        <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.model_config">(pybandits.cmab_simulator.CmabSimulator attribute)</a>
+        <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.model_config">(pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.model_config">[1]</a>
 </li>
         <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.model_config">(pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
 </li>
@@ -360,6 +417,36 @@
         <li><a href="fullapi.html#pybandits.model.Model.model_config">(pybandits.model.Model attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.model.ModelMO.model_config">(pybandits.model.ModelMO attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.model_config">(pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.model_config">(pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DirectMethod.model_config">(pybandits.offline_policy_estimator.DirectMethod attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobust.model_config">(pybandits.offline_policy_estimator.DoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.model_config">(pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.model_config">(pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedDoublyRobust.model_config">(pybandits.offline_policy_estimator.GeneralizedDoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting.model_config">(pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.InverseProbabilityWeighting.model_config">(pybandits.offline_policy_estimator.InverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.ReplayMethod.model_config">(pybandits.offline_policy_estimator.ReplayMethod attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.model_config">(pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.model_config">(pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianDoublyRobust.model_config">(pybandits.offline_policy_estimator.SubGaussianDoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.model_config">(pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SwitchDoublyRobust.model_config">(pybandits.offline_policy_estimator.SwitchDoublyRobust attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.smab.BaseSmabBernoulli.model_config">(pybandits.smab.BaseSmabBernoulli attribute)</a>
 </li>
@@ -396,7 +483,7 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.model_params">model_params (pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.model_post_init">model_post_init() (pybandits.cmab_simulator.CmabSimulator method)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.model_post_init">model_post_init() (pybandits.cmab_simulator.CmabSimulator method)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.model_post_init">[1]</a>
 
       <ul>
         <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.model_post_init">(pybandits.model.BaseBayesianNeuralNetwork method)</a>
@@ -408,6 +495,20 @@
         <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetwork.model_post_init">(pybandits.model.BayesianNeuralNetwork method)</a>
 </li>
         <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkCC.model_post_init">(pybandits.model.BayesianNeuralNetworkCC method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobust.model_post_init">(pybandits.offline_policy_estimator.DoublyRobust method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.model_post_init">(pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.model_post_init">(pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedDoublyRobust.model_post_init">(pybandits.offline_policy_estimator.GeneralizedDoublyRobust method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.model_post_init">(pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianDoublyRobust.model_post_init">(pybandits.offline_policy_estimator.SubGaussianDoublyRobust method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SwitchDoublyRobust.model_post_init">(pybandits.offline_policy_estimator.SwitchDoublyRobust method)</a>
 </li>
         <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.model_post_init">(pybandits.smab_simulator.SmabSimulator method)</a>
 </li>
@@ -428,9 +529,11 @@
 </li>
         <li><a href="fullapi.html#module-pybandits.cmab">pybandits.cmab</a>
 </li>
-        <li><a href="fullapi.html#module-pybandits.cmab_simulator">pybandits.cmab_simulator</a>
+        <li><a href="fullapi.html#module-pybandits.cmab_simulator">pybandits.cmab_simulator</a>, <a href="fullapi.html#module-pybandits.cmab_simulator">[1]</a>
 </li>
         <li><a href="fullapi.html#module-pybandits.model">pybandits.model</a>
+</li>
+        <li><a href="fullapi.html#module-pybandits.offline_policy_estimator">pybandits.offline_policy_estimator</a>
 </li>
         <li><a href="fullapi.html#module-pybandits.smab">pybandits.smab</a>
 </li>
@@ -453,14 +556,46 @@
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.n_bootstrap_samples">n_bootstrap_samples (pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.Model.n_failures">n_failures (pybandits.model.Model attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.Model.n_successes">n_successes (pybandits.model.Model attribute)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.model.StudentTArray.nu">nu (pybandits.model.StudentTArray attribute)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.n_updates">n_updates (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.name">name (pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting attribute)</a>
+
+      <ul>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.name">(pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DirectMethod.name">(pybandits.offline_policy_estimator.DirectMethod attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobust.name">(pybandits.offline_policy_estimator.DoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.name">(pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.name">(pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.InverseProbabilityWeighting.name">(pybandits.offline_policy_estimator.InverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.ReplayMethod.name">(pybandits.offline_policy_estimator.ReplayMethod attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.name">(pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.name">(pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianDoublyRobust.name">(pybandits.offline_policy_estimator.SubGaussianDoublyRobust attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.name">(pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SwitchDoublyRobust.name">(pybandits.offline_policy_estimator.SwitchDoublyRobust attribute)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.StudentTArray.nu">nu (pybandits.model.StudentTArray attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.numerize_exploit_p">numerize_exploit_p() (pybandits.strategy.BestActionIdentificationBandit class method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.strategy.Strategy.numerize_field">numerize_field() (pybandits.strategy.Strategy class method)</a>
@@ -474,6 +609,8 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.StudentTArray.params">params (pybandits.model.StudentTArray property)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.path">path (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab.BaseCmabBernoulli.predict">predict() (pybandits.cmab.BaseCmabBernoulli method)</a>
 
@@ -501,6 +638,8 @@
         <li><a href="fullapi.html#pybandits.cmab.CmabBernoulliCC.predict_with_proba">(pybandits.cmab.CmabBernoulliCC attribute)</a>
 </li>
       </ul></li>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.probs_reward">probs_reward (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+</li>
       <li>
     pybandits.actions_manager
 
@@ -521,7 +660,7 @@
     pybandits.cmab_simulator
 
       <ul>
-        <li><a href="fullapi.html#module-pybandits.cmab_simulator">module</a>
+        <li><a href="fullapi.html#module-pybandits.cmab_simulator">module</a>, <a href="fullapi.html#module-pybandits.cmab_simulator">[1]</a>
 </li>
       </ul></li>
       <li>
@@ -529,6 +668,13 @@
 
       <ul>
         <li><a href="fullapi.html#module-pybandits.model">module</a>
+</li>
+      </ul></li>
+      <li>
+    pybandits.offline_policy_estimator
+
+      <ul>
+        <li><a href="fullapi.html#module-pybandits.offline_policy_estimator">module</a>
 </li>
       </ul></li>
       <li>
@@ -560,12 +706,18 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.strategy.random">random() (in module pybandits.strategy)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.replace_null_and_validate_probs_reward">replace_null_and_validate_probs_reward() (pybandits.smab_simulator.SmabSimulator class method)</a>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.random_seed">random_seed (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes">replace_nulls_and_validate_sizes_and_dtypes() (pybandits.cmab_simulator.CmabSimulator class method)</a>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.random_state">random_state (pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.replace_null_and_validate_probs_reward">replace_null_and_validate_probs_reward() (pybandits.smab_simulator.SmabSimulator class method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes">replace_nulls_and_validate_sizes_and_dtypes() (pybandits.cmab_simulator.CmabSimulator class method)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes">[1]</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.ReplayMethod">ReplayMethod (class in pybandits.offline_policy_estimator)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.BaseModel.reset">reset() (pybandits.model.BaseModel method)</a>
 
       <ul>
@@ -592,6 +744,8 @@
         <li><a href="fullapi.html#pybandits.model.ModelMO.sample_proba">(pybandits.model.ModelMO method)</a>
 </li>
       </ul></li>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.save">save (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.select_action">select_action() (pybandits.strategy.BestActionIdentificationBandit method)</a>
 
       <ul>
@@ -606,8 +760,20 @@
         <li><a href="fullapi.html#pybandits.strategy.Strategy.select_action">(pybandits.strategy.Strategy method)</a>
 </li>
       </ul></li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust">SelfNormalizedDoublyRobust (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting">SelfNormalizedInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.StudentTArray.shape">shape (pybandits.model.StudentTArray property)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.shrinkage_factor">shrinkage_factor (pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage attribute)</a>
+
+      <ul>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.shrinkage_factor">(pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.shrinkage_factor">(pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting attribute)</a>
+</li>
+      </ul></li>
       <li><a href="fullapi.html#pybandits.model.StudentTArray.sigma">sigma (pybandits.model.StudentTArray attribute)</a>
 </li>
       <li><a href="fullapi.html#id12">SmabActionsManager (class in pybandits.actions_manager)</a>, <a href="fullapi.html#id17">[1]</a>, <a href="fullapi.html#id23">[2]</a>, <a href="fullapi.html#id29">[3]</a>, <a href="fullapi.html#pybandits.actions_manager.SmabActionsManager">[4]</a>
@@ -618,10 +784,10 @@
 </li>
       <li><a href="fullapi.html#pybandits.actions_manager.SmabActionsManagerMOCC">SmabActionsManagerMOCC (in module pybandits.actions_manager)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.actions_manager.SmabActionsManagerSO">SmabActionsManagerSO (in module pybandits.actions_manager)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.actions_manager.SmabActionsManagerSO">SmabActionsManagerSO (in module pybandits.actions_manager)</a>
+</li>
       <li><a href="fullapi.html#pybandits.smab.SmabBernoulli">SmabBernoulli (class in pybandits.smab)</a>
 </li>
       <li><a href="fullapi.html#pybandits.smab.SmabBernoulliBAI">SmabBernoulliBAI (class in pybandits.smab)</a>
@@ -658,7 +824,15 @@
       </ul></li>
       <li><a href="fullapi.html#pybandits.model.StudentTArray">StudentTArray (class in pybandits.model)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianDoublyRobust">SubGaussianDoublyRobust (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting">SubGaussianInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
+</li>
       <li><a href="fullapi.html#pybandits.strategy.CostControlBandit.subsidy_factor">subsidy_factor (pybandits.strategy.CostControlBandit attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.SwitchDoublyRobust.switch_threshold">switch_threshold (pybandits.offline_policy_estimator.SwitchDoublyRobust attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.offline_policy_estimator.SwitchDoublyRobust">SwitchDoublyRobust (class in pybandits.offline_policy_estimator)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -705,6 +879,10 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BayesianLogisticRegression.validate_model_params">validate_model_params() (pybandits.model.BayesianLogisticRegression class method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.verbose">verbose (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.visualize">visualize (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
   </ul></td>
 </tr></table>

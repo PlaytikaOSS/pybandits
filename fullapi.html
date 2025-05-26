@@ -2466,6 +2466,838 @@ This is useful if you want to do some validation that requires the entire model 
 </dd></dl>
 
 </section>
+<section id="module-pybandits.cmab_simulator">
+<span id="pybandits-offline-policy-evaluator"></span><h2>pybandits.offline_policy_evaluator<a class="headerlink" href="#module-pybandits.cmab_simulator" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.cmab_simulator.</span></span><span class="sig-name descname"><span class="pre">CmabSimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmab</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pybandits.cmab.BaseCmabBernoulli" title="pybandits.cmab.BaseCmabBernoulli"><span class="pre">BaseCmabBernoulli</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_updates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Gt</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">gt</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Gt</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">gt</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probs_reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_prefix</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Ge</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">ge</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">visualize</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></p>
+<p>Simulate environment for contextual multi-armed bandit models.</p>
+<p>This class simulates information required by the contextual bandit. Generated data are processed by the bandit with
+batches of   size n&gt;=1. For each batch of samples, actions are recommended by the bandit and corresponding simulated
+rewards collected. Bandit policy parameters are then updated based on returned rewards from recommended actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mab</strong> (<a class="reference internal" href="#pybandits.cmab.BaseCmabBernoulli" title="pybandits.cmab.BaseCmabBernoulli"><em>BaseCmabBernoulli</em></a>) – Contextual multi-armed bandit model</p></li>
+<li><p><strong>context</strong> (<em>np.ndarray</em><em> of </em><em>shape</em><em> (</em><em>n_samples</em><em>, </em><em>n_feature</em><em>)</em>) – Context matrix of samples features.</p></li>
+<li><p><strong>group</strong> (<em>Optional</em><em>[</em><em>List</em><em>] </em><em>with length=n_samples</em>) – Group to which each sample belongs. Samples which belongs to the same group have features that come from the
+same distribution and they have the same probability to receive a positive/negative feedback from each action.
+If not supplied, all samples are assigned to the group.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.batch_size">
+<span class="sig-name descname"><span class="pre">batch_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">PositiveInt</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.batch_size" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.context">
+<span class="sig-name descname"><span class="pre">context</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.context" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.file_prefix">
+<span class="sig-name descname"><span class="pre">file_prefix</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.file_prefix" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.group">
+<span class="sig-name descname"><span class="pre">group</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.group" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.mab">
+<span class="sig-name descname"><span class="pre">mab</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#pybandits.cmab.BaseCmabBernoulli" title="pybandits.cmab.BaseCmabBernoulli"><span class="pre">BaseCmabBernoulli</span></a></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.mab" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'arbitrary_types_allowed':</span> <span class="pre">True,</span> <span class="pre">'extra':</span> <span class="pre">'forbid',</span> <span class="pre">'populate_by_name':</span> <span class="pre">True,</span> <span class="pre">'validate_by_alias':</span> <span class="pre">True,</span> <span class="pre">'validate_by_name':</span> <span class="pre">True}</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_Simulator__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.n_updates">
+<span class="sig-name descname"><span class="pre">n_updates</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">PositiveInt</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.n_updates" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.path">
+<span class="sig-name descname"><span class="pre">path</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.path" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.probs_reward">
+<span class="sig-name descname"><span class="pre">probs_reward</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">pd.DataFrame</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.probs_reward" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.random_seed">
+<span class="sig-name descname"><span class="pre">random_seed</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NonNegativeInt</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.random_seed" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">replace_nulls_and_validate_sizes_and_dtypes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">values</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.save">
+<span class="sig-name descname"><span class="pre">save</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.save" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.verbose">
+<span class="sig-name descname"><span class="pre">verbose</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.verbose" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.cmab_simulator.CmabSimulator.visualize">
+<span class="sig-name descname"><span class="pre">visualize</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pybandits.cmab_simulator.CmabSimulator.visualize" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-pybandits.offline_policy_estimator">
+<span id="pybandits-offline-policy-estimator"></span><h2>pybandits.offline_policy_estimator<a class="headerlink" href="#module-pybandits.offline_policy_estimator" title="Link to this heading"></a></h2>
+<p>Comprehensive Offline Policy Evaluation (OPE) estimators.</p>
+<p>This module provides a complete set of estimators for OPE.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">BalancedInverseProbabilityWeighting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting" title="pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting"><code class="xref py py-class docutils literal notranslate"><span class="pre">GeneralizedInverseProbabilityWeighting</span></code></a></p>
+<p>Balanced Inverse Probability Weighing estimator.</p>
+<p class="rubric">References</p>
+<p>Balanced Off-Policy Evaluation in General Action Spaces (Sondhi, Arbour, and Dimmery, 2020)
+<a class="reference external" href="https://arxiv.org/pdf/1906.03694">https://arxiv.org/pdf/1906.03694</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>defaults to 0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>defaults to 10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>defaults to None</em>) – Random seed for bootstrap sampling.</p></li>
+<li><p><strong>----------</strong></p></li>
+<li><p><strong>Sondhi</strong> (<em>Arjun</em>)</p></li>
+<li><p><strong>Arbour</strong> (<em>David</em>)</p></li>
+<li><p><strong>Dimmery</strong> (<em>and Drew</em>)</p></li>
+<li><p><strong>Spaces.&quot;</strong> (<em>&quot;Balanced Off-Policy Evaluation in General Action</em>)</p></li>
+<li><p><strong>2020.</strong></p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_importance_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>reward</strong> (<em>np.ndarray</em>) – Array of rewards corresponding to each action.</p></li>
+<li><p><strong>expected_importance_weight</strong> (<em>np.ndarray</em>) – Array of expected importance weights.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'b-ipw'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BalancedInverseProbabilityWeighting.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">BaseOfflinePolicyEstimator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">PyBanditsBaseModel</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<p>Base class for all OPE estimators.</p>
+<p>This class defines the interface for all OPE estimators and provides a common method for estimating the policy value.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.alpha">
+<span class="sig-name descname"><span class="pre">alpha</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Float_0_1</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.alpha" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_policy_value_with_confidence_interval">
+<span class="sig-name descname"><span class="pre">estimate_policy_value_with_confidence_interval</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_policy_value_with_confidence_interval" title="Link to this definition"></a></dt>
+<dd><p>Estimate the policy value with a confidence interval.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>action</strong> (<em>np.ndarray</em>) – Array of actions taken.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Estimated policy value, mean, lower bound, and upper bound of the confidence interval.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Tuple[float, float, float, float]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_sample_rewards">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Estimated sample rewards.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.n_bootstrap_samples">
+<span class="sig-name descname"><span class="pre">n_bootstrap_samples</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.n_bootstrap_samples" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.random_state">
+<span class="sig-name descname"><span class="pre">random_state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.random_state" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DirectMethod">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">DirectMethod</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.DirectMethod" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator" title="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseOfflinePolicyEstimator</span></code></a></p>
+<p>Direct Method (DM) estimator.</p>
+<p>This estimator uses the evaluation policy to Estimate the sample rewards.</p>
+<p class="rubric">References</p>
+<p>The Offset Tree for Learning with Partial Labels (Beygelzimer and Langford, 2009)
+<a class="reference external" href="https://arxiv.org/pdf/0812.4044">https://arxiv.org/pdf/0812.4044</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DirectMethod.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">estimated_policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.DirectMethod.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>estimated_policy</strong> (<em>np.ndarray</em>) – Array of action distributions.</p></li>
+<li><p><strong>expected_reward</strong> (<em>np.ndarray</em>) – Array of expected rewards.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated sample rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DirectMethod.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DirectMethod.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DirectMethod.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'dm'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DirectMethod.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobust">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">DoublyRobust</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobust" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust" title="pybandits.offline_policy_estimator.GeneralizedDoublyRobust"><code class="xref py py-class docutils literal notranslate"><span class="pre">GeneralizedDoublyRobust</span></code></a></p>
+<blockquote>
+<div><p>Doubly Robust (DR) estimator.</p>
+<p>Doubly Robust Policy Evaluation and Optimization (Dudík, Erhan, Langford, and Li, 2014)
+<a class="reference external" href="https://arxiv.org/pdf/1503.02834">https://arxiv.org/pdf/1503.02834</a></p>
+</div></blockquote>
+<p>More Robust Doubly Robust Off-policy Evaluation (Farajtabar, Chow, and Ghavamzadeh, 2018)
+<a class="reference external" href="https://arxiv.org/pdf/1802.03493">https://arxiv.org/pdf/1802.03493</a></p>
+<blockquote>
+<div><dl class="simple">
+<dt>alpha<span class="classifier">Float01, default=0.05</span></dt><dd><p>Significance level for confidence interval estimation.</p>
+</dd>
+<dt>n_bootstrap_samples<span class="classifier">int, default=10000</span></dt><dd><p>Number of bootstrap samples for confidence interval estimation.</p>
+</dd>
+<dt>random_state<span class="classifier">int, default=None</span></dt><dd><p>Random seed for bootstrap sampling.</p>
+</dd>
+</dl>
+</div></blockquote>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobust.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobust.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobust.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobust.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobust.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'dr'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobust.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">DoublyRobustWithOptimisticShrinkage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shrinkage_factor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Ge</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">ge</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.DoublyRobust" title="pybandits.offline_policy_estimator.DoublyRobust"><code class="xref py py-class docutils literal notranslate"><span class="pre">DoublyRobust</span></code></a></p>
+<p>Optimistic version of DRos estimator.</p>
+<p>This estimator uses a shrinkage factor to shrink the importance weight in the native DR.</p>
+<p class="rubric">References</p>
+<p>Doubly Robust Off-Policy Evaluation with Shrinkage (Su, Dimakopoulou, Krishnamurthy, and Dudik, 2020)
+<a class="reference external" href="https://arxiv.org/pdf/1907.09623">https://arxiv.org/pdf/1907.09623</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+<li><p><strong>shrinkage_factor</strong> (<em>float</em><em>, </em><em>default=0.0</em>) – Shrinkage factor for the importance weights.
+If set to 0 or infinity, the estimator is equivalent to the native DM or DR estimators, respectively.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'dros-opt'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.shrinkage_factor">
+<span class="sig-name descname"><span class="pre">shrinkage_factor</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Ge</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">ge</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithOptimisticShrinkage.shrinkage_factor" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">DoublyRobustWithPessimisticShrinkage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shrinkage_factor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Gt</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">gt</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">inf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.DoublyRobust" title="pybandits.offline_policy_estimator.DoublyRobust"><code class="xref py py-class docutils literal notranslate"><span class="pre">DoublyRobust</span></code></a></p>
+<p>Pessimistic version of DRos estimator.</p>
+<p>This estimator uses a shrinkage factor to shrink the importance weight in the native DR.</p>
+<p class="rubric">References</p>
+<p>Doubly Robust Off-Policy Evaluation with Shrinkage (Su, Dimakopoulou, Krishnamurthy, and Dudik, 2020)
+<a class="reference external" href="https://arxiv.org/pdf/1907.09623">https://arxiv.org/pdf/1907.09623</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+<li><p><strong>shrinkage_factor</strong> (<em>float</em><em>, </em><em>default=0.0</em>) – Shrinkage factor for the importance weights.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'dros-pess'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.shrinkage_factor">
+<span class="sig-name descname"><span class="pre">shrinkage_factor</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Gt</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">gt</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.DoublyRobustWithPessimisticShrinkage.shrinkage_factor" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedDoublyRobust">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">GeneralizedDoublyRobust</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator" title="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseOfflinePolicyEstimator</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<p>Abstract generalization of the Doubly Robust (DR) estimator.</p>
+<p class="rubric">References</p>
+<p>Doubly Robust Policy Evaluation and Optimization (Dudík, Erhan, Langford, and Li, 2014)
+<a class="reference external" href="https://arxiv.org/pdf/1503.02834">https://arxiv.org/pdf/1503.02834</a></p>
+<p>More Robust Doubly Robust Off-policy Evaluation (Farajtabar, Chow, and Ghavamzadeh, 2018)
+<a class="reference external" href="https://arxiv.org/pdf/1802.03493">https://arxiv.org/pdf/1802.03493</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedDoublyRobust.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">propensity_score</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimated_policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>action</strong> (<em>np.ndarray</em>) – Array of actions taken.</p></li>
+<li><p><strong>reward</strong> (<em>np.ndarray</em>) – Array of rewards corresponding to each action.</p></li>
+<li><p><strong>propensity_score</strong> (<em>np.ndarray</em>) – Array of propensity scores.</p></li>
+<li><p><strong>estimated_policy</strong> (<em>np.ndarray</em>) – Array of action distributions.</p></li>
+<li><p><strong>expected_reward</strong> (<em>np.ndarray</em>) – Array of expected rewards.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedDoublyRobust.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedDoublyRobust.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">GeneralizedInverseProbabilityWeighting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator" title="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseOfflinePolicyEstimator</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<p>Abstract generalization of the Inverse Probability Weighting (IPW) estimator.</p>
+<p class="rubric">References</p>
+<p>Learning from Logged Implicit Exploration Data (Strehl, Langford, Li, and Kakade, 2010)
+<a class="reference external" href="https://arxiv.org/pdf/1003.0120">https://arxiv.org/pdf/1003.0120</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shrinkage_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>reward</strong> (<em>np.ndarray</em>) – Array of rewards corresponding to each action.</p></li>
+<li><p><strong>shrinkage_method</strong> (<em>Optional</em><em>[</em><em>Callable</em><em>]</em>) – Shrinkage method for the importance weights.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated sample rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.InverseProbabilityWeighting">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">InverseProbabilityWeighting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.InverseProbabilityWeighting" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting" title="pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting"><code class="xref py py-class docutils literal notranslate"><span class="pre">GeneralizedInverseProbabilityWeighting</span></code></a></p>
+<p>Inverse Probability Weighing (IPW) estimator.</p>
+<p class="rubric">References</p>
+<p>Learning from Logged Implicit Exploration Data (Strehl, Langford, Li, and Kakade, 2010)
+<a class="reference external" href="https://arxiv.org/pdf/1003.0120">https://arxiv.org/pdf/1003.0120</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.InverseProbabilityWeighting.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">propensity_score</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimated_policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shrinkage_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.InverseProbabilityWeighting.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>action</strong> (<em>np.ndarray</em>) – Array of actions taken.</p></li>
+<li><p><strong>reward</strong> (<em>np.ndarray</em>) – Array of rewards corresponding to each action.</p></li>
+<li><p><strong>propensity_score</strong> (<em>np.ndarray</em>) – Array of propensity scores.</p></li>
+<li><p><strong>estimated_policy</strong> (<em>np.ndarray</em>) – Array of action distributions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated sample rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.InverseProbabilityWeighting.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.InverseProbabilityWeighting.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.InverseProbabilityWeighting.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'ipw'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.InverseProbabilityWeighting.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.ReplayMethod">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">ReplayMethod</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.ReplayMethod" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator" title="pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseOfflinePolicyEstimator</span></code></a></p>
+<p>Replay Method estimator.</p>
+<p>This estimator is a simple baseline that estimates the policy value by averaging the rewards of the matched samples.</p>
+<p class="rubric">References</p>
+<p>Unbiased Offline Evaluation of Contextual-bandit-based News Article Recommendation Algorithms (Li, Chu, Langford, and Wang, 2011)
+<a class="reference external" href="https://arxiv.org/pdf/1003.5956">https://arxiv.org/pdf/1003.5956</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.ReplayMethod.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimated_policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.ReplayMethod.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>action</strong> (<em>np.ndarray</em>) – Array of actions taken.</p></li>
+<li><p><strong>reward</strong> (<em>np.ndarray</em>) – Array of rewards corresponding to each action.</p></li>
+<li><p><strong>estimated_policy</strong> (<em>np.ndarray</em>) – Array of action distributions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated sample rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.ReplayMethod.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.ReplayMethod.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.ReplayMethod.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'rep'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.ReplayMethod.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">SelfNormalizedDoublyRobust</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust" title="pybandits.offline_policy_estimator.GeneralizedDoublyRobust"><code class="xref py py-class docutils literal notranslate"><span class="pre">GeneralizedDoublyRobust</span></code></a></p>
+<p>Self-Normalized Doubly Robust (SNDR) estimator.</p>
+<p>This estimator uses the self-normalized importance weights to combine the DR and IPS estimators.</p>
+<p class="rubric">References</p>
+<p>Intrinsically Efficient, Stable, and Bounded Off-Policy Evaluation for Reinforcement Learning (Kallus and Uehara, 2019)
+<a class="reference external" href="https://arxiv.org/pdf/1906.03735">https://arxiv.org/pdf/1906.03735</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'sndr'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">SelfNormalizedInverseProbabilityWeighting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.InverseProbabilityWeighting" title="pybandits.offline_policy_estimator.InverseProbabilityWeighting"><code class="xref py py-class docutils literal notranslate"><span class="pre">InverseProbabilityWeighting</span></code></a></p>
+<p>Self-Normalized Inverse Propensity Score (SNIPS) estimator.</p>
+<p class="rubric">References</p>
+<p>The Self-normalized Estimator for Counterfactual Learning (Swaminathan and Joachims, 2015)
+<a class="reference external" href="https://papers.nips.cc/paper_files/paper/2015/file/39027dfad5138c9ca0c474d71db915c3-Paper.pdf">https://papers.nips.cc/paper_files/paper/2015/file/39027dfad5138c9ca0c474d71db915c3-Paper.pdf</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.estimate_sample_rewards">
+<span class="sig-name descname"><span class="pre">estimate_sample_rewards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">propensity_score</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimated_policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shrinkage_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.estimate_sample_rewards" title="Link to this definition"></a></dt>
+<dd><p>Estimate the sample rewards.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>action</strong> (<em>np.ndarray</em>) – Array of actions taken.</p></li>
+<li><p><strong>reward</strong> (<em>np.ndarray</em>) – Array of rewards corresponding to each action.</p></li>
+<li><p><strong>propensity_score</strong> (<em>np.ndarray</em>) – Array of propensity scores.</p></li>
+<li><p><strong>estimated_policy</strong> (<em>np.ndarray</em>) – Array of action distributions.</p></li>
+<li><p><strong>shrinkage_method</strong> (<em>Optional</em><em>[</em><em>Callable</em><em>]</em>) – Shrinkage method for the importance weights.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sample_reward</strong> – Estimated sample rewards.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'snips'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SelfNormalizedInverseProbabilityWeighting.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianDoublyRobust">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">SubGaussianDoublyRobust</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianDoublyRobust" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.GeneralizedDoublyRobust" title="pybandits.offline_policy_estimator.GeneralizedDoublyRobust"><code class="xref py py-class docutils literal notranslate"><span class="pre">GeneralizedDoublyRobust</span></code></a></p>
+<p>SubGaussian Doubly Robust estimator.</p>
+<p class="rubric">References</p>
+<p>Subgaussian and Differentiable Importance Sampling for Off-Policy Evaluation and Learning (Metelli, Russo, and Restelli, 2021)
+<a class="reference external" href="https://proceedings.neurips.cc/paper_files/paper/2021/file/4476b929e30dd0c4e8bdbcc82c6ba23a-Paper.pdf">https://proceedings.neurips.cc/paper_files/paper/2021/file/4476b929e30dd0c4e8bdbcc82c6ba23a-Paper.pdf</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>defaults to 0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>defaults to 10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>defaults to None</em>) – Random seed for bootstrap sampling.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianDoublyRobust.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianDoublyRobust.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianDoublyRobust.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianDoublyRobust.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianDoublyRobust.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'sg-dr'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianDoublyRobust.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">SubGaussianInverseProbabilityWeighting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shrinkage_factor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.InverseProbabilityWeighting" title="pybandits.offline_policy_estimator.InverseProbabilityWeighting"><code class="xref py py-class docutils literal notranslate"><span class="pre">InverseProbabilityWeighting</span></code></a></p>
+<p>SubGaussian Inverse Probability Weighing estimator.</p>
+<p class="rubric">References</p>
+<p>Subgaussian and Differentiable Importance Sampling for Off-Policy Evaluation and Learning (Metelli, Russo, and Restelli, 2021)
+<a class="reference external" href="https://proceedings.neurips.cc/paper_files/paper/2021/file/4476b929e30dd0c4e8bdbcc82c6ba23a-Paper.pdf">https://proceedings.neurips.cc/paper_files/paper/2021/file/4476b929e30dd0c4e8bdbcc82c6ba23a-Paper.pdf</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>defaults to 0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>defaults to 10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>int</em><em>, </em><em>defaults to None</em>) – Random seed for bootstrap sampling.</p></li>
+<li><p><strong>shrinkage_factor</strong> (<em>Float01</em><em>, </em><em>defaults to 0.0</em>) – Shrinkage factor for the importance weights.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'sg-ipw'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.shrinkage_factor">
+<span class="sig-name descname"><span class="pre">shrinkage_factor</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Float_0_1</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting.shrinkage_factor" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SwitchDoublyRobust">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pybandits.offline_policy_estimator.</span></span><span class="sig-name descname"><span class="pre">SwitchDoublyRobust</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Float_0_1</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bootstrap_samples</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">switch_threshold</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">inf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.offline_policy_estimator.SwitchDoublyRobust" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pybandits.offline_policy_estimator.DoublyRobust" title="pybandits.offline_policy_estimator.DoublyRobust"><code class="xref py py-class docutils literal notranslate"><span class="pre">DoublyRobust</span></code></a></p>
+<p>Switch Doubly Robust (Switch-DR) estimator.</p>
+<p>This estimator uses a switching rule based on the propensity score to combine the DR and IPS estimators.</p>
+<p class="rubric">References</p>
+<p>Optimal and Adaptive Off-policy Evaluation in Contextual Bandits (Wang, Agarwal, and Dudik, 2017)
+<a class="reference external" href="https://arxiv.org/pdf/1507.02646">https://arxiv.org/pdf/1507.02646</a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alpha</strong> (<em>Float01</em><em>, </em><em>default=0.05</em>) – Significance level for confidence interval estimation.</p></li>
+<li><p><strong>n_bootstrap_samples</strong> (<em>int</em><em>, </em><em>default=10000</em>) – Number of bootstrap samples for confidence interval estimation.</p></li>
+<li><p><strong>random_state</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em><em>, </em><em>default=None</em>) – Random seed for bootstrap sampling.</p></li>
+<li><p><strong>switch_threshold</strong> (<em>float</em><em>, </em><em>default=inf</em>) – Threshold for the importance weight to switch between the DR and IPS estimators.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SwitchDoublyRobust.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'extra':</span> <span class="pre">'forbid'}</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SwitchDoublyRobust.model_config" title="Link to this definition"></a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SwitchDoublyRobust.model_post_init">
+<span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_GeneralizedDoublyRobust__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.offline_policy_estimator.SwitchDoublyRobust.model_post_init" title="Link to this definition"></a></dt>
+<dd><p>Override this method to perform additional initialization after <cite>__init__</cite> and <cite>model_construct</cite>.
+This is useful if you want to do some validation that requires the entire model to be initialized.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SwitchDoublyRobust.name">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'switch-dr'</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SwitchDoublyRobust.name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.offline_policy_estimator.SwitchDoublyRobust.switch_threshold">
+<span class="sig-name descname"><span class="pre">switch_threshold</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#pybandits.offline_policy_estimator.SwitchDoublyRobust.switch_threshold" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
 </section>
 
 
