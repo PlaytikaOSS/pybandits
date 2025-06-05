@@ -65,4 +65,6 @@ MANIFEST
 
 # poetry
 poetry.lock
+
+# qodo gen
 .qodo

@@ -1,25 +1,32 @@
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
-from inspect import isclass
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type, TypeVar, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
 
-from pybandits.base import ACTION_IDS_PREFIX, ACTIONS, ActionId, BinaryReward, PositiveProbability, PyBanditsBaseModel
+from pybandits.base import (
+    ACTION_IDS_PREFIX,
+    QUANTITATIVE_ACTION_IDS_PREFIX,
+    ActionId,
+    BinaryReward,
+    PositiveProbability,
+    PyBanditsBaseModel,
+)
+from pybandits.base_model import BaseModel, BaseModelMO, BaseModelSO
 from pybandits.model import (
-    BaseModel,
+    BaseBayesianNeuralNetwork,
+    BaseBeta,
+    BaseBetaMO,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
     Beta,
     BetaCC,
     BetaMO,
     BetaMOCC,
-    CmabModelType,
     Model,
     ModelMO,
-    SmabModelType,
 )
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
@@ -31,7 +38,16 @@ from pybandits.pydantic_version_compatibility import (
     pydantic_version,
     validate_call,
 )
-from pybandits.utils import extract_argument_names_from_function
+from pybandits.quantitative_model import (
+    BaseCmabZoomingModel,
+    BaseSmabZoomingModel,
+    CmabZoomingModel,
+    CmabZoomingModelCC,
+    QuantitativeModel,
+    SmabZoomingModel,
+    SmabZoomingModelCC,
+)
+from pybandits.utils import classproperty, extract_argument_names_from_function
 
 
 class ActionsManager(PyBanditsBaseModel, ABC):
@@ -103,16 +119,11 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         if not actions:
             raise AttributeError("At least one action should be defined.")
         reference_model = list(actions.values())[0]
-        if isinstance(reference_model, Model):
+        if isinstance(reference_model, BaseModelSO):
+            expected_memory_length_for_inf = sum([action_model.count - 2 for action_model in actions.values()])
+        elif isinstance(reference_model, BaseModelMO):
             expected_memory_length_for_inf = sum(
-                [action_model.n_successes + action_model.n_failures - 2 for action_model in actions.values()]
-            )
-        elif isinstance(reference_model, ModelMO):
-            expected_memory_length_for_inf = sum(
-                [
-                    action_model.models[0].n_successes + action_model.models[0].n_failures - 2
-                    for action_model in actions.values()
-                ]
+                [action_model.models[0].count - 2 for action_model in actions.values()]
             )
         else:
             raise ValueError(f"Model type {type(reference_model)} not supported.")
@@ -123,13 +134,21 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         delta: Optional[PositiveProbability] = None,
         actions: Optional[Dict[ActionId, Model]] = None,
         action_ids: Optional[Set[ActionId]] = None,
+        quantitative_action_ids: Optional[Set[ActionId]] = None,
         kwargs: Optional[Dict[str, Any]] = None,
     ):
-        actions = self._instantiate_actions(actions=actions, action_ids=action_ids, kwargs=kwargs)
+        kwargs = kwargs or {}
+        actions = self._instantiate_actions(
+            actions=actions, action_ids=action_ids, quantitative_action_ids=quantitative_action_ids, kwargs=kwargs
+        )
         super().__init__(actions=actions, delta=delta)
 
     def _validate_update_params(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        **kwargs,
     ):
         """
         Verify that the given list of action IDs is a subset of the currently defined actions and that
@@ -141,38 +160,38 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         """
         invalid = set(actions) - set(self.actions.keys())
         if invalid:
             raise AttributeError(f"The following invalid action(s) were specified: {invalid}.")
-        self._validate_params_lengths(actions=actions, rewards=rewards, **kwargs)
-
-    @classmethod
-    def _validate_matching_keys(cls, update_kwargs: Dict[str, Any], memory_kwargs: Dict[str, Any]):
-        """
-        Verify that the keys in the update kwargs and memory kwargs match.
-
-        Parameters
-        ----------
-        update_kwargs : Dict[str, Any]
-            The update kwargs.
-        memory_kwargs : Dict[str, Any]
-            The memory kwargs.
-        """
-        stripped_memory_keys = {k.split(cls._memory_parameters_suffix)[0] for k in memory_kwargs.keys()}
-        update_keys = set(update_kwargs.keys())
-        if stripped_memory_keys != update_keys:
-            raise AttributeError(f"Update and memory kwargs should have the same keys: {update_keys}.")
+        self._validate_params_lengths(actions=actions, rewards=rewards, quantities=quantities, **kwargs)
+        if quantities is None:
+            if not all(isinstance(self.actions[action], (Model, ModelMO)) for action in actions):
+                raise ValueError("Quantitative actions require defined quantities.")
+        else:
+            if not all(
+                q is not None for a, q in zip(actions, quantities) if isinstance(self.actions[a], QuantitativeModel)
+            ):
+                raise ValueError("Quantitative actions require defined quantities.")
+            if not all(q is None for a, q in zip(actions, quantities) if isinstance(self.actions[a], (Model, ModelMO))):
+                raise ValueError("regular actions should not have defined quantities.")
 
     @classmethod
     def _to_memory_key(cls, key: str) -> str:
         return f"{key}{cls._memory_parameters_suffix}"
+
+    @classmethod
+    def _to_key(cls, key: str) -> str:
+        return key.replace(cls._memory_parameters_suffix, "")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
         **kwargs,
@@ -187,6 +206,8 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
         rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
@@ -201,7 +222,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
 
         update_kwargs = {k: v for k, v in kwargs.items() if not k.endswith(self._memory_parameters_suffix)}
         memory_kwargs = {k: v for k, v in kwargs.items() if k.endswith(self._memory_parameters_suffix)}
-        self._validate_update_params(actions, rewards, **update_kwargs)
+        self._validate_update_params(actions, rewards, quantities, **update_kwargs)
         self._validate_params_lengths(actions_memory=actions_memory, rewards_memory=rewards_memory, **memory_kwargs)
         update_keys = tuple(update_kwargs.keys())
 
@@ -235,15 +256,52 @@ class ActionsManager(PyBanditsBaseModel, ABC):
                 )
 
                 for action_model in self.actions.values():
-                    action_model.reset()
-                stripped_memory_kwargs = {
-                    k[: -len(self._memory_parameters_suffix)]: v for k, v in memory_kwargs.items()
-                }
-                self._update_actions(actions_memory, rewards_memory, **stripped_memory_kwargs)
+                    if not isinstance(action_model, QuantitativeModel):
+                        action_model.reset()
+                regular_actions = [a for a in actions if not isinstance(self.actions[a], QuantitativeModel)]
+                quantitative_actions = [a for a in actions if isinstance(self.actions[a], QuantitativeModel)]
+
+                if regular_actions:
+                    regular_rewards = [
+                        r
+                        for a, r in zip(actions_memory, rewards_memory)
+                        if not isinstance(self.actions[a], QuantitativeModel)
+                    ]
+                    filtered_update_kwargs = {
+                        self._to_key(k): [
+                            v
+                            for a, v in zip(actions_memory, values)
+                            if not isinstance(self.actions[a], QuantitativeModel)
+                        ]
+                        if isinstance(values, list)
+                        else values
+                        for k, values in memory_kwargs.items()
+                    }
+                    self._update_actions(regular_actions, regular_rewards, None, **filtered_update_kwargs)
+
+                if quantitative_actions:
+                    filtered_quantitative_kwargs = {
+                        k: [v for a, v in zip(actions, values) if isinstance(self.actions[a], QuantitativeModel)]
+                        if isinstance(values, list)
+                        else values
+                        for k, values in update_kwargs.items()
+                    }
+                    quantitative_rewards = [
+                        r for a, r in zip(actions, rewards) if isinstance(self.actions[a], QuantitativeModel)
+                    ]
+                    quantitative_quantities = [
+                        q for a, q in zip(actions, quantities) if isinstance(self.actions[a], QuantitativeModel)
+                    ]
+                    self._update_actions(
+                        quantitative_actions,
+                        quantitative_rewards,
+                        quantitative_quantities,
+                        **filtered_quantitative_kwargs,
+                    )
             else:
-                self._update_actions(actions, rewards, **update_kwargs)
+                self._update_actions(actions, rewards, quantities, **update_kwargs)
         else:
-            self._update_actions(actions, rewards, **update_kwargs)
+            self._update_actions(actions, rewards, quantities, **update_kwargs)
 
     @staticmethod
     def _slice_memory(
@@ -384,7 +442,11 @@ class ActionsManager(PyBanditsBaseModel, ABC):
 
     @abstractmethod
     def _update_actions(
-        self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]],
+        **kwargs,
     ):
         """
         Update the models associated with the given actions using the provided rewards.
@@ -395,8 +457,9 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         """
-        pass
 
     def _get_last_change_point(
         self,
@@ -429,6 +492,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
                 rewards_memory=rewards_memory,
             )
             for action_id in self.actions.keys()
+            if not isinstance(self.actions[action_id], QuantitativeModel)
         ]
 
         return max(change_points)
@@ -553,11 +617,11 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The number of trials for the given action for each of the objectives.
         """
         action_model = self.actions[action_id]
-        if isinstance(action_model, Model):
+        if isinstance(action_model, BaseModelSO):
             current_sum = np.array([action_model.n_successes - 1]).reshape((1, -1))
             current_trials = np.array([action_model.count - 2]).reshape((1, -1))
 
-        elif isinstance(action_model, ModelMO):
+        elif isinstance(action_model, BaseModelMO):
             current_sum = np.array([model.n_successes - 1 for model in action_model.models]).reshape((1, -1))
             current_trials = np.array([model.count - 2 for model in action_model.models]).reshape((1, -1))
         else:
@@ -566,7 +630,11 @@ class ActionsManager(PyBanditsBaseModel, ABC):
 
     @classmethod
     def _instantiate_actions(
-        cls, actions: Optional[Dict[ActionId, Model]], action_ids: Optional[Set[ActionId]], kwargs
+        cls,
+        actions: Optional[Dict[ActionId, Model]],
+        action_ids: Optional[Set[ActionId]],
+        quantitative_action_ids: Optional[Set[ActionId]],
+        kwargs: Dict[str, Any],
     ):
         """
         Utility function to instantiate the action models based on the provided kwargs.
@@ -577,6 +645,8 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The list of possible actions and their associated models.
         action_ids : Optional[Set[ActionId]]
             The list of possible actions.
+        quantitative_action_ids : Optional[Set[ActionId]]
+            The list of quantitative actions.
         kwargs : Dict[str, Any]
             Additional parameters for the mab and for the action model.
 
@@ -586,32 +656,37 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             Dictionary of actions and the parameters of their associated model.
         """
         if actions is None:
-            action_specific_kwargs = cls._extract_action_specific_kwargs(kwargs)
+            action_specific_kwargs, quantitative_action_specific_kwargs = cls._extract_action_specific_kwargs(kwargs)
 
             # Extract inner_action_ids
-            inner_action_ids = action_ids or set(action_specific_kwargs.keys())
-            if not inner_action_ids:
-                raise ValueError(
-                    "inner_action_ids should be provided either directly or via keyword argument in the form of "
-                    "action_id_{model argument name} = {action_id: value}."
-                )
-            action_model_start = cls._get_action_model_start_method(True)
-            action_general_kwargs = cls._extract_action_model_class_and_attributes(kwargs, action_model_start)
-            actions = {}
-            for a in inner_action_ids:
-                actions[a] = action_model_start(**action_general_kwargs, **action_specific_kwargs.get(a, {}))
+            inner_action_ids = action_ids or set(action_specific_kwargs)
+            inner_quantitative_action_ids = quantitative_action_ids or set(quantitative_action_specific_kwargs)
+            if not inner_action_ids and not inner_quantitative_action_ids:
+                raise ValueError("At least one action should be defined.")
 
-        if all(isinstance(potential_model, Dict) for potential_model in actions.values()):
-            action_model_start = cls._get_action_model_start_method(False)
-            state_actions = actions.copy()
+            # Assign model for each action
+            (
+                model_cold_start,
+                quantitative_model_cold_start,
+                action_general_kwargs,
+                quantitative_action_general_kwargs,
+            ) = cls._extract_action_model_class_and_attributes(kwargs)
+
+            # Instantiate the actions
             actions = {}
-            for action_id, action_state in state_actions.items():
-                actions[action_id] = action_model_start(**action_state)
+            for action_ids, cold_start, general_kwargs, specific_kwargs in zip(
+                [inner_action_ids, inner_quantitative_action_ids],
+                [model_cold_start, quantitative_model_cold_start],
+                [action_general_kwargs, quantitative_action_general_kwargs],
+                [action_specific_kwargs, quantitative_action_specific_kwargs],
+            ):
+                for a in action_ids:
+                    actions[a] = cold_start(**general_kwargs, **specific_kwargs.get(a, {}))
 
         return actions
 
     @staticmethod
-    def _extract_action_specific_kwargs(kwargs) -> Dict[ActionId, Dict]:
+    def _extract_action_specific_kwargs(kwargs: Dict[str, Any]) -> Tuple[Dict[str, Dict], Dict[str, Dict]]:
         """
         Utility function to extract kwargs that are specific for each action when constructing the action model.
 
@@ -624,26 +699,30 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         -------
         action_specific_kwargs : Dict[str, Dict]
             Dictionary of actions and the parameters of their associated model.
+        quantitative_action_specific_kwargs : Dict[str, Dict]
+            Dictionary of quantitative actions and the parameters of their associated model.
         kwargs : Dict[str, Any]
-            Dictionary of parameters and their values, without the action_specific_kwargs.
+            Dictionary of parameters and their quantities, without the action_specific_kwargs.
         """
         action_specific_kwargs = defaultdict(dict)
-        for keyword in list(kwargs.keys()):
+        quantitative_action_specific_kwargs = defaultdict(dict)
+        for keyword in list(kwargs):
             argument = kwargs[keyword]
-            if keyword.startswith(ACTION_IDS_PREFIX) and type(argument) is dict:
-                kwargs.pop(keyword)
-                inner_keyword = keyword.split(ACTION_IDS_PREFIX)[1]
-                for action_id, value in argument.items():
-                    action_specific_kwargs[action_id][inner_keyword] = value
-            if keyword == ACTIONS and type(argument) is dict:
-                kwargs.pop(keyword)
-                action_specific_kwargs.update(argument)
-        return dict(action_specific_kwargs)
+            for prefix, target_kwargs in zip(
+                [ACTION_IDS_PREFIX, QUANTITATIVE_ACTION_IDS_PREFIX],
+                [action_specific_kwargs, quantitative_action_specific_kwargs],
+            ):
+                if keyword.startswith(prefix) and type(argument) is dict:
+                    kwargs.pop(keyword)
+                    inner_keyword = keyword.split(prefix)[1]
+                    for action_id, value in argument.items():
+                        target_kwargs[action_id][inner_keyword] = value
+        return dict(action_specific_kwargs), dict(quantitative_action_specific_kwargs)
 
     @classmethod
     def _extract_action_model_class_and_attributes(
-        cls, kwargs: Dict[str, Any], action_model_start: Callable
-    ) -> Dict[str, Dict]:
+        cls, kwargs
+    ) -> Tuple[Callable, Callable, Dict[str, Dict], Dict[str, Dict]]:
         """
         Utility function to extract kwargs that are specific for each action when constructing the action model.
 
@@ -651,32 +730,68 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         ----------
         kwargs : Dict[str, Any]
             Additional parameters for the mab and for the action model.
-        action_model_start : Callable
-            Function handle for the action model start: either cold start or init.
 
         Returns
         -------
         action_model_cold_start : Callable
             Function handle for factoring the required action model.
+        quantitative_action_model_cold_start : Callable
+            Function handle for factoring the required quantitative action model.
         action_general_kwargs : Dict[str, any]
             Dictionary of parameters and their values for the action model.
+        quantitative_action_general_kwargs : Dict[str, any]
+            Dictionary of parameters and their values for the quantitative action model.
         """
-        if isclass(action_model_start):
-            action_model_attributes = list(action_model_start.model_fields.keys())
-        else:
-            action_model_attributes = extract_argument_names_from_function(action_model_start, True)
+        action_model_classes = cls._action_model_classes
+        if len(action_model_classes) > 2:
+            raise ValueError("Only up to two types of action models are supported.")
+        quantitative_model_cold_start = model_cold_start = lambda **kwargs: None  # dummy callable
+        action_general_kwargs = quantitative_action_general_kwargs = None
+        for action_model_class in action_model_classes:
+            if hasattr(action_model_class, "cold_start"):
+                action_model_cold_start = action_model_class.cold_start
+                action_model_attributes = extract_argument_names_from_function(action_model_cold_start)
+                # cover for cold_start kwargs
+                action_model_attributes = action_model_attributes + extract_argument_names_from_function(
+                    action_model_class
+                )
+            else:
+                action_model_cold_start = action_model_class
+                action_model_attributes = extract_argument_names_from_function(action_model_cold_start)
+            general_kwargs = {k: kwargs.pop(k) for k in action_model_attributes if k in kwargs.keys()}
 
-        action_general_kwargs = {k: kwargs.pop(k) for k in action_model_attributes if k in kwargs.keys()}
-        return action_general_kwargs
+            if issubclass(action_model_class, (Model, ModelMO)):
+                model_cold_start = action_model_cold_start
+                action_general_kwargs = general_kwargs
+            elif issubclass(action_model_class, QuantitativeModel):
+                quantitative_model_cold_start = action_model_cold_start
+                quantitative_action_general_kwargs = general_kwargs
+            else:
+                raise TypeError(f"Unsupported action model class: {action_model_class}")
 
-    @classmethod
-    def _get_action_model_start_method(cls, cold_start_mode: bool) -> Callable:
-        action_model_class = cls._get_field_type("actions")
-        if cold_start_mode and hasattr(action_model_class, "cold_start"):
-            action_model_start = action_model_class.cold_start
-        else:
-            action_model_start = action_model_class
-        return action_model_start
+        return (
+            model_cold_start,
+            quantitative_model_cold_start,
+            action_general_kwargs,
+            quantitative_action_general_kwargs,
+        )
+
+    @classproperty
+    def _action_model_classes(cls) -> Tuple[Type[BaseModel], ...]:
+        """
+        Utility function to extract the action model classes from the actions field.
+
+        Returns
+        -------
+        action_model_classes : Tuple[Type[BaseModel],...]
+            Tuple of action model classes.
+        """
+        action_model_type = cls._get_field_type("actions")
+        action_model_classes = action_model_type if isinstance(action_model_type, tuple) else (action_model_type,)
+        return action_model_classes
+
+
+SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BaseBetaMO, BaseSmabZoomingModel])
 
 
 class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
@@ -707,6 +822,7 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]],
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
     ):
@@ -720,32 +836,62 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
         rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
             List of previously collected rewards.
         """
-        super().update(actions, rewards, actions_memory, rewards_memory)
+        super().update(actions, rewards, quantities, actions_memory, rewards_memory)
 
-    def _update_actions(self, actions: List[ActionId], rewards: Union[List[BinaryReward], List[List[BinaryReward]]]):
+    def _update_actions(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]],
+    ):
         """
-        Update the models associated with the given actions using the provided rewards.
+        Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
+        rewards.
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
-            The reward for each sample.
+        rewards : Union[List[BinaryReward], List[List[BinaryReward]]],
+            if nested list, len() should follow shape of (n_samples, n_objectives)
+            The binary reward for each sample.
+                If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
+                    rewards = [1, 0, 1, 1, 1, ...]
+                If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
+                    rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         """
 
         rewards_dict = defaultdict(list)
 
-        for a, r in zip(actions, rewards):
-            rewards_dict[a].append(r)
+        if quantities is None:
+            for a, r in zip(actions, rewards):
+                rewards_dict[a].append(r)
+            for a in set(actions):
+                self.actions[a].update(rewards=rewards_dict[a])
+        else:
+            quantities = quantities[-len(actions) :]
+            quantities_dict = defaultdict(list)
+            for a, v, r in zip(actions, quantities, rewards):
+                if v is not None:
+                    quantities_dict[a].append(v)
+                rewards_dict[a].append(r)
+            for a in set(actions):
+                if quantities_dict[a]:  # quantitative action
+                    self.actions[a].update(rewards=rewards_dict[a], quantities=quantities_dict[a])
+                else:  # non-quantitative action
+                    self.actions[a].update(rewards=rewards_dict[a])
 
-        for a in set(actions):
-            self.actions[a].update(rewards=rewards_dict[a])
+
+CmabModelType = TypeVar("CmabModelType", bound=Union[BaseBayesianNeuralNetwork, BaseCmabZoomingModel])
 
 
 class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
@@ -755,7 +901,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
     Parameters
     ----------
-    actions : Dict[ActionId, BayesianLogisticRegression]
+    actions : Dict[ActionId, BaseBayesianNeuralNetwork]
         The list of possible actions, and their associated Model.
     delta : Optional[PositiveProbability], 0.1 if not specified.
         The confidence level for the adaptive window.
@@ -763,20 +909,23 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
     actions: Dict[ActionId, CmabModelType]
 
+    @staticmethod
+    def _maybe_crawl_model(model: Union[BaseBayesianNeuralNetwork, BaseCmabZoomingModel]):
+        return list(model.sub_actions.values())[0] if isinstance(model, BaseCmabZoomingModel) else model
+
     @field_validator("actions", mode="after")
     @classmethod
-    def check_bayesian_neural_network_models(cls, v):
+    def check_models(cls, v):
         action_models = list(v.values())
         first_action = action_models[0]
-        first_action_type = type(first_action)
+        test_first_action = cls._maybe_crawl_model(first_action)
         for action in action_models[1:]:
-            if not isinstance(action, first_action_type):
-                raise TypeError("All actions should follow the same type.")
-            if not action.input_dim == first_action.input_dim:
+            test_action = cls._maybe_crawl_model(action)
+            if not test_first_action.input_dim == test_action.input_dim:
                 raise AttributeError("All actions should have the same input size.")
-            if not action.update_method == first_action.update_method:
+            if not test_first_action.update_method == test_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
-            if not action.update_kwargs == first_action.update_kwargs:
+            if not test_first_action.update_kwargs == test_action.update_kwargs:
                 raise AttributeError("All actions should have the same update kwargs.")
         return v
 
@@ -785,6 +934,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]],
         context: ArrayLike,
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
@@ -800,6 +950,8 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
             The selected action for each sample.
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
             The reward for each sample.
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         context: ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
         actions_memory : Optional[List[ActionId]]
@@ -815,7 +967,15 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
             context_memory = self._check_context_matrix(context_memory)
             if context.shape[1] != context_memory.shape[1]:
                 raise ValueError("Context memory must have the same number of features as the context.")
-        super().update(actions, rewards, actions_memory, rewards_memory, context=context, context_memory=context_memory)
+        super().update(
+            actions=actions,
+            rewards=rewards,
+            quantities=quantities,
+            context=context,
+            actions_memory=actions_memory,
+            rewards_memory=rewards_memory,
+            context_memory=context_memory,
+        )
 
     @staticmethod
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -843,6 +1003,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]],
         context: np.ndarray,
     ):
         """
@@ -850,31 +1011,53 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : List[UnifiedActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
-            The reward for each sample.
+        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+            The binary reward for each sample.
+                If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
+                    rewards = [1, 0, 1, 1, 1, ...]
+                If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
+                    rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         context: np.ndarray of shape (n_samples, n_features)
             Matrix of contextual features.
         """
-        # cast inputs to numpy arrays to facilitate their manipulation
         context = context[-len(actions) :]
+
         rewards_dict = defaultdict(list)
         context_dict = defaultdict(list)
+        if quantities is None:
+            for a, r, c in zip(actions, rewards, context):
+                rewards_dict[a].append(r)
+                context_dict[a].append(c)
 
-        for a, r, c in zip(actions, rewards, context):
-            rewards_dict[a].append(r)
-            context_dict[a].append(c)
+            for a in set(actions):
+                self.actions[a].update(rewards=rewards_dict[a], context=np.array(context_dict[a]))
 
-        for a in set(actions):
-            self.actions[a].update(rewards=rewards_dict[a], context=np.array(context_dict[a]))
+        else:
+            quantities = quantities[-len(actions) :]
+            quantities_dict = defaultdict(list)
+            for a, r, c, q in zip(actions, rewards, context, quantities):
+                rewards_dict[a].append(r)
+                context_dict[a].append(c)
+                quantities_dict[a].append(q)
+
+            for a in set(actions):
+                if any(quantities_dict[a]):  # quantitative action
+                    self.actions[a].update(
+                        context=np.array(context_dict[a]), rewards=rewards_dict[a], quantities=quantities_dict[a]
+                    )
+                else:  # non-quantitative action
+                    self.actions[a].update(context=np.array(context_dict[a]), rewards=rewards_dict[a])
 
 
 # For pickling purposes
-SmabActionsManagerSO = SmabActionsManager[Beta]
-SmabActionsManagerCC = SmabActionsManager[BetaCC]
+SmabActionsManagerSO = SmabActionsManager[Union[Beta, SmabZoomingModel]]
+SmabActionsManagerCC = SmabActionsManager[Union[BetaCC, SmabZoomingModelCC]]
 SmabActionsManagerMO = SmabActionsManager[BetaMO]
 SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
-CmabActionsManagerSO = CmabActionsManager[BayesianNeuralNetwork]
-CmabActionsManagerCC = CmabActionsManager[BayesianNeuralNetworkCC]
+CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]]
+CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, CmabZoomingModelCC]]

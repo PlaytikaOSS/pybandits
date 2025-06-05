@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from copy import deepcopy
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -29,9 +30,12 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic.dataclasses import dataclass
 
+from pybandits.actions_manager import SmabModelType
 from pybandits.base import ActionId, Float01, PositiveProbability
-from pybandits.model import BaseBeta, Beta, BetaCC, BetaMO, BetaMOCC
+from pybandits.base_model import BaseModel
+from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
 from pybandits.pydantic_version_compatibility import PositiveInt, ValidationError
+from pybandits.quantitative_model import QuantitativeModel, SmabZoomingModel, SmabZoomingModelCC
 from pybandits.smab import (
     BaseSmabBernoulli,
     SmabBernoulli,
@@ -60,13 +64,13 @@ def cost_strategy(draw, n_actions):
     return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
-def mock_update(models: List[BaseBeta], diff, monkeymodule, label=0):
+def mock_update(models: List[SmabModelType], diff, monkeymodule, label=0):
     for model in models:
         for field in model.model_fields:
             if field in ("n_successes", "n_failures"):
                 monkeymodule.setattr(model, field, getattr(model, field) + diff.draw(diff_strategy(), label=f"{label}"))
                 label += 1
-            elif isinstance(sub_models := getattr(model, field), list) and isinstance(sub_models[0], BaseBeta):
+            elif isinstance(sub_models := getattr(model, field), list) and isinstance(sub_models[0], BaseModel):
                 mock_update(sub_models, diff, monkeymodule, label)
 
 
@@ -74,7 +78,11 @@ def mock_update(models: List[BaseBeta], diff, monkeymodule, label=0):
 class ModelTestConfig:
     smab_class: Type
     strategy_class: Type
-    model_types: List[Union[Type[BaseBeta], Type[BetaMO]]]
+    model_types: List[Type[SmabModelType]]
+
+    @staticmethod
+    def _quantitative_cost(x, cost):
+        return x**cost
 
     def _create_actions(
         self, action_ids: List[str], costs: Optional[st.SearchStrategy], n_objectives: Optional[PositiveInt]
@@ -82,11 +90,11 @@ class ModelTestConfig:
         if len(self.model_types) < len(action_ids):
             indices = np.random.randint(0, len(self.model_types), len(action_ids))
             self.model_types = [self.model_types[i] for i in indices]
-        if all(model in [BetaCC, BetaMOCC] for model in self.model_types):
+        if all(model in [BetaCC, SmabZoomingModelCC, BetaMOCC] for model in self.model_types):
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
-                cost if model_type in [BetaCC, BetaMOCC] else lambda x: x**cost
+                cost if model_type in [BetaCC, BetaMOCC] else partial(self._quantitative_cost, cost=cost)
                 for cost, model_type in zip(costs, self.model_types)
             ]
         else:
@@ -96,10 +104,17 @@ class ModelTestConfig:
             if costs is not None:
                 return {
                     action_id: model_type(cost=cost)
+                    if issubclass(model_type, BetaCC)
+                    else model_type.cold_start(dimension=1, cost=cost)  # SmabZoomingModelCC
                     for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
                 }
             else:
-                return {action_id: model_type() for action_id, model_type in zip(action_ids, self.model_types)}
+                return {
+                    action_id: model_type()
+                    if issubclass(model_type, Beta)
+                    else model_type.cold_start(dimension=1)  # SmabZoomingModel
+                    for action_id, model_type in zip(action_ids, self.model_types)
+                }
         else:
             if costs is not None:
                 return {
@@ -121,7 +136,7 @@ class ModelTestConfig:
         n_objectives: st.SearchStrategy[PositiveInt],
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
-    ) -> Tuple[BaseSmabBernoulli, Dict[ActionId, BaseBeta], Dict[str, Any]]:
+    ) -> Tuple[BaseSmabBernoulli, Dict[ActionId, SmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
             if self.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]
@@ -129,6 +144,8 @@ class ModelTestConfig:
         )
         actions = self._create_actions(action_ids, costs, n_objectives)
         default_action = action_ids[0] if epsilon and not delta else None
+        if default_action and isinstance(self.model_types[0], QuantitativeModel):
+            default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
         epsilon = epsilon if not delta else 0.1
         kwargs = {
             k: v
@@ -156,12 +173,12 @@ class ModelTestConfig:
 
 
 TEST_CONFIGS = {
-    "smab": ModelTestConfig(SmabBernoulli, ClassicBandit, [Beta]),
-    "smab_bai": ModelTestConfig(SmabBernoulliBAI, BestActionIdentificationBandit, [Beta]),
+    "smab": ModelTestConfig(SmabBernoulli, ClassicBandit, [Beta, SmabZoomingModel]),
+    "smab_bai": ModelTestConfig(SmabBernoulliBAI, BestActionIdentificationBandit, [Beta, SmabZoomingModel]),
     "smab_cc": ModelTestConfig(
         SmabBernoulliCC,
         CostControlBandit,
-        [BetaCC],
+        [BetaCC, SmabZoomingModelCC],
     ),
     "smab_mo": ModelTestConfig(SmabBernoulliMO, MultiObjectiveBandit, [BetaMO]),
     "smab_mocc": ModelTestConfig(SmabBernoulliMOCC, MultiObjectiveCostControlBandit, [BetaMOCC]),
@@ -205,11 +222,17 @@ def test_cold_start(
     cold_start_kwargs = {
         "action_ids": {
             action for action, model in zip(action_ids, config.model_types) if issubclass(model, (Beta, BetaMO))
-        }
+        },
+        "quantitative_action_ids": {
+            action for action, model in zip(action_ids, config.model_types) if issubclass(model, QuantitativeModel)
+        },
     }
-    if all(model in [BetaCC, BetaMOCC] for model in config.model_types):
+    if all(model in [BetaCC, SmabZoomingModelCC, BetaMOCC] for model in config.model_types):
         cold_start_kwargs["action_ids_cost"] = {
             action: model.cost for action, model in actions.items() if isinstance(model, (BetaCC, BetaMOCC))
+        }
+        cold_start_kwargs["quantitative_action_ids_cost"] = {
+            action: model.cost for action, model in actions.items() if isinstance(model, SmabZoomingModelCC)
         }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
@@ -325,7 +348,6 @@ def test_update(
     exploit_p,
     subsidy_factor,
     memory_len,
-    monkeymodule,
 ):
     # Create SMAB instance
     smab, _, kwargs = config.create_smab_and_actions(
@@ -341,14 +363,31 @@ def test_update(
     )
     reward_data = reward_data.tolist()
     # Test updates with generated data
-    actions_to_update = sample_with_replacement(action_ids, n_samples)
+    actions_to_update = sample_with_replacement(
+        action_ids, n_samples
+    )  # Generate quantities only if there are any QuantitativeModel actions
+    if any(isinstance(model, QuantitativeModel) for model in smab.actions.values()):
+        quantity_data = np.random.random(size=n_samples).tolist()
+        quantity_data = [
+            q if isinstance(smab.actions[action], QuantitativeModel) else None
+            for q, action in zip(quantity_data, actions_to_update)
+        ]
+        [
+            smab.update(actions=[action], rewards=[reward], quantities=[quantity])
+            for action, reward, quantity in zip(actions_to_update, reward_data, quantity_data)
+        ]
+    else:
+        quantity_data = None
+        [
+            smab.update(actions=[action], rewards=[reward], quantities=quantity_data)
+            for action, reward in zip(actions_to_update, reward_data)
+        ]
 
-    [smab.update(actions=[action], rewards=[reward]) for action, reward in zip(actions_to_update, reward_data)]
     if delta:
         with pytest.warns(UserWarning):
-            batched_smab.update(actions=actions_to_update, rewards=reward_data)
+            batched_smab.update(actions=actions_to_update, rewards=reward_data, quantities=quantity_data)
     else:
-        batched_smab.update(actions=actions_to_update, rewards=reward_data)
+        batched_smab.update(actions=actions_to_update, rewards=reward_data, quantities=quantity_data)
 
     if delta:
         actions_memory = actions_to_update[-memory_len:]
@@ -374,7 +413,11 @@ def test_update(
             )
 
     batched_smab.update(
-        actions=actions_to_update, rewards=reward_data, actions_memory=actions_memory, rewards_memory=rewards_memory
+        actions=actions_to_update,
+        rewards=reward_data,
+        quantities=quantity_data,
+        actions_memory=actions_memory,
+        rewards_memory=rewards_memory,
     )
 
 

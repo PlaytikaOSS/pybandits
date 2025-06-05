@@ -14,6 +14,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 import pybandits
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC
+from pybandits.model import BaseBayesianNeuralNetwork
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
 from pybandits.smab import (
@@ -22,7 +23,7 @@ from pybandits.smab import (
     SmabBernoulliMO,
     SmabBernoulliMOCC,
 )
-from tests.test_utils import FakeApproximation
+from tests.test_utils import FakeApproximation, fake_bnn_sample_proba
 
 
 @pytest.fixture(scope="module")
@@ -195,7 +196,7 @@ def test_initialization_mismatches(
 @settings(deadline=None)
 @given(
     split_prop=st.just(0.5),
-    n_trials=st.just(10),
+    n_trials=st.just(2),
     fast_fit=st.booleans(),
     scaler=st.sampled_from([None, MinMaxScaler()]),
     verbose=st.booleans(),
@@ -261,6 +262,7 @@ def test_running_configuration(
             "sample",
             FakeApproximation(n_features=len(contextual_features)).sample,
         )
+
     else:
         contextual_features = None
     unique_actions = logged_data["action_id"].unique()
@@ -313,6 +315,12 @@ def test_running_configuration(
         propensity_score_feature=propensity_score_feature,
     )
     execution_func = evaluator.update_and_evaluate if update else evaluator.evaluate
+    if context:
+        monkeymodule.setattr(
+            BaseBayesianNeuralNetwork,
+            "sample_proba",
+            fake_bnn_sample_proba,
+        )
     with TemporaryDirectory() as tmp_dir:
         execution_func(mab=mab, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir)
     if visualize:

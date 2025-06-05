@@ -43,6 +43,61 @@ jobs:
         run: |
           # run pre-commit hooks
           poetry run pre-commit run --all-files
-      - name: Run tests
+      - name: Run tests without coverage
+        if: ${{ !(matrix.python-version == '3.10' && matrix.pydantic-version == '2.*') }}
         run: |
-          poetry run pytest -n auto -s -vv --durations=5
+          poetry run pytest -n auto -vv --durations=5
+      - name: Run tests with coverage
+        if: ${{ matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        run: |
+          poetry run pytest -n auto -vv --durations=5 --cov=pybandits/ --cov-report=xml --cov-report=html
+      - name: Generate coverage badge
+        if: ${{ matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        run: |
+          # Extract coverage percentage from the XML report
+          COVERAGE=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          coverage = float(root.attrib['line-rate']) * 100
+          print(f'{coverage:.1f}')
+          ")
+          echo "Coverage: $COVERAGE%"
+
+          # Determine badge color based on coverage
+          if (( $(echo "$COVERAGE >= 90" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$COVERAGE >= 70" | bc -l) )); then
+            COLOR="yellow"
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            COLOR="orange"
+          else
+            COLOR="red"
+          fi
+
+          # Create badge URL
+          BADGE_URL="https://img.shields.io/badge/coverage-${COVERAGE}%25-${COLOR}"
+
+          # Download badge
+          curl -o coverage-badge.svg "$BADGE_URL"
+
+          # Export coverage as environment variable for subsequent steps
+          echo "COVERAGE_PERCENTAGE=$COVERAGE" >> $GITHUB_ENV
+
+      - name: Upload coverage HTML report as artifact
+        if: ${{ matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+
+      - name: Upload coverage badge as artifact
+        if: ${{ matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge
+          path: coverage-badge.svg
+          retention-days: 30

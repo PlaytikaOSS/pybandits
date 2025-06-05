@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Dict, List, Optional, Set, Union
+from typing import List, Optional, Set, Union
 
 from pybandits.actions_manager import (
     SmabActionsManager,
@@ -33,12 +33,12 @@ from pybandits.actions_manager import (
 from pybandits.base import (
     ActionId,
     BinaryReward,
-    Probability,
     SmabPredictions,
 )
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBeta
 from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
+from pybandits.quantitative_model import BaseSmabZoomingModel
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
@@ -54,13 +54,13 @@ class BaseSmabBernoulli(BaseMab, ABC):
 
     Parameters
     ----------
-    actions: Dict[ActionId, BaseBeta]
+    actions: Dict[ActionId, Union[BaseBeta, BaseSmabZoomingModel]]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[BaseBeta]
+    actions_manager: SmabActionsManager[Union[BaseBeta, BaseSmabZoomingModel]]
 
     @validate_call
     def predict(
@@ -73,7 +73,7 @@ class BaseSmabBernoulli(BaseMab, ABC):
 
         Parameters
         ----------
-        n_samples : int > 0, default=1
+        n_samples : PositiveInt, default=1
             Number of samples to predict.
         forbidden_actions : Optional[Set[ActionId]], default=None
             Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
@@ -82,20 +82,14 @@ class BaseSmabBernoulli(BaseMab, ABC):
 
         Returns
         -------
-        actions: List[ActionId] of shape (n_samples,)
+        actions: List[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
-        probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
+        probs: Union[List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, MOProbability]]]
             The probabilities of getting a positive reward for each action.
         """
-        valid_actions = self._get_valid_actions(forbidden_actions)
 
-        selected_actions: List[ActionId] = []
-        probs: List[Dict[ActionId, Probability]] = []
-
-        for _ in range(n_samples):
-            p = {action: model.sample_proba() for action, model in self.actions.items() if action in valid_actions}
-            selected_actions.append(self._select_epsilon_greedy_action(p=p, actions=self.actions))
-            probs.append(p)
+        probs = self._get_action_probabilities(forbidden_actions=forbidden_actions, n_samples=n_samples)
+        selected_actions = [self._select_epsilon_greedy_action(p=prob, actions=self.actions) for prob in probs]
 
         return selected_actions, probs
 
@@ -104,6 +98,7 @@ class BaseSmabBernoulli(BaseMab, ABC):
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
     ):
@@ -121,12 +116,20 @@ class BaseSmabBernoulli(BaseMab, ABC):
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
+        quantities : Optional[List[Union[float, List[float], None]]]
+            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
         rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
             List of previously collected rewards.
         """
-        super().update(actions=actions, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory)
+        super().update(
+            actions=actions,
+            rewards=rewards,
+            quantities=quantities,
+            actions_memory=actions_memory,
+            rewards_memory=rewards_memory,
+        )
 
 
 class SmabBernoulli(BaseSmabBernoulli):

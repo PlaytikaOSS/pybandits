@@ -21,15 +21,24 @@
 # SOFTWARE.
 
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 
-from pybandits.base import ActionId, BinaryReward
+from pybandits.base import ActionId, BinaryReward, Probability, UnifiedActionId
 from pybandits.cmab import BaseCmabBernoulli
 from pybandits.pydantic_version_compatibility import Field, model_validator
-from pybandits.simulator import Simulator
+from pybandits.quantitative_model import QuantitativeModel
+from pybandits.simulator import (
+    DoubleParametricActionProbability,
+    ParametricActionProbability,
+    Simulator,
+)
+from pybandits.utils import extract_argument_names_from_function
+
+CmabProbabilityValue = Union[ParametricActionProbability, DoubleParametricActionProbability]
+CmabActionProbabilityGroundTruth = Dict[ActionId, CmabProbabilityValue]
 
 
 class CmabSimulator(Simulator):
@@ -52,10 +61,22 @@ class CmabSimulator(Simulator):
         If not supplied, all samples are assigned to the group.
     """
 
+    probs_reward: Optional[Union[CmabActionProbabilityGroundTruth, Dict[str, CmabActionProbabilityGroundTruth]]] = None
     mab: BaseCmabBernoulli = Field(validation_alias="cmab")
     context: np.ndarray
     group: Optional[List] = None
     _base_columns: List[str] = ["batch", "action", "reward", "group"]
+
+    @classmethod
+    def _validate_probs_reward_values(cls, probability: CmabProbabilityValue, is_quantitative_action: bool):
+        if not callable(probability):
+            raise ValueError("The probability must be a callable function.")
+        if not is_quantitative_action:
+            if len(extract_argument_names_from_function(probability)) != 1:
+                raise ValueError("The probability function must have only one argument.")
+        else:
+            if len(extract_argument_names_from_function(probability)) != 2:
+                raise ValueError("The probability function must have only two argument.")
 
     @model_validator(mode="before")
     @classmethod
@@ -74,15 +95,32 @@ class CmabSimulator(Simulator):
             if len(context) != len(group):
                 raise ValueError("Mismatch between context length and group length")
             values["group"] = [str(g) for g in group]
-        mab_action_ids = list(values["mab"].actions.keys())
-        index = list(set(group))
         probs_reward = cls._get_value_with_default("probs_reward", values)
         if probs_reward is None:
-            probs_reward = pd.DataFrame(0.5, index=index, columns=mab_action_ids)
+            probs_reward = {
+                g: {
+                    action: cls._generate_prob_reward(values["context"].shape[1], model.dimension)
+                    if isinstance(model, QuantitativeModel)
+                    else cls._generate_prob_reward(values["context"].shape[1])
+                    for action, model in values["mab"].actions.items()
+                }
+                for g in set(group)
+            }
             values["probs_reward"] = probs_reward
         else:
-            if probs_reward.shape[0] != len(index):
+            if probs_reward.shape[0] != len(set(group)):
                 raise ValueError("number of probs_reward rows must match the number of groups.")
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_probs_reward_columns(cls, values):
+        if "probs_reward" in values and values["probs_reward"] is not None:
+            groups = set(values["group"])
+            if set(values["probs_reward"].keys()) != groups:
+                raise ValueError("probs_reward keys must match groups.")
+            for v in values["probs_reward"].values():
+                cls._validate_probs_reward_dict(v, values["mab"].actions)
         return values
 
     def _initialize_results(self):
@@ -90,16 +128,18 @@ class CmabSimulator(Simulator):
         Initialize the results DataFrame. The results DataFrame is used to store the raw simulation results.
         """
         self._results = pd.DataFrame(
-            columns=["action", "reward", "group", "selected_prob_reward", "max_prob_reward"],
+            columns=["action", "reward", "quantities", "group", "selected_prob_reward", "max_prob_reward"],
         )
 
-    def _draw_rewards(self, actions: List[ActionId], metadata: Dict[str, List]) -> List[BinaryReward]:
+    def _draw_rewards(
+        self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
+    ) -> List[BinaryReward]:
         """
         Draw rewards for the selected actions based on metadata according to probs_reward
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : List[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
         metadata : Dict[str, List]
             The metadata for the selected actions; should contain the batch groups association.
@@ -109,8 +149,37 @@ class CmabSimulator(Simulator):
         reward : List[BinaryReward]
             A list of binary rewards.
         """
-        rewards = [int(random.random() < self.probs_reward.loc[g, a]) for g, a in zip(metadata["group"], actions)]
+        rewards = [
+            int(random.random() < self._extract_ground_truth(a, g, c))
+            for g, a, c in zip(metadata["group"], actions, update_kwargs["context"])
+        ]
         return rewards
+
+    def _extract_ground_truth(self, action: UnifiedActionId, group: str, context: np.ndarray) -> Probability:
+        """
+        Extract the ground truth probability for the action.
+
+        Parameters
+        ----------
+        action : UnifiedActionId
+            The action for which the ground truth probability is extracted.
+        group : str
+            The group to which the action was applied.
+        context : np.ndarray
+            The context for the action.
+
+        Returns
+        -------
+        Probability
+            The ground truth probability for the action.
+        """
+        return (
+            self.probs_reward[group][action[0]](context, np.array(action[1]))
+            if isinstance(action, tuple) and action[1] is not None
+            else self.probs_reward[group][action[0]](context)
+            if isinstance(action, tuple)
+            else self.probs_reward[group][action](context)
+        )
 
     def _get_batch_step_kwargs_and_metadata(
         self, batch_index
@@ -139,35 +208,38 @@ class CmabSimulator(Simulator):
         metadata = {"group": self.group[idx_batch_min:idx_batch_max]}
         return predict_and_update_kwargs, predict_and_update_kwargs, metadata
 
-    def _finalize_step(self, batch_results: pd.DataFrame):
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]):
         """
         Finalize the step by adding additional information to the batch results.
 
         Parameters
         ----------
         batch_results : pd.DataFrame
-            raw batch results
+            Raw batch results
+        update_kwargs : Dict[str, np.ndarray]
+            Context for the batch
 
         Returns
         -------
         batch_results : pd.DataFrame
-            batch results with added reward probability for selected action and most rewarding action
+            Batch results with added reward probability for selected action and most rewarding action
         """
         group_id = batch_results.loc[:, "group"]
         action_id = batch_results.loc[:, "action"]
-        selected_prob_reward = [self.probs_reward.loc[g, a] for g, a in zip(group_id, action_id)]
+        quantity = batch_results.loc[:, "quantities"]
+        selected_prob_reward = [
+            self._extract_ground_truth((a, q), g, c)
+            for a, q, g, c in zip(action_id, quantity, group_id, update_kwargs["context"])
+        ]
         batch_results.loc[:, "selected_prob_reward"] = selected_prob_reward
-        max_prob_reward = self.probs_reward.loc[group_id].max(axis=1)
-        batch_results.loc[:, "max_prob_reward"] = max_prob_reward.tolist()
+        max_prob_reward = [
+            max(
+                self._maximize_prob_reward((lambda q: self.probs_reward[g][a](c, q)), m.dimension)
+                if isinstance(m, QuantitativeModel)
+                else self.probs_reward[g][a](c)
+                for a, m in self.mab.actions.items()
+            )
+            for g, c in zip(group_id, update_kwargs["context"])
+        ]
+        batch_results.loc[:, "max_prob_reward"] = max_prob_reward
         return batch_results
-
-    def _finalize_results(self):
-        """
-        Finalize the simulation process. Used to add regret and cumulative regret
-
-        Returns
-        -------
-        None
-        """
-        self._results["regret"] = self._results["max_prob_reward"] - self._results["selected_prob_reward"]
-        self._results["cum_regret"] = self._results["regret"].cumsum()

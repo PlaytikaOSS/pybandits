@@ -22,7 +22,7 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from random import betavariate
-from typing import ClassVar, Dict, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pytensor.tensor as pt
@@ -35,7 +35,8 @@ from pymc import StudentT as PymcStudentT
 from pytensor.tensor import specify_broadcastable
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, Probability, PyBanditsBaseModel
+from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight
+from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -50,38 +51,12 @@ from pybandits.pydantic_version_compatibility import (
     validate_call,
 )
 
-UpdateMethods = Literal["MCMC", "VI"]
+UpdateMethods = Literal["VI", "MCMC"]
 
 
-class BaseModel(PyBanditsBaseModel, ABC):
-    @abstractmethod
-    def sample_proba(self) -> Probability:
-        """
-        Sample the probability of getting a positive reward.
-        """
-
-    @validate_call
-    @abstractmethod
-    def update(self, rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
-        """
-        Update the model.
-
-        Parameters
-        ----------
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
-            A list of binary rewards.
-        """
-
-    @abstractmethod
-    def reset(self):
-        """
-        Reset the model.
-        """
-
-
-class Model(BaseModel, ABC):
+class Model(BaseModelSO, ABC):
     """
-    Class to model the prior distributions.
+    Class to model the prior distributions for single objective.
 
     Parameters
     ----------
@@ -91,129 +66,57 @@ class Model(BaseModel, ABC):
         Counter of the number of failures.
     """
 
-    n_successes: PositiveInt = 1
-    n_failures: PositiveInt = 1
-
-    @validate_call
-    def update(self, rewards: List[BinaryReward], **kwargs):
-        """
-        Update n_successes and n_failures.
-
-        Parameters
-        ----------
-        rewards: List[BinaryReward]
-            A list of binary rewards.
-        """
-        self.n_successes += sum(rewards)
-        self.n_failures += len(rewards) - sum(rewards)
-        self._update(rewards=rewards, **kwargs)
-
     @abstractmethod
-    def _update(self, rewards: List[BinaryReward], **kwargs):
+    def sample_proba(self, **kwargs) -> Union[List[Probability], List[MOProbability], List[ProbabilityWeight]]:
         """
-        Update the model.
-
-        Parameters
-        ----------
-        rewards: List[BinaryReward]
-            A list of binary rewards.
-        """
-
-    @property
-    def count(self) -> int:
-        """
-        The total amount of successes and failures collected.
-        """
-        return self.n_successes + self.n_failures
-
-    def reset(self):
-        """
-        Reset the model.
-        """
-        self.n_successes = 1
-        self.n_failures = 1
-        self._reset()
-
-    @abstractmethod
-    def _reset(self):
-        """
-        Reset the model.
+        Sample the probability of getting a positive reward.
         """
 
 
-class ModelMO(BaseModel, ABC):
+class ModelCC(BaseModelCC, ABC):
     """
-    Multi-objective extension of Model.
+    Class to model action cost.
+
+    Parameters
+    ----------
+    cost: NonNegativeFloat
+        Cost associated to the action.
+    """
+
+    cost: NonNegativeFloat
+
+
+class ModelMO(BaseModelMO, ABC):
+    """
+    Class to model the prior distributions for multi-objective.
+
     Parameters
     ----------
     models : List[Model]
-        List of models.
+        The list of models for each objective.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        models: List[Model] = Field(..., min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        models: List[Model] = Field(..., min_length=1)
-    else:
-        raise ValueError("Invalid version.")
-
-    @validate_call
-    def sample_proba(self, **kwargs) -> List[Probability]:
-        """
-        Sample the probability of getting a positive reward.
-        Returns
-        -------
-        prob: List[Probability]
-            Probabilities of getting a positive reward for each objective.
-        """
-        return [x.sample_proba(**kwargs) for x in self.models]
-
-    @validate_call
-    def update(self, rewards: List[List[BinaryReward]], **kwargs):
-        """
-        Update the Beta model using the provided rewards.
-
-        Parameters
-        ----------
-        rewards: List[List[BinaryReward]]
-            A list of rewards, where each reward is in turn a list containing the reward of the Beta model
-            associated to each objective.
-            For example, `[[1, 1], [1, 0], [1, 1], [1, 0], [1, 1]]`.
-        kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression MO child model.
-        """
-        if any(len(x) != len(self.models) for x in rewards):
-            raise AttributeError("The shape of rewards is incorrect")
-
-        for i, model in enumerate(self.models):
-            model.update(rewards=[r[i] for r in rewards], **kwargs)
-
-    def reset(self):
-        """
-        Reset the model.
-        """
-        for model in self.models:
-            model.reset()
+    models: List[Model]
 
 
-class BaseBeta(Model):
+class BaseBeta(Model, ABC):
     """
     Beta Distribution model for Bernoulli multi-armed bandits.
+
+    Parameters
+    ----------
+    n_successes: PositiveInt = 1
+        Counter of the number of successes.
+    n_failures: PositiveInt = 1
+        Counter of the number of failures.
     """
 
     @model_validator(mode="before")
     @classmethod
-    def both_or_neither_counters_are_defined(cls, values):
+    def both_or_neither_models_are_defined(cls, values):
         if hasattr(values, "n_successes") != hasattr(values, "n_failures"):
             raise ValueError("Either both or neither n_successes and n_failures should be specified.")
         return values
-
-    @property
-    def mean(self) -> float:
-        """
-        The success rate i.e. n_successes / (n_successes + n_failures).
-        """
-        return self.n_successes / self.count
 
     @property
     def std(self) -> float:
@@ -222,20 +125,10 @@ class BaseBeta(Model):
         """
         return sqrt((self.n_successes * self.n_failures) / (self.count * (self.count - 1)))
 
-    def sample_proba(self) -> Probability:
+    @validate_call
+    def _update(self, rewards: List[BinaryReward]):
         """
-        Sample the probability of getting a positive reward.
-
-        Returns
-        -------
-        prob: Probability
-            Probability of getting a positive reward.
-        """
-        return betavariate(self.n_successes, self.n_failures)  # type: ignore
-
-    def _update(self, rewards: List[BinaryReward], **kwargs):
-        """
-        Update the model.
+        Update n_successes and n_failures.
 
         Parameters
         ----------
@@ -247,49 +140,74 @@ class BaseBeta(Model):
     def _reset(self):
         pass
 
+    def sample_proba(self, n_samples: PositiveInt) -> List[Probability]:
+        """
+        Sample the probability of getting a positive reward.
+
+        Returns
+        -------
+        prob: Probability
+            Probability of getting a positive reward.
+        """
+        return [betavariate(self.n_successes, self.n_failures) for _ in range(n_samples)]
+
 
 class Beta(BaseBeta):
     """
     Beta Distribution model for Bernoulli multi-armed bandits.
+
+    Parameters
+    ----------
+    n_successes: PositiveInt = 1
+        Counter of the number of successes.
+    n_failures: PositiveInt = 1
+        Counter of the number of failures.
     """
 
 
-class BetaCC(BaseBeta):
+class BetaCC(BaseBeta, ModelCC):
     """
     Beta Distribution model for Bernoulli multi-armed bandits with cost control.
 
     Parameters
     ----------
-    cost: NonNegativeFloat
+    n_successes : PositiveInt = 1
+        Counter of the number of successes.
+    n_failures : PositiveInt = 1
+        Counter of the number of failures.
+    cost : NonNegativeFloat
         Cost associated to the Beta distribution.
     """
 
-    cost: NonNegativeFloat
 
-
-class BetaMO(ModelMO):
+class BaseBetaMO(ModelMO, ABC):
     """
-    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+    Base beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
     Parameters
     ----------
-    models: List[Beta] of shape (n_objectives,)
+    models: List[Beta] of length (n_objectives,)
         List of Beta distributions.
     """
 
     models: List[Beta]
 
     @validate_call
-    def sample_proba(self) -> List[Probability]:
+    def sample_proba(self, n_samples: PositiveInt) -> List[MOProbability]:
         """
         Sample the probability of getting a positive reward.
 
+        Parameters
+        ----------
+        n_samples : PositiveInt
+            Number of samples to draw.
+
         Returns
         -------
-        prob: List[Probability]
-            Probabilities of getting a positive reward for each objective.
+        prob: List[MOProbability]
+            Probabilities of getting a positive reward for each sample and objective.
         """
-        return [x.sample_proba() for x in self.models]
+        return [list(p) for p in zip(*[model.sample_proba(n_samples=n_samples) for model in self.models])]
 
     @validate_call
     def _update(self, rewards: List[List[BinaryReward]]):
@@ -306,23 +224,28 @@ class BetaMO(ModelMO):
         if any(len(x) != len(self.models) for x in rewards):
             raise AttributeError("The shape of rewards is incorrect")
 
-        for i, counter in enumerate(self.models):
-            counter.update([r[i] for r in rewards])
+        for i, model in enumerate(self.models):
+            model.update([r[i] for r in rewards])
 
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
         """
-        Utility function to create a multi-objective Beta model with cold start.
+        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        with default parameters.
+
+        It is modeled as:
+
+            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
+
+        where the alpha and betas coefficients are Student's t-distributions.
 
         Parameters
         ----------
-        n_objectives : PositiveInt
-            The number of objectives.
-
-        Parameters
-        ----------
-        n_objectives: PositiveInt
-            The number of objectives.
+        n_betas : PositiveInt
+            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
+            after in the context matrix.
+        kwargs: Dict[str, Any]
+            Additional arguments for the Bayesian Logistic Regression child model.
 
         Returns
         -------
@@ -333,12 +256,19 @@ class BetaMO(ModelMO):
         beta_mo = cls(models=models, **kwargs)
         return beta_mo
 
-    def _reset(self):
-        for model in self.models:
-            model._reset()
+
+class BetaMO(BaseBetaMO):
+    """
+    Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+
+    Parameters
+    ----------
+    models: List[Beta] of length (n_objectives,)
+        List of Beta distributions.
+    """
 
 
-class BetaMOCC(BetaMO):
+class BetaMOCC(BaseBetaMO, ModelCC):
     """
     Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives and cost control.
 
@@ -349,11 +279,6 @@ class BetaMOCC(BetaMO):
     cost: NonNegativeFloat
         Cost associated to the Beta distribution.
     """
-
-    cost: NonNegativeFloat
-
-
-SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BetaMO])
 
 
 @dataclass
@@ -414,7 +339,10 @@ class StudentTArray:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
         if (mu_arr.shape != sigma_arr.shape) or (mu_arr.shape != nu_arr.shape):
-            raise ValueError("mu, sigma, and nu must have the same shape.")
+            raise ValueError(
+                f"mu, sigma, and nu must have the same shape, "
+                f"but are {mu_arr.shape}, {sigma_arr.shape}, and {nu_arr.shape}, respectively."
+            )
 
         if any(dim_len == 0 for dim_len in mu_arr.shape):
             raise ValueError("mu, sigma, and nu must have at least one element in every dimension.")
@@ -424,7 +352,7 @@ class StudentTArray:
     @classmethod
     def cold_start(
         cls,
-        shape: Union[PositiveInt, Tuple[PositiveInt]],
+        shape: Union[PositiveInt, Tuple[PositiveInt, ...]],
         mu: float = 0.0,
         sigma: NonNegativeFloat = 10.0,
         nu: PositiveFloat = 5.0,
@@ -441,7 +369,7 @@ class StudentTArray:
         return cls(mu=mu, sigma=sigma, nu=nu)
 
     @property
-    def shape(self) -> Tuple[PositiveInt]:
+    def shape(self) -> Tuple[PositiveInt, ...]:
         return np.array(self.mu).shape
 
     @property
@@ -617,7 +545,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
         weight_layer_params_name = f"{cls._weight_var_name}_{layer_ind}"
         bias_layer_params_name = f"{cls._bias_var_name}_{layer_ind}"
-        return (weight_layer_params_name, bias_layer_params_name)
+        return weight_layer_params_name, bias_layer_params_name
 
     @classmethod
     def create_model_params(
@@ -753,7 +681,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                 w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
                 b_shape = layer_params.bias.shape
-                (weight_layer_params_name, bias_layer_params_name) = self.get_layer_params_name(layer_ind)
+                weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
 
                 if is_predict:
                     # in this case we create n_samples different weights and biases - one for each sample
@@ -791,17 +719,19 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return _model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray) -> Tuple[Probability, float]:
+    def sample_proba(self, context: np.ndarray) -> List[ProbabilityWeight]:
         """
         Samples probabilities and weighted sums from the prior predictive distribution.
+
         Parameters
         ----------
         context : ArrayLike
             The context matrix for which the probabilities are to be sampled.
         Returns
         -------
-        Tuple[Probability, float]
-            A tuple containing the sampled probabilities and the weighted sum.
+        List[ProbabilityWeight]
+            Each element is a tuple containing the probability of a positive reward and
+            the corresponding weighted sum between contextual feature quantities and sampled coefficients.
         """
 
         # check input args
@@ -816,7 +746,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         prob = trace["prior"][self._prob_var_name].values.reshape(-1)
         weighted_sum = trace["prior"][self._logit_var_name].values.reshape(-1)
 
-        return prob, weighted_sum
+        return list(zip(prob, weighted_sum))
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
@@ -855,7 +785,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 raise ValueError("Invalid update method.")
 
         for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-            (weight_layer_params_name, bias_layer_params_name) = self.get_layer_params_name(layer_ind)
+            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
 
             w_mu = np.mean(trace[weight_layer_params_name], axis=0)
             w_sigma = np.std(trace[weight_layer_params_name], axis=0)
@@ -927,19 +857,36 @@ class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     """
 
 
-class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork):
-    """
-    Bayesian Neural Network with Cost Constraint.
+class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork, ModelCC):
+    """Bayesian Neural Network model for binary classification with cost constraint.
 
-    This class extends the BayesianNeuralNetwork to include a cost constraint.
+    This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
+    using PyMC for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
+    and Variational Inference (VI) methods for posterior inference.
 
-    Attributes
+    References
     ----------
-    cost : NonNegativeFloat
-        The cost associated with the neural network, which must be a non-negative float.
-    """
+    Bayesian Learning for Neural Networks (Radford M. Neal, 1995)
+    https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=db869fa192a3222ae4f2d766674a378e47013b1b
 
-    cost: NonNegativeFloat
+    Parameters
+    ----------
+    model_params : BnnParams
+        The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
+    update_method : str, optional
+        The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
+    update_kwargs : Optional[dict], optional
+        A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
+        For VI, it contains both 'trace' and 'fit' settings.
+    cost : NonNegativeFloat
+        Cost associated to the Bayesian Neural Network model.
+
+    Notes
+    -----
+    - The model uses tanh activation for hidden layers and sigmoid activation for the output layer.
+    - The output layer is designed for binary classification tasks, with probabilities modeled
+      using a Bernoulli likelihood.
+    """
 
 
 class BayesianLogisticRegression(BayesianNeuralNetwork):
@@ -957,10 +904,7 @@ class BayesianLogisticRegression(BayesianNeuralNetwork):
         return model_params
 
 
-class BayesianLogisticRegressionCC(BayesianLogisticRegression, BayesianNeuralNetworkCC):
+class BayesianLogisticRegressionCC(BayesianLogisticRegression, ModelCC):
     """
     A Bayesian Logistic Regression model with cost control.
     """
-
-
-CmabModelType = TypeVar("CmabModelType", bound=BaseBayesianNeuralNetwork)
