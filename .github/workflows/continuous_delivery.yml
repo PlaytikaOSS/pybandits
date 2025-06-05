@@ -100,7 +100,7 @@ jobs:
               core.setFailed(`Draft release named "Draft" not found.`);
             };
       - name: Build and publish to pypi
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
         run: |
           poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
           poetry publish --build
