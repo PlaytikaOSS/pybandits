@@ -150,16 +150,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.99887608  0.58184769  0.37872543 -0.74111224  0.47671857]
- [-0.37058366  0.27642465  0.71221131  0.07865985 -0.14019107]
- [-0.2410159   0.62763069 -0.27200726 -0.92256378 -0.59322774]
- [-0.24205207  0.83696288  0.11517586 -0.27345265  0.90808839]
- [ 0.6084086  -0.81742751 -0.88985043  0.06341991 -0.69439075]
- [-0.20763808 -0.76936009  0.82698356 -0.01167249  0.88892859]
- [-0.50588374 -0.2422486   0.87123685 -0.03572576  0.27934144]
- [-0.64518356 -0.50483828 -0.85558135  0.98880744 -0.07079319]
- [ 0.83664094  0.53571778  0.17718614  0.16756581  0.76926201]
- [ 0.57144607  0.4531617  -0.27295713 -0.97981009  0.53270267]]
+[[-0.48536411 -0.08726239  0.61452207  0.02023142  0.66874729]
+ [-0.46794804 -0.94428169 -0.27628144 -0.06584578  0.90715402]
+ [ 0.69255664 -0.25077038  0.42801534  0.06427431  0.68483438]
+ [-0.37374583 -0.06280324 -0.95396109 -0.42902359 -0.47016012]
+ [ 0.16742348  0.04888102 -0.22390741 -0.86094907  0.66822079]
+ [ 0.48896061 -0.78531697  0.94537978 -0.56002736  0.63365625]
+ [-0.63188617 -0.8829583   0.47499     0.84605223  0.93166914]
+ [ 0.7565733  -0.23498129  0.63379376 -0.31004873  0.46817446]
+ [ 0.75419718  0.58539999 -0.74844187 -0.90603287  0.01906088]
+ [ 0.51438041 -0.94372683  0.30133167  0.24113698  0.12048955]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -227,7 +227,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -246,7 +246,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 1, 1, 0, 0, 0, 0, 0, 1, 0]
+Simulated rewards: [0, 0, 0, 0, 1, 1, 0, 1, 0, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -269,8 +269,11 @@ Simulated rewards: [0, 1, 1, 0, 0, 0, 0, 0, 1, 0]
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
 NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 2 seconds.
+There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 Initializing NUTS using adapt_diag...
