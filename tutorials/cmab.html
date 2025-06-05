@@ -25,7 +25,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="sMAB Simulation" href="smab_simulator.html" />
+    <link rel="next" title="Stochastic Multi-Armed Bandit with Zooming Model" href="smab_zooming.html" />
     <link rel="prev" title="Stochastic Multi-Armed Bandit" href="smab.html" /> 
 </head>
 
@@ -55,6 +55,8 @@
 <li class="toctree-l1 current"><a class="reference internal" href="../tutorials.html">Tutorials</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Contextual Multi-Armed Bandit</a></li>
+<li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Introduction</a></li>
@@ -148,16 +150,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.18730083 -0.27367885 -0.26901958 -0.43026932  0.38938563]
- [-0.02941649  0.54144287  0.34254096  0.80048601 -0.40754959]
- [ 0.19659102 -0.04024541 -0.97014599 -0.4488626   0.51790059]
- [-0.09423098  0.15408444  0.17915607 -0.96039263 -0.66300856]
- [-0.14247619 -0.72992103  0.24232003 -0.58296306  0.08531849]
- [-0.29948914 -0.40008444  0.86224922 -0.49121899  0.22727749]
- [ 0.57902369 -0.24472164  0.16847738 -0.04742026  0.20132522]
- [ 0.0955097   0.66830073  0.50515276  0.85143765 -0.936136  ]
- [-0.65290302 -0.02521972 -0.12857212  0.88872108  0.18495478]
- [-0.22402918  0.29914395 -0.67718286  0.4363225   0.64089309]]
+[[ 0.99887608  0.58184769  0.37872543 -0.74111224  0.47671857]
+ [-0.37058366  0.27642465  0.71221131  0.07865985 -0.14019107]
+ [-0.2410159   0.62763069 -0.27200726 -0.92256378 -0.59322774]
+ [-0.24205207  0.83696288  0.11517586 -0.27345265  0.90808839]
+ [ 0.6084086  -0.81742751 -0.88985043  0.06341991 -0.69439075]
+ [-0.20763808 -0.76936009  0.82698356 -0.01167249  0.88892859]
+ [-0.50588374 -0.2422486   0.87123685 -0.03572576  0.27934144]
+ [-0.64518356 -0.50483828 -0.85558135  0.98880744 -0.07079319]
+ [ 0.83664094  0.53571778  0.17718614  0.16756581  0.76926201]
+ [ 0.57144607  0.4531617  -0.27295713 -0.97981009  0.53270267]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -205,9 +207,9 @@ X: context matrix of shape (n_samples, n_features)
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2959: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
 For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
@@ -215,7 +217,7 @@ For more options and details see https://pytensor.readthedocs.io/en/latest/troub
 Sampling: [bias_0, out, weight_0]
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
 Sampling: [bias_0, out, weight_0]
 </pre></div></div>
@@ -225,7 +227,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -244,7 +246,7 @@ Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 0, 0, 0, 0, 1, 1, 1, 1, 0]
+Simulated rewards: [0, 1, 1, 0, 0, 0, 0, 0, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -267,23 +269,15 @@ Simulated rewards: [0, 0, 0, 0, 0, 1, 1, 1, 1, 0]
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
 NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 1 seconds.
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
-  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
-There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
 NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 2 seconds.
-There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 </pre></div></div>
 </div>
 </section>
@@ -293,7 +287,7 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="smab.html" class="btn btn-neutral float-left" title="Stochastic Multi-Armed Bandit" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="smab_simulator.html" class="btn btn-neutral float-right" title="sMAB Simulation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="smab_zooming.html" class="btn btn-neutral float-right" title="Stochastic Multi-Armed Bandit with Zooming Model" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

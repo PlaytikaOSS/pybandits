@@ -55,6 +55,8 @@
 <li class="toctree-l1 current"><a class="reference internal" href="../tutorials.html">Tutorials</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab.html">Contextual Multi-Armed Bandit</a></li>
+<li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Introduction</a></li>
@@ -202,7 +204,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7ff0a1c11840&gt;
+&lt;matplotlib.legend.Legend at 0x7f7c675d2fb0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -241,7 +243,7 @@
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2959: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
 For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
@@ -268,7 +270,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 142.42
+Finished [100%]: Average Loss = 800.36
 </pre></div></div>
 </div>
 <p>In order to sample from the posterior distribution, we are creating the model with the new updated parameters, and generate samples using pm.sample_prior_predictive.</p>
@@ -293,7 +295,7 @@ Finished [100%]: Average Loss = 142.42
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
 Sampling: [bias_0, out, weight_0]
 </pre></div></div>
@@ -317,7 +319,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7ff0a33e9ea0&gt;
+&lt;matplotlib.legend.Legend at 0x7f7c616772b0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -347,8 +349,8 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.844
-AUC: 0.9414821219836351
+Accuracy: 0.726
+AUC: 0.7775434601321445
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -398,7 +400,7 @@ AUC: 0.9414821219836351
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
 Sampling: [bias_0, out, weight_0]
 </pre></div></div>
@@ -494,7 +496,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 183.53
+Finished [100%]: Average Loss = 112.13
 </pre></div></div>
 </div>
 <p>We can see that the separation is much better than the bayesian logistic model.</p>
@@ -523,7 +525,7 @@ Finished [100%]: Average Loss = 183.53
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
 Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </pre></div></div>
@@ -554,8 +556,8 @@ Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.848
-AUC: 0.9380874605690862
+Accuracy: 0.966
+AUC: 0.9917890820450318
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
@@ -600,7 +602,7 @@ AUC: 0.9380874605690862
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1736: FutureWarning: batched_dot is deprecated. Use `dot` in conjution with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
   warnings.warn(
 Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </pre></div></div>

@@ -29,6 +29,16 @@
 
 ```
 
+## pybandits.quantitative_model
+
+```{eval-rst}
+.. automodule:: pybandits.quantitative_model
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+```
+
 ## pybandits.strategy
 
 ```{eval-rst}

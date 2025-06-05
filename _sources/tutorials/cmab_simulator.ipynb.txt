@@ -20,7 +20,6 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "import pandas as pd\n",
     "from sklearn.datasets import make_classification\n",
     "\n",
     "from pybandits.cmab import CmabBernoulli\n",
@@ -140,21 +139,13 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "# init probability of rewards from the environment\n",
-    "probs_reward = pd.DataFrame(\n",
-    "    [[0.05, 0.80, 0.05], [0.80, 0.05, 0.05], [0.80, 0.05, 0.80]],\n",
-    "    columns=actions.keys(),\n",
-    "    index=[str(g) for g in range(n_groups)],\n",
-    ")\n",
-    "print(\"Probability of positive reward for each group/action:\")\n",
-    "probs_reward"
+    "# init probability of rewards randomly using splines\n",
+    "probs_reward = None"
    ]
   },
   {
    "cell_type": "markdown",
-   "metadata": {
-    "tags": []
-   },
+   "metadata": {},
    "source": [
     "Now, we initialize the cMAB as shown in the previous notebook and the CmabSimulator with the parameters set above."
    ]
