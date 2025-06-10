@@ -204,7 +204,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f01bad4e470&gt;
+&lt;matplotlib.legend.Legend at 0x7fc0707eb940&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -241,7 +241,7 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
@@ -270,7 +270,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 910.73
+Finished [100%]: Average Loss = 136.47
 </pre></div></div>
 </div>
 <p>In order to sample from the posterior distribution, we are creating the model with the new updated parameters, and generate samples using pm.sample_prior_predictive.</p>
@@ -293,9 +293,7 @@ Finished [100%]: Average Loss = 910.73
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 Sampling: [bias_0, out, weight_0]
 </pre></div></div>
@@ -319,7 +317,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f01b640b9a0&gt;
+&lt;matplotlib.legend.Legend at 0x7fc06aa9d9f0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -349,8 +347,8 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.25
-AUC: 0.2135470030737705
+Accuracy: 0.856
+AUC: 0.9374149986399782
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -358,7 +356,7 @@ AUC: 0.2135470030737705
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">blr</span><span class="o">.</span><span class="n">_approx</span><span class="o">.</span><span class="n">hist</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">blr</span><span class="o">.</span><span class="n">approx_history</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;ELBO&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;iteration&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
@@ -398,9 +396,7 @@ AUC: 0.2135470030737705
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 Sampling: [bias_0, out, weight_0]
 </pre></div></div>
@@ -470,7 +466,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
@@ -496,7 +492,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 196.01
+Finished [100%]: Average Loss = 112.96
 </pre></div></div>
 </div>
 <p>We can see that the separation is much better than the bayesian logistic model.</p>
@@ -523,9 +519,7 @@ Finished [100%]: Average Loss = 196.01
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </pre></div></div>
@@ -556,8 +550,8 @@ Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.848
-AUC: 0.9479460169057378
+Accuracy: 0.954
+AUC: 0.9906158498535976
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
@@ -565,7 +559,7 @@ AUC: 0.9479460169057378
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">bnn</span><span class="o">.</span><span class="n">_approx</span><span class="o">.</span><span class="n">hist</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">bnn</span><span class="o">.</span><span class="n">approx_history</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;ELBO&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;iteration&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
@@ -600,9 +594,7 @@ AUC: 0.9479460169057378
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:265: FutureWarning: MutableData is deprecated. All Data variables are now mutable. Use Data instead.
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/tensor/blas.py:1719: FutureWarning: batched_dot is deprecated. Use `dot` in conjunction with `tensor.vectorize` or `graph.replace.vectorize_graph`
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </pre></div></div>
