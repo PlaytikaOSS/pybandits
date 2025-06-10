@@ -20,12 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import importlib.metadata
 import random
 from abc import ABC, abstractmethod
 from inspect import isclass
-from typing import Any, Dict, List, Optional, Set, Union, get_origin
+from typing import Any, ClassVar, Dict, List, Optional, Set, Union, get_origin
 
 import numpy as np
+from packaging import version
 
 from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
@@ -68,6 +70,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
     default_action : Optional[ActionId], None if not specified.
         The default action to select with a probability of epsilon when using the epsilon-greedy approach.
         If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
+    current_supported_version_th : ClassVar[str]
+        The threshold of the supported version of PyBandits which don't require any changes to the state.
     strategy_kwargs : Dict[str, Any]
         Relevant only if strategy was not provided. This argument contains the parameters for the strategy,
         which in turn will be used to instantiate the strategy.
@@ -77,11 +81,15 @@ class BaseMab(PyBanditsBaseModel, ABC):
     strategy: Strategy
     epsilon: Optional[Float01] = None
     default_action: Optional[UnifiedActionId] = None
+    version: Optional[str] = None
+    deprecated_adwin_keys: ClassVar[List[str]] = ["adaptive_window_size", "actions_memory", "rewards_memory"]
+    current_supported_version_th: ClassVar[str] = "3.0.0"
 
     def __init__(
         self,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
+        version: Optional[str] = None,
         **kwargs,
     ):
         class_attributes = {
@@ -90,7 +98,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
         }
         if kwargs:
             raise ValueError(f"Unknown arguments: {kwargs.keys()}")
-        super().__init__(**class_attributes, epsilon=epsilon, default_action=default_action)
+
+        version = importlib.metadata.version("pybandits")
+        super().__init__(**class_attributes, epsilon=epsilon, default_action=default_action, version=version)
 
     @classmethod
     def _get_instantiated_class_attribute(cls, attribute_name: str, kwargs: Dict[str, Any]) -> PyBanditsBaseModel:
@@ -408,33 +418,55 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return cls.model_validate(state)
 
     @classmethod
+    def update_old_state(cls, state: Dict[str, Serializable], delta: PositiveProbability) -> Dict[str, Serializable]:
+        """
+        Update the model state to the current version if needed.
+        It adjusts the following:
+        1. Adding actions_manager to the state if it is not present.
+        2. Removes deprecated members from the state.
+
+        """
+        # the state is in the old format of PyBandits < 2.0.0.
+        if "actions" in state:
+            state["actions_manager"] = {}
+            state["actions_manager"]["actions"] = state.pop("actions")
+            state["actions_manager"]["delta"] = delta
+
+        for key in cls.deprecated_adwin_keys:
+            if key in state["actions_manager"]:
+                state["actions_manager"].pop(key)
+
+        return state
+
+    @classmethod
     def from_old_state(
         cls,
-        state: dict,
+        state: Dict[str, Serializable],
         delta: Optional[PositiveProbability] = None,
     ) -> "BaseMab":
         """
-        Create a new instance of the class from a given model state.
-        The state can be obtained by applying get_state() to a model.
+        Create a new instance of the class from previous versions of the model state.
+        (The state can be obtained by applying get_state() to a model.)
 
         Parameters
         ----------
         state: dict
             The internal state of a model (actions, strategy, etc.) of the same type.
-            The state is expected to be in the old format of PyBandits < 2.0.0.
-
+            The state is expected to be in the old format of PyBandits below the current supported version (cls.current_supported_version_th).
         Returns
         -------
         model: BaseMab
             The new model instance.
 
         """
-        if "actions" not in state or "actions_manager" in state:
-            raise ValueError("The state is expected to be in the old format of PyBandits < 2.0.0.")
-        state["actions_manager"] = {}
-        state["actions_manager"]["actions"] = state.pop("actions")
-        state["actions_manager"]["delta"] = delta
+        if ("version" in state) and (
+            version.parse(state["version"]) >= version.parse(cls.current_supported_version_th)
+        ):
+            raise ValueError(
+                f"The state is expected to be in the old format of PyBandits < {cls.current_supported_version_th}."
+            )
 
+        state = cls.update_old_state(state, delta)
         return cls.from_state(state)
 
     @classmethod

@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 from typing import Any, Dict, List, Mapping, NewType, Optional, Tuple, Union, _GenericAlias, get_args, get_origin
 
 from typing_extensions import Self
@@ -100,7 +99,6 @@ class PyBanditsBaseModel(BaseModel):
 
         def __init__(self, **data):
             super(PyBanditsBaseModel, self).__init__(**data)
-
             self.model_post_init(None)
 
         def model_post_init(self, __context: Any) -> None:
@@ -108,6 +106,9 @@ class PyBanditsBaseModel(BaseModel):
 
     elif pydantic_version == PYDANTIC_VERSION_2:
         model_config = {"extra": "forbid"}
+
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     def _validate_params_lengths(
         self,

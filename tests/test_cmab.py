@@ -28,6 +28,7 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from hypothesis.strategies import composite
 from pydantic.dataclasses import dataclass
 from pytest import MonkeyPatch
 
@@ -50,6 +51,7 @@ from pybandits.pydantic_version_compatibility import (
 )
 from pybandits.quantitative_model import BaseCmabZoomingModel, CmabZoomingModel, CmabZoomingModelCC, QuantitativeModel
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
+from tests.test_actions_manager import REFERENCE_DELTA
 from tests.test_utils import (
     FakeApproximation,
     FakePrediction,
@@ -57,6 +59,11 @@ from tests.test_utils import (
     sample_with_replacement,
     to_temporary_pickle,
 )
+
+
+def _apply_update_method_to_state(state, update_method):
+    for model_state in state["actions_manager"]["actions"].values():
+        model_state["update_method"] = update_method
 
 
 @st.composite
@@ -732,11 +739,175 @@ def test_serialization(
     restored_cmab = config.cmab_class.from_state(post_update_state[1])
     assert restored_cmab == cmab
 
-    # Test serialization from old state
-    old_post_update_state = post_update_state[1]
-    old_post_update_state["actions"] = old_post_update_state.pop("actions_manager")["actions"]
-    restored_cmab = config.cmab_class.from_old_state(old_post_update_state, delta=delta)
-    assert restored_cmab == cmab
+
+@composite
+def cmab_old_state(draw, CmabClass=None):
+    # Define individual components
+    actions = draw(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=10),
+            values=st.fixed_dictionaries(
+                {
+                    "n_successes": st.integers(min_value=1, max_value=100),
+                    "n_failures": st.integers(min_value=1, max_value=100),
+                    "alpha": st.fixed_dictionaries(
+                        {
+                            "mu": st.floats(min_value=-100, max_value=100),
+                            "nu": st.floats(min_value=0.001, max_value=100),
+                            "sigma": st.floats(min_value=0, max_value=100),
+                        }
+                    ),
+                    "betas": st.lists(
+                        st.fixed_dictionaries(
+                            {
+                                "mu": st.floats(min_value=-100, max_value=100),
+                                "nu": st.floats(min_value=0.001, max_value=100),
+                                "sigma": st.floats(min_value=0, max_value=100),
+                            }
+                        ),
+                        min_size=3,
+                        max_size=3,
+                    ),
+                },
+            ),
+            min_size=2,
+        )
+    )
+
+    actions_manager = {"actions": actions}
+    strategy = {}
+
+    state = {"actions_manager": actions_manager, "strategy": strategy}
+    adaptive_window_indicator = draw(st.booleans())
+    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
+
+    if epsilon_greedy_indicator:
+        if adaptive_window_indicator:
+            epsilon = 0.1
+        else:
+            epsilon = draw(st.sampled_from([None, 0.1]))
+
+        state["epsilon"] = epsilon
+        # Adjust default_action based on epsilon and actions
+        if draw(st.booleans()):
+            if epsilon is None or adaptive_window_indicator:
+                default_action = None
+            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
+                default_action = list(actions.keys())[default_action_index]
+            else:
+                default_action = None
+            state["default_action"] = default_action
+
+    # Add config-specific parameters
+    if CmabClass:
+        if CmabClass == CmabBernoulliBAI:
+            state["strategy"] = {"exploit_p": draw(st.one_of(st.floats(min_value=0, max_value=1)))}
+        elif CmabClass == CmabBernoulliCC:
+            state["strategy"] = {"subsidy_factor": draw(st.one_of(st.floats(min_value=0, max_value=1)))}
+            n_actions = len(actions)
+            costs = draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
+            for action_id, cost in zip(actions.keys(), costs):
+                actions[action_id]["cost"] = cost
+
+    update_method = draw(st.sampled_from(literal_update_methods))
+    _apply_update_method_to_state(state, update_method)
+    if adaptive_window_indicator:
+        actions_manager_state = state["actions_manager"]
+        actions_manager_state["adaptive_window_size"] = draw(
+            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
+        )
+        if actions_manager_state["adaptive_window_size"] is not None:
+            actions_manager_state["delta"] = draw(
+                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
+            )
+            if draw(st.booleans()):
+                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
+                if actions_manager_state["adaptive_window_size"] != "inf":
+                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
+                else:
+                    max_size = memory_limit
+                actions_manager_state["actions_memory"] = draw(
+                    st.lists(
+                        st.sampled_from(list(actions.keys())),
+                        min_size=0,
+                        max_size=max_size,
+                    )
+                )
+                size = len(actions_manager_state["actions_memory"])
+                actions_manager_state["rewards_memory"] = draw(
+                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
+                )
+    return state
+
+
+OLD_STATE_TEST_CONFIGS = {"cmab": CmabBernoulli, "cmab_bai": CmabBernoulliBAI, "cmab_cc": CmabBernoulliCC}
+
+
+@pytest.mark.parametrize("CmabClass", OLD_STATE_TEST_CONFIGS.values(), ids=OLD_STATE_TEST_CONFIGS.keys())
+@settings(deadline=500)
+@given(old_state=st.data())
+def test_cmab_from_old_state(CmabClass, old_state):
+    """
+    Test backward compatibility of loading CMAB states from different versions of PyBandits.
+
+    This test verifies that the CmabBernoulli class can correctly load and reconstruct model states
+    from different versions of PyBandits (1.* and 2.*). It tests three main scenarios:
+
+    1. Loading from version 2.* state with full memory (actions_memory and rewards_memory)
+    2. Loading from version 2.* state without memory
+    3. Loading from version 1.* state format
+
+    The test ensures that:
+    - Model parameters (alpha, betas) are correctly loaded
+    - Memory states are properly handled
+    - Version 1.* and memory-less version 2.* states produce equivalent models
+    - All model attributes are correctly reconstructed
+
+    Parameters
+    ----------
+    old_state : st.data()
+        A data strategy for drawing test states
+    """
+    # Draw the old_state using the config parameter
+    old_state = old_state.draw(cmab_old_state(CmabClass=CmabClass))
+
+    # read from version 2.0.0
+    old_state_ver2 = deepcopy(old_state)
+    cmab = CmabClass.from_old_state(old_state_ver2)
+    assert isinstance(cmab, CmabClass)
+
+    # read from version 2.0.0 without actions_memory and rewards_memory
+    stripped_state = deepcopy(old_state)
+    stripped_state["actions_manager"].pop("actions_memory", None)
+    stripped_state["actions_manager"].pop("rewards_memory", None)
+    memory_less_cmab = CmabClass.from_old_state(stripped_state)
+
+    #  read from version 1.0.0
+    old_state_ver1 = deepcopy(old_state)
+    actions_manager_state = old_state_ver1.pop("actions_manager")
+    old_state_ver1["actions"] = actions_manager_state["actions"]
+    old_cmab = CmabClass.from_old_state(
+        old_state_ver1,
+        delta=actions_manager_state.pop("delta", None),
+    )
+    assert old_cmab == memory_less_cmab
+
+    # check that the model parameters are correctly loaded
+    actual_actions = cmab.get_state()[1]["actions_manager"]["actions"]  # Normalize the dict
+    expected_actions = {k: {**v, **old_state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
+    for action_id, expected_action in expected_actions.items():
+        actual_action = cmab.actions[action_id]
+        assert expected_action["alpha"]["mu"] == actual_action.model_params.bnn_layer_params[0].bias.mu[0]
+        assert expected_action["alpha"]["sigma"] == actual_action.model_params.bnn_layer_params[0].bias.sigma[0]
+        assert expected_action["alpha"]["nu"] == actual_action.model_params.bnn_layer_params[0].bias.nu[0]
+        for i, beta in enumerate(expected_action["betas"]):
+            assert beta["mu"] == actual_action.model_params.bnn_layer_params[0].weight.mu[0][i]
+            assert beta["sigma"] == actual_action.model_params.bnn_layer_params[0].weight.sigma[0][i]
+            assert beta["nu"] == actual_action.model_params.bnn_layer_params[0].weight.nu[0][i]
+
+    # check the an error was raised when loading a state with a version >= 3.0.0
+    with pytest.raises(ValueError):
+        CmabClass.from_old_state(old_cmab.get_state()[1])
 
 
 @settings(deadline=None)
