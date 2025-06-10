@@ -535,6 +535,8 @@ def test_serialization(
     # Test serialization from old state
     old_post_update_state = post_update_state[1]
     old_post_update_state["actions"] = old_post_update_state.pop("actions_manager")["actions"]
+    old_post_update_state.pop("version")
+
     restored_smab = config.smab_class.from_old_state(old_post_update_state, delta=delta)
     assert restored_smab == smab
 

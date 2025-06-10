@@ -7,7 +7,7 @@ import numpy as np
 
 from pybandits.base import ProbabilityWeight, PyBanditsBaseModel
 from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
-from pybandits.pydantic_version_compatibility import Optional, PositiveInt
+from pybandits.pydantic_version_compatibility import Optional, PositiveInt, PrivateAttr
 
 literal_update_methods = get_args(UpdateMethods)
 
@@ -25,6 +25,11 @@ class FakeApproximation(PyBanditsBaseModel):
     n_draws: PositiveInt = 10
     n_features: PositiveInt
     hidden_dim_list: Optional[list] = None
+    _hist: Optional[np.ndarray] = PrivateAttr(default=None)
+
+    @property
+    def hist(self) -> Optional[np.ndarray]:
+        return self._hist
 
     def sample(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         sample_dict = {}

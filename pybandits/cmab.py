@@ -21,15 +21,15 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Union
 
 from numpy import array
 from numpy.typing import ArrayLike
 
 from pybandits.actions_manager import CmabActionsManager, CmabActionsManagerCC, CmabActionsManagerSO
-from pybandits.base import ActionId, BinaryReward, CmabPredictions
+from pybandits.base import ActionId, BinaryReward, CmabPredictions, PositiveProbability, Serializable
 from pybandits.mab import BaseMab
-from pybandits.model import BaseBayesianNeuralNetwork
+from pybandits.model import BaseBayesianNeuralNetwork, BnnLayerParams, BnnParams, StudentTArray
 from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.quantitative_model import BaseCmabZoomingModel
 from pybandits.strategy import (
@@ -155,6 +155,48 @@ class BaseCmabBernoulli(BaseMab, ABC):
             rewards_memory=rewards_memory,
             context_memory=context_memory,
         )
+
+    @classmethod
+    def update_old_state(cls, state: Dict[str, Serializable], delta: PositiveProbability) -> Dict[str, Serializable]:
+        """
+        Update the model state to the current version.
+        Besides the updates in the MAB class, it also loads legacy Bayesian Logistic Regression model parmeters into the new Bayesian Neural Network model.
+        """
+        state = super().update_old_state(state, delta)
+
+        # the state is in the old format of PyBandits < 3.0.0.
+        for action_id, action_state in state["actions_manager"]["actions"].items():
+            # Load legacy Bayesian Logistic Regression model parmeters into the new Bayesian Neural Network model.
+            if ("alpha" in action_state) and ("betas" in action_state):
+                bias = StudentTArray.cold_start(
+                    mu=[action_state["alpha"]["mu"]],
+                    sigma=[action_state["alpha"]["sigma"]],
+                    nu=[action_state["alpha"]["nu"]],
+                    shape=1,
+                )
+                mu_list = []
+                sigma_list = []
+                nu_list = []
+                for beta in action_state["betas"]:
+                    mu_list.append(beta["mu"])
+                    sigma_list.append(beta["sigma"])
+                    nu_list.append(beta["nu"])
+
+                weight = StudentTArray(mu=[mu_list], sigma=[sigma_list], nu=[nu_list], shape=(len(mu_list), 1))
+                layer_params = BnnLayerParams(weight=weight, bias=bias)
+
+                # add model_params_init - in case we need to reset the model
+                bias_init = StudentTArray.cold_start(shape=1)
+                weight_init = StudentTArray.cold_start(shape=(len(mu_list), 1))
+                layer_params_init = BnnLayerParams(weight=weight_init, bias=bias_init)
+
+                model_params = BnnParams(bnn_layer_params=[layer_params], bnn_layer_params_init=[layer_params_init])
+                action_state["model_params"] = model_params
+
+                action_state.pop("alpha")
+                action_state.pop("betas")
+
+        return state
 
 
 class CmabBernoulli(BaseCmabBernoulli):

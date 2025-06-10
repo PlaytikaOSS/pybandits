@@ -29,7 +29,7 @@ import pytensor.tensor as pt
 from numpy import sqrt
 from numpy.typing import ArrayLike
 from pydantic.dataclasses import dataclass
-from pymc import Approximation, Bernoulli, Deterministic, MutableData, fit, math, sample, sample_prior_predictive
+from pymc import Bernoulli, Data, Deterministic, fit, math, sample, sample_prior_predictive
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
 from pytensor.tensor import specify_broadcastable
@@ -483,7 +483,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         draws=1000, progressbar=False, return_inferencedata=False
     )
 
-    _approx: Approximation = PrivateAttr(None)
+    _approx_history: np.ndarray = PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -540,6 +540,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+    @property
+    def approx_history(self) -> Optional[np.ndarray]:
+        return self._approx_history
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
@@ -608,6 +612,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             n_cols_context = np.array(context).shape[1]
         except Exception as e:
             raise AttributeError(f"Context must be an ArrayLike with {self.input_dim} columns: {e}.")
+
+        if not np.issubdtype(context.dtype, np.number):
+            raise ValueError("Context array must contain only numeric values.")
+
         if n_cols_context != self.input_dim:
             raise AttributeError(f"Shape mismatch: context must have {self.input_dim} columns.")
 
@@ -664,16 +672,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         with PymcModel() as _model:
             # Define data variables using minibatches
-            bnn_output = MutableData("bnn_output", y)
+            bnn_output = Data("bnn_output", y, mutable=True)
             if is_predict:
                 # arrange  for batched dot product
                 x_expanded = np.expand_dims(x, axis=1)
-                bnn_input = MutableData("bnn_input", x_expanded)
+                bnn_input = Data("bnn_input", x_expanded, mutable=True)
                 for dim, size in enumerate(x_expanded.shape):
                     if size == 1:
                         bnn_input = specify_broadcastable(bnn_input, dim)
             else:
-                bnn_input = MutableData("bnn_input", x)
+                bnn_input = Data("bnn_input", x, mutable=True)
 
             n_samples = len(x)
 
@@ -692,8 +700,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                         name=bias_layer_params_name, shape=(n_samples, 1) + b_shape, **layer_params.bias.params
                     )
 
+                    batched_dot = pt.vectorize(
+                        lambda x_batch, w_batch: pt.dot(x_batch, w_batch), signature="(n,m),(m,p)->(n,p)"
+                    )
                     linear_transform = pt.as_tensor_variable(
-                        pt.batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
+                        batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
                     )
 
                 else:
@@ -776,8 +787,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             if self.update_method == "VI":
                 # variational inference
                 update_kwargs = self.update_kwargs.copy()
-                self._approx = fit(**update_kwargs["fit"])
-                trace = self._approx.sample(**update_kwargs["trace"])
+                approx = fit(**update_kwargs["fit"])
+                trace = approx.sample(**update_kwargs["trace"])
+                self._approx_history = approx.hist
             elif self.update_method == "MCMC":
                 # MCMC
                 trace = sample(**self.update_kwargs["trace"])

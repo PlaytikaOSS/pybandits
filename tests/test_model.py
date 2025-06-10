@@ -269,6 +269,13 @@ def test_check_context_matrix(n_samples, n_features, hidden_dim_list):
     with pytest.raises(AttributeError):
         bnn.check_context_matrix(context=context.loc[:, 1:])
 
+    # check that context is a numeric numpy array
+    context_str = context.copy()
+    context_str = context_str.astype(object)
+    context_str[:, 0] = context_str[:, 0].astype(str)
+    with pytest.raises(ValueError):
+        bnn.check_context_matrix(context=context_str)
+
 
 @settings(deadline=20000)
 @given(
