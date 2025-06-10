@@ -190,6 +190,9 @@ def test_change_detection(n_successes, n_failures, delta, reference):
     manager.update(actions=actions_memory, rewards=rewards_memory, actions_memory=[], rewards_memory=[])
     assert manager.actions["action1"].n_successes == n_successes
     assert manager.actions["action1"].n_failures == n_failures
+    # Initially no changes detected
+    assert manager.actions_with_change == set()
+
     manager.update(
         actions=["action1"] * 100,
         rewards=[0] * 100,
@@ -198,6 +201,11 @@ def test_change_detection(n_successes, n_failures, delta, reference):
     )
     assert manager.actions["action1"].n_successes == 1
     assert manager.actions["action1"].n_failures == reference
+    # Verify that change point was detected and recorded
+    assert len(manager.actions_with_change) > 0
+    # Check that action1 is in the detected changes
+    detected_actions = {action_id for action_id, _ in manager.actions_with_change}
+    assert "action1" in detected_actions
 
 
 ########################################################################################################################
@@ -670,14 +678,23 @@ def test_invalid_success_count(mocker: MockerFixture):
 def test_hypothesis_memory_trim(n_actions: int, trials_per_action: int, monkeymodule):
     # Mock stats for each action
     successes_per_action = trials_per_action - 1  # Ensure successes < trials
-    monkeymodule.setattr(
-        ActionsManager,
-        "_extract_current_stats_for_action",
-        lambda *args, **kwargs: (np.array([[successes_per_action]]), np.array([[trials_per_action]])),
-    )
 
     actions = {f"action{i}": Beta() for i in range(n_actions)}
     manager = DummyActionsManager(actions=actions)
+
+    def mock_extract_current_stats_for_action(action_id, *args, **kwargs):
+        # Return successes and trials for each action
+        return (
+            np.array([[successes_per_action]]),  # successes
+            np.array([[trials_per_action]]),  # trials
+        )
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+        manager.__dict__["_extract_current_stats_for_action"] = mock_extract_current_stats_for_action
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        monkeymodule.setattr(manager, "_extract_current_stats_for_action", mock_extract_current_stats_for_action)
+    else:
+        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
 
     total_trials = n_actions * trials_per_action
     actions_memory = [f"action{i}" for _ in range(trials_per_action) for i in range(n_actions)]
@@ -691,3 +708,111 @@ def test_hypothesis_memory_trim(n_actions: int, trials_per_action: int, monkeymo
     assert len(actions_memory) == total_trials
     assert len(rewards_memory) == total_trials
     assert len(memory_kwargs["context_memory"]) == total_trials
+
+
+########################################################################################################################
+
+
+# ActionsManager.actions_with_change functionality tests
+def test_actions_with_change_basic_functionality():
+    """Test basic functionality: initialization, clearing, and structure"""
+    actions = {"action1": Beta(), "action2": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+
+    # Test initialization
+    assert manager.actions_with_change == set()
+
+    # Test manual population and structure
+    manager.actions_with_change.add(("action1", 10))
+    manager.actions_with_change.add(("action2", 25))
+
+    # Verify structure
+    assert isinstance(manager.actions_with_change, set)
+    assert len(manager.actions_with_change) == 2
+    for action_id, change_point in manager.actions_with_change:
+        assert isinstance(action_id, str) and action_id in actions
+        assert isinstance(change_point, int) and change_point >= 0
+
+    # Test clearing on update
+    manager.update(actions=["action1"], rewards=[1])
+    assert manager.actions_with_change == set()
+
+
+def test_actions_with_change_detection_scenarios(monkeymodule):
+    """Test change detection scenarios: populated, selective, and empty"""
+    actions = {"action1": Beta(), "action2": Beta(), "action3": Beta()}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+
+    # Initialize actions with some data to avoid memory validation issues
+    initial_actions = ["action1"] * 20 + ["action2"] * 30 + ["action3"] * 10
+    initial_rewards = [1] * 60
+    manager.update(actions=initial_actions, rewards=initial_rewards, actions_memory=[], rewards_memory=[])
+
+    # Scenario 1: Multiple changes detected
+    def mock_multiple_changes(action_id, *args, **kwargs):
+        changes = {"action1": 15, "action2": 25, "action3": manager._no_change_point}
+        return changes[action_id]
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+        manager.__dict__["_get_last_change_point_for_action"] = mock_multiple_changes
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        monkeymodule.setattr(manager, "_get_last_change_point_for_action", mock_multiple_changes)
+    else:
+        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+
+    manager.update(actions=["action1"], rewards=[1], actions_memory=initial_actions, rewards_memory=initial_rewards)
+
+    # Should contain changes for action1 and action2 only
+    expected_changes = {("action1", 15), ("action2", 25)}
+    assert manager.actions_with_change == expected_changes
+
+    # Scenario 2: No changes detected - create a new manager to avoid state interference
+    if pydantic_version == PYDANTIC_VERSION_1:
+        manager.__dict__["_get_last_change_point_for_action"] = lambda *args, **kwargs: manager._no_change_point
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        monkeymodule.setattr(
+            manager, "_get_last_change_point_for_action", lambda *args, **kwargs: manager._no_change_point
+        )
+    else:
+        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+
+    manager.update(
+        actions=["action1"],
+        rewards=[1],
+        actions_memory=initial_actions + ["action1"],
+        rewards_memory=initial_rewards + [1],
+    )
+    assert manager.actions_with_change == set()
+
+
+@given(change_point_indices=st.lists(st.integers(min_value=0, max_value=100), min_size=0, max_size=3))
+def test_actions_with_change_hypothesis(change_point_indices, monkeymodule):
+    """Hypothesis test for actions_with_change with various scenarios"""
+    actions = {f"action{i}": Beta() for i in range(3)}
+    manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
+
+    # Initialize actions with some data to match memory expectations
+    initial_actions = ["action0"] * 50 + ["action1"] * 50 + ["action2"] * 50
+    initial_rewards = [1] * 150
+    manager.update(actions=initial_actions, rewards=initial_rewards, actions_memory=[], rewards_memory=[])
+
+    expected_changes = set()
+
+    def mock_change_detection(action_id, *args, **kwargs):
+        action_num = int(action_id.replace("action", ""))
+        if action_num < len(change_point_indices) and change_point_indices[action_num] > 0:
+            change_point = change_point_indices[action_num]
+            expected_changes.add((action_id, change_point))
+            return change_point
+        return manager._no_change_point
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+        manager.__dict__["_get_last_change_point_for_action"] = mock_change_detection
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        monkeymodule.setattr(manager, "_get_last_change_point_for_action", mock_change_detection)
+    else:
+        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+
+    manager.update(actions=["action0"], rewards=[1], actions_memory=initial_actions, rewards_memory=initial_rewards)
+
+    assert manager.actions_with_change == expected_changes

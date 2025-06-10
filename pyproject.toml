@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "4.0.2"
+version = "4.0.3"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -22,7 +22,7 @@ classifiers = [
 ]
 homepage = "https://github.com/PlaytikaOSS/pybandits"
 repository = "https://github.com/PlaytikaOSS/pybandits"
-keywords = ["multi-armed bandit", "reinforcement-learning", "optimization"]
+keywords = ["multi-armed bandits", "reinforcement-learning", "optimization"]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
