@@ -204,7 +204,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fc0707eb940&gt;
+&lt;matplotlib.legend.Legend at 0x7f4307195570&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -270,7 +270,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 136.47
+Finished [100%]: Average Loss = 149.87
 </pre></div></div>
 </div>
 <p>In order to sample from the posterior distribution, we are creating the model with the new updated parameters, and generate samples using pm.sample_prior_predictive.</p>
@@ -317,7 +317,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fc06aa9d9f0&gt;
+&lt;matplotlib.legend.Legend at 0x7f4303abe6e0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -347,8 +347,8 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.856
-AUC: 0.9374149986399782
+Accuracy: 0.852
+AUC: 0.946260183462698
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -492,7 +492,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Finished [100%]: Average Loss = 112.96
+Finished [100%]: Average Loss = 109.23
 </pre></div></div>
 </div>
 <p>We can see that the separation is much better than the bayesian logistic model.</p>
@@ -550,8 +550,8 @@ Sampling: [bias_0, bias_1, bias_2, out, weight_0, weight_1, weight_2]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.954
-AUC: 0.9906158498535976
+Accuracy: 0.946
+AUC: 0.9915806017063313
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
