@@ -1,11 +1,12 @@
-
 PyBandits
 =========
 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/PlaytikaOSS/pybandits/continuous_integration.yml)
 ![PyPI - Version](https://img.shields.io/pypi/v/pybandits)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pybandits)
-![alt text](https://img.shields.io/badge/license-MIT-blue)
+![MIT License](https://img.shields.io/badge/license-MIT-blue)
+![Ask DeepWiki](https://deepwiki.com/badge.svg)
+![Coverage](https://codecov.io/gh/PlaytikaOSS/pybandits/branch/main/graph/badge.svg)
 
 **PyBandits**  is a ``Python`` library for Multi-Armed Bandit. It provides an implementation of stochastic Multi-Armed Bandit (sMAB) and contextual Multi-Armed Bandit (cMAB) based on Thompson Sampling.
 
@@ -67,6 +68,8 @@ For more information please read the full
 [documentation](https://playtikaoss.github.io/pybandits/pybandits.html)
 and
 [tutorials](https://playtikaoss.github.io/pybandits/tutorials.html).
+
+You can also observe on [DeepWiki](https://deepwiki.com/PlaytikaOSS/pybandits).
 
 Info for developers
 -------------------

@@ -51,9 +51,21 @@ jobs:
         run: |
           # run pre-commit hooks
           poetry run pre-commit run --all-files
-      - name: Run tests
+      - name: Run tests without coverage
+        if: ${{ !(matrix.python-version == '3.10' && matrix.pydantic-version == '2.*') }}
         run: |
-          poetry run pytest -n auto -vv
+          poetry run pytest -n auto -vv --durations=5
+      - name: Run tests with coverage
+        if: ${{ matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        run: |
+          poetry run pytest -n auto -vv --durations=5 --cov=pybandits/ --cov-report=xml --cov-report=html
+      - name: Upload coverage to Codecov
+        if: ${{ matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Extract version from pyproject.toml
         id: extract_version
         run: |

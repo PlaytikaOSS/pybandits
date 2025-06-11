@@ -31,6 +31,7 @@ from pybandits.model import (
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
+    Field,
     GenericModel,
     NonNegativeInt,
     NonPositiveInt,
@@ -74,6 +75,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     _no_change_point: ClassVar[NonNegativeInt] = -1
     _min_adaptive_window_size: ClassVar[NonPositiveInt] = 10000
     _memory_parameters_suffix: ClassVar[str] = "_memory"
+    actions_with_change: Set[Tuple[ActionId, NonNegativeInt]] = Field(default_factory=set)
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -136,12 +138,14 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         action_ids: Optional[Set[ActionId]] = None,
         quantitative_action_ids: Optional[Set[ActionId]] = None,
         kwargs: Optional[Dict[str, Any]] = None,
+        actions_with_change: Optional[Set[Tuple[ActionId, NonNegativeInt]]] = None,
     ):
         kwargs = kwargs or {}
         actions = self._instantiate_actions(
             actions=actions, action_ids=action_ids, quantitative_action_ids=quantitative_action_ids, kwargs=kwargs
         )
-        super().__init__(actions=actions, delta=delta)
+        actions_with_change = actions_with_change or set()
+        super().__init__(actions=actions, delta=delta, actions_with_change=actions_with_change)
 
     def _validate_update_params(
         self,
@@ -213,6 +217,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
             List of previously collected rewards.
         """
+        self.actions_with_change.clear()
         if self.delta is None and (actions_memory or rewards_memory):
             raise AttributeError("Adaptive window size is not set, so memory should not be provided.")
         if self.delta is not None and (actions_memory is None or rewards_memory is None):
@@ -484,18 +489,19 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         NonNegativeInt
             The last change point. 0 if no change point is found.
         """
-        change_points = [
-            self._get_last_change_point_for_action(
-                action_id=action_id,
-                residual_memory_len=residual_memory_len,
-                actions_memory=actions_memory,
-                rewards_memory=rewards_memory,
-            )
-            for action_id in self.actions.keys()
-            if not isinstance(self.actions[action_id], QuantitativeModel)
-        ]
-
-        return max(change_points)
+        last_change_point = self._no_change_point
+        for action_id, action_model in self.actions.items():
+            if not isinstance(action_model, QuantitativeModel):
+                change_point = self._get_last_change_point_for_action(
+                    action_id=action_id,
+                    residual_memory_len=residual_memory_len,
+                    actions_memory=actions_memory,
+                    rewards_memory=rewards_memory,
+                )
+                if change_point != self._no_change_point:
+                    self.actions_with_change.add((action_id, change_point))
+                    last_change_point = max(last_change_point, change_point)
+        return last_change_point
 
     def _get_threshold(self, past_trials: np.ndarray, present_trials: np.ndarray) -> np.ndarray:
         """
