@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import importlib.metadata
+import json
 import random
 from abc import ABC, abstractmethod
 from inspect import isclass
@@ -328,7 +329,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The weighted sum of logistic regression logits..
         """
 
-    def get_state(self) -> (str, dict):
+    def get_state(self) -> (str, str):
         """
         Access the complete model internal state, enough to create an exact copy of the same model from it.
         Returns
@@ -339,7 +340,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The internal state of the model (actions, scores, etc.).
         """
         model_name = self.__class__.__name__
-        state = self._apply_version_adjusted_method("model_dump", "dict")
+        state = self._apply_version_adjusted_method("model_dump_json", "json")
         return model_name, state
 
     @validate_call
@@ -399,7 +400,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return selected_action
 
     @classmethod
-    def from_state(cls, state: Dict[str, Serializable]) -> "BaseMab":
+    def from_state(cls, state: str) -> "BaseMab":
         """
         Create a new instance of the class from a given model state.
         The state can be obtained by applying get_state() to a model.
@@ -415,17 +416,34 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The new model instance.
 
         """
-        return cls.model_validate(state)
+        return cls.model_validate_json(state)
 
     @classmethod
-    def update_old_state(cls, state: Dict[str, Serializable], delta: PositiveProbability) -> Dict[str, Serializable]:
+    def update_old_state(
+        cls, state: Dict[str, Serializable], delta: Optional[PositiveProbability]
+    ) -> Dict[str, Serializable]:
         """
         Update the model state to the current version if needed.
         It adjusts the following:
         1. Adding actions_manager to the state if it is not present.
         2. Removes deprecated members from the state.
 
+        Parameters
+        ----------
+        state : str
+            The internal state of a model (actions, strategy, etc.) of the same type.
+            The state is expected to be in the old format of PyBandits below the current supported version.
+        delta : Optional[PositiveProbability]
+            The delta value to be set in the actions_manager. If None, it will not be set.
+            This is relevant only for adaptive window models.
+
+        Returns
+        -------
+        state : Dict[str, Serializable]
+            The updated state of the model.
+            The state is in the current format of PyBandits, with actions_manager and delta added if needed.
         """
+
         # the state is in the old format of PyBandits < 2.0.0.
         if "actions" in state:
             state["actions_manager"] = {}
@@ -441,7 +459,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
     @classmethod
     def from_old_state(
         cls,
-        state: Dict[str, Serializable],
+        state: str,
         delta: Optional[PositiveProbability] = None,
     ) -> "BaseMab":
         """
@@ -450,23 +468,28 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        state: dict
+        state : str
             The internal state of a model (actions, strategy, etc.) of the same type.
             The state is expected to be in the old format of PyBandits below the current supported version (cls.current_supported_version_th).
+        delta : Optional[PositiveProbability]
+            The delta value to be set in the actions_manager. If None, it will not be set.
+            This is relevant only for adaptive window models.
+
         Returns
         -------
-        model: BaseMab
+        model : BaseMab
             The new model instance.
-
         """
-        if ("version" in state) and (
-            version.parse(state["version"]) >= version.parse(cls.current_supported_version_th)
+
+        state_dict = json.loads(state)
+        if ("version" in state_dict) and (
+            version.parse(state_dict["version"]) >= version.parse(cls.current_supported_version_th)
         ):
             raise ValueError(
                 f"The state is expected to be in the old format of PyBandits < {cls.current_supported_version_th}."
             )
-
-        state = cls.update_old_state(state, delta)
+        state_dict = cls.update_old_state(state_dict, delta)
+        state = json.dumps(state_dict)
         return cls.from_state(state)
 
     @classmethod

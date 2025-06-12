@@ -51,7 +51,7 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
-from tests.test_utils import sample_with_replacement, to_temporary_pickle
+from tests.test_utils import pop_from_state, push_to_state, sample_with_replacement, to_temporary_pickle
 
 
 @st.composite
@@ -74,15 +74,15 @@ def mock_update(models: List[SmabModelType], diff, monkeymodule, label=0):
                 mock_update(sub_models, diff, monkeymodule, label)
 
 
+def _quantitative_cost(x, cost):
+    return x**cost
+
+
 @dataclass
 class ModelTestConfig:
     smab_class: Type
     strategy_class: Type
     model_types: List[Type[SmabModelType]]
-
-    @staticmethod
-    def _quantitative_cost(x, cost):
-        return x**cost
 
     def _create_actions(
         self, action_ids: List[str], costs: Optional[st.SearchStrategy], n_objectives: Optional[PositiveInt]
@@ -94,7 +94,7 @@ class ModelTestConfig:
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
-                cost if model_type in [BetaCC, BetaMOCC] else partial(self._quantitative_cost, cost=cost)
+                cost if model_type in [BetaCC, BetaMOCC] else partial(_quantitative_cost, cost=cost)
                 for cost, model_type in zip(costs, self.model_types)
             ]
         else:
@@ -529,16 +529,18 @@ def test_serialization(
     assert pre_update_state != post_update_state
 
     # Test serialization
-    restored_smab = config.smab_class.from_state(post_update_state[1])
-    assert restored_smab == smab
+    restored_smab_state = config.smab_class.from_state(post_update_state[1]).get_state()
+    assert restored_smab_state == post_update_state
 
     # Test serialization from old state
     old_post_update_state = post_update_state[1]
-    old_post_update_state["actions"] = old_post_update_state.pop("actions_manager")["actions"]
-    old_post_update_state.pop("version")
+    old_post_update_state = push_to_state(
+        old_post_update_state, "actions", pop_from_state(old_post_update_state, "actions_manager")[0]["actions"]
+    )
+    old_post_update_state = pop_from_state(old_post_update_state, "version")[1]
 
-    restored_smab = config.smab_class.from_old_state(old_post_update_state, delta=delta)
-    assert restored_smab == smab
+    restored_smab_state = config.smab_class.from_old_state(old_post_update_state, delta=delta).get_state()
+    assert restored_smab_state == post_update_state
 
 
 @settings(deadline=None)

@@ -55,6 +55,32 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
     check_value_error(probs_reward, context[:1])
 
 
+@pytest.mark.parametrize(
+    "probability, is_quantitative, should_pass",
+    [
+        # Valid functions
+        (lambda x: 0.5, False, True),  # Valid non-quantitative function
+        (lambda x, y: 0.5, True, True),  # Valid quantitative function
+        # Invalid functions - not callable
+        (0.5, False, False),
+        (None, True, False),
+        # Invalid functions - wrong argument count
+        (lambda x, y: 0.5, False, False),
+        (lambda x: 0.5, True, False),
+        (lambda x, y, z: 0.5, False, False),
+        (lambda x, y, z: 0.5, True, False),
+    ],
+)
+def test_validate_probs_reward_values(probability, is_quantitative, should_pass):
+    if should_pass:
+        # Should not raise any exception
+        CmabSimulator._validate_probs_reward_values(probability, is_quantitative)
+    else:
+        # Should raise ValueError
+        with pytest.raises(ValueError):
+            CmabSimulator._validate_probs_reward_values(probability, is_quantitative)
+
+
 @settings(deadline=None)
 @given(
     st.just(["a1", "a2"]),

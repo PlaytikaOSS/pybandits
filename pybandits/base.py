@@ -219,17 +219,17 @@ class PyBanditsBaseModel(BaseModel):
             return self.copy(update=update, deep=deep)
 
         @classmethod
-        def model_validate(
+        def model_validate_json(
             cls,
-            obj: Any,
+            json_data: Union[str, bytes, bytearray],
         ) -> Self:
             """
             Validate a PyBandits BaseModel model instance.
 
             Parameters
             ----------
-            obj : Any
-                The object to validate. Use state dictionary to generate model from state.
+            json_data : str
+                JSON string of the object to validate.
 
             Raises
             ------
@@ -240,4 +240,4 @@ class PyBanditsBaseModel(BaseModel):
             Self
                 The validated model instance.
             """
-            return cls.parse_obj(obj)
+            return cls.parse_raw(json_data)

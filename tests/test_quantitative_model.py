@@ -1,5 +1,7 @@
+import functools
+import json
 from copy import deepcopy
-from typing import List
+from typing import List, Union
 
 import numpy as np
 import pytest
@@ -10,7 +12,14 @@ from hypothesis.extra.numpy import arrays
 import pybandits
 from pybandits.base import BinaryReward
 from pybandits.model import Beta
-from pybandits.quantitative_model import CmabZoomingModel, Segment, SmabZoomingModel, ZoomingModel
+from pybandits.pydantic_version_compatibility import NonNegativeFloat
+from pybandits.quantitative_model import (
+    CmabZoomingModel,
+    Segment,
+    SmabZoomingModel,
+    SmabZoomingModelCC,
+    ZoomingModel,
+)
 from tests.test_utils import FakeApproximation
 
 
@@ -304,3 +313,47 @@ def test_sample_proba_returns_valid_probabilities_cmab(context, dimension, n_fea
         for (q,), (p, _) in proba:
             assert 0 <= q <= 1
             assert 0 <= p <= 1
+
+
+########################################################################################################################
+
+
+# QuantitativeModelCC tests via SmabZoomingModelCC
+
+
+def simple_cost(value: float) -> float:
+    return value * 2
+
+
+def complex_cost(value: Union[float, NonNegativeFloat], factor: float = 1.0) -> NonNegativeFloat:
+    return value * factor
+
+
+partial_cost = functools.partial(complex_cost, factor=1.5)
+
+
+@pytest.mark.parametrize(
+    "cost_function",
+    [
+        simple_cost,
+        complex_cost,
+        partial_cost,
+    ],
+)
+def test_cost_serialization_deserialization(cost_function):
+    """Test serialization and deserialization of cost field with different callables."""
+
+    # Create model with the test callable as cost
+    model = SmabZoomingModelCC.cold_start(cost=cost_function)
+    serialized = model._apply_version_adjusted_method("model_dump_json", "json")
+    serialized_dict = json.loads(serialized)
+
+    assert "cost" in serialized_dict
+    assert isinstance(serialized_dict["cost"], str)
+
+    deserialized_model = SmabZoomingModelCC.model_validate_json(serialized)
+    # Check callable was properly restored
+    assert callable(deserialized_model.cost)
+
+    reserialized = deserialized_model._apply_version_adjusted_method("model_dump_json", "json")
+    assert reserialized == serialized

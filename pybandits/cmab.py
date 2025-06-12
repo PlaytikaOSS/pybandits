@@ -157,10 +157,27 @@ class BaseCmabBernoulli(BaseMab, ABC):
         )
 
     @classmethod
-    def update_old_state(cls, state: Dict[str, Serializable], delta: PositiveProbability) -> Dict[str, Serializable]:
+    def update_old_state(
+        cls, state: Dict[str, Serializable], delta: Optional[PositiveProbability]
+    ) -> Dict[str, Serializable]:
         """
         Update the model state to the current version.
         Besides the updates in the MAB class, it also loads legacy Bayesian Logistic Regression model parmeters into the new Bayesian Neural Network model.
+
+        Parameters
+        ----------
+        state : Dict[str, Serializable]
+            The internal state of a model (actions, strategy, etc.) of the same type.
+            The state is expected to be in the old format of PyBandits below the current supported version.
+        delta : Optional[PositiveProbability]
+            The delta value to be set in the actions_manager. If None, it will not be set.
+            This is relevant only for adaptive window models.
+
+        Returns
+        -------
+        state : Dict[str, Serializable]
+            The updated state of the model.
+            The state is in the current format of PyBandits, with actions_manager and delta added if needed.
         """
         state = super().update_old_state(state, delta)
 
@@ -182,7 +199,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
                     sigma_list.append(beta["sigma"])
                     nu_list.append(beta["nu"])
 
-                weight = StudentTArray(mu=[mu_list], sigma=[sigma_list], nu=[nu_list], shape=(len(mu_list), 1))
+                weight = StudentTArray(mu=[mu_list], sigma=[sigma_list], nu=[nu_list])
                 layer_params = BnnLayerParams(weight=weight, bias=bias)
 
                 # add model_params_init - in case we need to reset the model
@@ -190,7 +207,9 @@ class BaseCmabBernoulli(BaseMab, ABC):
                 weight_init = StudentTArray.cold_start(shape=(len(mu_list), 1))
                 layer_params_init = BnnLayerParams(weight=weight_init, bias=bias_init)
 
-                model_params = BnnParams(bnn_layer_params=[layer_params], bnn_layer_params_init=[layer_params_init])
+                model_params = BnnParams(
+                    bnn_layer_params=[layer_params], bnn_layer_params_init=[layer_params_init]
+                )._apply_version_adjusted_method("model_dump", "dict")
                 action_state["model_params"] = model_params
 
                 action_state.pop("alpha")
