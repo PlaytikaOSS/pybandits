@@ -28,14 +28,13 @@ import numpy as np
 import pytensor.tensor as pt
 from numpy import sqrt
 from numpy.typing import ArrayLike
-from pydantic.dataclasses import dataclass
 from pymc import Bernoulli, Data, Deterministic, fit, math, sample, sample_prior_predictive
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
 from pytensor.tensor import specify_broadcastable
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight
+from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
 from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
@@ -110,13 +109,6 @@ class BaseBeta(Model, ABC):
     n_failures: PositiveInt = 1
         Counter of the number of failures.
     """
-
-    @model_validator(mode="before")
-    @classmethod
-    def both_or_neither_models_are_defined(cls, values):
-        if hasattr(values, "n_successes") != hasattr(values, "n_failures"):
-            raise ValueError("Either both or neither n_successes and n_failures should be specified.")
-        return values
 
     @property
     def std(self) -> float:
@@ -281,8 +273,7 @@ class BetaMOCC(BaseBetaMO, ModelCC):
     """
 
 
-@dataclass
-class StudentTArray:
+class StudentTArray(PyBanditsBaseModel):
     """
     A class representing an array of Student's t-distributions with parameters `mu`, `sigma`, and `nu`.
     A specific element (e.g, a single parameter of a layer) distribution is defined by the the corresponding elements in the lists.
@@ -377,8 +368,7 @@ class StudentTArray:
         return dict(mu=np.array(self.mu), sigma=np.array(self.sigma), nu=np.array(self.nu))
 
 
-@dataclass
-class BnnLayerParams:
+class BnnLayerParams(PyBanditsBaseModel):
     """
     Represents the parameters of a Bayesian neural network (BNN) layer.
 
@@ -394,8 +384,7 @@ class BnnLayerParams:
     bias: StudentTArray
 
 
-@dataclass
-class BnnParams:
+class BnnParams(PyBanditsBaseModel):
     """
     Represents the parameters of a Bayesian Neural Network (BNN), including
     both the current layer parameters and the initial layer parameters.
@@ -410,20 +399,13 @@ class BnnParams:
     """
 
     bnn_layer_params: Optional[List[BnnLayerParams]]
-    bnn_layer_params_init: List[BnnLayerParams] = Field(None, frozen=True)
+    bnn_layer_params_init: List[BnnLayerParams] = Field(default_factory=list, init=False, frozen=True)
 
-    @model_validator(mode="after")
+    @model_validator(mode="before")
     @classmethod
     def validate_inputs(cls, values):
-        if pydantic_version == PYDANTIC_VERSION_1:
-            if values.get("bnn_layer_params_init") is None:
-                values["bnn_layer_params_init"] = deepcopy(values["bnn_layer_params"])
-
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            if values.bnn_layer_params_init is None:
-                values.bnn_layer_params_init = deepcopy(values.bnn_layer_params)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        if values.get("bnn_layer_params_init") is None:
+            values["bnn_layer_params_init"] = deepcopy(values["bnn_layer_params"])
 
         return values
 

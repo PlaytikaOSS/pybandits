@@ -45,6 +45,55 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
         SmabSimulator(mab=smab, probs_reward=probs_reward)
 
 
+@pytest.mark.parametrize(
+    "probability, is_quantitative_action, should_pass",
+    [
+        # Valid non-quantitative actions
+        (0.5, False, True),
+        (0.0, False, True),
+        (1.0, False, True),
+        # Invalid non-quantitative actions - not float
+        ("0.5", False, False),
+        (None, False, False),
+        (lambda x: 0.5, False, False),
+        # Invalid non-quantitative actions - out of range
+        (-0.1, False, False),
+        (1.1, False, False),
+        # Valid quantitative actions
+        (lambda x: 0.5, True, True),
+        (lambda quantity: 0.7, True, True),
+        (lambda *args: 0.5, True, True),
+        # Invalid quantitative actions - not callable
+        (0.5, True, False),
+        (None, True, False),
+        # Invalid quantitative actions - wrong argument count
+        (lambda: 0.5, True, False),
+        (lambda x, y: 0.5, True, False),
+    ],
+)
+def test_validate_probs_reward_values(probability, is_quantitative_action, should_pass):
+    """
+    Test the _validate_probs_reward_values method with various combinations
+    of probability values and action types.
+
+    Parameters
+    ----------
+    probability : Union[float, callable]
+        The probability value to test
+    is_quantitative_action : bool
+        Whether the action is quantitative
+    should_pass : bool
+        Whether the validation should pass
+    """
+    if should_pass:
+        # Should not raise any exception
+        SmabSimulator._validate_probs_reward_values(probability, is_quantitative_action)
+    else:
+        # Should raise ValueError
+        with pytest.raises(ValueError):
+            SmabSimulator._validate_probs_reward_values(probability, is_quantitative_action)
+
+
 @settings(deadline=None)
 @given(
     action_ids=st.just(["a1", "a2"]),

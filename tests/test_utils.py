@@ -1,9 +1,11 @@
+import json
 import pickle
 import random
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, get_args
+from typing import Any, Dict, List, Tuple, get_args
 
 import numpy as np
+from bokeh.core.serialization import Serializable
 
 from pybandits.base import ProbabilityWeight, PyBanditsBaseModel
 from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
@@ -67,3 +69,52 @@ def fake_bnn_sample_proba(self, context: np.ndarray, *args, **kwargs) -> List[Pr
     mock_probs = predictions[BaseBayesianNeuralNetwork._prob_var_name].values
     mock_weighted_sums = predictions[BaseBayesianNeuralNetwork._logit_var_name].values
     return list(zip(mock_probs, mock_weighted_sums))
+
+
+def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:
+    """
+    Pop a key from a JSON string state.
+
+    Parameters
+    ----------
+    state: str
+        The JSON string state.
+    key: str
+        The key to pop.
+
+    Returns
+    -------
+    value : Any
+        The value of the popped key.
+    str
+
+    """
+
+    state_dict = json.loads(state)
+    value = state_dict.pop(key, None)
+    state = json.dumps(state_dict)
+    return value, state
+
+
+def push_to_state(state: str, key: str, value: Any):
+    """
+    Push a key-value pair to a JSON string state.
+
+    Parameters
+    ----------
+    state: str
+        The JSON string state.
+    key: str
+        The key to push.
+    value: Any
+        The value to push.
+
+    Returns
+    -------
+    new_state: str
+        The updated JSON string state.
+    """
+
+    state_dict = json.loads(state)
+    state_dict[key] = value
+    return json.dumps(state_dict)

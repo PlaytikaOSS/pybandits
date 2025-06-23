@@ -1,3 +1,6 @@
+import functools
+import inspect
+import json
 from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import product
@@ -9,16 +12,22 @@ from scipy.spatial.distance import jensenshannon
 from scipy.stats import beta
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, Float01, Probability, PyBanditsBaseModel, QuantitativeProbability
+from pybandits.base import BinaryReward, Float01, PyBanditsBaseModel, QuantitativeProbability
 from pybandits.base_model import BaseModelCC, BaseModelSO
 from pybandits.model import BayesianNeuralNetwork, Beta, Model
 from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
     NonNegativeFloat,
     PositiveInt,
     PrivateAttr,
     field_validator,
+    pydantic_version,
     validate_call,
 )
+
+if pydantic_version == PYDANTIC_VERSION_2:
+    from pydantic import field_serializer
 
 
 class QuantitativeModel(BaseModelSO, ABC):
@@ -91,6 +100,103 @@ class QuantitativeModelCC(BaseModelCC, ABC):
 
     cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
 
+    @staticmethod
+    def _serialize_function(func: Callable) -> str:
+        """
+        Serialize a function to its source code.
+
+        Parameters
+        ----------
+        func : Callable
+            Function to serialize as string.
+
+        Returns
+        -------
+        str
+            The serialized function code.
+        """
+        if inspect.isfunction(func) and not func.__name__ == "<lambda>":
+            try:
+                return inspect.getsource(func).strip()
+            except OSError:  # Dynamically evaluated functions may not have source code available
+                return globals()[func.__name__].__source__  # Fallback to the global scope if source is not available
+        return str(func)
+
+    @staticmethod
+    def _deserialize_function(code: str) -> Callable:
+        """
+        Deserialize a function from its source code.
+
+        Parameters
+        ----------
+        code : str
+            python code representing a function or a callable object.
+
+        Returns
+        -------
+        Callable
+            The deserialized function or callable object.
+        """
+        if code.startswith("def "):
+            exec(code, globals())
+            func_name = code.split("(")[0][4:].strip()
+            globals()[func_name].__source__ = code.strip()  # Register the function in the global scope
+        else:
+            func_name = code.strip()
+        return eval(func_name)
+
+    @staticmethod
+    def serialize_cost(cost_value) -> str:
+        """Serialize cost value to string representation."""
+        if isinstance(cost_value, functools.partial):
+            return f"functools.partial({QuantitativeModelCC._serialize_function(cost_value.func)}, {cost_value.args}, {cost_value.keywords})"
+        elif callable(cost_value):
+            return QuantitativeModelCC._serialize_function(cost_value)
+        else:
+            raise ValueError(f"Unrecognized cost for serialization: {cost_value}")
+
+    @classmethod
+    def deserialize_cost(cls, value):
+        """Deserialize cost from string representation if needed."""
+        if isinstance(value, str):
+            if value.startswith("functools.partial"):
+                inner_func_split = "(".join(value.split("(")[1:]).split(",")
+                # Extract function and arguments from pattern: functools.partial(func_name, args, kwargs)
+                func_str = ",".join(inner_func_split[:-2]).strip()
+                func = cls._deserialize_function(func_str)
+                args_str = ")".join(",".join(inner_func_split[-2:]).split(")")[:-1]).strip()
+                args_parts = eval(args_str) if args_str else ((), {})
+                return functools.partial(func, *args_parts[0], **args_parts[1])
+            else:
+                return cls._deserialize_function(value)
+        return value
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+
+        def dict(self, **kwargs):
+            d = super().dict(**kwargs)
+            # Handle cost field serialization for CC models
+            if "cost" in d:
+                d["cost"] = self.serialize_cost(d["cost"])
+            return d
+
+    elif pydantic_version == PYDANTIC_VERSION_2:
+
+        @field_serializer("cost")
+        def encode_cost(self, value):
+            return self.serialize_cost(value).encode("ascii")
+
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+    @field_validator("cost", mode="before")
+    @classmethod
+    def validate_cost(cls, value):
+        """
+        Deserialize cost from string representation if needed.
+        """
+        return cls.deserialize_cost(value)
+
 
 class Segment(PyBanditsBaseModel):
     """
@@ -131,8 +237,8 @@ class Segment(PyBanditsBaseModel):
 
     def split(self) -> Tuple["Segment", "Segment"]:
         middles = (self.mins + self.maxs) / 2
-        left_intervals = np.concatenate(np.atleast_2d(self.mins, middles), axis=1)
-        right_intervals = np.concatenate(np.atleast_2d(middles, self.maxs), axis=1)
+        left_intervals = np.concatenate([np.atleast_2d(self.mins).T, np.atleast_2d(middles).T], axis=1)
+        right_intervals = np.concatenate([np.atleast_2d(middles).T, np.atleast_2d(self.maxs).T], axis=1)
         return Segment(intervals=left_intervals), Segment(intervals=right_intervals)
 
     def __add__(self, other: "Segment") -> "Segment":
@@ -148,16 +254,19 @@ class Segment(PyBanditsBaseModel):
         -------
         Segment
             The merged segment.
-            The merged segment.
         """
         if not self.is_adjacent(other):
             raise ValueError("Segments must be adjacent.")
-        to_concatenate = (self.mins, other.maxs) if self.maxs == other.mins else (other.mins, self.maxs)
-        new_intervals = np.concatenate(np.atleast_2d(*to_concatenate), axis=1)
+
+        if np.array_equal(self.maxs, other.mins):
+            new_intervals = np.column_stack((self.mins, other.maxs))
+        else:
+            new_intervals = np.column_stack((other.mins, self.maxs))
+
         return Segment(intervals=new_intervals)
 
     def __hash__(self) -> int:
-        return tuple(self.intervals_array.flatten()).__hash__()
+        return hash(tuple(tuple(interval) for interval in self.intervals))
 
     def __contains__(self, value: Union[float, np.ndarray]) -> bool:
         """
@@ -219,7 +328,7 @@ class Segment(PyBanditsBaseModel):
                 (self.maxs[diff_mask] == other.mins[diff_mask]), (self.mins[diff_mask] == other.maxs[diff_mask])
             )
             # Segments are adjacent if exactly one dimension differs and it's adjacent
-            return adjacent_mask[0]
+            return bool(adjacent_mask[0])
         else:
             return False
 
@@ -242,9 +351,9 @@ class ZoomingModel(QuantitativeModel, ABC):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -253,18 +362,60 @@ class ZoomingModel(QuantitativeModel, ABC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Segment, Optional[Model]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Model]]
         Mapping of segments to models.
     """
 
     dimension: PositiveInt
-    comparison_threshold: Probability = 0.1
-    segment_update_factor: Probability = 0.1
+    comparison_threshold: Float01 = 0.1
+    segment_update_factor: Float01 = 0.1
     n_comparison_points: PositiveInt = 1000
     n_max_segments: Optional[PositiveInt] = 32
     sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Model]]
     _base_model: Model = PrivateAttr()
     _n_initial_segments: ClassVar = 4
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+
+        def dict(self, **kwargs):
+            d = super().dict(**kwargs)
+            # Convert tuple keys to strings for serialization
+            d["sub_actions"] = {str(k): v for k, v in d["sub_actions"].items()}
+            return d
+
+        def json(self, **kwargs) -> str:
+            d = self.dict()
+            # Convert tuple keys to strings for serialization
+            return json.dumps(d, **kwargs)
+
+    elif pydantic_version == PYDANTIC_VERSION_2:
+
+        @field_serializer("sub_actions")
+        def serialize_sub_actions(self, value):
+            return {str(k): v for k, v in value.items()}
+
+    @field_validator("sub_actions", mode="before")
+    @classmethod
+    def deserialize_sub_actions(cls, value):
+        """
+        Convert sub_actions from a dict with string keys (json representation) to tuple (object representation).
+        """
+        if isinstance(value, dict) and all(isinstance(k, str) for k in value.keys()):
+            value = {cls._deserialize_sub_action_key(k): v for k, v in value.items()}
+
+        return value
+
+    @staticmethod
+    def _deserialize_sub_action_key(key: str) -> Tuple[Tuple[Float01, Float01], ...]:
+        key = eval(key)
+        if isinstance(key, tuple):
+            if not isinstance(key[0], tuple):  # case of dimension = 1
+                key = (key,)
+        elif isinstance(key, list):
+            key = tuple(tuple(interval) for interval in key)
+        else:
+            raise ValueError(f"Invalid key type: for {key}. Expected tuple or list of lists.")
+        return key
 
     def _validate_segments(self):
         if self.n_max_segments is not None and len(self.sub_actions) > self.n_max_segments:
@@ -299,7 +450,7 @@ class ZoomingModel(QuantitativeModel, ABC):
     def cold_start(
         cls,
         dimension: PositiveInt = 1,
-        comparison_threshold: Probability = 0.1,
+        comparison_threshold: Float01 = 0.1,
         n_comparison_points: PositiveInt = 1000,
         n_max_segments: Optional[PositiveInt] = 32,
         **kwargs,
@@ -603,9 +754,9 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -614,11 +765,11 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[Beta]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
         Mapping of segments to Beta models.
     """
 
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[Beta]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
 
     def _init_base_model(self):
         """
@@ -670,9 +821,9 @@ class SmabZoomingModel(BaseSmabZoomingModel):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -681,7 +832,7 @@ class SmabZoomingModel(BaseSmabZoomingModel):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[Beta]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
         Mapping of segments to Beta models.
     """
 
@@ -694,9 +845,9 @@ class SmabZoomingModelCC(BaseSmabZoomingModel, QuantitativeModelCC):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -705,7 +856,7 @@ class SmabZoomingModelCC(BaseSmabZoomingModel, QuantitativeModelCC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[Beta]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
         Mapping of segments to Beta models.
     cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
         Cost associated to the Beta distribution.
@@ -720,9 +871,9 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -731,13 +882,13 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[BayesianNeuralNetwork]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
         Mapping of segments to Bayesian Logistic Regression models.
     base_model_cold_start_kwargs: Dict[str, Any]
         Keyword arguments for the base model cold start.
     """
 
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[BayesianNeuralNetwork]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
     base_model_cold_start_kwargs: Dict[str, Any]
 
     @field_validator("base_model_cold_start_kwargs", mode="before")
@@ -804,9 +955,9 @@ class CmabZoomingModel(BaseCmabZoomingModel):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -815,7 +966,7 @@ class CmabZoomingModel(BaseCmabZoomingModel):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[BayesianNeuralNetwork]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
         Mapping of segments to Bayesian Logistic Regression models.
     base_model_cold_start_kwargs: Dict[str, Any]
         Keyword arguments for the base model cold start.
@@ -830,9 +981,9 @@ class CmabZoomingModelCC(BaseCmabZoomingModel, QuantitativeModelCC):
     ----------
     dimension: PositiveInt
         Number of parameters of the model.
-    comparison_threshold: Probability
+    comparison_threshold: Float01
         Comparison threshold.
-    segment_update_factor: Probability
+    segment_update_factor: Float01
         Segment update factor. If the number of samples in a segment is more than the average number of samples in all
         segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
         than the average number of samples in all segments by this factor, the segment is considered a nuisance.
@@ -841,7 +992,7 @@ class CmabZoomingModelCC(BaseCmabZoomingModel, QuantitativeModelCC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Probability, Probability], ...], Optional[BayesianNeuralNetwork]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
         Mapping of segments to Bayesian Logistic Regression models.
     base_model_cold_start_kwargs: Dict[str, Any]
         Keyword arguments for the base model cold start.

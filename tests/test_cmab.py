@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import json
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Type, Union
@@ -166,15 +167,15 @@ def mock_update(models: Union[List[BaseBayesianNeuralNetwork], BaseBayesianNeura
         label = find_and_update_parameters(model, diff, monkeymodule, label)
 
 
+def _quantitative_cost(x, cost):
+    return x**cost
+
+
 @dataclass
 class ModelTestConfig:
     cmab_class: Type
     strategy_class: Type
     model_types: List[Type[CmabModelType]]
-
-    @staticmethod
-    def _quantitative_cost(x, cost):
-        return x**cost
 
     def _create_actions(
         self,
@@ -192,7 +193,7 @@ class ModelTestConfig:
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
-                cost if model_type in [BayesianNeuralNetworkCC] else partial(self._quantitative_cost, cost=cost)
+                cost if model_type in [BayesianNeuralNetworkCC] else partial(_quantitative_cost, cost=cost)
                 for cost, model_type in zip(costs, self.model_types)
             ]
         else:
@@ -736,8 +737,8 @@ def test_serialization(
     assert pre_update_state != post_update_state
 
     # Test serialization
-    restored_cmab = config.cmab_class.from_state(post_update_state[1])
-    assert restored_cmab == cmab
+    restored_cmab_state = config.cmab_class.from_state(post_update_state[1]).get_state()
+    assert restored_cmab_state == post_update_state
 
 
 @composite
@@ -873,27 +874,27 @@ def test_cmab_from_old_state(CmabClass, old_state):
 
     # read from version 2.0.0
     old_state_ver2 = deepcopy(old_state)
-    cmab = CmabClass.from_old_state(old_state_ver2)
+    cmab = CmabClass.from_old_state(json.dumps(old_state_ver2))
     assert isinstance(cmab, CmabClass)
 
     # read from version 2.0.0 without actions_memory and rewards_memory
     stripped_state = deepcopy(old_state)
     stripped_state["actions_manager"].pop("actions_memory", None)
     stripped_state["actions_manager"].pop("rewards_memory", None)
-    memory_less_cmab = CmabClass.from_old_state(stripped_state)
+    memory_less_cmab = CmabClass.from_old_state(json.dumps(stripped_state))
 
     #  read from version 1.0.0
     old_state_ver1 = deepcopy(old_state)
     actions_manager_state = old_state_ver1.pop("actions_manager")
     old_state_ver1["actions"] = actions_manager_state["actions"]
     old_cmab = CmabClass.from_old_state(
-        old_state_ver1,
+        json.dumps(old_state_ver1),
         delta=actions_manager_state.pop("delta", None),
     )
     assert old_cmab == memory_less_cmab
 
     # check that the model parameters are correctly loaded
-    actual_actions = cmab.get_state()[1]["actions_manager"]["actions"]  # Normalize the dict
+    actual_actions = json.loads(cmab.get_state()[1])["actions_manager"]["actions"]  # Normalize the dict
     expected_actions = {k: {**v, **old_state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
     for action_id, expected_action in expected_actions.items():
         actual_action = cmab.actions[action_id]
@@ -905,7 +906,7 @@ def test_cmab_from_old_state(CmabClass, old_state):
             assert beta["sigma"] == actual_action.model_params.bnn_layer_params[0].weight.sigma[0][i]
             assert beta["nu"] == actual_action.model_params.bnn_layer_params[0].weight.nu[0][i]
 
-    # check the an error was raised when loading a state with a version >= 3.0.0
+    # check that an error was raised when loading a state with a version >= 3.0.0
     with pytest.raises(ValueError):
         CmabClass.from_old_state(old_cmab.get_state()[1])
 
