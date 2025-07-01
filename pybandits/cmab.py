@@ -181,6 +181,12 @@ class BaseCmabBernoulli(BaseMab, ABC):
         """
         state = super().update_old_state(state, delta)
 
+        if "predict_with_proba" in state:
+            state.pop("predict_with_proba")
+
+        if "predict_actions_randomly" in state:
+            state.pop("predict_actions_randomly")
+
         # the state is in the old format of PyBandits < 3.0.0.
         for action_id, action_state in state["actions_manager"]["actions"].items():
             # Load legacy Bayesian Logistic Regression model parmeters into the new Bayesian Neural Network model.
