@@ -201,11 +201,11 @@ class BaseCmabBernoulli(BaseMab, ABC):
                 sigma_list = []
                 nu_list = []
                 for beta in action_state["betas"]:
-                    mu_list.append(beta["mu"])
-                    sigma_list.append(beta["sigma"])
-                    nu_list.append(beta["nu"])
+                    mu_list.append([beta["mu"]])
+                    sigma_list.append([beta["sigma"]])
+                    nu_list.append([beta["nu"]])
 
-                weight = StudentTArray(mu=[mu_list], sigma=[sigma_list], nu=[nu_list])
+                weight = StudentTArray(mu=mu_list, sigma=sigma_list, nu=nu_list)
                 layer_params = BnnLayerParams(weight=weight, bias=bias)
 
                 # add model_params_init - in case we need to reset the model

@@ -901,10 +901,12 @@ def test_cmab_from_old_state(CmabClass, old_state):
         assert expected_action["alpha"]["mu"] == actual_action.model_params.bnn_layer_params[0].bias.mu[0]
         assert expected_action["alpha"]["sigma"] == actual_action.model_params.bnn_layer_params[0].bias.sigma[0]
         assert expected_action["alpha"]["nu"] == actual_action.model_params.bnn_layer_params[0].bias.nu[0]
+
+        assert len(expected_action["betas"]) == actual_action.input_dim
         for i, beta in enumerate(expected_action["betas"]):
-            assert beta["mu"] == actual_action.model_params.bnn_layer_params[0].weight.mu[0][i]
-            assert beta["sigma"] == actual_action.model_params.bnn_layer_params[0].weight.sigma[0][i]
-            assert beta["nu"] == actual_action.model_params.bnn_layer_params[0].weight.nu[0][i]
+            assert beta["mu"] == actual_action.model_params.bnn_layer_params[0].weight.mu[i][0]
+            assert beta["sigma"] == actual_action.model_params.bnn_layer_params[0].weight.sigma[i][0]
+            assert beta["nu"] == actual_action.model_params.bnn_layer_params[0].weight.nu[i][0]
 
     # check that an error was raised when loading a state with a version >= 3.0.0
     with pytest.raises(ValueError):
