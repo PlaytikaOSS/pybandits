@@ -150,16 +150,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.64442861 -0.66783854  0.57177325  0.59325672 -0.2396677 ]
- [ 0.73459484 -0.72518906  0.64395804  0.14733409  0.72497825]
- [ 0.2032226   0.17261862 -0.39321721 -0.45604134 -0.46552433]
- [ 0.3539449  -0.78145525 -0.43865795 -0.5099745   0.66316842]
- [ 0.21236028  0.01069622  0.8277691  -0.48279275  0.20947206]
- [ 0.23633855 -0.54319104 -0.79053374 -0.06539662  0.12987522]
- [-0.65080713  0.95090505 -0.30150012  0.56471149  0.15935843]
- [-0.62085161 -0.58158232  0.05113742  0.70456057 -0.592402  ]
- [ 0.49030487 -0.11631171  0.39211183  0.4678212  -0.15845572]
- [-0.35140496  0.30247346  0.0421965   0.28874923  0.59270882]]
+[[-0.91030319  0.89620142  0.59405197 -0.02914133  0.4723237 ]
+ [ 0.33089149 -0.75687786 -0.405837   -0.28882056 -0.82464408]
+ [-0.42223378  0.69674569  0.21305299  0.16466325 -0.46933436]
+ [ 0.6579928   0.57349049 -0.14792145 -0.34823614 -0.407781  ]
+ [ 0.07862152  0.73228107 -0.05417721  0.93769777 -0.64421086]
+ [-0.19470489  0.28477126  0.13955311  0.56250546  0.06630537]
+ [-0.02654957  0.8446321   0.4954199  -0.10510569 -0.36835649]
+ [ 0.68907754 -0.46163304  0.42812826  0.91233853  0.02407889]
+ [ 0.3245856   0.04251906  0.05192085  0.88920073 -0.01298182]
+ [ 0.64359805 -0.97782746 -0.47159171  0.68118263 -0.06095806]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -223,7 +223,7 @@ Sampling: [bias_0, out, weight_0]
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -242,7 +242,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 0, 0, 1, 1, 0, 1, 1, 0, 1]
+Simulated rewards: [1, 0, 1, 1, 1, 1, 1, 0, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -265,15 +265,25 @@ Simulated rewards: [0, 0, 0, 1, 1, 0, 1, 1, 0, 1]
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
 NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 1 seconds.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
 Initializing NUTS using adapt_diag...
 Sequential sampling (2 chains in 1 job)
 NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 3 seconds.
+Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 1 seconds.
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 </pre></div></div>
 </div>
 </section>
