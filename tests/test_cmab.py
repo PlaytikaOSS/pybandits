@@ -55,7 +55,6 @@ from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, Co
 from tests.test_actions_manager import REFERENCE_DELTA
 from tests.test_utils import (
     FakeApproximation,
-    FakePrediction,
     literal_update_methods,
     sample_with_replacement,
     to_temporary_pickle,
@@ -636,9 +635,6 @@ def test_predict(
         update_kwargs,
     )[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    monkeymodule.setattr(
-        pybandits.model, "sample_prior_predictive", FakePrediction(n_samples=context.shape[0]).sample_prior_predictive
-    )
 
     # Test predictions with random forbidden actions
     forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None

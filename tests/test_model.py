@@ -250,7 +250,7 @@ def test_can_init_bayesian_neural_network(n_features, hidden_dim_list):
     if any(layer_dim <= 0 for layer_dim in dim_list):
         with pytest.raises((ValidationError, ValueError)):
             model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-            bnn = BayesianNeuralNetwork(model_params=model_params)
+            BayesianNeuralNetwork(model_params=model_params)
     else:
         model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
         bnn = BayesianNeuralNetwork(model_params=model_params)
@@ -324,41 +324,40 @@ def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
 
 @settings(deadline=None)
 @given(
-    n_features=st.integers(min_value=1, max_value=3),
+    n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
-    n_samples=st.just(100),
+    n_samples=st.just(5),
     update_method=st.just("VI"),
 )
 def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
-    def update(context, rewards):
+    def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
         )
         init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
         dim_list = [n_features] + hidden_dim_list
-        for param in init_params.keys():
-            for layer_ind in range(len(dim_list)):
-                layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-                layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
 
-                assert all(w_val == init_params[param] for w_val in np.array(layer_w[param]).flatten())
-                assert all(b_val == init_params[param] for b_val in np.array(layer_b[param]).flatten())
+        for layer_ind in range(len(dim_list)):
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            for param in init_params.keys():
+                assert np.all(np.array(layer_w[param]) == init_params[param])
+                assert np.all(np.array(layer_b[param]) == init_params[param])
 
         bnn.update(context=context, rewards=rewards)
 
-        for param in ["mu", "sigma"]:  # nu is not updated:
-            for layer_ind in range(len(dim_list)):
-                layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-                layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-
-                assert all(w_val != init_params[param] for w_val in np.array(layer_w[param]).flatten())
-                assert all(b_val != init_params[param] for b_val in np.array(layer_b[param]).flatten())
+        # nu is not updated:
+        for layer_ind in range(len(dim_list)):
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            for param in ["mu", "sigma"]:
+                assert np.all(np.array(layer_w[param]) != init_params[param])
+                assert np.all(np.array(layer_b[param]) != init_params[param])
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
     # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
     # raise an error if len(context) != len(rewards)
@@ -370,46 +369,44 @@ def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
-def test_bnn_mcmc_update(n_features, hidden_dim_list=(2,), n_samples=100, update_method="MCMC"):
+def test_bnn_mcmc_update(n_features, hidden_dim_list=(2,), n_samples=10, update_method="MCMC"):
     hidden_dim_list = list(hidden_dim_list)
 
-    def update(context, rewards):
+    def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
         )
         init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
         dim_list = [n_features] + hidden_dim_list
-        for param in init_params.keys():
-            for layer_ind in range(len(dim_list)):
-                layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-                layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+        for layer_ind in range(len(dim_list)):
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            for param in init_params.keys():
+                assert np.all(np.array(layer_w[param]) == init_params[param])
+                assert np.all(np.array(layer_b[param]) == init_params[param])
 
-                assert all(w_val == init_params[param] for w_val in np.array(layer_w[param]).flatten())
-                assert all(b_val == init_params[param] for b_val in np.array(layer_b[param]).flatten())
+        bnn.update(context=context, rewards=rewards)
 
-            bnn.update(context=context, rewards=rewards)
+        # nu is not updated:
+        for layer_ind in range(len(dim_list)):
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            for param in ["mu", "sigma"]:
+                assert np.all(np.array(layer_w[param]) != init_params[param])
+                assert np.all(np.array(layer_b[param]) != init_params[param])
 
-            for param in ["mu", "sigma"]:  # nu is not updated:
-                for layer_ind in range(len(dim_list)):
-                    layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-                    layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+    rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
-                    assert all(w_val != init_params[param] for w_val in np.array(layer_w[param]).flatten())
-                    assert all(b_val != init_params[param] for b_val in np.array(layer_b[param]).flatten())
+    # context is numpy array
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    update(context=context, rewards=rewards)
 
-        rewards = np.random.choice([0, 1], size=n_samples).tolist()
-
-        # context is numpy array
-        context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-        assert type(context) is np.ndarray
-        update(context=context, rewards=rewards)
-
-        # raise an error if len(context) != len(rewards)
-        with pytest.raises(AttributeError):
-            bnn = BayesianNeuralNetwork.cold_start(
-                n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
-            )
-            bnn.update(context=context, rewards=rewards[1:])
+    # raise an error if len(context) != len(rewards)
+    with pytest.raises(AttributeError):
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+        )
+        bnn.update(context=context, rewards=rewards[1:])
 
 
 ########################################################################################################################

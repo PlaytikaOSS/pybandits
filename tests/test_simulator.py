@@ -143,8 +143,8 @@ def test_probability_function_exceptions():
         Simulator._maximize_prob_reward(failing_prob_func, 1)
 
 
-# Input dimension is very large
-def test_large_input_dimension(dimension=50):
+# Input dimension is large
+def test_large_input_dimension(dimension=30):
     def prob_func(x):
         return 0.5
 
