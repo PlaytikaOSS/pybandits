@@ -313,6 +313,14 @@ def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
     assert type(context) is pd.DataFrame
     sample_proba(context=context)
 
+    # check that the model is working with multi-sample prediction
+    context = np.repeat(np.random.uniform(low=-1.0, high=1.0, size=(1, n_features)), n_samples, axis=0)
+    assert type(context) is np.ndarray
+    prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
+    prob, weighted_sum = zip(*prob_and_weighted_sum)
+    is_all_different = len(np.unique(weighted_sum)) == len(weighted_sum)
+    assert is_all_different
+
 
 @settings(deadline=None)
 @given(
