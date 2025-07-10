@@ -52,9 +52,6 @@ class FakePrediction(PyBanditsBaseModel):
     def sample_prior_predictive(self, *args, **kwargs) -> Dict[str, Dict[str, object]]:
         return {
             "prior": {
-                BaseBayesianNeuralNetwork._prob_var_name: type(
-                    "FakeArray", (), {"values": np.random.random(size=(self.n_samples))}
-                ),
                 BaseBayesianNeuralNetwork._logit_var_name: type(
                     "FakeArray", (), {"values": np.random.random(size=(self.n_samples))}
                 ),
@@ -66,8 +63,9 @@ def fake_bnn_sample_proba(self, context: np.ndarray, *args, **kwargs) -> List[Pr
     n_samples = len(context)
     fake_prediction = FakePrediction(n_samples=n_samples)
     predictions = fake_prediction.sample_prior_predictive()["prior"]
-    mock_probs = predictions[BaseBayesianNeuralNetwork._prob_var_name].values
     mock_weighted_sums = predictions[BaseBayesianNeuralNetwork._logit_var_name].values
+    mock_probs = BaseBayesianNeuralNetwork._stable_sigmoid(mock_weighted_sums)
+
     return list(zip(mock_probs, mock_weighted_sums))
 
 

@@ -442,7 +442,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     model_params: BnnParams
 
     _logit_var_name: ClassVar[str] = "logit"
-    _prob_var_name: ClassVar[str] = "prob"
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
 
@@ -526,6 +525,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @property
     def approx_history(self) -> Optional[np.ndarray]:
         return self._approx_history
+
+    @classmethod
+    def _stable_sigmoid(cls, x):
+        return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
@@ -652,10 +655,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if y is None:
             y = np.zeros(len(x), dtype=np.int64)
 
+        n_samples = len(x)
+        is_multi_sample_predict = is_predict and (n_samples != 1)
         with PymcModel() as _model:
             # Define data variables using minibatches
             bnn_output = Data("bnn_output", y, mutable=True)
-            if is_predict:
+
+            if is_multi_sample_predict:
                 # arrange  for batched dot product
                 x_expanded = np.expand_dims(x, axis=1)
                 bnn_input = Data("bnn_input", x_expanded, mutable=True)
@@ -665,15 +671,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             else:
                 bnn_input = Data("bnn_input", x, mutable=True)
 
-            n_samples = len(x)
-
             next_layer_input = bnn_input
             for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                 w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
                 b_shape = layer_params.bias.shape
                 weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
 
-                if is_predict:
+                if is_multi_sample_predict:
                     # in this case we create n_samples different weights and biases - one for each sample
                     w = PymcStudentT(
                         name=weight_layer_params_name, shape=(n_samples,) + w_shape, **layer_params.weight.params
@@ -698,7 +702,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                         name=bias_layer_params_name, shape=b_shape, **layer_params.bias.params, initval="prior"
                     )
 
-                    linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
+                    linear_transform = math.dot(next_layer_input, w) + b
 
                 if layer_ind < len(self.model_params.bnn_layer_params) - 1:
                     next_layer_input = math.tanh(linear_transform)
@@ -706,9 +710,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 linear_transform = specify_broadcastable(linear_transform, dim)
 
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
-            Deterministic(self._prob_var_name, math.sigmoid(logit))
 
-            Bernoulli("out", logit_p=logit, observed=bnn_output)
+            if not is_predict:
+                Bernoulli("out", logit_p=logit, observed=bnn_output)
+
         return _model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -736,8 +741,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         with _model:
             trace = sample_prior_predictive(samples=1)
 
-        prob = trace["prior"][self._prob_var_name].values.reshape(-1)
         weighted_sum = trace["prior"][self._logit_var_name].values.reshape(-1)
+        prob = self._stable_sigmoid(weighted_sum)
 
         return list(zip(prob, weighted_sum))
 
