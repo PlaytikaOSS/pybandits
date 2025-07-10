@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import warnings
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from random import betavariate
@@ -31,7 +32,6 @@ from numpy.typing import ArrayLike
 from pymc import Bernoulli, Data, Deterministic, fit, math, sample, sample_prior_predictive
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
-from pytensor.tensor import specify_broadcastable
 from typing_extensions import Self
 
 from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
@@ -644,8 +644,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         The model structure follows these steps:
         1. For each layer, create weight and bias variables from StudentT distributions.
         2. Apply linear transformations and activations through the layers.
-           When is_sampelwise is True, the linear transformation is applied on each row separately (so random variables are not shared).
-           When is_sampelwise is False, the linear transformation is applied on the whole matrix at once, so random variables are shared.
+           When is_predict is True, the linear transformation is applied on each row separately (so random variables are not shared).
+           When is_predict is False, the linear transformation is applied on the whole matrix at once, so random variables are shared.
         3. Apply sigmoid activation at the output
         4. Use Bernoulli likelihood for binary classification
         """
@@ -653,28 +653,21 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             y = np.zeros(len(x), dtype=np.int64)
 
         with PymcModel() as _model:
-            # Define data variables using minibatches
-            bnn_output = Data("bnn_output", y, mutable=True)
-            if is_predict:
-                # arrange  for batched dot product
-                x_expanded = np.expand_dims(x, axis=1)
-                bnn_input = Data("bnn_input", x_expanded, mutable=True)
-                for dim, size in enumerate(x_expanded.shape):
-                    if size == 1:
-                        bnn_input = specify_broadcastable(bnn_input, dim)
-            else:
-                bnn_input = Data("bnn_input", x, mutable=True)
+            # Define data variables
+            bnn_output = Data("bnn_output", y)
+            bnn_input = Data("bnn_input", x)
 
             n_samples = len(x)
-
+            is_multi_sample_predict = is_predict and (n_samples != 1)
             next_layer_input = bnn_input
+
             for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                 w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
                 b_shape = layer_params.bias.shape
                 weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
 
-                if is_predict:
-                    # in this case we create n_samples different weights and biases - one for each sample
+                if is_multi_sample_predict:
+                    # Create separate weights and biases for each sample to capture uncertainty
                     w = PymcStudentT(
                         name=weight_layer_params_name, shape=(n_samples,) + w_shape, **layer_params.weight.params
                     )
@@ -682,28 +675,37 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                         name=bias_layer_params_name, shape=(n_samples, 1) + b_shape, **layer_params.bias.params
                     )
 
-                    batched_dot = pt.vectorize(
-                        lambda x_batch, w_batch: pt.dot(x_batch, w_batch), signature="(n,m),(m,p)->(n,p)"
-                    )
-                    linear_transform = pt.as_tensor_variable(
-                        batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
-                    )
+                    # Use einsum for more efficient JAX compilation - better than vectorize for this use case
+                    # Convert Data variable to tensor variable for JAX optimization
+                    input_tensor = pt.as_tensor_variable(next_layer_input)
 
+                    # Reshape input for batch processing: (n_samples, n_features) -> (n_samples, 1, n_features)
+                    input_batched = input_tensor.reshape((n_samples, 1, -1))
+
+                    # Use einsum for efficient batch matrix multiplication: (n_samples, 1, n_features) @ (n_samples, n_features, n_outputs)
+                    # This is more JAX-friendly than vectorize and avoids lambda function overhead
+                    linear_transform = Deterministic(
+                        f"linear_transform{layer_ind}", pt.einsum("bif,bfj->bij", input_batched, w) + b
+                    )
                 else:
-                    # in this case we create one weight and bias for all samples
+                    kwargs = dict() if is_predict else dict(initval="prior")
+                    # For training, use shared weights and biases
                     w = PymcStudentT(
-                        name=weight_layer_params_name, shape=w_shape, **layer_params.weight.params, initval="prior"
+                        name=weight_layer_params_name, shape=w_shape, **layer_params.weight.params, **kwargs
                     )
-                    b = PymcStudentT(
-                        name=bias_layer_params_name, shape=b_shape, **layer_params.bias.params, initval="prior"
-                    )
+                    b = PymcStudentT(name=bias_layer_params_name, shape=b_shape, **layer_params.bias.params, **kwargs)
 
-                    linear_transform = Deterministic(f"linear_transform{layer_ind}", math.dot(next_layer_input, w) + b)
+                    linear_transform = math.dot(next_layer_input, w) + b
 
                 if layer_ind < len(self.model_params.bnn_layer_params) - 1:
                     next_layer_input = math.tanh(linear_transform)
-            for dim in range(1, linear_transform.ndim):
-                linear_transform = specify_broadcastable(linear_transform, dim)
+
+            # Ensure proper broadcasting for the final output with JAX optimization
+            # Use more efficient broadcasting for JAX compilation
+            if linear_transform.ndim > 1:
+                # Reshape to ensure proper broadcasting without multiple operations
+                target_shape = (linear_transform.shape[0],) + (1,) * (linear_transform.ndim - 1)
+                linear_transform = linear_transform.reshape(target_shape)
 
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
             Deterministic(self._prob_var_name, math.sigmoid(logit))
@@ -734,7 +736,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _model = self.create_model(x=_context, is_predict=True)
 
         with _model:
-            trace = sample_prior_predictive(samples=1)
+            # Suppress JAX RandomType SharedVariables warning
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="The RandomType SharedVariables.*will not be used in the compiled JAX graph.*",
+                    category=UserWarning,
+                )
+                trace = sample_prior_predictive(draws=1, compile_kwargs={"mode": "JAX"})
 
         prob = trace["prior"][self._prob_var_name].values.reshape(-1)
         weighted_sum = trace["prior"][self._logit_var_name].values.reshape(-1)
@@ -774,7 +783,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 self._approx_history = approx.hist
             elif self.update_method == "MCMC":
                 # MCMC
-                trace = sample(**self.update_kwargs["trace"])
+                trace = sample(**self.update_kwargs["trace"], nuts_sampler="blackjax")
             else:
                 raise ValueError("Invalid update method.")
 

@@ -36,14 +36,11 @@ scipy = [
     { version = ">=1.9,<1.13", python = ">=3.8,<3.12" },
     { version = ">=1.11,<1.13", python = "3.12.*" },
 ]
-pymc = [
-    { version = "^5.3", python = "3.8.*" },
-    { version = "^5.10", python = ">=3.9" },
-]
+pymc = "^5.10"
 scikit-learn = "^1.1"
 optuna = "^3.6"
 bokeh = "^3.1"
-
+blackjax ="^1.0"
 
 [tool.poetry.group.dev.dependencies]
 hypothesis = "^6.68.2"
