@@ -150,16 +150,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.5285175  -0.05228887  0.19835608  0.32689102  0.19719533]
- [-0.3132468  -0.31361116 -0.29442892  0.41919992  0.54720322]
- [-0.77693054  0.95649133  0.49386009 -0.35104945 -0.7350991 ]
- [-0.99822708 -0.21798427  0.54473838  0.04482453  0.76356762]
- [-0.38404736  0.41135912  0.03980305 -0.78629694 -0.47528718]
- [ 0.84458725 -0.1103139  -0.32329648 -0.85923443 -0.02208486]
- [-0.24621794 -0.84101825  0.33660977 -0.16579716  0.83782307]
- [ 0.92155154 -0.8990105  -0.35697737  0.65098417 -0.526555  ]
- [ 0.07155641  0.08588879  0.3220394   0.22821753  0.56524977]
- [-0.90299882  0.87860681 -0.2439853   0.27823644  0.62557461]]
+[[-0.76345997  0.38895151  0.04508611 -0.20535914  0.49443699]
+ [ 0.78173751  0.9246051   0.26176022  0.72768781  0.66594534]
+ [ 0.72385492 -0.42117864  0.74259555  0.15441217 -0.40354142]
+ [-0.28010836  0.71675668 -0.53909174  0.33041967 -0.81696866]
+ [ 0.6014499   0.27648735  0.69914952 -0.90313667 -0.31963019]
+ [-0.90675117 -0.51252383 -0.71304326 -0.54964905  0.63921398]
+ [ 0.46156084  0.07569352  0.07505388  0.07890817 -0.65375832]
+ [ 0.04859643 -0.07171612  0.79787237  0.03935526  0.19341382]
+ [-0.63564799  0.12428345  0.25904442  0.65790027 -0.60068758]
+ [ 0.59152709 -0.77937105  0.34329308  0.29189316  0.93895606]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -207,23 +207,28 @@ X: context matrix of shape (n_samples, n_features)
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
-Sampling: [bias_0, out, weight_0]
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-Sampling: [bias_0, out, weight_0]
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area docutils container">
+<div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;]
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
+Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
+For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
+  warnings.warn(
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+  warnings.warn(
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -242,7 +247,7 @@ Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 0, 0, 0, 1, 1, 0, 0, 1, 0]
+Simulated rewards: [1, 1, 1, 1, 1, 1, 1, 0, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -262,28 +267,10 @@ Simulated rewards: [0, 0, 0, 0, 1, 1, 0, 0, 1, 0]
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
-Initializing NUTS using adapt_diag...
-Sequential sampling (2 chains in 1 job)
-NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 1 seconds.
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
-  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
-There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
+2025-07-10 14:20:49.391 | ERROR    | pymc.stats.convergence:log_warning:181 - There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
+2025-07-10 14:20:49.392 | ERROR    | pymc.stats.convergence:log_warning:181 - The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
   warnings.warn(
-Initializing NUTS using adapt_diag...
-Sequential sampling (2 chains in 1 job)
-NUTS: [weight_0, bias_0]
-Sampling 2 chains for 500 tune and 1_000 draw iterations (1_000 + 2_000 draws total) took 1 seconds.
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
-  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
-There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 </pre></div></div>
 </div>
 </section>
