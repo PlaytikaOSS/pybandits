@@ -59,10 +59,7 @@
 <li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html#Objectives">Objectives</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html#id1">Predictions + uncertainty map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html#Objectives">Objectives</a></li>
 </ul>
@@ -150,16 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.76345997  0.38895151  0.04508611 -0.20535914  0.49443699]
- [ 0.78173751  0.9246051   0.26176022  0.72768781  0.66594534]
- [ 0.72385492 -0.42117864  0.74259555  0.15441217 -0.40354142]
- [-0.28010836  0.71675668 -0.53909174  0.33041967 -0.81696866]
- [ 0.6014499   0.27648735  0.69914952 -0.90313667 -0.31963019]
- [-0.90675117 -0.51252383 -0.71304326 -0.54964905  0.63921398]
- [ 0.46156084  0.07569352  0.07505388  0.07890817 -0.65375832]
- [ 0.04859643 -0.07171612  0.79787237  0.03935526  0.19341382]
- [-0.63564799  0.12428345  0.25904442  0.65790027 -0.60068758]
- [ 0.59152709 -0.77937105  0.34329308  0.29189316  0.93895606]]
+[[-0.34010086  0.29231936  0.50365044 -0.04839801 -0.57627984]
+ [ 0.16478065  0.24365252  0.23380398 -0.57035721  0.40434826]
+ [ 0.75797185 -0.42698827  0.98442505  0.42302882  0.86534494]
+ [-0.50495798  0.05113916  0.85332508 -0.29933688 -0.94658987]
+ [-0.74244986 -0.2058213   0.96030056  0.16832951 -0.55147285]
+ [-0.54324952  0.07283435  0.42763653 -0.49169193  0.53253104]
+ [ 0.71876109  0.00126033  0.58061722  0.63049189 -0.8380556 ]
+ [-0.89889023 -0.90513913 -0.16966669 -0.14848783  0.93066211]
+ [-0.37171935  0.03385923 -0.19403483 -0.52404388 -0.09914882]
+ [-0.67172369 -0.5923852  -0.04845132 -0.93762544 -0.49238362]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -200,35 +197,12 @@ X: context matrix of shape (n_samples, n_features)
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;]
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -247,7 +221,7 @@ For more options and details see https://pytensor.readthedocs.io/en/latest/troub
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 1, 1, 1, 1, 1, 1, 0, 1, 0]
+Simulated rewards: [1, 1, 0, 1, 1, 0, 1, 0, 0, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -265,11 +239,10 @@ Simulated rewards: [1, 1, 1, 1, 1, 1, 1, 0, 1, 0]
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-2025-07-10 14:20:49.391 | ERROR    | pymc.stats.convergence:log_warning:181 - There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
-2025-07-10 14:20:49.392 | ERROR    | pymc.stats.convergence:log_warning:181 - The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
+Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
+For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
   warnings.warn(
 </pre></div></div>
 </div>

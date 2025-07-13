@@ -25,7 +25,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Introduction" href="bnn.html" />
+    <link rel="next" title="Bayesian Neural Network" href="bnn.html" />
     <link rel="prev" title="sMAB Simulation" href="smab_simulator.html" /> 
 </head>
 
@@ -59,10 +59,7 @@
 <li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">cMAB Simulation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html#Objectives">Objectives</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
-<li class="toctree-l2"><a class="reference internal" href="bnn.html#id1">Predictions + uncertainty map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html#Objectives">Objectives</a></li>
 </ul>
@@ -257,17 +254,6 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -278,7 +264,10 @@ For more options and details see https://pytensor.readthedocs.io/en/latest/troub
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:328: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
   self._results = pd.concat((self._results, batch_results), ignore_index=True)
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
+This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
+Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
+For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
   warnings.warn(
 </pre></div></div>
 </div>
@@ -300,11 +289,17 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -326,36 +321,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -364,9 +329,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -388,60 +381,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -450,9 +389,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -474,60 +441,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -536,9 +449,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -560,60 +501,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -622,9 +509,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -646,60 +561,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -708,9 +569,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -732,60 +621,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -794,9 +629,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -818,60 +681,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -880,9 +689,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -904,60 +741,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -966,9 +749,37 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -990,60 +801,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
@@ -1052,8 +809,6 @@ UserWarning: install "ipywidgets" for Jupyter support
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:221: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -1074,15 +829,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:231:
 UserWarning: install "ipywidgets" for Jupyter support
@@ -1094,15 +840,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -1124,11 +861,11 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2025-07-10 14:23:02.685 | INFO     | pybandits.simulator:_print_results:583 - Simulation results (first 10 observations):
+2025-07-13 12:34:04.917 | INFO     | pybandits.simulator:_print_results:583 - Simulation results (first 10 observations):
 
-2025-07-10 14:23:02.708 | INFO     | pybandits.simulator:_print_results:584 - Count of actions selected by the bandit:
+2025-07-13 12:34:04.938 | INFO     | pybandits.simulator:_print_results:584 - Count of actions selected by the bandit:
 
-2025-07-10 14:23:02.711 | INFO     | pybandits.simulator:_print_results:585 - Observed proportion of positive rewards for each action:
+2025-07-13 12:34:04.941 | INFO     | pybandits.simulator:_print_results:585 - Observed proportion of positive rewards for each action:
 
 </pre></div></div>
 </div>
@@ -1187,342 +924,342 @@ UserWarning: install "ipywidgets" for Jupyter support
     <tr>
       <th>0</th>
       <th>0.0</th>
-      <td>12</td>
-      <td>13</td>
-      <td>9</td>
-      <td>12</td>
-      <td>13</td>
-      <td>9</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>0.0</th>
-      <td>12</td>
-      <td>9</td>
       <td>16</td>
-      <td>12</td>
-      <td>9</td>
-      <td>16</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>0.0</th>
-      <td>14</td>
-      <td>7</td>
-      <td>8</td>
-      <td>14</td>
-      <td>7</td>
-      <td>8</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>1.0</th>
-      <td>13</td>
-      <td>13</td>
       <td>6</td>
+      <td>8</td>
+      <td>16</td>
+      <td>6</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>0.0</th>
+      <td>14</td>
+      <td>5</td>
+      <td>12</td>
+      <td>14</td>
+      <td>5</td>
+      <td>12</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>0.0</th>
+      <td>14</td>
+      <td>13</td>
+      <td>12</td>
+      <td>14</td>
+      <td>13</td>
+      <td>12</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>1.0</th>
+      <td>7</td>
       <td>25</td>
-      <td>26</td>
-      <td>15</td>
+      <td>2</td>
+      <td>23</td>
+      <td>31</td>
+      <td>10</td>
     </tr>
     <tr>
       <th>1</th>
       <th>1.0</th>
-      <td>10</td>
-      <td>4</td>
-      <td>20</td>
-      <td>22</td>
-      <td>13</td>
-      <td>36</td>
+      <td>9</td>
+      <td>12</td>
+      <td>23</td>
+      <td>23</td>
+      <td>17</td>
+      <td>35</td>
     </tr>
     <tr>
       <th>2</th>
       <th>1.0</th>
-      <td>10</td>
-      <td>1</td>
-      <td>23</td>
-      <td>24</td>
+      <td>7</td>
+      <td>7</td>
       <td>8</td>
-      <td>31</td>
+      <td>21</td>
+      <td>20</td>
+      <td>20</td>
     </tr>
     <tr>
       <th>0</th>
       <th>2.0</th>
-      <td>13</td>
-      <td>4</td>
-      <td>12</td>
-      <td>38</td>
-      <td>30</td>
+      <td>5</td>
       <td>27</td>
+      <td>5</td>
+      <td>28</td>
+      <td>58</td>
+      <td>15</td>
     </tr>
     <tr>
       <th>1</th>
       <th>2.0</th>
-      <td>17</td>
-      <td>1</td>
-      <td>12</td>
-      <td>39</td>
-      <td>14</td>
-      <td>48</td>
+      <td>10</td>
+      <td>7</td>
+      <td>21</td>
+      <td>33</td>
+      <td>24</td>
+      <td>56</td>
     </tr>
     <tr>
       <th>2</th>
       <th>2.0</th>
-      <td>15</td>
-      <td>1</td>
-      <td>25</td>
-      <td>39</td>
-      <td>9</td>
-      <td>56</td>
+      <td>11</td>
+      <td>10</td>
+      <td>4</td>
+      <td>32</td>
+      <td>30</td>
+      <td>24</td>
     </tr>
     <tr>
       <th>0</th>
       <th>3.0</th>
-      <td>15</td>
-      <td>14</td>
+      <td>6</td>
+      <td>27</td>
+      <td>6</td>
+      <td>34</td>
+      <td>85</td>
+      <td>21</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>3.0</th>
+      <td>10</td>
+      <td>8</td>
       <td>7</td>
-      <td>53</td>
-      <td>44</td>
+      <td>43</td>
+      <td>32</td>
+      <td>63</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>3.0</th>
+      <td>10</td>
+      <td>12</td>
+      <td>14</td>
+      <td>42</td>
+      <td>42</td>
+      <td>38</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>4.0</th>
+      <td>4</td>
+      <td>23</td>
+      <td>5</td>
+      <td>38</td>
+      <td>108</td>
+      <td>26</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>4.0</th>
+      <td>11</td>
+      <td>7</td>
+      <td>18</td>
+      <td>54</td>
+      <td>39</td>
+      <td>81</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>4.0</th>
+      <td>7</td>
+      <td>14</td>
+      <td>11</td>
+      <td>49</td>
+      <td>56</td>
+      <td>49</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>5.0</th>
+      <td>3</td>
+      <td>26</td>
+      <td>8</td>
+      <td>41</td>
+      <td>134</td>
       <td>34</td>
     </tr>
     <tr>
       <th>1</th>
-      <th>3.0</th>
-      <td>10</td>
+      <th>5.0</th>
+      <td>6</td>
+      <td>6</td>
       <td>11</td>
-      <td>14</td>
-      <td>49</td>
-      <td>25</td>
-      <td>62</td>
+      <td>60</td>
+      <td>45</td>
+      <td>92</td>
     </tr>
     <tr>
       <th>2</th>
-      <th>3.0</th>
-      <td>6</td>
-      <td>2</td>
-      <td>21</td>
-      <td>45</td>
+      <th>5.0</th>
+      <td>15</td>
       <td>11</td>
-      <td>77</td>
+      <td>14</td>
+      <td>64</td>
+      <td>67</td>
+      <td>63</td>
     </tr>
     <tr>
       <th>0</th>
-      <th>4.0</th>
-      <td>15</td>
-      <td>10</td>
+      <th>6.0</th>
+      <td>2</td>
+      <td>17</td>
       <td>4</td>
-      <td>68</td>
-      <td>54</td>
+      <td>43</td>
+      <td>151</td>
       <td>38</td>
     </tr>
     <tr>
       <th>1</th>
-      <th>4.0</th>
-      <td>13</td>
-      <td>4</td>
-      <td>24</td>
-      <td>62</td>
-      <td>29</td>
-      <td>86</td>
+      <th>6.0</th>
+      <td>14</td>
+      <td>8</td>
+      <td>10</td>
+      <td>74</td>
+      <td>53</td>
+      <td>102</td>
     </tr>
     <tr>
       <th>2</th>
-      <th>4.0</th>
+      <th>6.0</th>
       <td>11</td>
-      <td>8</td>
-      <td>11</td>
-      <td>56</td>
-      <td>19</td>
-      <td>88</td>
+      <td>13</td>
+      <td>21</td>
+      <td>75</td>
+      <td>80</td>
+      <td>84</td>
     </tr>
     <tr>
       <th>0</th>
-      <th>5.0</th>
+      <th>7.0</th>
+      <td>1</td>
+      <td>26</td>
       <td>5</td>
-      <td>14</td>
-      <td>10</td>
-      <td>73</td>
-      <td>68</td>
-      <td>48</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>5.0</th>
-      <td>21</td>
-      <td>3</td>
-      <td>12</td>
-      <td>83</td>
-      <td>32</td>
-      <td>98</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>5.0</th>
-      <td>11</td>
-      <td>6</td>
-      <td>18</td>
-      <td>67</td>
-      <td>25</td>
-      <td>106</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>6.0</th>
-      <td>13</td>
-      <td>21</td>
-      <td>4</td>
-      <td>86</td>
-      <td>89</td>
-      <td>52</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>6.0</th>
-      <td>14</td>
-      <td>8</td>
-      <td>7</td>
-      <td>97</td>
-      <td>40</td>
-      <td>105</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>6.0</th>
-      <td>11</td>
-      <td>10</td>
-      <td>12</td>
-      <td>78</td>
-      <td>35</td>
-      <td>118</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>7.0</th>
-      <td>3</td>
-      <td>25</td>
-      <td>4</td>
-      <td>89</td>
-      <td>114</td>
-      <td>56</td>
+      <td>44</td>
+      <td>177</td>
+      <td>43</td>
     </tr>
     <tr>
       <th>1</th>
       <th>7.0</th>
-      <td>19</td>
-      <td>8</td>
-      <td>11</td>
-      <td>116</td>
-      <td>48</td>
-      <td>116</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>7.0</th>
-      <td>11</td>
       <td>15</td>
-      <td>4</td>
+      <td>8</td>
+      <td>12</td>
       <td>89</td>
-      <td>50</td>
-      <td>122</td>
+      <td>61</td>
+      <td>114</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>7.0</th>
+      <td>9</td>
+      <td>12</td>
+      <td>12</td>
+      <td>84</td>
+      <td>92</td>
+      <td>96</td>
     </tr>
     <tr>
       <th>0</th>
       <th>8.0</th>
+      <td>4</td>
+      <td>27</td>
+      <td>6</td>
+      <td>48</td>
+      <td>204</td>
+      <td>49</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>8.0</th>
       <td>9</td>
-      <td>28</td>
-      <td>2</td>
+      <td>9</td>
+      <td>21</td>
       <td>98</td>
-      <td>142</td>
+      <td>70</td>
+      <td>135</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>8.0</th>
+      <td>8</td>
+      <td>8</td>
+      <td>8</td>
+      <td>92</td>
+      <td>100</td>
+      <td>104</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>9.0</th>
+      <td>2</td>
+      <td>20</td>
+      <td>9</td>
+      <td>50</td>
+      <td>224</td>
       <td>58</td>
     </tr>
     <tr>
       <th>1</th>
-      <th>8.0</th>
-      <td>16</td>
-      <td>3</td>
-      <td>8</td>
-      <td>132</td>
-      <td>51</td>
-      <td>124</td>
+      <th>9.0</th>
+      <td>18</td>
+      <td>7</td>
+      <td>9</td>
+      <td>116</td>
+      <td>77</td>
+      <td>144</td>
     </tr>
     <tr>
       <th>2</th>
-      <th>8.0</th>
-      <td>3</td>
-      <td>14</td>
-      <td>17</td>
-      <td>92</td>
-      <td>64</td>
-      <td>139</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>9.0</th>
-      <td>9</td>
-      <td>22</td>
-      <td>6</td>
-      <td>107</td>
-      <td>164</td>
-      <td>64</td>
-    </tr>
-    <tr>
-      <th>1</th>
       <th>9.0</th>
       <td>9</td>
       <td>10</td>
-      <td>8</td>
-      <td>141</td>
-      <td>61</td>
-      <td>132</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>9.0</th>
-      <td>4</td>
-      <td>19</td>
-      <td>13</td>
-      <td>96</td>
-      <td>83</td>
-      <td>152</td>
+      <td>16</td>
+      <td>101</td>
+      <td>110</td>
+      <td>120</td>
     </tr>
     <tr>
       <th>0</th>
       <th>total</th>
-      <td>107</td>
-      <td>164</td>
-      <td>64</td>
-      <td>107</td>
-      <td>164</td>
-      <td>64</td>
+      <td>50</td>
+      <td>224</td>
+      <td>58</td>
+      <td>50</td>
+      <td>224</td>
+      <td>58</td>
     </tr>
     <tr>
       <th>1</th>
       <th>total</th>
-      <td>141</td>
-      <td>61</td>
-      <td>132</td>
-      <td>141</td>
-      <td>61</td>
-      <td>132</td>
+      <td>116</td>
+      <td>77</td>
+      <td>144</td>
+      <td>116</td>
+      <td>77</td>
+      <td>144</td>
     </tr>
     <tr>
       <th>2</th>
       <th>total</th>
-      <td>96</td>
-      <td>83</td>
-      <td>152</td>
-      <td>96</td>
-      <td>83</td>
-      <td>152</td>
+      <td>101</td>
+      <td>110</td>
+      <td>120</td>
+      <td>101</td>
+      <td>110</td>
+      <td>120</td>
     </tr>
     <tr>
       <th>total</th>
       <th>total</th>
-      <td>344</td>
-      <td>308</td>
-      <td>348</td>
-      <td>344</td>
-      <td>308</td>
-      <td>348</td>
+      <td>267</td>
+      <td>411</td>
+      <td>322</td>
+      <td>267</td>
+      <td>411</td>
+      <td>322</td>
     </tr>
   </tbody>
 </table>
@@ -1572,41 +1309,41 @@ UserWarning: install "ipywidgets" for Jupyter support
     <tr>
       <th rowspan="3" valign="top">a1</th>
       <th>0</th>
-      <td>0.523364</td>
+      <td>0.1</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.794326</td>
+      <td>0.689655</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.083333</td>
+      <td>0.663366</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a2</th>
       <th>0</th>
-      <td>0.182927</td>
+      <td>0.919643</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.606557</td>
+      <td>0.493506</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.240964</td>
+      <td>0.781818</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a3</th>
       <th>0</th>
-      <td>0.46875</td>
+      <td>0.862069</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.719697</td>
+      <td>0.333333</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.769737</td>
+      <td>0.391667</td>
     </tr>
   </tbody>
 </table>
@@ -1619,7 +1356,7 @@ UserWarning: install "ipywidgets" for Jupyter support
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="smab_simulator.html" class="btn btn-neutral float-left" title="sMAB Simulation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="bnn.html" class="btn btn-neutral float-right" title="Introduction" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="bnn.html" class="btn btn-neutral float-right" title="Bayesian Neural Network" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

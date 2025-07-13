@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Introduction &mdash; PyBandits 1.0 documentation</title>
+  <title>Bayesian Neural Network &mdash; PyBandits 1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -59,18 +59,17 @@
 <li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#Objectives">Objectives</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#Train-Bayesian-models,-including:">Train Bayesian models, including:</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Evaluation:">Evaluation:</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#Generate-data">Generate data</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#Using-Bayesian-logistic-regression">Using Bayesian logistic regression</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Bayesian Neural Network</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Introduction">Introduction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Objectives">Objectives</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Train-Bayesian-models,-including:">Train Bayesian models, including:</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Evaluation:">Evaluation:</a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id1">Predictions + uncertainty map</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#id1">Predictions + uncertainty map</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html#Objectives">Objectives</a></li>
 </ul>
@@ -96,7 +95,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../tutorials.html">Tutorials</a></li>
-      <li class="breadcrumb-item active">Introduction</li>
+      <li class="breadcrumb-item active">Bayesian Neural Network</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/tutorials/bnn.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -106,18 +105,20 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="Introduction">
-<h1>Introduction<a class="headerlink" href="#Introduction" title="Link to this heading"></a></h1>
+  <section id="Bayesian-Neural-Network">
+<h1>Bayesian Neural Network<a class="headerlink" href="#Bayesian-Neural-Network" title="Link to this heading"></a></h1>
+<section id="Introduction">
+<h2>Introduction<a class="headerlink" href="#Introduction" title="Link to this heading"></a></h2>
 <p>This notebook demonstrates the use of Bayesian models for classification tasks, focusing on Bayesian Logistic Regression and Bayesian Neural Networks. Bayesian methods provide a probabilistic approach to machine learning, allowing for uncertainty quantification in predictions, which is particularly useful in decision-making under uncertainty. The notebook is based on the example in <a class="reference external" href="https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html">https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html</a></p>
 </section>
 <section id="Objectives">
-<h1>Objectives<a class="headerlink" href="#Objectives" title="Link to this heading"></a></h1>
+<h2>Objectives<a class="headerlink" href="#Objectives" title="Link to this heading"></a></h2>
 <section id="Train-Bayesian-models,-including:">
-<h2>Train Bayesian models, including:<a class="headerlink" href="#Train-Bayesian-models,-including:" title="Link to this heading"></a></h2>
+<h3>Train Bayesian models, including:<a class="headerlink" href="#Train-Bayesian-models,-including:" title="Link to this heading"></a></h3>
 <p>Bayesian Logistic Regression: A probabilistic version of logistic regression. Bayesian Neural Networks: Neural networks with Bayesian inference for parameter estimation.</p>
 </section>
 <section id="Evaluation:">
-<h2>Evaluation:<a class="headerlink" href="#Evaluation:" title="Link to this heading"></a></h2>
+<h3>Evaluation:<a class="headerlink" href="#Evaluation:" title="Link to this heading"></a></h3>
 <p>Evaluate the performance of the models using metrics such as: Accuracy: To measure the proportion of correct predictions. ROC-AUC: To assess the model’s ability to distinguish between classes. Visualization:</p>
 <p>Visualize the results, including decision boundaries and uncertainty estimates, to better understand the behavior of Bayesian models.</p>
 <div class="nbinput docutils container">
@@ -126,7 +127,6 @@
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pymc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pm</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_moons</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">accuracy_score</span><span class="p">,</span> <span class="n">roc_auc_score</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_test_split</span>
@@ -179,8 +179,8 @@
 </div>
 </div>
 <section id="Generate-data">
-<h3>Generate data<a class="headerlink" href="#Generate-data" title="Link to this heading"></a></h3>
-<p>We first generate a binarly labeled data set, with a two dimensional feature space, and is not lineraly seprabale. We then split the data set to a training data setm and a test data set.</p>
+<h4>Generate data<a class="headerlink" href="#Generate-data" title="Link to this heading"></a></h4>
+<p>We first generate a binary labeled data set, with a two dimensional feature space, and is not linearly separable. We then split the data set to a training data set and a test data set.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
@@ -204,20 +204,20 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fd310c872e0&gt;
+&lt;matplotlib.legend.Legend at 0x7f609c3f0280&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_5_1.png" src="../_images/tutorials_bnn_5_1.png" />
+<img alt="../_images/tutorials_bnn_6_1.png" src="../_images/tutorials_bnn_6_1.png" />
 </div>
 </div>
 </section>
 <section id="Using-Bayesian-logistic-regression">
-<h3>Using Bayesian logistic regression<a class="headerlink" href="#Using-Bayesian-logistic-regression" title="Link to this heading"></a></h3>
-<p>Using the cold_start method of BayesianLogisticRegression we can create a Bayesian Logistic Regresion model with default Student-T parameters. Default parameters values are mu (mean) = 0, sigma (standard deviation) = 10, nu (degrees of freedom) = 5.</p>
+<h4>Using Bayesian logistic regression<a class="headerlink" href="#Using-Bayesian-logistic-regression" title="Link to this heading"></a></h4>
+<p>Using the cold_start method of BayesianLogisticRegression we can create a Bayesian Logistic Regression model with default Student-T parameters. Default parameters values are mu (mean) = 0, sigma (standard deviation) = 10, nu (degrees of freedom) = 5.</p>
 <p>In this case we define the model to run with Variational inference which is usually faster than MCMC.</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
@@ -241,8 +241,6 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
@@ -267,30 +265,21 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <p>In order to sample from the posterior distribution, we are creating the model with the new updated parameters, and generate samples using pm.sample_prior_predictive.</p>
 <p>We consider a point to belong to Class 1, if more than half of the samples belong to Class 1 is higher than 0.5.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">_model</span> <span class="o">=</span> <span class="n">blr</span><span class="o">.</span><span class="n">create_model</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">x_test</span><span class="p">,</span> <span class="n">is_predict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">with</span> <span class="n">_model</span><span class="p">:</span>
-    <span class="n">samples</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">sample_prior_predictive</span><span class="p">(</span><span class="n">samples</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
-
-
-<span class="n">out</span> <span class="o">=</span> <span class="n">samples</span><span class="p">[</span><span class="s2">&quot;prior&quot;</span><span class="p">][</span><span class="s2">&quot;logit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
-<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">blr</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
+<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
+<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
+<span class="p">)</span>
+<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
 <span class="n">pred</span> <span class="o">=</span> <span class="n">pred_proba</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
 </div>
 <p>Since the Bayesian Logistic Regression model is linear, it’s not able do separate the space accurately.</p>
 <div class="nbinput docutils container">
@@ -311,14 +300,14 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fd2c882b4f0&gt;
+&lt;matplotlib.legend.Legend at 0x7f609c3d2620&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_14_1.png" src="../_images/tutorials_bnn_14_1.png" />
+<img alt="../_images/tutorials_bnn_15_1.png" src="../_images/tutorials_bnn_15_1.png" />
 </div>
 </div>
 <p>Here we calculate the accuracy and AUC score of the model</p>
@@ -341,8 +330,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.222
-AUC: 0.19817917086673387
+Accuracy: 0.868
+AUC: 0.9488151810428967
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -361,39 +350,30 @@ AUC: 0.19817917086673387
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_18_0.png" src="../_images/tutorials_bnn_18_0.png" />
+<img alt="../_images/tutorials_bnn_19_0.png" src="../_images/tutorials_bnn_19_0.png" />
 </div>
 </div>
 </section>
 </section>
 </section>
 <section id="Predictions-+-uncertainty-map">
-<h1>Predictions + uncertainty map<a class="headerlink" href="#Predictions-+-uncertainty-map" title="Link to this heading"></a></h1>
+<h2>Predictions + uncertainty map<a class="headerlink" href="#Predictions-+-uncertainty-map" title="Link to this heading"></a></h2>
 <p>In order to visualize the posterior predictive distribution, we can create a grid of points in the input space and evaluate the model at those points.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mgrid</span><span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
 <span class="n">grid_2d</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
-
-<span class="n">_model</span> <span class="o">=</span> <span class="n">blr</span><span class="o">.</span><span class="n">create_model</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">,</span> <span class="n">is_predict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">with</span> <span class="n">_model</span><span class="p">:</span>
-    <span class="n">samples</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">sample_prior_predictive</span><span class="p">(</span><span class="n">samples</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
-
-<span class="n">out</span> <span class="o">=</span> <span class="n">samples</span><span class="p">[</span><span class="s2">&quot;prior&quot;</span><span class="p">][</span><span class="s2">&quot;logit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
-<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">blr</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
+<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
+<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
+<span class="p">)</span>
+<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
 </div>
 <p>This is the average of the output of the model</p>
 <div class="nbinput docutils container">
@@ -408,7 +388,7 @@ AUC: 0.19817917086673387
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_23_0.png" src="../_images/tutorials_bnn_23_0.png" />
+<img alt="../_images/tutorials_bnn_24_0.png" src="../_images/tutorials_bnn_24_0.png" />
 </div>
 </div>
 <p>This is the standard deviation of the output of the model</p>
@@ -416,10 +396,9 @@ AUC: 0.19817917086673387
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">out</span> <span class="o">=</span> <span class="n">samples</span><span class="p">[</span><span class="s2">&quot;prior&quot;</span><span class="p">][</span><span class="s2">&quot;logit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
-<span class="n">std</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pred_proba_std</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
-<span class="n">plot_map</span><span class="p">(</span><span class="n">std</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">)</span>
+<span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba_std</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -427,7 +406,7 @@ AUC: 0.19817917086673387
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_25_0.png" src="../_images/tutorials_bnn_25_0.png" />
+<img alt="../_images/tutorials_bnn_26_0.png" src="../_images/tutorials_bnn_26_0.png" />
 </div>
 </div>
 <p>In the following section we will demonstrate how a bayesian neural network (BNN) can capture complex patterns and relationships in data through multiple layers of abstraction, leading to better performance on tasks with high-dimensional features. In contrast, bayesian logistic regression is limited to linear relationships and may not effectively model intricate dependencies within the data.</p>
@@ -462,8 +441,6 @@ AUC: 0.19817917086673387
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 </pre></div></div>
@@ -488,12 +465,13 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">_model</span> <span class="o">=</span> <span class="n">bnn</span><span class="o">.</span><span class="n">create_model</span><span class="p">(</span><span class="n">x_test</span><span class="p">,</span> <span class="n">is_predict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">with</span> <span class="n">_model</span><span class="p">:</span>
-    <span class="n">samples</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">sample_prior_predictive</span><span class="p">(</span><span class="n">samples</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
-
-<span class="n">out</span> <span class="o">=</span> <span class="n">samples</span><span class="p">[</span><span class="s2">&quot;prior&quot;</span><span class="p">][</span><span class="s2">&quot;logit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
-<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
+<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
+<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
+<span class="p">)</span>
+<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
 <span class="n">pred</span> <span class="o">=</span> <span class="n">pred_proba</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
 
@@ -504,20 +482,11 @@ UserWarning: install "ipywidgets" for Jupyter support
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
-</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_33_1.png" src="../_images/tutorials_bnn_33_1.png" />
+<img alt="../_images/tutorials_bnn_34_0.png" src="../_images/tutorials_bnn_34_0.png" />
 </div>
 </div>
 <div class="nbinput docutils container">
@@ -539,8 +508,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.856
-AUC: 0.9431430902894447
+Accuracy: 0.958
+AUC: 0.991839869437911
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
@@ -559,43 +528,34 @@ AUC: 0.9431430902894447
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_36_0.png" src="../_images/tutorials_bnn_36_0.png" />
+<img alt="../_images/tutorials_bnn_37_0.png" src="../_images/tutorials_bnn_37_0.png" />
 </div>
 </div>
 </section>
 <section id="id1">
-<h1>Predictions + uncertainty map<a class="headerlink" href="#id1" title="Link to this heading"></a></h1>
+<h2>Predictions + uncertainty map<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
 <p>We now visualize the posterior predictive distribution of output of the bayesian neural network model</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mgrid</span><span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
-<span class="n">grid_2d</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
-<span class="n">_model</span> <span class="o">=</span> <span class="n">bnn</span><span class="o">.</span><span class="n">create_model</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">,</span> <span class="n">is_predict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">with</span> <span class="n">_model</span><span class="p">:</span>
-    <span class="n">samples</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">sample_prior_predictive</span><span class="p">(</span><span class="n">samples</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
+<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
+<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
+<span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/data.py:384: FutureWarning: Data is now always mutable. Specifying the `mutable` kwarg will raise an error in a future release
-  warnings.warn(
-</pre></div></div>
 </div>
 <p>This is the average of the output of the model</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">out</span> <span class="o">=</span> <span class="n">samples</span><span class="p">[</span><span class="s2">&quot;prior&quot;</span><span class="p">][</span><span class="s2">&quot;logit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
-<span class="n">mean</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pred_proba_mean</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
-<span class="n">plot_map</span><span class="p">(</span><span class="n">mean</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">)</span>
+<span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba_mean</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -603,7 +563,7 @@ AUC: 0.9431430902894447
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_41_0.png" src="../_images/tutorials_bnn_41_0.png" />
+<img alt="../_images/tutorials_bnn_42_0.png" src="../_images/tutorials_bnn_42_0.png" />
 </div>
 </div>
 <p>This is the standard deviation of the output of the model</p>
@@ -611,10 +571,9 @@ AUC: 0.9431430902894447
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">out</span> <span class="o">=</span> <span class="n">samples</span><span class="p">[</span><span class="s2">&quot;prior&quot;</span><span class="p">][</span><span class="s2">&quot;logit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">values</span> <span class="o">&gt;</span> <span class="mi">0</span>
-<span class="n">std</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pred_proba_std</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
-<span class="n">plot_map</span><span class="p">(</span><span class="n">std</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">)</span>
+<span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba_std</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -622,9 +581,10 @@ AUC: 0.9431430902894447
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_43_0.png" src="../_images/tutorials_bnn_43_0.png" />
+<img alt="../_images/tutorials_bnn_44_0.png" src="../_images/tutorials_bnn_44_0.png" />
 </div>
 </div>
+</section>
 </section>
 
 
