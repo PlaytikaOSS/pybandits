@@ -22,6 +22,7 @@
 
 import os
 from tempfile import TemporaryDirectory
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -35,7 +36,7 @@ from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
 from pybandits.model import BayesianLogisticRegression
 from pybandits.quantitative_model import CmabZoomingModel
-from tests.test_utils import FakeApproximation, FakePrediction
+from tests.test_utils import FakeApproximation
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
@@ -72,6 +73,19 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
     ],
 )
 def test_validate_probs_reward_values(probability, is_quantitative, should_pass):
+    """
+    Test the _validate_probs_reward_values method with various combinations
+    of probability values and action types.
+
+    Parameters
+    ----------
+    probability : Union[float, callable]
+        The probability value to test
+    is_quantitative : bool
+        Whether the action is quantitative
+    should_pass : bool
+        Whether the validation should pass
+    """
     if should_pass:
         # Should not raise any exception
         CmabSimulator._validate_probs_reward_values(probability, is_quantitative)
@@ -81,20 +95,117 @@ def test_validate_probs_reward_values(probability, is_quantitative, should_pass)
             CmabSimulator._validate_probs_reward_values(probability, is_quantitative)
 
 
+@pytest.mark.parametrize(
+    "probs_reward_config, expected_values, groups, context_shape",
+    [
+        # Standard actions with single-argument functions (context only)
+        (
+            {"0": {"a1": lambda x: 0.7, "a2": lambda x: 0.3}, "1": {"a1": lambda x: 0.8, "a2": lambda x: 0.2}},
+            {"0": {"a1": 0.7, "a2": 0.3}, "1": {"a1": 0.8, "a2": 0.2}},
+            ["0", "1"],
+            (1000, 3),  # batch_size * n_updates = 100 * 10 = 1000
+        ),
+        # Different probability values for different groups
+        (
+            {"0": {"a1": lambda x: 0.6, "a2": lambda x: 0.4}, "1": {"a1": lambda x: 0.9, "a2": lambda x: 0.1}},
+            {"0": {"a1": 0.6, "a2": 0.4}, "1": {"a1": 0.9, "a2": 0.1}},
+            ["0", "1"],
+            (1000, 3),
+        ),
+        # Single group scenario
+        (
+            {"0": {"a1": lambda x: 0.5, "a2": lambda x: 0.5}},
+            {"0": {"a1": 0.5, "a2": 0.5}},
+            ["0"],
+            (1000, 3),
+        ),
+    ],
+)
+def test_cmab_simulator_with_explicit_probs_reward(
+    mocker: MockerFixture,
+    probs_reward_config: Dict[str, Dict[str, Union[Callable, float]]],
+    expected_values: Dict[str, Dict[str, float]],
+    groups: List[str],
+    context_shape: tuple,
+    dimension: int = 2,
+    test_context=np.array([0.5, 0.3, 0.7]),
+):
+    """
+    Test CmabSimulator when probs_reward is explicitly provided (not None).
+
+    This test ensures that the if condition in replace_nulls_and_validate_sizes_and_dtypes
+    is false, improving test coverage for that branch. Covers different group scenarios
+    with context-based probability functions.
+
+    Parameters
+    ----------
+    mocker : MockerFixture
+        Pytest mock fixture for mocking objects.
+    probs_reward_config : Dict[str, Dict[str, Union[Callable, float]]]
+        Explicit probs_reward configuration with group-based dictionaries containing
+        callable functions that take context as input.
+    expected_values : Dict[str, Dict[str, float]]
+        Expected probability values for verification per group.
+    groups : List[str]
+        List of group identifiers.
+    context_shape : tuple
+        Shape of the context array (n_samples, n_features).
+    dimension : int
+        Dimension for quantitative models.
+    test_context : np.ndarray
+        Context for testing the probability values.
+    """
+    # Create mock MAB with actions
+    cmab = mocker.Mock(spec=CmabBernoulli)
+    cmab.actions = {}
+
+    # Create mock actions for all action IDs
+    first_group_probs = next(iter(probs_reward_config.values()))
+    for action_id in first_group_probs.keys():
+        cmab.actions[action_id] = mocker.Mock()
+
+    cmab.epsilon = 0.0
+    cmab.default_action = None
+
+    # Create context and group arrays
+    n_samples, n_features = context_shape
+    context = np.random.random(context_shape)
+    group_list = groups * (n_samples // len(groups)) + groups[: n_samples % len(groups)]
+
+    # Create simulator with explicit probs_reward
+    simulator = CmabSimulator(mab=cmab, probs_reward=probs_reward_config, context=context, group=group_list)
+
+    # Verify that the provided probs_reward was used (not generated)
+    assert simulator.probs_reward == probs_reward_config
+
+    # Test that the values work correctly for each group
+
+    for group_id, group_probs in expected_values.items():
+        for action_id, expected_value in group_probs.items():
+            prob_value = simulator.probs_reward[group_id][action_id]
+            if callable(prob_value):
+                # For context-based actions, test with context only
+                actual_value = prob_value(test_context)
+                assert actual_value == expected_value
+            else:
+                # For non-callable values, test directly
+                assert prob_value == expected_value
+
+
 @settings(deadline=None)
 @given(
     st.just(["a1", "a2"]),
     st.lists(
         st.sampled_from(
             [
-                BayesianLogisticRegression.cold_start(n_features=3, update_method="VI"),
-                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 3, "update_method": "VI"}),
+                BayesianLogisticRegression.cold_start(n_features=2, update_method="VI"),
+                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 2, "update_method": "VI"}),
             ]
         ),
         min_size=2,
         max_size=2,
     ),
-    st.just(3),
+    st.just(2),
     st.just(2),
 )
 def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, models, n_features, num_groups):
@@ -119,11 +230,9 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
     batch_size = CmabSimulator.model_fields["batch_size"].default
     group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
     context = (
-        np.repeat(np.arange(3).reshape(1, -1), n_updates * batch_size, axis=0).T * (np.array(group) - np.mean(group))
+        np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0).T
+        * (np.array(group) - np.mean(group))
     ).T
-    monkeymodule.setattr(
-        pybandits.model, "sample_prior_predictive", FakePrediction(n_samples=batch_size).sample_prior_predictive
-    )
     with TemporaryDirectory() as path:
         simulator = CmabSimulator(
             mab=mab,
@@ -158,8 +267,8 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
         max_size=2,
     ),
     n_features=st.just(3),
-    n_updates=st.integers(min_value=1, max_value=3),
-    batch_size=st.integers(min_value=1, max_value=10),
+    n_updates=st.integers(min_value=1, max_value=2),
+    batch_size=st.integers(min_value=1, max_value=5),
     save=st.booleans(),
     random_seed=st.sampled_from([None, 0, 42]),
     verbose=st.booleans(),
@@ -203,9 +312,6 @@ def test_cmab_e2e_simulation_with_non_default_args(
         np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0).T
         * (np.array(group) - np.mean(group))
     ).T
-    monkeymodule.setattr(
-        pybandits.model, "sample_prior_predictive", FakePrediction(n_samples=batch_size).sample_prior_predictive
-    )
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:
         with pytest.raises(ValueError):

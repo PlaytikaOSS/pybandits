@@ -2,12 +2,12 @@ import json
 import pickle
 import random
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, Tuple, get_args
+from typing import Any, Dict, Tuple, get_args
 
 import numpy as np
 from bokeh.core.serialization import Serializable
 
-from pybandits.base import ProbabilityWeight, PyBanditsBaseModel
+from pybandits.base import PyBanditsBaseModel
 from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
 from pybandits.pydantic_version_compatibility import Optional, PositiveInt, PrivateAttr
 
@@ -44,29 +44,6 @@ class FakeApproximation(PyBanditsBaseModel):
             sample_dict[bias_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i + 1]))
 
         return sample_dict
-
-
-class FakePrediction(PyBanditsBaseModel):
-    n_samples: PositiveInt
-
-    def sample_prior_predictive(self, *args, **kwargs) -> Dict[str, Dict[str, object]]:
-        return {
-            "prior": {
-                BaseBayesianNeuralNetwork._logit_var_name: type(
-                    "FakeArray", (), {"values": np.random.random(size=(self.n_samples))}
-                ),
-            }
-        }
-
-
-def fake_bnn_sample_proba(self, context: np.ndarray, *args, **kwargs) -> List[ProbabilityWeight]:
-    n_samples = len(context)
-    fake_prediction = FakePrediction(n_samples=n_samples)
-    predictions = fake_prediction.sample_prior_predictive()["prior"]
-    mock_weighted_sums = predictions[BaseBayesianNeuralNetwork._logit_var_name].values
-    mock_probs = BaseBayesianNeuralNetwork._stable_sigmoid(mock_weighted_sums)
-
-    return list(zip(mock_probs, mock_weighted_sums))
 
 
 def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:

@@ -14,7 +14,6 @@ from sklearn.preprocessing import MinMaxScaler
 
 import pybandits
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC
-from pybandits.model import BaseBayesianNeuralNetwork
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
 from pybandits.smab import (
@@ -23,7 +22,7 @@ from pybandits.smab import (
     SmabBernoulliMO,
     SmabBernoulliMOCC,
 )
-from tests.test_utils import FakeApproximation, fake_bnn_sample_proba
+from tests.test_utils import FakeApproximation
 
 
 @pytest.fixture(scope="module")
@@ -192,6 +191,10 @@ def test_initialization_mismatches(
         )
 
 
+def generate_random_bool() -> bool:
+    return np.random.rand() > 0.5
+
+
 @pytest.mark.usefixtures("logged_data")
 @settings(deadline=None)
 @given(
@@ -199,8 +202,6 @@ def test_initialization_mismatches(
     n_trials=st.just(2),
     fast_fit=st.booleans(),
     scaler=st.sampled_from([None, MinMaxScaler()]),
-    verbose=st.booleans(),
-    visualize=st.booleans(),
     propensity_score_model_type=st.sampled_from(
         get_args(get_type_hints(OfflinePolicyEvaluator)["propensity_score_model_type"])
     ),
@@ -218,8 +219,6 @@ def test_initialization_mismatches(
     cost_feature=st.sampled_from(["cost", None]),
     propensity_score_feature=st.just("propensity_score"),
     n_mc_experiments=st.just(2),
-    update=st.booleans(),
-    shuffle=st.booleans(),
 )
 # test various OfflinePolicyEvaluator configurations to validate that everything works
 def test_running_configuration(
@@ -228,8 +227,6 @@ def test_running_configuration(
     n_trials: PositiveInt,
     fast_fit: bool,
     scaler: Optional[Union[TransformerMixin, Dict[str, TransformerMixin]]],
-    verbose: bool,
-    visualize: bool,
     propensity_score_model_type: str,
     expected_reward_model_type: str,
     importance_weights_model_type: str,
@@ -241,10 +238,13 @@ def test_running_configuration(
     cost_feature: Optional[str],
     propensity_score_feature: Optional[str],
     n_mc_experiments: int,
-    shuffle: bool,
-    update: bool,
     monkeymodule,
 ):
+    shuffle = generate_random_bool()
+    update = generate_random_bool()
+    visualize = generate_random_bool()
+    verbose = generate_random_bool()
+
     if context and type(reward_feature) is List:
         pass  # CmabMO and CmabMOCC are not supported yet
     true_reward_feature = (
@@ -315,12 +315,6 @@ def test_running_configuration(
         propensity_score_feature=propensity_score_feature,
     )
     execution_func = evaluator.update_and_evaluate if update else evaluator.evaluate
-    if context:
-        monkeymodule.setattr(
-            BaseBayesianNeuralNetwork,
-            "sample_proba",
-            fake_bnn_sample_proba,
-        )
     with TemporaryDirectory() as tmp_dir:
         execution_func(mab=mab, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir)
     if visualize:

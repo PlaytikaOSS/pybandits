@@ -108,7 +108,7 @@ class CmabSimulator(Simulator):
             }
             values["probs_reward"] = probs_reward
         else:
-            if probs_reward.shape[0] != len(set(group)):
+            if len(probs_reward) != len(set(group)):
                 raise ValueError("number of probs_reward rows must match the number of groups.")
         return values
 

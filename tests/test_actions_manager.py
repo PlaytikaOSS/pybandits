@@ -1,3 +1,4 @@
+import math
 from collections import defaultdict
 from typing import Dict, List, Optional, Union
 
@@ -359,22 +360,26 @@ def test_extracts_action_model_class_and_attributes_with_valid_kwargs(mocker: Mo
 
 
 # SmabActionsManager
-# Handle actions_memory and rewards_memory with non-matching lengths
 @settings(deadline=None)
 @given(
-    data_len=st.integers(min_value=1, max_value=10000),
+    data_len_base=st.just(math.sqrt(10)),
+    data_len_power=st.integers(min_value=1, max_value=8),
+    memory_len_base=st.just(math.sqrt(10)),
+    memory_len_power=st.integers(min_value=1, max_value=8),
     other_reward=st.integers(min_value=0, max_value=1),
 )
-def test_smab_manager_update(data_len, other_reward):
+def test_smab_manager_update(data_len_base, data_len_power, memory_len_base, memory_len_power, other_reward):
     actions_dict = {
         "action1": Beta(),
         "action2": Beta(),
     }
+    data_len = int(data_len_base**data_len_power)
+    memory_len = int(memory_len_base**memory_len_power)
     manager = SmabActionsManager[Beta](actions=actions_dict, delta=REFERENCE_DELTA)
     actions = ["action1"] * data_len
     rewards = [1] * data_len
-    actions_memory = ["action1"] * data_len
-    rewards_memory = [other_reward] * data_len
+    actions_memory = ["action1"] * memory_len
+    rewards_memory = [other_reward] * memory_len
     manager.update(actions_memory, rewards_memory, None)
     manager.update(actions, rewards, None, actions_memory=actions_memory, rewards_memory=rewards_memory)
 
@@ -383,7 +388,6 @@ def test_smab_manager_update(data_len, other_reward):
 
 
 # CmabActionsManager
-# Handle context and context_memory with non matching feature dimensions
 @settings(deadline=None)
 @given(
     context=st.lists(

@@ -25,13 +25,12 @@ from random import betavariate
 from typing import ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
-import pytensor.tensor as pt
 from numpy import sqrt
 from numpy.typing import ArrayLike
-from pymc import Bernoulli, Data, Deterministic, fit, math, sample, sample_prior_predictive
+from pymc import Bernoulli, Data, Deterministic, fit, math, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
-from pytensor.tensor import specify_broadcastable
+from scipy.stats import t
 from typing_extensions import Self
 
 from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
@@ -442,6 +441,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     model_params: BnnParams
 
     _logit_var_name: ClassVar[str] = "logit"
+    _prob_var_name: ClassVar[str] = "prob"
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
 
@@ -617,9 +617,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         return self.model_params.bnn_layer_params[0].weight.shape[0]
 
-    def create_model(
-        self, x: ArrayLike, y: Optional[Union[List[BinaryReward], np.ndarray]] = None, is_predict: bool = False
-    ) -> PymcModel:
+    def create_update_model(self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray]) -> PymcModel:
         """
         Create a PyMC model for Bayesian Neural Network.
 
@@ -632,10 +630,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Input features of shape (n_samples, n_features)
         y : Union[List[BinaryReward], np.ndarray]
             Binary target values of shape (n_samples,)
-        is_predict : bool
-            If True, process samples independently. If False, process all samples at once.
-            In the predict step, we would like to sample the model parameters independently for each sample.
-            In the update step, this is not required.
 
         Returns
         -------
@@ -647,72 +641,39 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         The model structure follows these steps:
         1. For each layer, create weight and bias variables from StudentT distributions.
         2. Apply linear transformations and activations through the layers.
-           When is_sampelwise is True, the linear transformation is applied on each row separately (so random variables are not shared).
-           When is_sampelwise is False, the linear transformation is applied on the whole matrix at once, so random variables are shared.
         3. Apply sigmoid activation at the output
         4. Use Bernoulli likelihood for binary classification
         """
-        if y is None:
-            y = np.zeros(len(x), dtype=np.int64)
 
-        n_samples = len(x)
-        is_multi_sample_predict = is_predict and (n_samples != 1)
         with PymcModel() as _model:
-            # Define data variables using minibatches
-            bnn_output = Data("bnn_output", y, mutable=True)
-
-            if is_multi_sample_predict:
-                # arrange  for batched dot product
-                x_expanded = np.expand_dims(x, axis=1)
-                bnn_input = Data("bnn_input", x_expanded, mutable=True)
-                for dim, size in enumerate(x_expanded.shape):
-                    if size == 1:
-                        bnn_input = specify_broadcastable(bnn_input, dim)
-            else:
-                bnn_input = Data("bnn_input", x, mutable=True)
+            # Define data variables
+            bnn_output = Data("bnn_output", y)
+            bnn_input = Data("bnn_input", x)
 
             next_layer_input = bnn_input
+
             for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                 w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
                 b_shape = layer_params.bias.shape
                 weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
 
-                if is_multi_sample_predict:
-                    # in this case we create n_samples different weights and biases - one for each sample
-                    w = PymcStudentT(
-                        name=weight_layer_params_name, shape=(n_samples,) + w_shape, **layer_params.weight.params
-                    )
-                    b = PymcStudentT(
-                        name=bias_layer_params_name, shape=(n_samples, 1) + b_shape, **layer_params.bias.params
-                    )
+                # For training, use shared weights and biases
+                w = PymcStudentT(
+                    name=weight_layer_params_name, shape=w_shape, **layer_params.weight.params, initval="prior"
+                )
+                b = PymcStudentT(
+                    name=bias_layer_params_name, shape=b_shape, **layer_params.bias.params, initval="prior"
+                )
 
-                    batched_dot = pt.vectorize(
-                        lambda x_batch, w_batch: pt.dot(x_batch, w_batch), signature="(n,m),(m,p)->(n,p)"
-                    )
-                    linear_transform = pt.as_tensor_variable(
-                        batched_dot(next_layer_input, w) + b, name=f"linear_transform{layer_ind}"
-                    )
-
-                else:
-                    # in this case we create one weight and bias for all samples
-                    w = PymcStudentT(
-                        name=weight_layer_params_name, shape=w_shape, **layer_params.weight.params, initval="prior"
-                    )
-                    b = PymcStudentT(
-                        name=bias_layer_params_name, shape=b_shape, **layer_params.bias.params, initval="prior"
-                    )
-
-                    linear_transform = math.dot(next_layer_input, w) + b
+                linear_transform = math.dot(next_layer_input, w) + b
 
                 if layer_ind < len(self.model_params.bnn_layer_params) - 1:
                     next_layer_input = math.tanh(linear_transform)
-            for dim in range(1, linear_transform.ndim):
-                linear_transform = specify_broadcastable(linear_transform, dim)
 
+            # Final output processing
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
 
-            if not is_predict:
-                Bernoulli("out", logit_p=logit, observed=bnn_output)
+            Bernoulli("out", logit_p=logit, observed=bnn_output)
 
         return _model
 
@@ -736,13 +697,36 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.check_context_matrix(context=context)
 
         _context = np.atleast_2d(context)
-        _model = self.create_model(x=_context, is_predict=True)
+        n_samples = len(_context)
+        # Sample from StudentT distributions for each layer
+        next_layer_input = _context
 
-        with _model:
-            trace = sample_prior_predictive(samples=1)
+        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+            # Sample weights and biases from StudentT distributions
+            w_params = layer_params.weight.params
+            b_params = layer_params.bias.params
 
-        weighted_sum = trace["prior"][self._logit_var_name].values.reshape(-1)
-        prob = self._stable_sigmoid(weighted_sum)
+            # Sample weights and biases using scipy.stats
+            w = t.rvs(
+                w_params["nu"],
+                loc=w_params["mu"],
+                scale=w_params["sigma"],
+                size=(n_samples, len(w_params["nu"]), len(w_params["nu"][0])),
+            )
+            b = t.rvs(
+                b_params["nu"], loc=b_params["mu"], scale=b_params["sigma"], size=(n_samples, len(b_params["nu"]))
+            )
+
+            # Linear transformation
+            linear_transform = np.sum(next_layer_input[..., None] * w, axis=1) + b
+
+            # Apply activation function (tanh for hidden layers, sigmoid for output)
+            if layer_ind < len(self.model_params.bnn_layer_params) - 1:
+                next_layer_input = np.tanh(linear_transform)
+            else:
+                # Output layer - apply sigmoid
+                weighted_sum = linear_transform.squeeze(-1)
+                prob = self._stable_sigmoid(weighted_sum)
 
         return list(zip(prob, weighted_sum))
 
@@ -768,7 +752,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             raise AttributeError("Shape mismatch: context and rewards must have the same length.")
 
         _context = np.atleast_2d(context)
-        _model = self.create_model(x=_context, y=rewards, is_predict=False)
+        _model = self.create_update_model(x=_context, y=rewards)
         with _model:
             # update traces object by sampling from posterior distribution
             if self.update_method == "VI":

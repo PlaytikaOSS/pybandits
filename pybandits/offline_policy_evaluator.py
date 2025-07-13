@@ -4,7 +4,6 @@ from functools import partial
 from itertools import product
 from math import floor
 from multiprocessing import Pool, cpu_count
-from sys import version_info
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
@@ -21,7 +20,12 @@ from sklearn.model_selection import cross_val_score
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from tqdm import tqdm
+from typing_extensions import Self
 
+from pybandits import offline_policy_estimator
+from pybandits.base import ActionId, Float01, PyBanditsBaseModel
+from pybandits.mab import BaseMab
+from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.pydantic_version_compatibility import (
     NonNegativeInt,
     PositiveInt,
@@ -30,16 +34,6 @@ from pybandits.pydantic_version_compatibility import (
     model_validator,
     validate_call,
 )
-
-if version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
-
-from pybandits import offline_policy_estimator
-from pybandits.base import ActionId, Float01, PyBanditsBaseModel
-from pybandits.mab import BaseMab
-from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.utils import (
     extract_argument_names_from_function,
     get_non_abstract_classes,

@@ -22,20 +22,32 @@
 
 import os
 from tempfile import TemporaryDirectory
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pytest
+from _pytest.monkeypatch import MonkeyPatch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pytest_mock import MockerFixture
+from pytest_mock.plugin import MockerFixture
 
+from pybandits.actions_manager import SmabModelType
+from pybandits.base_model import BaseModel
 from pybandits.model import Beta
-from pybandits.quantitative_model import SmabZoomingModel
+from pybandits.quantitative_model import QuantitativeModel, SmabZoomingModel
 from pybandits.smab import SmabBernoulli
 from pybandits.smab_simulator import SmabSimulator
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture):
+    """
+    Test that SmabSimulator raises ValueError when probs_reward keys don't match action keys.
+
+    Parameters
+    ----------
+    mocker : MockerFixture
+        Pytest mock fixture for mocking objects.
+    """
     smab = mocker.Mock(spec=SmabBernoulli)
     smab.actions = {"a1": mocker.Mock(), "a2": mocker.Mock()}
     smab.epsilon = 0.0
@@ -43,6 +55,83 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
     probs_reward = {str(i): {"a1": 0.5, "a2": 0.5} for i in range(2)}
     with pytest.raises(ValueError):
         SmabSimulator(mab=smab, probs_reward=probs_reward)
+
+
+@pytest.mark.parametrize(
+    "probs_reward_config, expected_values",
+    [
+        # Standard actions with float probabilities
+        ({"a1": 0.7, "a2": 0.3}, {"a1": 0.7, "a2": 0.3}),
+        # Quantitative actions with callable functions
+        ({"a1": lambda q: 0.8, "a2": lambda q: 0.4}, {"a1": 0.8, "a2": 0.4}),
+        # Mixed actions (standard + quantitative)
+        ({"a1": 0.6, "a2": lambda q: 0.9}, {"a1": 0.6, "a2": 0.9}),
+    ],
+)
+def test_smab_simulator_with_explicit_probs_reward(
+    mocker: MockerFixture,
+    probs_reward_config: Dict[str, Union[float, Callable]],
+    expected_values: Dict[str, float],
+    dimension: int = 2,
+    test_quantity=np.array([0.5, 0.3]),
+):
+    """
+    Test SmabSimulator when probs_reward is explicitly provided (not None).
+
+    This test ensures that the if condition in replace_null_and_validate_probs_reward
+    is false, improving test coverage for that branch. Covers standard actions,
+    quantitative actions, and mixed scenarios.
+
+    Parameters
+    ----------
+    mocker : MockerFixture
+        Pytest mock fixture for mocking objects.
+    probs_reward_config : Dict[str, Union[float, Callable]]
+        Explicit probs_reward configuration with float values or callable functions.
+    expected_values : Dict[str, float]
+        Expected probability values for verification.
+    """
+    # Create mock MAB with actions that match the probs_reward types
+    smab = mocker.Mock(spec=SmabBernoulli)
+    smab.actions = {}
+
+    for action_id, prob_value in probs_reward_config.items():
+        if callable(prob_value):
+            # Quantitative action - needs a model with dimension
+            mock_model = mocker.Mock(spec=QuantitativeModel)
+            mock_model.dimension = dimension
+            smab.actions[action_id] = mock_model
+        else:
+            # Standard action - regular mock
+            smab.actions[action_id] = mocker.Mock()
+
+    smab.epsilon = 0.0
+    smab.default_action = None
+
+    # # Mock isinstance to return True for quantitative actions
+    # def mock_isinstance(obj, cls):
+    #     if cls.__name__ == 'QuantitativeModel':
+    #         return True
+    #     return False
+
+    # with mocker.patch('builtins.isinstance', side_effect=mock_isinstance):
+    # Create simulator with explicit probs_reward
+    simulator = SmabSimulator(mab=smab, probs_reward=probs_reward_config)
+
+    # Verify that the provided probs_reward was used (not generated)
+    assert simulator.probs_reward == probs_reward_config
+
+    # Test that the values work correctly
+
+    for action_id, expected_value in expected_values.items():
+        prob_value = simulator.probs_reward[action_id]
+        if callable(prob_value):
+            # For quantitative actions, test the callable function
+            actual_value = prob_value(test_quantity)
+            assert actual_value == expected_value
+        else:
+            # For standard actions, test the float value directly
+            assert prob_value == expected_value
 
 
 @pytest.mark.parametrize(
@@ -71,7 +160,9 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
         (lambda x, y: 0.5, True, False),
     ],
 )
-def test_validate_probs_reward_values(probability, is_quantitative_action, should_pass):
+def test_validate_probs_reward_values(
+    probability: Union[float, Callable], is_quantitative_action: bool, should_pass: bool
+):
     """
     Test the _validate_probs_reward_values method with various combinations
     of probability values and action types.
@@ -99,7 +190,21 @@ def test_validate_probs_reward_values(probability, is_quantitative_action, shoul
     action_ids=st.just(["a1", "a2"]),
     models=st.lists(st.sampled_from([Beta(), SmabZoomingModel.cold_start()]), min_size=2, max_size=2),
 )
-def test_smab_e2e_simulation_with_default_args(action_ids, models, monkeymodule):
+def test_smab_e2e_simulation_with_default_args(
+    action_ids: List[str], models: List[BaseModel], monkeymodule: pytest.MonkeyPatch
+):
+    """
+    Test end-to-end simulation with default arguments.
+
+    Parameters
+    ----------
+    action_ids : List[str]
+        List of action IDs for the MAB.
+    models : List[BaseModel]
+        List of models for the actions.
+    monkeymodule : MonkeyPatch
+        Pytest monkeypatch fixture for modifying module attributes.
+    """
     monkeymodule.setattr(SmabSimulator, "_maximize_prob_reward", lambda *args, **kwargs: np.random.random())
     mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     with TemporaryDirectory() as path:
@@ -126,8 +231,43 @@ def test_smab_e2e_simulation_with_default_args(action_ids, models, monkeymodule)
     file_prefix=st.sampled_from(["", "unit_test"]),
 )
 def test_smab_e2e_simulation_with_non_default_args(
-    action_ids, models, n_updates, batch_size, save, random_seed, verbose, visualize, file_prefix, monkeymodule
+    action_ids: List[str],
+    models: List[SmabModelType],
+    n_updates: int,
+    batch_size: int,
+    save: bool,
+    random_seed: Optional[int],
+    verbose: bool,
+    visualize: bool,
+    file_prefix: str,
+    monkeymodule: MonkeyPatch,
 ):
+    """
+    Test end-to-end simulation with non-default arguments.
+
+    Parameters
+    ----------
+    action_ids : List[str]
+        List of action IDs for the MAB.
+    models : List[BaseModel]
+        List of models for the actions.
+    n_updates : int
+        Number of updates for the simulation.
+    batch_size : int
+        Batch size for the simulation.
+    save : bool
+        Whether to save results.
+    random_seed : Optional[int]
+        Random seed for reproducibility.
+    verbose : bool
+        Whether to enable verbose output.
+    visualize : bool
+        Whether to enable visualization.
+    file_prefix : str
+        Prefix for saved files.
+    monkeymodule : MonkeyPatch
+        Pytest monkeypatch fixture for modifying module attributes.
+    """
     monkeymodule.setattr(
         SmabSimulator,
         "_maximize_prob_reward",
