@@ -13,6 +13,7 @@ from sklearn.base import TransformerMixin
 from sklearn.preprocessing import MinMaxScaler
 
 import pybandits
+from pybandits import offline_policy_estimator
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
@@ -22,7 +23,8 @@ from pybandits.smab import (
     SmabBernoulliMO,
     SmabBernoulliMOCC,
 )
-from tests.test_utils import FakeApproximation
+from pybandits.utils import get_non_abstract_classes
+from tests.utils import FakeApproximation
 
 
 @pytest.fixture(scope="module")
@@ -240,6 +242,9 @@ def test_running_configuration(
     n_mc_experiments: int,
     monkeymodule,
 ):
+    ope_estimators = np.random.choice(get_non_abstract_classes(offline_policy_estimator) + [None])
+    if ope_estimators is not None:
+        ope_estimators = [ope_estimators]
     shuffle = generate_random_bool()
     update = generate_random_bool()
     visualize = generate_random_bool()
@@ -299,7 +304,7 @@ def test_running_configuration(
         n_trials=n_trials,
         fast_fit=fast_fit,
         scaler=scaler,
-        ope_estimators=None,
+        ope_estimators=ope_estimators,
         verbose=verbose,
         shuffle=shuffle,
         propensity_score_model_type=propensity_score_model_type,

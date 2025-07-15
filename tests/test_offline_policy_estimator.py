@@ -8,12 +8,13 @@ from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
 from pybandits import offline_policy_estimator
-from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
+from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator, DoublyRobustWithOptimisticShrinkage
 from pybandits.utils import get_non_abstract_classes
 
 
 @st.composite
 def invalid_inputs(draw, n_samples: int = 10, n_actions: int = 2):
+    """Generate invalid inputs for testing with configurable sample and action counts."""
     reward = None
     propensity_score = None
     estimated_policy = None
@@ -121,6 +122,7 @@ def invalid_inputs(draw, n_samples: int = 10, n_actions: int = 2):
 def test_shape_mismatches(
     inputs: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ):
+    """Test shape mismatches with configurable inputs."""
     action, reward, propensity_score, estimated_policy, expected_reward, expected_importance_weight = inputs
     estimator = BaseOfflinePolicyEstimator()
     kwargs = {}
@@ -138,6 +140,30 @@ def test_shape_mismatches(
         estimator._check_inputs(action=action, **kwargs)
 
 
+def test_check_array_mismatched_actions(n_samples: int = 5, n_actions: int = 3, wrong_actions: int = 2):
+    """Test _check_array raises ValueError when 2D array's second dimension does not match number of actions."""
+    # estimated_policy with wrong number of actions (should be n_actions, but is wrong_actions)
+    estimated_policy = np.ones((n_samples, wrong_actions), dtype=float)
+    data = {"estimated_policy": estimated_policy}
+    with pytest.raises(ValueError, match="must have the same number of actions as the action array"):
+        BaseOfflinePolicyEstimator._check_array(
+            name="estimated_policy",
+            data=data,
+            ndim=2,
+            dtype=float,
+            n_samples=n_samples,
+            n_actions=n_actions,
+        )
+
+
+def test_check_inputs_action_not_integer(n_samples: int = 5):
+    """Test _check_inputs raises ValueError when action array is not of integer dtype."""
+    # action array with float dtype
+    action = np.array([0.0, 1.0, 2.0, 0.0, 1.0][:n_samples], dtype=float)
+    with pytest.raises(ValueError, match="action must be an integer array."):
+        BaseOfflinePolicyEstimator._check_inputs(action=action)
+
+
 @given(
     arrays(dtype=int, shape=(10,), elements=st.integers(0, 1)),
     arrays(dtype=int, shape=(10,), elements=st.integers(0, 1)),
@@ -149,6 +175,7 @@ def test_shape_mismatches(
 def test_default_estimators(
     action, reward, propensity_score, estimated_policy, expected_reward, expected_importance_weight
 ):
+    """Test default estimators with configurable inputs."""
     if np.unique(action).size > 1:
         estimators = [class_() for class_ in get_non_abstract_classes(offline_policy_estimator)]
         for estimator in estimators:
@@ -160,3 +187,81 @@ def test_default_estimators(
                 expected_reward=expected_reward,
                 expected_importance_weight=expected_importance_weight,
             )
+
+
+class TestDoublyRobustWithOptimisticShrinkage:
+    """Test cases for DoublyRobustWithOptimisticShrinkage._shrink_weights method."""
+
+    @pytest.mark.parametrize(
+        "shrinkage_factor,importance_weight_values,expected_result,test_description",
+        [
+            (0.0, [1.0, 2.0, 3.0, 4.0, 5.0], [0.0, 0.0, 0.0, 0.0, 0.0], "zero shrinkage factor"),
+            (float("inf"), [1.0, 2.0, 3.0, 4.0, 5.0], [1.0, 2.0, 3.0, 4.0, 5.0], "infinite shrinkage factor"),
+            (2.0, [1.0, 2.0, 3.0, 4.0, 5.0], None, "finite shrinkage factor"),  # Will be calculated
+            (
+                1.5,
+                [0.0, 1.0, 0.0, 2.0, 0.0],
+                [0.0, 1.5 * 1.0 / (1.0**2 + 1.5), 0.0, 1.5 * 2.0 / (2.0**2 + 1.5), 0.0],
+                "with zeros",
+            ),
+            (0.1, [10.0, 100.0, 1000.0], None, "large values"),  # Will be calculated
+            (10.0, [0.1, 0.01, 0.001], None, "small values"),  # Will be calculated
+            (1.0, [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], None, "2D array"),  # Will be calculated
+            (2.0, [-1.0, -2.0, -3.0], None, "negative values"),  # Will be calculated
+            (1.5, [-2.0, 0.0, 1.0, 3.0, -1.0], None, "mixed values"),  # Will be calculated
+            (0.5, [2.0], [0.5 * 2.0 / (2.0**2 + 0.5)], "single value"),
+            (1.0, [], [], "empty array"),
+            (1e-10, [1e10, 1e-10, 1e5], None, "numerical stability"),  # Will be calculated
+        ],
+    )
+    def test_shrink_weights_parametrized(
+        self, shrinkage_factor: float, importance_weight_values: list, expected_result: list, test_description: str
+    ) -> None:
+        """Parametrized test for _shrink_weights method covering various scenarios."""
+        estimator = DoublyRobustWithOptimisticShrinkage(shrinkage_factor=shrinkage_factor)
+        importance_weight = np.array(importance_weight_values)
+
+        result = estimator._shrink_weights(importance_weight)
+
+        # Calculate expected result if not provided
+        if expected_result is None:
+            expected_result = shrinkage_factor * importance_weight / (importance_weight**2 + shrinkage_factor)
+        else:
+            expected_result = np.array(expected_result)
+
+        # For numerical stability test, check for finite results
+        if test_description == "numerical stability":
+            assert not np.any(np.isnan(result))
+            assert not np.any(np.isinf(result))
+            assert np.all(np.isfinite(result))
+        else:
+            np.testing.assert_array_almost_equal(result, expected_result)
+
+    @given(
+        st.floats(min_value=0.0, max_value=10.0),
+        arrays(dtype=float, shape=st.integers(1, 5), elements=st.floats(min_value=-5.0, max_value=5.0)),
+    )
+    def test_shrink_weights_property_based(self, shrinkage_factor: float, importance_weight: np.ndarray) -> None:
+        """Property-based test for _shrink_weights method."""
+        estimator = DoublyRobustWithOptimisticShrinkage(shrinkage_factor=shrinkage_factor)
+
+        result = estimator._shrink_weights(importance_weight)
+
+        # Test that result has same shape as input
+        assert result.shape == importance_weight.shape
+
+        # Test that result has same dtype as input
+        assert result.dtype == importance_weight.dtype
+
+        # Test that when importance_weight is 0, result is 0
+        zero_mask = importance_weight == 0.0
+        if zero_mask.any():
+            np.testing.assert_array_equal(result[zero_mask], 0.0)
+
+        # Test that when shrinkage_factor is 0, result is all zeros
+        if shrinkage_factor == 0.0:
+            np.testing.assert_array_equal(result, np.zeros_like(importance_weight))
+
+        # Test that when shrinkage_factor is infinity, result equals importance_weight
+        if np.isinf(shrinkage_factor) and shrinkage_factor > 0:
+            np.testing.assert_array_equal(result, importance_weight)

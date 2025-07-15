@@ -200,24 +200,6 @@ class BaseBetaMO(ModelMO, ABC):
         """
         return [list(p) for p in zip(*[model.sample_proba(n_samples=n_samples) for model in self.models])]
 
-    @validate_call
-    def _update(self, rewards: List[List[BinaryReward]]):
-        """
-        Update the Beta model using the provided rewards.
-
-        Parameters
-        ----------
-        rewards: List[List[BinaryReward]]
-            A list of rewards, where each reward is in turn a list containing the reward of the Beta model
-            associated to each objective.
-            For example, `[[1, 1], [1, 0], [1, 1], [1, 0], [1, 1]]`.
-        """
-        if any(len(x) != len(self.models) for x in rewards):
-            raise AttributeError("The shape of rewards is incorrect")
-
-        for i, model in enumerate(self.models):
-            model.update([r[i] for r in rewards])
-
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
         """

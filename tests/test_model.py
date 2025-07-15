@@ -27,6 +27,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pybandits.model import (
+    BayesianLogisticRegression,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
     Beta,
@@ -283,6 +284,49 @@ def test_check_context_matrix(n_samples, n_features, hidden_dim_list):
         bnn.check_context_matrix(context=context_str)
 
 
+@pytest.mark.parametrize(
+    "invalid_context",
+    [
+        "not_an_array",
+        None,
+        42,
+        [["not_numeric", 1], [2, "also_not_numeric"]],
+        {1: 2, 3: 4},
+        True,
+        [1, 2, 3],
+        [[1]],
+    ],
+)
+def test_check_context_matrix_bad_input_type(invalid_context) -> None:
+    """Test error handling in check_context_matrix method for non-ArrayLike inputs."""
+    bnn = BayesianNeuralNetwork.cold_start(n_features=2, hidden_dim_list=[])
+
+    with pytest.raises(ValidationError):
+        bnn.check_context_matrix(context=invalid_context)
+
+
+@given(
+    n_features=st.integers(min_value=1, max_value=5),
+    n_rows=st.integers(min_value=1, max_value=3),
+    invalid_col_delta=st.integers(min_value=1, max_value=3),
+)
+def test_check_context_matrix_error_handling(n_features: int, n_rows: int, invalid_col_delta: int) -> None:
+    """
+    Test error handling in check_context_matrix method for ArrayLike inputs with invalid number of columns.
+
+    This test generates numpy arrays with a number of columns different from n_features,
+    which should trigger a ValidationError.
+    """
+    # Generate invalid context arrays with too many or too few columns
+    for invalid_n_features in [n_features + invalid_col_delta, max(1, n_features - invalid_col_delta)]:
+        if invalid_n_features == n_features:
+            continue  # skip if by chance delta is 0
+        invalid_context = np.random.rand(n_rows, invalid_n_features)
+        bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=[])
+        with pytest.raises(AttributeError):
+            bnn.check_context_matrix(context=invalid_context)
+
+
 @settings(deadline=20000)
 @given(
     n_samples=st.integers(min_value=1, max_value=1000),
@@ -369,7 +413,7 @@ def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
-def test_bnn_mcmc_update(n_features, hidden_dim_list=(2,), n_samples=10, update_method="MCMC"):
+def test_bnn_mcmc_update(n_features, hidden_dim_list=(2,), n_samples=5, update_method="MCMC"):
     hidden_dim_list = list(hidden_dim_list)
 
     def update(context: np.ndarray, rewards: list):
@@ -450,3 +494,33 @@ def test_create_default_instance_bayesian_neural_network_cc(n_features, hidden_d
         model_params = BayesianNeuralNetwork.create_model_params(n_features=n_features, hidden_dim_list=hidden_dim_list)
         bnn_init = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
         assert bnn_cold_start == bnn_init
+
+
+########################################################################################################################
+
+
+# BayesianLogisticRegression
+
+
+@given(
+    n_features=st.integers(min_value=1, max_value=10),
+)
+def test_bayesian_logistic_regression_valid_init(n_features: int) -> None:
+    """Test that BayesianLogisticRegression can be initialized with valid single-layer configurations."""
+
+    # Should not raise any validation errors
+    blr = BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=[])
+    assert len(blr.model_params.bnn_layer_params) == 1
+    assert len(blr.model_params.bnn_layer_params_init) == 1
+
+
+@settings(deadline=500)
+@given(
+    n_features=st.integers(min_value=1, max_value=5),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=3),
+)
+def test_bayesian_logistic_regression_invalid_init(n_features: int, hidden_dim_list: list) -> None:
+    """Test that BayesianLogisticRegression raises ValueError for multi-layer configurations."""
+
+    with pytest.raises(ValueError, match="The Bayesian Logistic Regression model should have only one layer."):
+        BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)

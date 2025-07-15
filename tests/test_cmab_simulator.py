@@ -36,7 +36,7 @@ from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
 from pybandits.model import BayesianLogisticRegression
 from pybandits.quantitative_model import CmabZoomingModel
-from tests.test_utils import FakeApproximation
+from tests.utils import FakeApproximation
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
