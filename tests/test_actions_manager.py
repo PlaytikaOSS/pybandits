@@ -19,7 +19,7 @@ from pybandits.pydantic_version_compatibility import (
     pydantic_version,
 )
 from pybandits.quantitative_model import CmabZoomingModel, SmabZoomingModel
-from tests.test_utils import FakeApproximation
+from tests.utils import FakeApproximation
 
 REFERENCE_DELTA = 0.0001
 

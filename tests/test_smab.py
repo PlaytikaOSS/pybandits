@@ -51,7 +51,7 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
-from tests.test_utils import pop_from_state, push_to_state, sample_with_replacement, to_temporary_pickle
+from tests.utils import pop_from_state, push_to_state, sample_with_replacement, to_temporary_pickle
 
 
 @st.composite

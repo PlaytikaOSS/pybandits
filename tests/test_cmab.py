@@ -53,7 +53,7 @@ from pybandits.pydantic_version_compatibility import (
 from pybandits.quantitative_model import BaseCmabZoomingModel, CmabZoomingModel, CmabZoomingModelCC, QuantitativeModel
 from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
 from tests.test_actions_manager import REFERENCE_DELTA
-from tests.test_utils import (
+from tests.utils import (
     FakeApproximation,
     literal_update_methods,
     sample_with_replacement,

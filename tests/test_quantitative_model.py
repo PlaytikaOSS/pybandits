@@ -20,7 +20,7 @@ from pybandits.quantitative_model import (
     SmabZoomingModelCC,
     ZoomingModel,
 )
-from tests.test_utils import FakeApproximation
+from tests.utils import FakeApproximation
 
 
 def tuple_of_tuples_strategy(n, m, elements=st.floats(min_value=0, max_value=1)):

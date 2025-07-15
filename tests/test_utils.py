@@ -1,95 +1,298 @@
-import json
-import pickle
-import random
-from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Tuple, get_args
+"""Tests for pybandits.utils module."""
 
-import numpy as np
-from bokeh.core.serialization import Serializable
+from abc import ABC, abstractmethod
+from types import ModuleType
+from unittest.mock import MagicMock, patch
 
-from pybandits.base import PyBanditsBaseModel
-from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
-from pybandits.pydantic_version_compatibility import Optional, PositiveInt, PrivateAttr
+import pytest
+from bokeh.models import Div, InlineStyleSheet, TabPanel, Tabs
 
-literal_update_methods = get_args(UpdateMethods)
-
-
-def sample_with_replacement(source: list, length: PositiveInt):
-    return [random.choice(source) for _ in range(length)]
+from pybandits.utils import (
+    classproperty,
+    extract_argument_names_from_function,
+    get_non_abstract_classes,
+    in_jupyter_notebook,
+    visualize_via_bokeh,
+)
 
 
-def to_temporary_pickle(model: PyBanditsBaseModel):
-    with NamedTemporaryFile("wb") as file:
-        pickle.dump(model, file)
+class TestExtractArgumentNamesFromFunction:
+    """Test cases for extract_argument_names_from_function."""
+
+    def test_extract_arguments_from_regular_function(self) -> None:
+        """Test extracting argument names from a regular function."""
+
+        def test_func(a: int, b: str, c: bool = True) -> None:
+            pass
+
+        result = extract_argument_names_from_function(test_func)
+        assert result == ["a", "b", "c"]
+
+    def test_extract_arguments_with_self_ignored(self) -> None:
+        """Test that 'self' argument is ignored by default."""
+
+        def test_method(self, a: int, b: str) -> None:
+            pass
+
+        result = extract_argument_names_from_function(test_method)
+        assert result == ["a", "b"]
+
+    def test_extract_arguments_with_cls_ignored(self) -> None:
+        """Test that 'cls' argument is ignored by default."""
+
+        def test_classmethod(cls, a: int, b: str) -> None:
+            pass
+
+        result = extract_argument_names_from_function(test_classmethod)
+        assert result == ["a", "b"]
+
+    def test_extract_arguments_with_custom_ignore(self) -> None:
+        """Test extracting arguments with custom ignore list."""
+
+        def test_func(a: int, b: str, c: bool) -> None:
+            pass
+
+        result = extract_argument_names_from_function(test_func, ignore_arguments=("a",))
+        assert result == ["b", "c"]
+
+    def test_extract_arguments_from_pydantic_model(self) -> None:
+        """Test extracting arguments from a Pydantic model."""
+        from pydantic import BaseModel
+
+        class TestModel(BaseModel):
+            a: int
+            b: str
+            c: bool = True
+
+        result = extract_argument_names_from_function(TestModel)
+        assert result == ["a", "b", "c"]
+
+    def test_extract_arguments_from_pydantic_model_with_ignore(self) -> None:
+        """Test extracting arguments from Pydantic model with ignored arguments."""
+        from pydantic import BaseModel
+
+        class TestModel(BaseModel):
+            a: int
+            b: str
+            c: bool = True
+
+        result = extract_argument_names_from_function(TestModel, ignore_arguments=("a",))
+        assert result == ["b", "c"]
 
 
-class FakeApproximation(PyBanditsBaseModel):
-    n_draws: PositiveInt = 10
-    n_features: PositiveInt
-    hidden_dim_list: Optional[list] = None
-    _hist: Optional[np.ndarray] = PrivateAttr(default=None)
+class TestGetNonAbstractClasses:
+    """Test cases for get_non_abstract_classes."""
 
-    @property
-    def hist(self) -> Optional[np.ndarray]:
-        return self._hist
+    def test_get_non_abstract_classes_from_module(self) -> None:
+        """Test getting non-abstract classes from a module."""
+        # Create a test module
+        test_module = ModuleType("test_module")
 
-    def sample(self, *args, **kwargs) -> Dict[str, np.ndarray]:
-        sample_dict = {}
-        if self.hidden_dim_list is None:
-            self.hidden_dim_list = []
-        dim_list = [self.n_features] + self.hidden_dim_list + [1]
-        for i in range(len(dim_list) - 1):
-            weight_layer_params_name, bias_layer_params_name = BaseBayesianNeuralNetwork.get_layer_params_name(i)
-            sample_dict[weight_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i], dim_list[i + 1]))
-            sample_dict[bias_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i + 1]))
+        # Add some classes to the module
+        class ConcreteClass:
+            pass
 
-        return sample_dict
+        class AbstractClass(ABC):
+            @abstractmethod
+            def abstract_method(self) -> None:
+                pass
+
+        class AnotherConcreteClass:
+            pass
+
+        # Set the module attribute for each class
+        ConcreteClass.__module__ = "test_module"
+        AbstractClass.__module__ = "test_module"
+        AnotherConcreteClass.__module__ = "test_module"
+
+        # Add classes to module namespace
+        test_module.ConcreteClass = ConcreteClass
+        test_module.AbstractClass = AbstractClass
+        test_module.AnotherConcreteClass = AnotherConcreteClass
+
+        result = get_non_abstract_classes(test_module)
+
+        # Should only return concrete classes
+        assert len(result) == 2
+        assert ConcreteClass in result
+        assert AnotherConcreteClass in result
+        assert AbstractClass not in result
+
+    def test_get_non_abstract_classes_empty_module(self) -> None:
+        """Test getting non-abstract classes from an empty module."""
+        test_module = ModuleType("empty_module")
+        result = get_non_abstract_classes(test_module)
+        assert result == []
+
+    def test_get_non_abstract_classes_ignores_imported_classes(self) -> None:
+        """Test that imported classes are ignored."""
+        test_module = ModuleType("test_module")
+
+        class LocalClass:
+            pass
+
+        class ImportedClass:
+            pass
+
+        # Set different modules
+        LocalClass.__module__ = "test_module"
+        ImportedClass.__module__ = "other_module"
+
+        test_module.LocalClass = LocalClass
+        test_module.ImportedClass = ImportedClass
+
+        result = get_non_abstract_classes(test_module)
+
+        assert len(result) == 1
+        assert LocalClass in result
+        assert ImportedClass not in result
 
 
-def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:
-    """
-    Pop a key from a JSON string state.
+class TestInJupyterNotebook:
+    """Test cases for in_jupyter_notebook."""
 
-    Parameters
-    ----------
-    state: str
-        The JSON string state.
-    key: str
-        The key to pop.
+    @patch("pybandits.utils.get_ipython")
+    def test_in_jupyter_notebook_true(self, mock_get_ipython: MagicMock) -> None:
+        """Test that function returns True when in Jupyter notebook."""
+        mock_ipython = MagicMock()
+        mock_ipython.__class__.__name__ = "ZMQInteractiveShell"
+        mock_get_ipython.return_value = mock_ipython
 
-    Returns
-    -------
-    value : Any
-        The value of the popped key.
-    str
+        result = in_jupyter_notebook()
+        assert result is True
 
-    """
+    @patch("pybandits.utils.get_ipython")
+    def test_in_jupyter_notebook_false_different_shell(self, mock_get_ipython: MagicMock) -> None:
+        """Test that function returns False for different shell types."""
+        mock_ipython = MagicMock()
+        mock_ipython.__class__.__name__ = "TerminalInteractiveShell"
+        mock_get_ipython.return_value = mock_ipython
 
-    state_dict = json.loads(state)
-    value = state_dict.pop(key, None)
-    state = json.dumps(state_dict)
-    return value, state
+        result = in_jupyter_notebook()
+        assert result is False
+
+    @patch("pybandits.utils.get_ipython")
+    def test_in_jupyter_notebook_false_name_error(self, mock_get_ipython: MagicMock) -> None:
+        """Test that function returns False when get_ipython raises NameError."""
+        mock_get_ipython.side_effect = NameError("name 'get_ipython' is not defined")
+
+        result = in_jupyter_notebook()
+        assert result is False
 
 
-def push_to_state(state: str, key: str, value: Any):
-    """
-    Push a key-value pair to a JSON string state.
+class TestVisualizeViaBokeh:
+    """Test cases for visualize_via_bokeh."""
 
-    Parameters
-    ----------
-    state: str
-        The JSON string state.
-    key: str
-        The key to push.
-    value: Any
-        The value to push.
+    @patch("pybandits.utils.in_jupyter_notebook")
+    @patch("pybandits.utils.output_notebook")
+    @patch("pybandits.utils.show")
+    @patch("pybandits.utils.curdoc")
+    def test_visualize_in_jupyter_notebook(
+        self, mock_curdoc: MagicMock, mock_show: MagicMock, mock_output_notebook: MagicMock, mock_in_jupyter: MagicMock
+    ) -> None:
+        """Test visualization in Jupyter notebook environment."""
+        mock_in_jupyter.return_value = True
+        mock_doc = MagicMock()
+        mock_curdoc.return_value = mock_doc
 
-    Returns
-    -------
-    new_state: str
-        The updated JSON string state.
-    """
+        tabs = [TabPanel(child=Div(text="Test Content"), title="Test Tab")]
 
-    state_dict = json.loads(state)
-    state_dict[key] = value
-    return json.dumps(state_dict)
+        visualize_via_bokeh(None, tabs)
+
+        mock_output_notebook.assert_called_once()
+        mock_show.assert_called_once()
+        assert mock_doc.title == "Visual report"
+
+    @patch("pybandits.utils.in_jupyter_notebook")
+    @patch("pybandits.utils.output_file")
+    @patch("pybandits.utils.save")
+    @patch("pybandits.utils.curdoc")
+    def test_visualize_to_file(
+        self, mock_curdoc: MagicMock, mock_save: MagicMock, mock_output_file: MagicMock, mock_in_jupyter: MagicMock
+    ) -> None:
+        """Test visualization to HTML file."""
+        mock_in_jupyter.return_value = False
+        mock_doc = MagicMock()
+        mock_curdoc.return_value = mock_doc
+
+        tabs = [TabPanel(child=Div(text="Test Content"), title="Test Tab")]
+        output_path = "test_output.html"
+
+        visualize_via_bokeh(output_path, tabs)
+
+        mock_output_file.assert_called_once_with(output_path)
+        mock_save.assert_called_once()
+        assert mock_doc.title == "Visual report"
+
+    @patch("pybandits.utils.in_jupyter_notebook")
+    def test_visualize_no_output_path_error(self, mock_in_jupyter: MagicMock) -> None:
+        """Test that ValueError is raised when no output_path is provided outside Jupyter."""
+        mock_in_jupyter.return_value = False
+
+        tabs = [TabPanel(child=Div(text="Test Content"), title="Test Tab")]
+
+        with pytest.raises(ValueError, match="output_path is required when not running in a Jupyter notebook"):
+            visualize_via_bokeh(None, tabs)
+
+    @patch("pybandits.utils.in_jupyter_notebook")
+    @patch("pybandits.utils.output_notebook")
+    @patch("pybandits.utils.show")
+    @patch("pybandits.utils.curdoc")
+    def test_visualize_tabs_styling(
+        self, mock_curdoc: MagicMock, mock_show: MagicMock, mock_output_notebook: MagicMock, mock_in_jupyter: MagicMock
+    ) -> None:
+        """Test that tabs are created with proper styling."""
+        mock_in_jupyter.return_value = True
+        mock_doc = MagicMock()
+        mock_curdoc.return_value = mock_doc
+
+        tabs = [TabPanel(child=Div(text="Test Content"), title="Test Tab")]
+
+        visualize_via_bokeh(None, tabs)
+
+        # Verify that show was called with a Tabs object
+        call_args = mock_show.call_args[0][0]
+        assert isinstance(call_args, Tabs)
+        assert call_args.tabs == tabs
+        assert call_args.sizing_mode == "stretch_both"
+
+        # Verify stylesheet was added
+        assert len(call_args.stylesheets) == 1
+        assert isinstance(call_args.stylesheets[0], InlineStyleSheet)
+
+
+class TestClassProperty:
+    """Test cases for classproperty decorator."""
+
+    def test_classproperty_decorator(self) -> None:
+        """Test that classproperty works correctly."""
+
+        class TestClass:
+            _value = "test_value"
+
+            @classproperty
+            def class_attr(cls) -> str:
+                return cls._value
+
+        # Test accessing via class
+        assert TestClass.class_attr == "test_value"
+
+        # Test accessing via instance
+        instance = TestClass()
+        assert instance.class_attr == "test_value"
+
+    def test_classproperty_with_different_values(self) -> None:
+        """Test classproperty with different class values."""
+
+        class TestClass:
+            _value = "original"
+
+            @classproperty
+            def class_attr(cls) -> str:
+                return cls._value
+
+        class SubClass(TestClass):
+            _value = "subclass"
+
+        assert TestClass.class_attr == "original"
+        assert SubClass.class_attr == "subclass"
