@@ -97,7 +97,7 @@
              
   <section id="Contextual-Multi-Armed-Bandit">
 <h1>Contextual Multi-Armed Bandit<a class="headerlink" href="#Contextual-Multi-Armed-Bandit" title="Link to this heading"></a></h1>
-<p>For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on PyMC3.</p>
+<p>For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on PyMC.</p>
 <img alt="title" src="../_images/cmab.png" />
 <p>The following notebook contains an example of usage of the class Cmab, which implements the algorithm above.</p>
 <div class="nbinput docutils container">
@@ -147,16 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.91144527  0.9183142   0.17122563  0.16669782 -0.81348019]
- [ 0.96414426 -0.70469111 -0.50685547  0.47722264 -0.44448306]
- [ 0.99734545 -0.38097442 -0.89371258 -0.65270472 -0.96050322]
- [-0.94443337  0.31684659  0.77290821  0.08848712 -0.03675815]
- [-0.30959007  0.09222938  0.01978839 -0.83075725  0.83718432]
- [ 0.2118728  -0.33504915 -0.17130969 -0.99957276 -0.18843549]
- [-0.87884292  0.67994438 -0.70455824  0.35361489 -0.76102402]
- [ 0.14357529  0.51740563 -0.98563096 -0.57848113  0.25587455]
- [-0.32423699 -0.31094987  0.71907127 -0.59167312 -0.95804743]
- [-0.10801382  0.92943405  0.44164084  0.82621604  0.34057745]]
+[[ 0.74940531  0.51642045  0.42028269 -0.80737275  0.9048318 ]
+ [-0.34920399  0.51882517 -0.22286712 -0.72928127  0.76306319]
+ [-0.45620418 -0.34757661 -0.0056537  -0.70585844 -0.97081006]
+ [ 0.12822752  0.11113249  0.02538047  0.77718962 -0.23429496]
+ [-0.08248037  0.53110768  0.08511385  0.16207921 -0.24445767]
+ [-0.68288796  0.73097275  0.41594788 -0.20976203  0.21360162]
+ [-0.45841675  0.87810032 -0.51543081  0.8769486   0.99734166]
+ [-0.60821195 -0.58293135 -0.60925256 -0.64405144  0.27757592]
+ [ 0.22833159  0.1387103  -0.31531232 -0.65496029  0.41923547]
+ [ 0.39300462 -0.96855747 -0.90259842 -0.48682849 -0.81193479]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -202,7 +202,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -221,7 +221,7 @@ Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 1, 1, 0, 0, 1, 0, 1, 0, 0]
+Simulated rewards: [1, 1, 0, 0, 1, 0, 1, 1, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -244,12 +244,8 @@ This usually happens when PyTensor is installed via pip. We recommend it be inst
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
 For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
   warnings.warn(
-2025-07-16 09:47:42.028 | ERROR    | pymc.stats.convergence:log_warning:181 - There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
-2025-07-16 09:47:42.029 | ERROR    | pymc.stats.convergence:log_warning:181 - The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
-  (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
-2025-07-16 09:47:46.200 | ERROR    | pymc.stats.convergence:log_warning:181 - There were 2000 divergences after tuning. Increase `target_accept` or reparameterize.
-2025-07-16 09:47:46.200 | ERROR    | pymc.stats.convergence:log_warning:181 - The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
+2025-07-16 10:34:56.549 | ERROR    | pymc.stats.convergence:log_warning:181 - There were 1000 divergences after tuning. Increase `target_accept` or reparameterize.
+2025-07-16 10:34:56.550 | ERROR    | pymc.stats.convergence:log_warning:181 - The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 </pre></div></div>
 </div>
 </section>
