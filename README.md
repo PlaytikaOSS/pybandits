@@ -6,11 +6,11 @@ PyBandits
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pybandits)
 ![MIT License](https://img.shields.io/badge/license-MIT-blue)
 ![Ask DeepWiki](https://deepwiki.com/badge.svg)
-![Coverage](https://codecov.io/gh/PlaytikaOSS/pybandits/branch/main/graph/badge.svg)
+![Coverage](https://codecov.io/gh/PlaytikaOSS/pybandits/branch/develop/graph/badge.svg)
 
 **PyBandits**  is a ``Python`` library for Multi-Armed Bandit. It provides an implementation of stochastic Multi-Armed Bandit (sMAB) and contextual Multi-Armed Bandit (cMAB) based on Thompson Sampling.
 
-For the sMAB, we implemented a Bernoulli multi-armed bandit based on Thompson Sampling algorithm [Agrawal and Goyal, 2012](http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf). If context information is available we provide a generalisation of Thompson Sampling for cMAB [Agrawal and Goyal, 2014](https://arxiv.org/pdf/1209.3352.pdf) implemented with [PyMC3](https://peerj.com/articles/cs-55/), an open source probabilistic programming framework  for automatic Bayesian inference on user-defined probabilistic models.
+For the sMAB, we implemented a Bernoulli multi-armed bandit based on Thompson Sampling algorithm [Agrawal and Goyal, 2012](http://proceedings.mlr.press/v23/agrawal12/agrawal12.pdf). If context information is available we provide a generalisation of Thompson Sampling for cMAB [Agrawal and Goyal, 2014](https://arxiv.org/pdf/1209.3352.pdf) implemented with [PyMC](https://peerj.com/articles/cs-55/), an open source probabilistic programming framework for automatic Bayesian inference on user-defined probabilistic models.
 
 Installation
 ------------

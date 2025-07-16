@@ -82,7 +82,7 @@ jobs:
             echo "VERSION_CHANGED=true" >> $GITHUB_ENV
           fi
       - name: Create a Git tag
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.8' && matrix.pydantic-version == '2.*' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions"
