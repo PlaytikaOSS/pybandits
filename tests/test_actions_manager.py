@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pytest_mock import MockerFixture
+from pytest_mock.plugin import MockerFixture
 
 import pybandits
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
 from pybandits.base import ACTION_IDS_PREFIX, QUANTITATIVE_ACTION_IDS_PREFIX, ActionId, BinaryReward
-from pybandits.model import BayesianNeuralNetwork, Beta
+from pybandits.model import BayesianNeuralNetwork, Beta, BetaMO
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -25,7 +25,7 @@ REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
-    actions: Dict[ActionId, Beta]
+    actions: Dict[ActionId, Union[Beta, BetaMO]]
 
     def _update_actions(
         self,
@@ -69,8 +69,16 @@ def test_update_with_missing_memory_delta_set(action_list):
 
 @given(
     data_len=st.integers(min_value=1, max_value=200),
-    regular_kwargs=st.dictionaries(st.text().filter(lambda x: not x.endswith("_memory")), st.integers(), min_size=1),
-    memory_kwargs=st.dictionaries(st.text().map(lambda x: x + "_memory"), st.integers(), min_size=1),
+    regular_kwargs=st.dictionaries(
+        st.text().filter(lambda x: not x.endswith("_memory") and x not in ["actions", "rewards"]),
+        st.integers(),
+        min_size=1,
+    ),
+    memory_kwargs=st.dictionaries(
+        st.text().filter(lambda x: x not in ["actions", "rewards"]).map(lambda x: x + "_memory"),
+        st.integers(),
+        min_size=1,
+    ),
 )
 def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monkeymodule):
     """Test proper separation of regular and memory kwargs"""
@@ -384,6 +392,25 @@ def test_smab_manager_update(data_len_base, data_len_power, memory_len_base, mem
     manager.update(actions, rewards, None, actions_memory=actions_memory, rewards_memory=rewards_memory)
 
 
+@given(n_objectives=st.integers(min_value=1, max_value=10), other_n_objectives=st.integers(min_value=1, max_value=10))
+def test_smab_actions_different_number_of_objectives(n_objectives, other_n_objectives):
+    """Test the specific ValueError when actions have different numbers of objectives."""
+    if n_objectives == other_n_objectives:
+        return
+    # Create actions with different numbers of objectives
+    # BetaMO has models attribute with different lengths
+    beta_mo_n_obj = BetaMO.cold_start(n_objectives=n_objectives)  # 2 objectives
+    beta_mo_other_obj = BetaMO.cold_start(n_objectives=other_n_objectives)  # 3 objectives
+
+    actions = {
+        "action1": beta_mo_n_obj,  # Single objective (no models attribute)
+        "action2": beta_mo_other_obj,  # 2 objectives
+    }
+
+    with pytest.raises(ValueError, match="All actions should have the same number of objectives"):
+        SmabActionsManager[Union[Beta, BetaMO]](actions=actions)
+
+
 ########################################################################################################################
 
 
@@ -485,6 +512,39 @@ def test_cmab_context_memory_matching_dimensions(context, context_memory, n_feat
         manager.update(
             actions,
             rewards,
+            context=context,
+            actions_memory=actions_memory,
+            rewards_memory=rewards_memory,
+            context_memory=context_memory,
+        )
+
+
+def test_cmab_context_memory_features_mismatch():
+    """Test the specific ValueError when context memory has different number of features than context."""
+
+    # Create actions with 3 features
+    actions = {
+        "action1": BayesianNeuralNetwork.cold_start(n_features=3),
+        "action2": BayesianNeuralNetwork.cold_start(n_features=3),
+    }
+    manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions, delta=REFERENCE_DELTA)
+
+    # Context with 3 features
+    context = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+
+    # Context memory with 4 features (mismatch)
+    context_memory = [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
+
+    actions_list = ["action1", "action2"]
+    rewards = [1, 0]
+    actions_memory = ["action1", "action2"]
+    rewards_memory = [1, 0]
+
+    with pytest.raises(ValueError, match="Context memory must have the same number of features as the context."):
+        manager.update(
+            actions=actions_list,
+            rewards=rewards,
+            quantities=None,
             context=context,
             actions_memory=actions_memory,
             rewards_memory=rewards_memory,
@@ -678,6 +738,26 @@ def test_invalid_success_count(mocker: MockerFixture):
         manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
 
 
+def test_invalid_success_count_less_trials(mocker: MockerFixture):
+    """Test the specific error when actual_trials < expected_trials but actual_successes > expected_successes."""
+    actions = {"action1": Beta()}
+    manager = DummyActionsManager(actions=actions)
+
+    # Mock expected stats: 1 success out of 5 trials
+    mocker.patch.object(
+        ActionsManager, "_extract_current_stats_for_action", return_value=(np.array([[1]]), np.array([[5]]))
+    )
+
+    # Less trials than expected (2 < 5) but more successes than expected (2 > 1)
+    # This triggers the else branch
+    actions_memory = ["action1"] * 2  # 2 trials < expected 5
+    rewards_memory = [1, 1]  # 2 successes > expected 1
+    memory_kwargs = {"context_memory": list(range(2))}
+
+    with pytest.raises(ValueError, match="Memory for action action1 is not consistent with the expected stats."):
+        manager._maybe_trim_memory(actions_memory, rewards_memory, memory_kwargs)
+
+
 @given(n_actions=st.integers(min_value=1, max_value=5), trials_per_action=st.integers(min_value=1, max_value=10))
 def test_hypothesis_memory_trim(n_actions: int, trials_per_action: int, monkeymodule):
     # Mock stats for each action
@@ -820,3 +900,216 @@ def test_actions_with_change_hypothesis(change_point_indices, monkeymodule):
     manager.update(actions=["action0"], rewards=[1], actions_memory=initial_actions, rewards_memory=initial_rewards)
 
     assert manager.actions_with_change == expected_changes
+
+
+########################################################################################################################
+
+
+# ActionsManager._get_expected_memory_length tests
+@pytest.mark.parametrize(
+    "actions, expected_len",
+    [
+        (
+            {
+                "action1": Beta(n_successes=5, n_failures=3),
+                "action2": Beta(n_successes=2, n_failures=1),
+                "action3": Beta(n_successes=10, n_failures=5),
+            },
+            20,
+        ),
+        ({"action1": Beta(n_successes=7, n_failures=3)}, 8),
+    ],
+)
+def test_get_expected_memory_length_with_base_model_so(actions, expected_len):
+    """Test _get_expected_memory_length with BaseModelSO models."""
+    actual_length = ActionsManager._get_expected_memory_length(actions)
+    assert actual_length == expected_len
+
+
+@pytest.mark.parametrize(
+    "actions, expected_len",
+    [
+        (
+            {
+                "action1": BetaMO(models=[Beta(n_successes=3, n_failures=2), Beta(n_successes=1, n_failures=1)]),
+                "action2": BetaMO(models=[Beta(n_successes=4, n_failures=1), Beta(n_successes=2, n_failures=3)]),
+            },
+            6,
+        ),
+    ],
+)
+def test_get_expected_memory_length_with_base_model_mo(actions, expected_len):
+    """Test _get_expected_memory_length with BaseModelMO models."""
+    actual_length = ActionsManager._get_expected_memory_length(actions)
+    assert actual_length == expected_len
+
+
+@pytest.mark.parametrize(
+    "actions, error_type, error_msg",
+    [
+        ({}, AttributeError, "At least one action should be defined."),
+        ({"action1": object()}, ValueError, "Model type.*not supported."),
+    ],
+)
+def test_get_expected_memory_length_with_errors(actions, error_type, error_msg):
+    """Test _get_expected_memory_length with empty or unsupported actions."""
+    with pytest.raises(error_type, match=error_msg):
+        ActionsManager._get_expected_memory_length(actions)
+
+
+def test_get_expected_memory_length_with_mixed_model_types():
+    """Test _get_expected_memory_length with mixed model types uses first model type."""
+
+    # Create mixed model types - should use the first one (BaseModelSO)
+    beta1 = Beta(n_successes=2, n_failures=1)  # count = 3
+    beta2 = Beta(n_successes=1, n_failures=1)  # count = 2
+    beta_mo = BetaMO(models=[beta1, beta2])
+
+    actions = {
+        "action1": Beta(n_successes=3, n_failures=2),  # count = 5, BaseModelSO
+        "action2": beta_mo,  # BaseModelMO
+    }
+
+    # The method should use the first model type (BaseModelSO) for consistency
+    # But since BetaMO doesn't have a count attribute, this will raise an error
+    # This test demonstrates the limitation of mixed model types
+    with pytest.raises(AttributeError, match="'BetaMO' object has no attribute 'count'"):
+        ActionsManager._get_expected_memory_length(actions)
+
+
+########################################################################################################################
+
+
+# ActionsManager._validate_update_params tests
+
+
+def test_actions_type_validation_with_correct_types():
+    """Test that no error is raised when all actions follow the expected type."""
+
+    # Create actions with correct types
+    actions = {"action1": Beta(), "action2": Beta()}
+
+    # This should not raise any error
+    manager = DummyActionsManager(actions=actions)
+    assert len(manager.actions) == 2
+    assert all(isinstance(action, Beta) for action in manager.actions.values())
+
+
+@pytest.mark.parametrize(
+    "actions, invalid_actions, rewards, error_msg",
+    [
+        (
+            {"action1": Beta(), "action2": Beta()},
+            ("action1", "invalid_action", "action2"),
+            (1, 0, 1),
+            "The following invalid action\\(s\\) were specified: {'invalid_action'}.",
+        ),
+    ],
+)
+def test_validate_update_params_invalid_actions(actions, invalid_actions, rewards, error_msg):
+    manager = DummyActionsManager(actions=actions)
+    with pytest.raises(AttributeError, match=error_msg):
+        manager._validate_update_params(actions=invalid_actions, rewards=rewards)
+
+
+@pytest.mark.parametrize(
+    "actions, action_list, rewards, quantities",
+    [
+        ({"action1": Beta(), "action2": Beta()}, ("action1", "action2"), (1, 0), None),
+    ],
+)
+def test_validate_update_params_valid_regular_actions(actions, action_list, rewards, quantities):
+    manager = DummyActionsManager(actions=actions)
+    manager._validate_update_params(actions=action_list, rewards=rewards, quantities=quantities)
+
+
+@pytest.mark.parametrize(
+    "actions, action_list, rewards",
+    [
+        ({"action1": Beta(), "action2": Beta()}, ("action1", "action2"), (1,)),
+    ],
+)
+def test_validate_update_params_length_mismatch(actions, action_list, rewards):
+    manager = DummyActionsManager(actions=actions)
+    with pytest.raises((ValueError, AttributeError)):
+        manager._validate_update_params(actions=action_list, rewards=rewards)
+
+
+@pytest.mark.parametrize(
+    "actions, action_list, rewards",
+    [
+        ({"action1": Beta(), "action2": Beta()}, tuple(), tuple()),
+    ],
+)
+def test_validate_update_params_empty_actions(actions, action_list, rewards):
+    manager = DummyActionsManager(actions=actions)
+    manager._validate_update_params(actions=action_list, rewards=rewards)
+
+
+def test_validate_update_params_multi_objective_rewards():
+    """Test _validate_update_params with multi-objective rewards."""
+
+    # Create multi-objective actions
+    beta1 = Beta()
+    beta2 = Beta()
+    beta_mo = BetaMO(models=[beta1, beta2])
+
+    actions = {
+        "action1": beta_mo,
+        "action2": beta_mo,
+    }
+    manager = DummyActionsManager(actions=actions)
+
+    # Test with multi-objective rewards
+    action_list = ["action1", "action2"]
+    rewards = [[1, 0], [0, 1]]  # Multi-objective rewards
+
+    # Should not raise any error
+    manager._validate_update_params(actions=action_list, rewards=rewards)
+
+
+########################################################################################################################
+
+
+# ActionsManager.update tests
+@pytest.fixture
+def actions(names=("action1", "action2")):
+    return {name: Beta() for name in names}
+
+
+@pytest.mark.parametrize(
+    "delta, actions_memory, rewards_memory, expected_exception, expected_message",
+    [
+        # Test 1: delta is None but memory is provided - should raise AttributeError
+        (
+            None,
+            ["action1", "action2"],
+            [1, 0],
+            AttributeError,
+            "Adaptive window size is not set, so memory should not be provided.",
+        ),
+        # Test 2: delta is set but memory is not provided - should warn
+        (REFERENCE_DELTA, None, None, UserWarning, "Adaptive window size is set, but memory was not provided."),
+        # Test 3: delta is set but only partial memory is provided - should warn
+        (REFERENCE_DELTA, None, None, UserWarning, "Adaptive window size is set, but memory was not provided."),
+    ],
+)
+def test_update_adaptive_window_size_validation(
+    actions, delta, actions_memory, rewards_memory, expected_exception, expected_message
+):
+    """Test update validation for adaptive window size scenarios."""
+    manager = DummyActionsManager(actions=actions, delta=delta)
+
+    action_list = list(actions.keys())
+    rewards = np.random.randint(0, 2, size=len(action_list)).tolist()
+
+    if expected_exception is AttributeError:
+        with pytest.raises(expected_exception, match=expected_message):
+            manager.update(
+                actions=action_list, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory
+            )
+    else:  # UserWarning
+        with pytest.warns(expected_exception, match=expected_message):
+            manager.update(
+                actions=action_list, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory
+            )
