@@ -78,7 +78,12 @@ Predictions = NewType("Predictions", Union[SmabPredictions, CmabPredictions])
 BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
 ActionRewardLikelihood = NewType(
     "ActionRewardLikelihood",
-    Union[Dict[UnifiedActionId, float], Dict[UnifiedActionId, Probability], Dict[UnifiedActionId, List[Probability]]],
+    Union[
+        Dict[UnifiedActionId, float],
+        Dict[UnifiedActionId, List[float]],
+        Dict[UnifiedActionId, Probability],
+        Dict[UnifiedActionId, List[Probability]],
+    ],
 )
 ACTION_IDS_PREFIX = "action_ids_"
 ACTIONS = "actions"

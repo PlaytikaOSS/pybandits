@@ -19,10 +19,11 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from random import betavariate
-from typing import ClassVar, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 from numpy import sqrt
@@ -43,6 +44,7 @@ from pybandits.pydantic_version_compatibility import (
     PositiveFloat,
     PositiveInt,
     PrivateAttr,
+    conlist,
     field_validator,
     model_validator,
     pydantic_version,
@@ -94,7 +96,12 @@ class ModelMO(BaseModelMO, ABC):
         The list of models for each objective.
     """
 
-    models: List[Model]
+    if pydantic_version == PYDANTIC_VERSION_1:
+        models: conlist(Model, min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        models: conlist(Model, min_length=1)
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
 
 class BaseBeta(Model, ABC):
@@ -181,24 +188,12 @@ class BaseBetaMO(ModelMO, ABC):
         List of Beta distributions.
     """
 
-    models: List[Beta]
-
-    @validate_call
-    def sample_proba(self, n_samples: PositiveInt) -> List[MOProbability]:
-        """
-        Sample the probability of getting a positive reward.
-
-        Parameters
-        ----------
-        n_samples : PositiveInt
-            Number of samples to draw.
-
-        Returns
-        -------
-        prob: List[MOProbability]
-            Probabilities of getting a positive reward for each sample and objective.
-        """
-        return [list(p) for p in zip(*[model.sample_proba(n_samples=n_samples) for model in self.models])]
+    if pydantic_version == PYDANTIC_VERSION_1:
+        models: conlist(Beta, min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        models: conlist(Beta, min_length=1)
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
@@ -298,7 +293,7 @@ class StudentTArray(PyBanditsBaseModel):
 
     @model_validator(mode="after")
     @classmethod
-    def validate_inputs(cls, values):
+    def validate_input_shapes(cls, values):
         if pydantic_version == PYDANTIC_VERSION_1:
             mu_arr = cls.convert_list_to_array(values.get("mu"))
             sigma_arr = cls.convert_list_to_array(values.get("sigma"))
@@ -427,7 +422,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
 
-    update_method: str = "MCMC"
+    update_method: str = "VI"
     update_kwargs: Optional[dict] = None
 
     _default_mcmc_trace_kwargs: ClassVar[dict] = dict(
@@ -593,7 +588,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         Returns
         -------
-        int
+        PositiveInt
             The number of input features expected by the model, derived from
             the shape of the weight matrix in the first layer's parameters.
         """
@@ -769,7 +764,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         cls,
         n_features: PositiveInt,
         hidden_dim_list: Optional[List[PositiveInt]] = None,
-        update_method: UpdateMethods = "MCMC",
+        update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
         dist_params_init: Optional[Dict[str, float]] = None,
         **kwargs,
@@ -851,6 +846,105 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork, ModelCC):
     - The model uses tanh activation for hidden layers and sigmoid activation for the output layer.
     - The output layer is designed for binary classification tasks, with probabilities modeled
       using a Bernoulli likelihood.
+    """
+
+
+class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
+    """
+    Base class for Bayesian Neural Network with multi-objective.
+
+    Parameters
+    ----------
+    models : List[BayesianNeuralNetwork]
+        The list of Bayesian Neural Network models for each objective.
+    """
+
+    if pydantic_version == PYDANTIC_VERSION_1:
+        models: conlist(BayesianNeuralNetwork, min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        models: conlist(BayesianNeuralNetwork, min_length=1)
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+    def model_post_init(self, __context: Any) -> None:
+        """
+        Validate that all models have the same number of features.
+        """
+        n_features = self.models[0].input_dim
+        for model in self.models[1:]:
+            if model.input_dim != n_features:
+                raise ValueError(f"All models must have the same number of features: {model.input_dim} != {n_features}")
+
+    @classmethod
+    def cold_start(
+        cls,
+        n_objectives: PositiveInt,
+        n_features: PositiveInt,
+        hidden_dim_list: Optional[List[PositiveInt]] = None,
+        update_method: UpdateMethods = "VI",
+        update_kwargs: Optional[dict] = None,
+        dist_params_init: Optional[Dict[str, float]] = None,
+        **kwargs,
+    ) -> Self:
+        """
+        Initialize a multi-objective Bayesian Neural Network with a cold start.
+
+        Parameters
+        ----------
+        n_objectives : PositiveInt
+            Number of objectives (models) to create.
+        n_features : PositiveInt
+            Number of input features for each network.
+        hidden_dim_list : Optional[List[PositiveInt]], optional
+            List of dimensions for the hidden layers of each network.
+        update_method : UpdateMethods
+            Method to update the networks.
+        update_kwargs : Optional[dict], optional
+            Additional keyword arguments for the update method.
+        dist_params_init : Optional[Dict[str, float]], optional
+            Initial distribution parameters for the network weights and biases.
+        **kwargs
+            Additional keyword arguments.
+
+        Returns
+        -------
+        BayesianNeuralNetworkMO
+            A multi-objective BNN with the specified number of objectives.
+        """
+        models = [
+            BayesianNeuralNetwork.cold_start(
+                n_features=n_features,
+                hidden_dim_list=hidden_dim_list,
+                update_method=update_method,
+                update_kwargs=update_kwargs,
+                dist_params_init=dist_params_init,
+            )
+            for _ in range(n_objectives)
+        ]
+        return cls(models=models, **kwargs)
+
+
+class BayesianNeuralNetworkMO(BaseBayesianNeuralNetworkMO):
+    """
+    Bayesian Neural Network model for multi-objective.
+
+    Parameters
+    ----------
+    models : List[BayesianNeuralNetwork]
+        The list of Bayesian Neural Network models for each objective.
+    """
+
+
+class BayesianNeuralNetworkMOCC(BaseBayesianNeuralNetworkMO, ModelMO, ModelCC):
+    """
+    Bayesian Neural Network model for multi-objective with cost control.
+
+    Parameters
+    ----------
+    models : List[BayesianNeuralNetwork]
+        The list of Bayesian Neural Network models for each objective.
+    cost : NonNegativeFloat
+        Cost associated to the Bayesian Neural Network model.
     """
 
 

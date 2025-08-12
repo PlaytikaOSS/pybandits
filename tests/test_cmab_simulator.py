@@ -22,7 +22,7 @@
 
 import os
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -192,6 +192,51 @@ def test_cmab_simulator_with_explicit_probs_reward(
                 assert prob_value == expected_value
 
 
+@given(
+    action_ids=st.just(["a1", "a2"]),
+    models=st.lists(
+        st.sampled_from(
+            [
+                BayesianLogisticRegression.cold_start(n_features=2, update_method="VI"),
+                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 2, "update_method": "VI"}),
+            ]
+        ),
+        min_size=2,
+        max_size=2,
+    ),
+    n_features=st.just(2),
+    n_samples=st.integers(min_value=1, max_value=10),
+    group_extra=st.sampled_from([-1, 1]),
+)
+def test_non_matching_context_and_group_shape(
+    action_ids,
+    models,
+    n_features,
+    n_samples: int,
+    group_extra: int,
+):
+    context = np.random.random((n_samples, n_features))
+    # Create a group list with a different length than n_samples
+    group: List[str] = [str(i) for i in range(n_samples + group_extra)]
+    cmab = CmabBernoulli(actions=dict(zip(action_ids, models)))
+    with pytest.raises(ValueError):
+        CmabSimulator(mab=cmab, context=context, group=group)
+
+
+def _get_context_and_group(n_features, n_updates, batch_size, num_groups) -> Tuple[np.ndarray, Optional[List[str]]]:
+    context = np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0)
+    if num_groups is not None:
+        base_groups = list(range(num_groups))
+        group = (
+            base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
+        )
+        context = (context.T * (np.array(group) - np.mean(group))).T
+        group = [str(g) for g in group]
+    else:
+        group = None
+    return context, group
+
+
 @settings(deadline=None)
 @given(
     st.just(["a1", "a2"]),
@@ -206,7 +251,7 @@ def test_cmab_simulator_with_explicit_probs_reward(
         max_size=2,
     ),
     st.just(2),
-    st.just(2),
+    st.sampled_from([None, 2]),
 )
 def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, models, n_features, num_groups):
     monkeymodule.setattr(
@@ -225,21 +270,18 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
         lambda *args, **kwargs: np.random.random(),
     )
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
-    base_groups = list(range(num_groups))
     n_updates = CmabSimulator.model_fields["n_updates"].default
     batch_size = CmabSimulator.model_fields["batch_size"].default
-    group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
-    context = (
-        np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0).T
-        * (np.array(group) - np.mean(group))
-    ).T
+
+    context, group = _get_context_and_group(n_features, n_updates, batch_size, num_groups)
+
     with TemporaryDirectory() as path:
         simulator = CmabSimulator(
             mab=mab,
             visualize=True,
             save=True,
             path=path,
-            group=[str(g) for g in group],
+            group=group,
             batch_size=batch_size,
             n_updates=n_updates,
             context=context,
@@ -306,12 +348,7 @@ def test_cmab_e2e_simulation_with_non_default_args(
         "_maximize_prob_reward",
         lambda *args, **kwargs: np.random.random(),
     )
-    base_groups = list(range(num_groups))
-    group = base_groups * (n_updates * batch_size // num_groups) + base_groups[: (n_updates * batch_size % num_groups)]
-    context = (
-        np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0).T
-        * (np.array(group) - np.mean(group))
-    ).T
+    context, group = _get_context_and_group(n_features, n_updates, batch_size, num_groups)
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:
         with pytest.raises(ValueError):
@@ -319,7 +356,7 @@ def test_cmab_e2e_simulation_with_non_default_args(
                 mab=mab,
                 visualize=visualize,
                 save=save,
-                group=[str(g) for g in group],
+                group=group,
                 n_updates=n_updates,
                 batch_size=batch_size,
                 random_seed=random_seed,
@@ -335,7 +372,7 @@ def test_cmab_e2e_simulation_with_non_default_args(
                 visualize=visualize,
                 save=save,
                 path=path,
-                group=[str(g) for g in group],
+                group=group,
                 n_updates=n_updates,
                 batch_size=batch_size,
                 random_seed=random_seed,

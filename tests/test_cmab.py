@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
 import json
 from copy import deepcopy
 from functools import partial
@@ -36,11 +37,21 @@ from pytest import MonkeyPatch
 import pybandits
 from pybandits.actions_manager import CmabModelType
 from pybandits.base import ActionId, Float01, PositiveProbability, PyBanditsBaseModel
-from pybandits.cmab import BaseCmabBernoulli, CmabBernoulli, CmabBernoulliBAI, CmabBernoulliCC
+from pybandits.cmab import (
+    BaseCmabBernoulli,
+    CmabBernoulli,
+    CmabBernoulliBAI,
+    CmabBernoulliCC,
+    CmabBernoulliMO,
+    CmabBernoulliMOCC,
+)
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
+    BaseBayesianNeuralNetworkMO,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkMO,
+    BayesianNeuralNetworkMOCC,
     BnnLayerParams,
     BnnParams,
     StudentTArray,
@@ -51,7 +62,13 @@ from pybandits.pydantic_version_compatibility import (
     ValidationError,
 )
 from pybandits.quantitative_model import BaseCmabZoomingModel, CmabZoomingModel, CmabZoomingModelCC, QuantitativeModel
-from pybandits.strategy import BestActionIdentificationBandit, ClassicBandit, CostControlBandit
+from pybandits.strategy import (
+    BestActionIdentificationBandit,
+    ClassicBandit,
+    CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+)
 from tests.test_actions_manager import REFERENCE_DELTA
 from tests.utils import (
     FakeApproximation,
@@ -184,15 +201,21 @@ class ModelTestConfig:
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
         update_kwargs: Optional[Dict[str, Any]],
+        n_objectives: Optional[PositiveInt] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         if len(self.model_types) < len(action_ids):
             indices = np.random.randint(0, len(self.model_types), len(action_ids))
             self.model_types = [self.model_types[i] for i in indices]
-        if all(model in [BayesianNeuralNetworkCC, CmabZoomingModelCC] for model in self.model_types):
+        if all(
+            model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, CmabZoomingModelCC]
+            for model in self.model_types
+        ):
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
-                cost if model_type in [BayesianNeuralNetworkCC] else partial(_quantitative_cost, cost=cost)
+                cost
+                if model_type in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC]
+                else partial(_quantitative_cost, cost=cost)
                 for cost, model_type in zip(costs, self.model_types)
             ]
         else:
@@ -202,36 +225,56 @@ class ModelTestConfig:
         base_model_cold_start_kwargs = dict(
             n_features=n_features, hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs
         )
-        model_params = BaseBayesianNeuralNetwork.create_model_params(
-            n_features=n_features, hidden_dim_list=hidden_dim_list
-        )
 
-        if costs is not None:
-            # Handle models with costs (BayesianNeuralNetworkCC or CmabZoomingModelCC)
-            actions_dict = {}
-            for action_id, model_type, cost in zip(action_ids, self.model_types, costs):
-                if issubclass(model_type, BayesianNeuralNetworkCC):
-                    actions_dict[action_id] = model_type(
-                        model_params=model_params,
-                        **model_cold_start_kwargs,
-                        cost=cost,
+        if n_objectives is None:
+            # Single-objective models
+            if costs is not None:
+                # Handle models with costs
+                return {
+                    action_id: model_type.cold_start(
+                        n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost, **model_cold_start_kwargs
                     )
-                else:  # CmabZoomingModelCC
-                    actions_dict[action_id] = model_type.cold_start(
+                    if issubclass(model_type, BayesianNeuralNetworkCC)
+                    else model_type.cold_start(
                         dimension=1, base_model_cold_start_kwargs=base_model_cold_start_kwargs, cost=cost
+                    )  # CmabZoomingModelCC
+                    for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
+                }, base_model_cold_start_kwargs
+            else:
+                # Handle models without costs
+                return {
+                    action_id: model_type.cold_start(
+                        n_features=n_features, hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs
                     )
+                    if issubclass(model_type, BayesianNeuralNetwork)
+                    else model_type.cold_start(
+                        dimension=1, base_model_cold_start_kwargs=base_model_cold_start_kwargs
+                    )  # CmabZoomingModel
+                    for action_id, model_type in zip(action_ids, self.model_types)
+                }, base_model_cold_start_kwargs
         else:
-            # Handle models without costs (BayesianNeuralNetwork or CmabZoomingModel)
-            actions_dict = {}
-            for action_id, model_type in zip(action_ids, self.model_types):
-                if issubclass(model_type, BayesianNeuralNetwork):
-                    actions_dict[action_id] = model_type(model_params=model_params, **model_cold_start_kwargs)
-                else:  # CmabZoomingModel
-                    actions_dict[action_id] = model_type.cold_start(
-                        dimension=1,
-                        base_model_cold_start_kwargs=base_model_cold_start_kwargs,
+            # Multi-objective models
+            if costs is not None:
+                return {
+                    action_id: model_type.cold_start(
+                        n_objectives=n_objectives,
+                        n_features=n_features,
+                        hidden_dim_list=hidden_dim_list,
+                        cost=cost,
+                        **model_cold_start_kwargs,
                     )
-        return actions_dict, base_model_cold_start_kwargs
+                    for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
+                }, base_model_cold_start_kwargs
+            else:
+                return {
+                    action_id: model_type.cold_start(
+                        n_objectives=n_objectives,
+                        n_features=n_features,
+                        hidden_dim_list=hidden_dim_list,
+                        **model_cold_start_kwargs,
+                    )
+                    for action_id, model_type in zip(action_ids, self.model_types)
+                }, base_model_cold_start_kwargs
 
     def create_cmab_and_actions(
         self,
@@ -239,6 +282,7 @@ class ModelTestConfig:
         epsilon: Optional[Float01],
         delta: Optional[PositiveProbability],
         costs: st.SearchStrategy,
+        n_objectives: st.SearchStrategy[PositiveInt],
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         n_features: PositiveInt,
@@ -246,8 +290,13 @@ class ModelTestConfig:
         update_method: UpdateMethods,
         update_kwargs: Optional[Dict[str, Any]],
     ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, CmabModelType], Dict[str, Any]]:
+        n_objectives = (
+            n_objectives.draw(st.integers(min_value=1, max_value=10))
+            if self.cmab_class in [CmabBernoulliMO, CmabBernoulliMOCC]
+            else None
+        )
         actions, base_model_cold_start_kwargs = self._create_actions(
-            action_ids, costs, n_features, hidden_dim_list, update_method, update_kwargs
+            action_ids, costs, n_features, hidden_dim_list, update_method, update_kwargs, n_objectives
         )
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(self.model_types[0], QuantitativeModel):
@@ -273,9 +322,14 @@ class ModelTestConfig:
         cmab = self.cmab_class(actions=actions, **kwargs)
         if any(isinstance(model, BaseCmabZoomingModel) for model in actions.values()):
             kwargs["base_model_cold_start_kwargs"] = base_model_cold_start_kwargs
-        if any(isinstance(model, BaseBayesianNeuralNetwork) for model in actions.values()):
+        if any(
+            isinstance(model, (BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO)) for model in actions.values()
+        ):
             kwargs.update(base_model_cold_start_kwargs)
 
+        # For cold start test
+        if self.cmab_class in [CmabBernoulliMO, CmabBernoulliMOCC]:
+            kwargs["n_objectives"] = n_objectives
         return cmab, actions, kwargs
 
 
@@ -288,6 +342,16 @@ TEST_CONFIGS = {
         CmabBernoulliCC,
         CostControlBandit,
         [BayesianNeuralNetworkCC, CmabZoomingModelCC],
+    ),
+    "cmab_mo": ModelTestConfig(
+        CmabBernoulliMO,
+        MultiObjectiveBandit,
+        [BayesianNeuralNetworkMO],
+    ),
+    "cmab_mocc": ModelTestConfig(
+        CmabBernoulliMOCC,
+        MultiObjectiveCostControlBandit,
+        [BayesianNeuralNetworkMOCC],
     ),
 }
 
@@ -306,6 +370,7 @@ TEST_CONFIGS = {
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
+    n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
@@ -319,6 +384,7 @@ def test_cold_start(
     epsilon: Optional[float],
     delta,
     costs,
+    n_objectives,
     n_features,
     hidden_dim_list,
     exploit_p,
@@ -332,6 +398,7 @@ def test_cold_start(
         epsilon,
         delta,
         costs,
+        n_objectives,
         exploit_p,
         subsidy_factor,
         n_features,
@@ -345,15 +412,20 @@ def test_cold_start(
         "action_ids": {
             action
             for action, model in zip(action_ids, config.model_types)
-            if issubclass(model, (BayesianNeuralNetwork))
+            if issubclass(model, (BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO))
         },
         "quantitative_action_ids": {
             action for action, model in zip(action_ids, config.model_types) if issubclass(model, QuantitativeModel)
         },
     }
-    if all(model in [BayesianNeuralNetworkCC, CmabZoomingModelCC] for model in config.model_types):
+    if all(
+        model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, CmabZoomingModelCC]
+        for model in config.model_types
+    ):
         cold_start_kwargs["action_ids_cost"] = {
-            action: model.cost for action, model in actions.items() if isinstance(model, (BayesianNeuralNetworkCC))
+            action: model.cost
+            for action, model in actions.items()
+            if isinstance(model, (BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC))
         }
         cold_start_kwargs["quantitative_action_ids_cost"] = {
             action: model.cost for action, model in actions.items() if isinstance(model, CmabZoomingModelCC)
@@ -370,6 +442,7 @@ def test_cold_start(
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     costs=st.data(),
+    n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
@@ -381,46 +454,43 @@ def test_bad_initialization(
     n_features: int,
     hidden_dim_list: List[PositiveInt],
     costs,
+    n_objectives,
     exploit_p,
     subsidy_factor,
     update_method,
     update_kwargs,
 ):
     """Test various invalid initialization scenarios for CMAB models"""
-    kwargs = {"cost": 1} if config.cmab_class == CmabBernoulliCC else {}
+    real_n_objectives = n_objectives.draw(st.integers(min_value=1, max_value=10))
+    kwargs = {"cost": 1} if config.cmab_class in (CmabBernoulliCC, CmabBernoulliMOCC) else {}
+    kwargs["n_features"] = n_features
+    kwargs["hidden_dim_list"] = hidden_dim_list
+    if config.cmab_class in [CmabBernoulliMO, CmabBernoulliMOCC]:
+        kwargs["n_objectives"] = real_n_objectives
+
     # Test empty actions
     with pytest.raises(AttributeError):
         config.cmab_class(actions={})
 
     # Test single action (should warn)
-    single_action = {
-        action_ids[0]: config.model_types[0].cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, **kwargs
-        )
-    }
+    single_action = {action_ids[0]: config.model_types[0].cold_start(**kwargs)}
     with pytest.warns(UserWarning):
         config.cmab_class(actions=single_action)
 
     # Test mismatched feature dimensions
+    alt_kwargs = deepcopy(kwargs)
+    alt_kwargs["n_features"] = n_features + 1
     actions_wrong_dims = {
-        action_ids[0]: config.model_types[0].cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, **kwargs
-        ),
-        action_ids[1]: config.model_types[0].cold_start(
-            n_features=n_features + 1, hidden_dim_list=hidden_dim_list, **kwargs
-        ),
+        action_ids[0]: config.model_types[0].cold_start(**kwargs),
+        action_ids[1]: config.model_types[0].cold_start(**alt_kwargs),
     }
     with pytest.raises(AttributeError):
         config.cmab_class(actions=actions_wrong_dims)
 
     # Test mismatched update methods
     actions_wrong_update = {
-        action_ids[0]: config.model_types[0].cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method="VI", **kwargs
-        ),
-        action_ids[1]: config.model_types[0].cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method="MCMC", **kwargs
-        ),
+        action_ids[0]: config.model_types[0].cold_start(update_method="VI", **kwargs),
+        action_ids[1]: config.model_types[0].cold_start(update_method="MCMC", **kwargs),
     }
     with pytest.raises(AttributeError):
         config.cmab_class(actions=actions_wrong_update)
@@ -429,15 +499,11 @@ def test_bad_initialization(
     base_kwargs = {"draws": 500} if update_kwargs else {"draws": 1000}
     actions_wrong_kwargs = {
         action_ids[0]: config.model_types[0].cold_start(
-            n_features=n_features,
-            hidden_dim_list=hidden_dim_list,
             update_method=update_method,
             update_kwargs=base_kwargs,
             **kwargs,
         ),
         action_ids[1]: config.model_types[0].cold_start(
-            n_features=n_features,
-            hidden_dim_list=hidden_dim_list,
             update_method=update_method,
             update_kwargs={"draws": base_kwargs["draws"] // 2},
             **kwargs,
@@ -468,6 +534,7 @@ def test_bad_initialization(
                 None,
                 None,
                 costs,
+                n_objectives,
                 exploit_p.draw(st.sampled_from([-0.1, 1.1])),
                 subsidy_factor,
                 n_features,
@@ -482,6 +549,7 @@ def test_bad_initialization(
                 None,
                 None,
                 costs,
+                n_objectives,
                 exploit_p,
                 subsidy_factor.draw(st.sampled_from([-0.1, 1.1])),
                 n_features,
@@ -489,6 +557,16 @@ def test_bad_initialization(
                 update_method,
                 update_kwargs,
             )
+    # Test multi-objective specific cases
+    if hasattr(config.model_types[0], "models"):
+        # Test mismatched number of objectives
+        kwargs.pop("n_objectives")
+        mo_actions_wrong = {
+            action_ids[0]: BayesianNeuralNetworkMO.cold_start(**kwargs, n_objectives=real_n_objectives),
+            action_ids[1]: BayesianNeuralNetworkMO.cold_start(**kwargs, n_objectives=real_n_objectives + 1),
+        }
+        with pytest.raises(AttributeError):
+            config.cmab_class(actions=mo_actions_wrong)
 
 
 @settings(deadline=None)
@@ -506,6 +584,7 @@ def test_bad_initialization(
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
+    n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
@@ -521,6 +600,7 @@ def test_update(
     epsilon: Optional[float],
     delta,
     costs,
+    n_objectives,
     n_features,
     hidden_dim_list,
     exploit_p,
@@ -546,6 +626,7 @@ def test_update(
         epsilon,
         delta,
         costs,
+        n_objectives,
         exploit_p,
         subsidy_factor,
         n_features,
@@ -553,12 +634,20 @@ def test_update(
         update_method,
         update_kwargs,
     )
+    n_objectives = kwargs.get("n_objectives")
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     # Generate random rewards
-    reward_data = np.random.choice([0, 1], size=n_samples).tolist()
+    reward_data = (
+        np.random.choice([0, 1], size=(n_samples, n_objectives), replace=True)
+        if n_objectives
+        else np.random.choice([0, 1], size=n_samples, replace=True)
+    )
+    reward_data = reward_data.tolist()
     # Test updates with generated data
     actions_to_update = sample_with_replacement(action_ids, n_samples)
     # Generate quantities only if there are any QuantitativeModel actions
+    # Handle multi-objective rewards for MO models
+
     for_update_kwargs = {"actions": actions_to_update, "rewards": reward_data}
     if any(isinstance(model, BaseCmabZoomingModel) for model in cmab.actions.values()):
         quantity_data = np.random.random(size=n_samples).tolist()
@@ -597,6 +686,7 @@ def test_update(
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
+    n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
@@ -612,6 +702,7 @@ def test_predict(
     epsilon: Optional[float],
     delta,
     costs,
+    n_objectives,
     n_features,
     hidden_dim_list,
     exploit_p,
@@ -627,6 +718,7 @@ def test_predict(
         epsilon,
         delta,
         costs,
+        n_objectives,
         exploit_p,
         subsidy_factor,
         n_features,
@@ -689,6 +781,7 @@ def test_predict(
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
+    n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
@@ -703,6 +796,7 @@ def test_serialization(
     epsilon: Optional[float],
     delta,
     costs,
+    n_objectives,
     n_features,
     hidden_dim_list,
     exploit_p,
@@ -718,6 +812,7 @@ def test_serialization(
         epsilon,
         delta,
         costs,
+        n_objectives,
         exploit_p,
         subsidy_factor,
         n_features,
@@ -775,6 +870,12 @@ def cmab_old_state(draw, CmabClass=None):
     strategy = {}
 
     state = {"actions_manager": actions_manager, "strategy": strategy}
+    # deprecated state parameters
+    if draw(st.booleans()):
+        state["predict_with_proba"] = draw(st.booleans())
+    if draw(st.booleans()):
+        state["predict_actions_randomly"] = draw(st.booleans())
+
     adaptive_window_indicator = draw(st.booleans())
     epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
 
@@ -837,7 +938,11 @@ def cmab_old_state(draw, CmabClass=None):
     return state
 
 
-OLD_STATE_TEST_CONFIGS = {"cmab": CmabBernoulli, "cmab_bai": CmabBernoulliBAI, "cmab_cc": CmabBernoulliCC}
+OLD_STATE_TEST_CONFIGS = {
+    "cmab": CmabBernoulli,
+    "cmab_bai": CmabBernoulliBAI,
+    "cmab_cc": CmabBernoulliCC,
+}
 
 
 @pytest.mark.parametrize("CmabClass", OLD_STATE_TEST_CONFIGS.values(), ids=OLD_STATE_TEST_CONFIGS.keys())
@@ -923,6 +1028,7 @@ def test_cmab_from_old_state(CmabClass, old_state):
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     costs=st.data(),
+    n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     subsidy_factor=st.data(),
@@ -937,6 +1043,7 @@ def test_pickling(
     epsilon: Optional[float],
     delta,
     costs,
+    n_objectives,
     n_features,
     hidden_dim_list,
     exploit_p,
@@ -952,6 +1059,7 @@ def test_pickling(
         epsilon,
         delta,
         costs,
+        n_objectives,
         exploit_p,
         subsidy_factor,
         n_features,
@@ -1003,3 +1111,110 @@ def test_cmab_predict_shape_mismatch(dim_list):
         mab.predict(context=context)
     with pytest.raises(AttributeError):
         mab.predict(context=[])
+
+
+@settings(deadline=500)
+@given(
+    st.integers(min_value=1, max_value=100),
+    st.integers(min_value=1, max_value=5),
+    st.sampled_from(literal_update_methods),
+    st.just([2]),
+    st.integers(min_value=2, max_value=3),
+)
+def test_cmab_mo_update_shape_mismatch(n_samples, n_features, update_method, hidden_dim_list, n_objectives):
+    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
+    # Multi-objective rewards
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    # Create multi-objective models
+    models_a1 = [
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+        )
+        for _ in range(n_objectives)
+    ]
+    models_a2 = [
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+        )
+        for _ in range(n_objectives)
+    ]
+    mab = CmabBernoulliMO(
+        actions={
+            "a1": BayesianNeuralNetworkMO(models=models_a1),
+            "a2": BayesianNeuralNetworkMO(models=models_a2),
+        }
+    )
+
+    # Test with wrong number of objectives in rewards
+    wrong_rewards = [[np.random.choice([0, 1]) for _ in range(n_objectives + 1)] for _ in range(n_samples)]
+    with pytest.raises(AttributeError):
+        mab.update(context=context, actions=actions, rewards=wrong_rewards)
+
+    # Test with single-objective rewards (should fail for MO model)
+    single_rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    with pytest.raises(ValidationError):
+        mab.update(context=context, actions=actions, rewards=single_rewards)
+
+
+@pytest.mark.parametrize(
+    "prob_weight,index,expected",
+    [
+        # Test with ProbabilityWeight (tuple)
+        ((0.7, 150.0), 0, 0.7),
+        ((0.7, 150.0), 1, 150.0),
+        ((0.7, 150.0), -1, 150.0),
+        ((0.7, 150.0), -2, 0.7),
+        # Test with MOProbabilityWeight (list of tuples)
+        ([(0.7, 150.0), (0.8, 200.0)], 0, [0.7, 0.8]),
+        ([(0.7, 150.0), (0.8, 200.0)], 1, [150.0, 200.0]),
+        ([(0.7, 150.0), (0.8, 200.0)], -1, [150.0, 200.0]),
+        ([(0.7, 150.0), (0.8, 200.0)], -2, [0.7, 0.8]),
+        # Test with empty list
+        ([], 0, []),
+        ([], 1, []),
+        # Test with single element list
+        ([(0.6, 120.0)], 0, [0.6]),
+        ([(0.6, 120.0)], 1, [120.0]),
+        # Test with larger list
+        ([(0.1, 10.0), (0.2, 20.0), (0.3, 30.0), (0.4, 40.0), (0.5, 50.0)], 0, [0.1, 0.2, 0.3, 0.4, 0.5]),
+        ([(0.1, 10.0), (0.2, 20.0), (0.3, 30.0), (0.4, 40.0), (0.5, 50.0)], 1, [10.0, 20.0, 30.0, 40.0, 50.0]),
+    ],
+)
+def test_extract_element_from_probability_weight_valid_cases(
+    prob_weight: Union[Tuple[float, float], List[Tuple[float, float]]], index: int, expected: Union[float, List[float]]
+) -> None:
+    """Test extracting element from probability weight with valid inputs."""
+    result = BaseCmabBernoulli._extract_element_from_probability_weight(index, prob_weight)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "prob_weight,index",
+    [
+        # Test invalid index for tuple
+        ((0.7, 150.0), 2),
+        ((0.7, 150.0), 3),
+        ((0.7, 150.0), -3),
+        # Test invalid index for list
+        ([(0.7, 150.0), (0.8, 200.0)], 2),
+        ([(0.7, 150.0), (0.8, 200.0)], 3),
+        ([(0.7, 150.0), (0.8, 200.0)], -3),
+    ],
+)
+def test_extract_element_from_probability_weight_invalid_index(
+    prob_weight: Union[Tuple[float, float], List[Tuple[float, float]]], index: int
+) -> None:
+    """Test extracting element with invalid index raises IndexError."""
+    with pytest.raises(IndexError):
+        BaseCmabBernoulli._extract_element_from_probability_weight(index, prob_weight)
+
+
+@pytest.mark.parametrize(
+    "unsupported_type",
+    ["string", 42, 3.14, {"key": "value"}, {1.0, 2.0, 3.0}, None, [1.0, 2.0, 3.0]],
+)
+def test_extract_element_from_probability_weight_unsupported_type(unsupported_type: Any) -> None:
+    """Test that unsupported types raise TypeError."""
+    with pytest.raises(TypeError, match=f"Unsupported probability weight type: {type(unsupported_type)}"):
+        BaseCmabBernoulli._extract_element_from_probability_weight(0, unsupported_type)

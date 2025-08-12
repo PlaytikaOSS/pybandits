@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2022 Playtika Ltd.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
@@ -17,10 +39,13 @@ from pybandits.base import (
 from pybandits.base_model import BaseModel, BaseModelMO, BaseModelSO
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
+    BaseBayesianNeuralNetworkMO,
     BaseBeta,
     BaseBetaMO,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkMO,
+    BayesianNeuralNetworkMOCC,
     Beta,
     BetaCC,
     BetaMO,
@@ -897,7 +922,9 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
                     self.actions[a].update(rewards=rewards_dict[a])
 
 
-CmabModelType = TypeVar("CmabModelType", bound=Union[BaseBayesianNeuralNetwork, BaseCmabZoomingModel])
+CmabModelType = TypeVar(
+    "CmabModelType", bound=Union[BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BaseCmabZoomingModel]
+)
 
 
 class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
@@ -916,8 +943,16 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
     actions: Dict[ActionId, CmabModelType]
 
     @staticmethod
-    def _maybe_crawl_model(model: Union[BaseBayesianNeuralNetwork, BaseCmabZoomingModel]):
-        return list(model.sub_actions.values())[0] if isinstance(model, BaseCmabZoomingModel) else model
+    def _maybe_crawl_model(model: CmabModelType):
+        """
+        Utility function to crawl the model to get the base model.
+        """
+        if isinstance(model, BaseBayesianNeuralNetworkMO):
+            return model.models[0]
+        elif isinstance(model, BaseCmabZoomingModel):
+            return list(model.sub_actions.values())[0]
+        else:
+            return model
 
     @field_validator("actions", mode="after")
     @classmethod
@@ -1067,3 +1102,5 @@ SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
 CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]]
 CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, CmabZoomingModelCC]]
+CmabActionsManagerMO = CmabActionsManager[BayesianNeuralNetworkMO]
+CmabActionsManagerMOCC = CmabActionsManager[BayesianNeuralNetworkMOCC]

@@ -26,16 +26,38 @@ from typing import Dict, List, Optional, Set, Union
 from numpy import array
 from numpy.typing import ArrayLike
 
-from pybandits.actions_manager import CmabActionsManager, CmabActionsManagerCC, CmabActionsManagerSO
-from pybandits.base import ActionId, BinaryReward, CmabPredictions, PositiveProbability, Serializable
+from pybandits.actions_manager import (
+    CmabActionsManager,
+    CmabActionsManagerCC,
+    CmabActionsManagerMO,
+    CmabActionsManagerMOCC,
+    CmabActionsManagerSO,
+    CmabModelType,
+)
+from pybandits.base import (
+    ActionId,
+    BinaryReward,
+    CmabPredictions,
+    MOProbabilityWeight,
+    PositiveProbability,
+    ProbabilityWeight,
+    Serializable,
+)
 from pybandits.mab import BaseMab
-from pybandits.model import BaseBayesianNeuralNetwork, BnnLayerParams, BnnParams, StudentTArray
+from pybandits.model import (
+    BaseBayesianNeuralNetworkMO,
+    BnnLayerParams,
+    BnnParams,
+    StudentTArray,
+)
 from pybandits.pydantic_version_compatibility import validate_call
-from pybandits.quantitative_model import BaseCmabZoomingModel
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+    MultiObjectiveStrategy,
 )
 
 
@@ -51,8 +73,21 @@ class BaseCmabBernoulli(BaseMab, ABC):
         The strategy used to select actions.
     """
 
-    actions_manager: CmabActionsManager[Union[BaseBayesianNeuralNetwork, BaseCmabZoomingModel]]
+    actions_manager: CmabActionsManager[CmabModelType]
     _predict_with_proba: bool
+
+    @staticmethod
+    def _extract_element_from_probability_weight(
+        index: int, prob_weight: Union[ProbabilityWeight, MOProbabilityWeight]
+    ):
+        if isinstance(prob_weight, tuple):  # ProbabilityWeight
+            return prob_weight[index]
+        elif isinstance(prob_weight, list) and all(
+            isinstance(value, tuple) for value in prob_weight
+        ):  # MOProbabilityWeight
+            return [value[index] for value in prob_weight]
+        else:
+            raise TypeError(f"Unsupported probability weight type: {type(prob_weight)}")
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def predict(
@@ -96,10 +131,12 @@ class BaseCmabBernoulli(BaseMab, ABC):
         probs_weights = self._get_action_probabilities(forbidden_actions=forbidden_actions, context=context)
 
         probs = [
-            {a: x[0] for a, x in prob_weight.items()} for prob_weight in probs_weights
+            {a: self._extract_element_from_probability_weight(0, x) for a, x in prob_weight.items()}
+            for prob_weight in probs_weights
         ]  # e.g. prob = {'a1': [0.5, 0.4, ...], 'a2': [0.4, 0.3, ...], ...}
         weighted_sums = [
-            {a: x[1] for a, x in prob_weight.items()} for prob_weight in probs_weights
+            {a: self._extract_element_from_probability_weight(1, x) for a, x in prob_weight.items()}
+            for prob_weight in probs_weights
         ]  # e.g. ws = {'a1': [200, 100, ...], 'a2': [100, 50, ...], ...}
 
         # select either "prob" or "ws" to use as input argument in select_actions()
@@ -295,4 +332,65 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
     actions_manager: CmabActionsManagerCC
     strategy: CostControlBandit
+    _predict_with_proba: bool = True
+
+
+class BaseCmabBernoulliMO(BaseCmabBernoulli, ABC):
+    """
+    Base model for a Contextual Multi-Armed Bandit with Thompson Sampling and Multi-Objective strategy.
+
+    Parameters
+    ----------
+    actions_manager: CmabActionsManager[BaseBayesianNeuralNetworkMO]
+        The manager for actions and their associated models.
+    strategy : MultiObjectiveStrategy
+        The strategy used to select actions.
+    """
+
+    actions_manager: CmabActionsManager[BaseBayesianNeuralNetworkMO]
+    strategy: MultiObjectiveStrategy
+
+
+class CmabBernoulliMO(BaseCmabBernoulliMO):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling and Multi-Objective strategy.
+
+    The reward for an action is a multidimensional vector. Actions are compared using Pareto order between their expected reward vectors.
+    Pareto optimal actions are those not strictly dominated by any other action.
+
+    Reference
+    ---------
+    Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+    https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+
+    Parameters
+    ----------
+    actions_manager: CmabActionsManagerMO
+        The manager for actions and their associated models.
+    strategy : MultiObjectiveBandit
+        The strategy used to select actions.
+    """
+
+    actions_manager: CmabActionsManagerMO
+    strategy: MultiObjectiveBandit
+    _predict_with_proba: bool = False
+
+
+class CmabBernoulliMOCC(BaseCmabBernoulliMO):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling for Multi-Objective (MO) and Cost Control (CC) strategy.
+
+    This bandit allows the reward to be a multidimensional vector and includes control of the action cost, merging
+    Multi-Objective and Cost Control strategies.
+
+    Parameters
+    ----------
+    actions_manager: CmabActionsManagerMOCC
+        The manager for actions and their associated models.
+    strategy : MultiObjectiveCostControlBandit
+        The strategy used to select actions.
+    """
+
+    actions_manager: CmabActionsManagerMOCC
+    strategy: MultiObjectiveCostControlBandit
     _predict_with_proba: bool = True

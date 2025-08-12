@@ -30,6 +30,8 @@ from pybandits.model import (
     BayesianLogisticRegression,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkMO,
+    BayesianNeuralNetworkMOCC,
     Beta,
     BetaCC,
     BetaMO,
@@ -524,3 +526,141 @@ def test_bayesian_logistic_regression_invalid_init(n_features: int, hidden_dim_l
 
     with pytest.raises(ValueError, match="The Bayesian Logistic Regression model should have only one layer."):
         BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
+
+
+########################################################################################################################
+
+
+# BaseBayesianNeuralNetworkMO
+
+
+@settings(deadline=500)
+@given(
+    cost=st.just(1.0),
+    n_features=st.integers(min_value=1, max_value=3),
+    extra_n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+)
+def test_validate_models_n_features_raises_value_error(
+    cost: float, n_features: int, extra_n_features: int, hidden_dim_list: list
+) -> None:
+    """
+    Test that validate_models_n_features raises ValueError when models have different input dimensions.
+
+    This test creates BayesianNeuralNetwork models with different input dimensions
+    and verifies that the validation method correctly raises a ValueError.
+    """
+    # Create models with different input dimensions
+    model_1 = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
+    model_2 = BayesianNeuralNetwork.cold_start(
+        n_features=n_features + extra_n_features, hidden_dim_list=hidden_dim_list
+    )
+
+    # Attempt to create a multi-objective model with different input dimensions
+    with pytest.raises(ValueError):
+        BayesianNeuralNetworkMO(models=[model_1, model_2])
+
+    # Test with cost control version as well
+    with pytest.raises(ValueError):
+        BayesianNeuralNetworkMOCC(models=[model_1, model_2], cost=cost)
+
+
+########################################################################################################################
+
+
+# BayesianNeuralNetworkMO
+
+
+@settings(deadline=500)
+@given(
+    n_features=st.integers(min_value=1, max_value=2),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    n_objectives=st.integers(min_value=1, max_value=3),
+)
+def test_can_init_bayesian_neural_network_mo(n_features, hidden_dim_list, n_objectives):
+    dim_list = [n_features] + hidden_dim_list
+    if any(layer_dim <= 0 for layer_dim in dim_list) or n_objectives <= 0:
+        with pytest.raises((ValidationError, ValueError)):
+            models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+            BayesianNeuralNetworkMO(models=models)
+    else:
+        models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+        bnn_mo = BayesianNeuralNetworkMO(models=models)
+        assert len(bnn_mo.models) == n_objectives
+        assert all(isinstance(model, BayesianNeuralNetwork) for model in bnn_mo.models)
+
+
+@settings(deadline=500)
+@given(
+    n_samples=st.integers(min_value=1, max_value=1000),
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    n_objectives=st.integers(min_value=1, max_value=3),
+)
+def test_bayesian_neural_network_mo_sample_proba(n_samples, n_features, hidden_dim_list, n_objectives):
+    models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+    bnn_mo = BayesianNeuralNetworkMO(models=models)
+
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    prob_weights = bnn_mo.sample_proba(context=context)
+
+    assert len(prob_weights) == n_samples
+
+    for prob_weight in prob_weights:
+        assert len(prob_weight) == n_objectives
+        for objective in range(n_objectives):
+            prob, weight = prob_weight[objective]
+            assert 0 <= prob <= 1
+
+
+@given(
+    n_features=st.integers(min_value=1, max_value=2),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    n_samples=st.just(5),
+    update_method=st.just("VI"),
+    n_objectives=st.integers(min_value=1, max_value=2),
+)
+def test_bayesian_neural_network_mo_update(n_features, hidden_dim_list, n_samples, update_method, n_objectives):
+    models = [
+        BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list, update_method=update_method)
+        for _ in range(n_objectives)
+    ]
+    bnn_mo = BayesianNeuralNetworkMO(models=models)
+
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    rewards = [[np.random.randint(0, 2) for _ in range(n_objectives)] for _ in range(n_samples)]
+
+    # Should not raise any exceptions
+    bnn_mo.update(context=context, rewards=rewards)
+
+    # Test with invalid rewards shape
+    invalid_rewards = [[1] * (n_objectives + 1) for _ in range(n_samples)]
+    with pytest.raises((ValueError, AttributeError)):
+        bnn_mo.update(context=context, rewards=invalid_rewards)
+
+
+########################################################################################################################
+
+
+# BayesianNeuralNetworkMOCC
+
+
+@settings(deadline=500)
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    n_objectives=st.integers(min_value=1, max_value=3),
+    cost=st.floats(allow_nan=False, allow_infinity=False),
+)
+def test_can_init_bayesian_neural_network_mo_cc(n_features, hidden_dim_list, n_objectives, cost):
+    dim_list = [n_features] + hidden_dim_list
+    if any(layer_dim <= 0 for layer_dim in dim_list) or n_objectives <= 0 or cost < 0:
+        with pytest.raises((ValidationError, ValueError)):
+            models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+            BayesianNeuralNetworkMOCC(models=models, cost=cost)
+    else:
+        models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+        bnn_mo_cc = BayesianNeuralNetworkMOCC(models=models, cost=cost)
+        assert len(bnn_mo_cc.models) == n_objectives
+        assert bnn_mo_cc.cost == cost
+        assert all(isinstance(model, BayesianNeuralNetwork) for model in bnn_mo_cc.models)

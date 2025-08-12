@@ -30,7 +30,7 @@ from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, Probability, PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel
-from pybandits.model import Beta, BetaMOCC
+from pybandits.model import BayesianNeuralNetworkMOCC, Beta, BetaMOCC
 from pybandits.pydantic_version_compatibility import field_validator, validate_call
 
 StrategyType = TypeVar("StrategyType", bound="Strategy")
@@ -43,7 +43,7 @@ class Strategy(PyBanditsBaseModel, ABC):
 
     @abstractmethod
     def select_action(
-        self, p: Dict[UnifiedActionId, Probability], actions: Optional[Dict[ActionId, BaseModel]]
+        self, p: Dict[UnifiedActionId, float], actions: Optional[Dict[ActionId, BaseModel]]
     ) -> UnifiedActionId:
         """
         Select the action.
@@ -382,7 +382,7 @@ class MultiObjectiveStrategy(Strategy, ABC):
 
     @classmethod
     @validate_call
-    def get_pareto_front(cls, p: Dict[UnifiedActionId, List[Probability]]) -> List[UnifiedActionId]:
+    def get_pareto_front(cls, p: Dict[UnifiedActionId, List[float]]) -> List[UnifiedActionId]:
         """
         Create Pareto optimal set of actions (Pareto front) A* identified as actions that are not dominated by
         any action out of the set A*.
@@ -443,7 +443,7 @@ class MultiObjectiveBandit(MultiObjectiveStrategy):
     """
 
     @validate_call
-    def select_action(self, p: Dict[UnifiedActionId, List[Probability]], **kwargs) -> UnifiedActionId:
+    def select_action(self, p: Dict[UnifiedActionId, List[float]], **kwargs) -> UnifiedActionId:
         """
         Select an action at random from the Pareto optimal set of action. The Pareto optimal action set (Pareto front)
         A* is the set of actions not dominated by any other actions not in A*. Dominance relation is established based
@@ -472,7 +472,9 @@ class MultiObjectiveCostControlBandit(MultiObjectiveStrategy, CostControlStrateg
 
     @validate_call
     def select_action(
-        self, p: Dict[UnifiedActionId, List[Probability]], actions: Dict[UnifiedActionId, BetaMOCC]
+        self,
+        p: Dict[UnifiedActionId, List[Probability]],
+        actions: Dict[UnifiedActionId, Union[BetaMOCC, BayesianNeuralNetworkMOCC]],
     ) -> UnifiedActionId:
         """
         Select the action with the minimum cost among the Pareto optimal set of action. The Pareto optimal

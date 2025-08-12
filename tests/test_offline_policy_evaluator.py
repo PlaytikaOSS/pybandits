@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2022 Playtika Ltd.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Optional, Union, get_args, get_type_hints
 
@@ -14,7 +36,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 import pybandits
 from pybandits import offline_policy_estimator
-from pybandits.cmab import CmabBernoulli, CmabBernoulliCC
+from pybandits.cmab import CmabBernoulli, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
 from pybandits.smab import (
@@ -250,8 +272,6 @@ def test_running_configuration(
     visualize = generate_random_bool()
     verbose = generate_random_bool()
 
-    if context and type(reward_feature) is List:
-        pass  # CmabMO and CmabMOCC are not supported yet
     true_reward_feature = (
         f"true_{reward_feature}" if isinstance(reward_feature, str) else [f"true_{r}" for r in reward_feature]
     )
@@ -279,12 +299,20 @@ def test_running_configuration(
     if context:
         if cost_feature:
             if type(reward_feature) is list:
-                return  # CmabMOCC is not supported yet
+                mab = CmabBernoulliMOCC.cold_start(
+                    action_ids_cost=action_ids_cost,
+                    n_objectives=len(reward_feature),
+                    n_features=len(contextual_features),
+                )
             else:
                 mab = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=len(contextual_features))
         else:
             if type(reward_feature) is list:
-                return  # CmabMO is not supported yet
+                mab = CmabBernoulliMO.cold_start(
+                    action_ids=set(unique_actions),
+                    n_objectives=len(reward_feature),
+                    n_features=len(contextual_features),
+                )
             else:
                 mab = CmabBernoulli.cold_start(action_ids=set(unique_actions), n_features=len(contextual_features))
     else:
