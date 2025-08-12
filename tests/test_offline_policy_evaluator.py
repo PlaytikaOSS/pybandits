@@ -14,7 +14,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 import pybandits
 from pybandits import offline_policy_estimator
-from pybandits.cmab import CmabBernoulli, CmabBernoulliCC
+from pybandits.cmab import CmabBernoulli, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
 from pybandits.smab import (
@@ -250,8 +250,6 @@ def test_running_configuration(
     visualize = generate_random_bool()
     verbose = generate_random_bool()
 
-    if context and type(reward_feature) is List:
-        pass  # CmabMO and CmabMOCC are not supported yet
     true_reward_feature = (
         f"true_{reward_feature}" if isinstance(reward_feature, str) else [f"true_{r}" for r in reward_feature]
     )
@@ -279,12 +277,12 @@ def test_running_configuration(
     if context:
         if cost_feature:
             if type(reward_feature) is list:
-                return  # CmabMOCC is not supported yet
+                mab = CmabBernoulliMOCC.cold_start(action_ids_cost=action_ids_cost, n_objectives=len(reward_feature))
             else:
                 mab = CmabBernoulliCC.cold_start(action_ids_cost=action_ids_cost, n_features=len(contextual_features))
         else:
             if type(reward_feature) is list:
-                return  # CmabMO is not supported yet
+                mab = CmabBernoulliMO.cold_start(action_ids=set(unique_actions), n_objectives=len(reward_feature))
             else:
                 mab = CmabBernoulli.cold_start(action_ids=set(unique_actions), n_features=len(contextual_features))
     else:

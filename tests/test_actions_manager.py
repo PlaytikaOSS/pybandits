@@ -25,7 +25,7 @@ REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
-    actions: Dict[ActionId, Union[Beta, BetaMO]]
+    actions: Dict[ActionId, Union[Beta, BetaMO, SmabZoomingModel]]
 
     def _update_actions(
         self,

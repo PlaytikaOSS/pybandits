@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import hypothesis.strategies as st
 import numpy as np
@@ -28,17 +28,17 @@ import pytest
 from hypothesis import given
 from pytest_mock import MockerFixture
 
-from pybandits.base import ActionId, BinaryReward, Float01, Probability
+from pybandits.base import ActionId, BinaryReward, Float01, Probability, UnifiedActionId
 from pybandits.mab import BaseMab
 from pybandits.model import Beta, BetaCC
 from pybandits.pydantic_version_compatibility import ValidationError
 from pybandits.strategy import ClassicBandit
-from tests.test_actions_manager import DummyActionsManager
+from tests.test_actions_manager import REFERENCE_DELTA, DummyActionsManager
 
 
 class DummyMab(BaseMab):
     epsilon: Optional[Float01] = None
-    default_action: Optional[ActionId] = None
+    default_action: Optional[UnifiedActionId] = None
     actions_manager: DummyActionsManager
 
     def _update(
@@ -57,7 +57,7 @@ class DummyMab(BaseMab):
         valid_actions = self._get_valid_actions(forbidden_actions)
         return np.random.choice(valid_actions)
 
-    def get_state(self) -> (str, dict):
+    def get_state(self) -> Tuple[str, dict]:
         model_name = self.__class__.__name__
         state: dict = {"actions": self.actions}
         return model_name, state
@@ -172,3 +172,94 @@ def test_adaptive_window_without_epsilon_fails(adaptive_window_size, epsilon):
             epsilon=epsilon,
             default_action="a1",
         )
+
+
+########################################################################################################################
+
+
+# MAB model_post_init validation tests
+
+
+def test_mab_model_post_init_adaptive_window_epsilon_validation():
+    """Test model_post_init validation for adaptive window with epsilon greedy requirements."""
+    actions = {"action1": Beta(), "action2": Beta()}
+
+    # Test case 1: delta is set but epsilon is None - should raise ValueError
+    with pytest.raises(
+        ValueError, match="Adaptive window requires epsilon greedy super strategy with not default action."
+    ):
+        DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=None, default_action=None, delta=REFERENCE_DELTA)
+
+    # Test case 2: delta is set, epsilon is provided, but default_action is also provided - should raise ValueError
+    with pytest.raises(
+        ValueError, match="Adaptive window requires epsilon greedy super strategy with not default action."
+    ):
+        DummyMab(
+            actions=actions, strategy=ClassicBandit(), epsilon=0.1, default_action="action1", delta=REFERENCE_DELTA
+        )
+
+
+def test_mab_model_post_init_default_action_validation():
+    """Test model_post_init validation for default action requirements."""
+    actions = {"action1": Beta(), "action2": Beta()}
+
+    # Test case 1: epsilon is not provided but default_action is provided - should raise AttributeError
+    with pytest.raises(AttributeError, match="A default action should only be defined when epsilon is defined."):
+        DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=None, default_action="action1")
+
+
+def test_mab_model_post_init_invalid_default_action(epsilon=0.1):
+    """Test model_post_init validation for invalid default action."""
+    actions = {"action1": Beta(), "action2": Beta()}
+
+    # Test case: default_action is not in the actions set - should raise AttributeError
+    with pytest.raises(AttributeError, match="The default action must be valid action defined in the actions set."):
+        DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action="invalid_action")
+
+
+def test_mab_model_post_init_quantitative_default_action_validation(epsilon=0.1):
+    """Test model_post_init validation for quantitative default action requirements."""
+
+    # This test is demonstrating that the current validation logic has an issue:
+    # When default_action is a tuple, it checks if the entire tuple is in self.actions keys,
+    # but actions only contains string keys. This causes the validation to fail at line 138-139
+    # before it reaches the quantitative validation at lines 140-145.
+
+    # Test case: quantitative default action (tuple) with any actions will fail the basic validation
+    actions = {"action1": Beta(), "action2": Beta()}
+
+    with pytest.raises(AttributeError, match="The default action must be valid action defined in the actions set."):
+        DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action=("action1", (0.5, 0.5)))
+
+
+def test_mab_model_post_init_standard_default_action_validation(epsilon=0.1):
+    """Test model_post_init validation for standard default action requirements."""
+    from pybandits.quantitative_model import SmabZoomingModel
+
+    # Create quantitative actions
+    actions = {"action1": SmabZoomingModel.cold_start(), "action2": SmabZoomingModel.cold_start()}
+
+    # Test case: standard default action (string) with quantitative model - should raise AttributeError
+    with pytest.raises(AttributeError, match="Standard default action requires a standard action model."):
+        DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action="action1")
+
+
+def test_mab_model_post_init_valid_configurations(epsilon=0.1):
+    """Test model_post_init validation with valid configurations."""
+    actions = {"action1": Beta(), "action2": Beta()}
+
+    # Valid case 1: No epsilon, no default action, no delta
+    mab = DummyMab(actions=actions, strategy=ClassicBandit())
+    assert mab.epsilon is None
+    assert mab.default_action is None
+
+    # Valid case 2: Epsilon with valid default action
+    mab = DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action="action1")
+    assert mab.epsilon == 0.1
+    assert mab.default_action == "action1"
+
+    # Valid case 3: Epsilon without default action and delta (adaptive window)
+    mab = DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, delta=REFERENCE_DELTA)
+    assert mab.epsilon == epsilon
+    assert mab.default_action is None
+    assert mab.actions_manager.delta == REFERENCE_DELTA

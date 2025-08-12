@@ -29,13 +29,24 @@ from numpy.typing import ArrayLike
 from pybandits.actions_manager import CmabActionsManager, CmabActionsManagerCC, CmabActionsManagerSO
 from pybandits.base import ActionId, BinaryReward, CmabPredictions, PositiveProbability, Serializable
 from pybandits.mab import BaseMab
-from pybandits.model import BaseBayesianNeuralNetwork, BnnLayerParams, BnnParams, StudentTArray
+from pybandits.model import (
+    BaseBayesianNeuralNetwork,
+    BaseBayesianNeuralNetworkMO,
+    BayesianNeuralNetworkMO,
+    BayesianNeuralNetworkMOCC,
+    BnnLayerParams,
+    BnnParams,
+    StudentTArray,
+)
 from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.quantitative_model import BaseCmabZoomingModel
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    MultiObjectiveBandit,
+    MultiObjectiveCostControlBandit,
+    MultiObjectiveStrategy,
 )
 
 
@@ -296,3 +307,66 @@ class CmabBernoulliCC(BaseCmabBernoulli):
     actions_manager: CmabActionsManagerCC
     strategy: CostControlBandit
     _predict_with_proba: bool = True
+
+
+class BaseCmabBernoulliMO(BaseCmabBernoulli, ABC):
+    """
+    Base model for a Contextual Multi-Armed Bandit with Thompson Sampling and Multi-Objective strategy.
+
+    Parameters
+    ----------
+    actions : Dict[ActionId, BaseBayesianNeuralNetworkMO]
+        The list of possible actions and their associated models.
+    strategy : MultiObjectiveStrategy
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BaseBayesianNeuralNetworkMO]
+    strategy: MultiObjectiveStrategy
+
+
+class CmabBernoulliMO(BaseCmabBernoulliMO):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling and Multi-Objective strategy.
+
+    The reward for an action is a multidimensional vector. Actions are compared using Pareto order between their expected reward vectors.
+    Pareto optimal actions are those not strictly dominated by any other action.
+
+    Reference
+    ---------
+    Thompson Sampling for Multi-Objective Multi-Armed Bandits Problem (Yahyaa and Manderick, 2015)
+    https://www.researchgate.net/publication/272823659_Thompson_Sampling_for_Multi-Objective_Multi-Armed_Bandits_Problem
+
+    Parameters
+    ----------
+    actions : Dict[ActionId, BayesianNeuralNetworkMO]
+        The list of possible actions and their associated models.
+    strategy : MultiObjectiveBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BayesianNeuralNetworkMO]
+    strategy: MultiObjectiveBandit
+    predict_with_proba: bool = False
+    predict_actions_randomly: bool = False
+
+
+class CmabBernoulliMOCC(BaseCmabBernoulliMO):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling for Multi-Objective (MO) and Cost Control (CC) strategy.
+
+    This bandit allows the reward to be a multidimensional vector and includes control of the action cost, merging
+    Multi-Objective and Cost Control strategies.
+
+    Parameters
+    ----------
+    actions : Dict[ActionId, BayesianNeuralNetworkMOCC]
+        The list of possible actions and their associated models.
+    strategy : MultiObjectiveCostControlBandit
+        The strategy used to select actions.
+    """
+
+    actions: Dict[ActionId, BayesianNeuralNetworkMOCC]
+    strategy: MultiObjectiveCostControlBandit
+    predict_with_proba: bool = True
+    predict_actions_randomly: bool = False

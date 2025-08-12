@@ -21,6 +21,8 @@ from pybandits.model import (
     BaseBetaMO,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkMO,
+    BayesianNeuralNetworkMOCC,
     Beta,
     BetaCC,
     BetaMO,
@@ -1067,3 +1069,5 @@ SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
 CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]]
 CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, CmabZoomingModelCC]]
+CmabActionsManagerMO = CmabActionsManager[BayesianNeuralNetworkMO]
+CmabActionsManagerMOCC = CmabActionsManager[BayesianNeuralNetworkMOCC]
