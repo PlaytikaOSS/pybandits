@@ -22,7 +22,7 @@
 
 from abc import ABC, abstractmethod
 from random import random
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 from scipy.stats import ttest_ind_from_stats
@@ -53,11 +53,6 @@ class Strategy(PyBanditsBaseModel, ABC):
     @validate_call
     def numerize_field(cls, v, field_name: str):
         return v if v is not None else cls.model_fields[field_name].default
-
-    @classmethod
-    @validate_call
-    def get_expected_value_from_state(cls, state: Dict[str, Any], field_name: str) -> float:
-        return cls.numerize_field(state["strategy"].get(field_name), field_name)
 
 
 class ClassicBandit(Strategy):
