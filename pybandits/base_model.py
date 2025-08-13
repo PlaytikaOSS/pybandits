@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2022 Playtika Ltd.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
@@ -15,9 +37,13 @@ from pybandits.base import (
     QuantitativeProbabilityWeight,
 )
 from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveInt,
+    conlist,
+    pydantic_version,
     validate_call,
 )
 
@@ -90,7 +116,7 @@ class BaseModelSO(BaseModel, ABC):
         Sample the probability of getting a positive reward.
         """
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
+    @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
     def update(self, rewards: List[BinaryReward], **kwargs):
         """
         Update the model parameters.
@@ -154,7 +180,12 @@ class BaseModelMO(BaseModel, ABC):
         The list of models for each objective.
     """
 
-    models: List[BaseModelSO]
+    if pydantic_version == PYDANTIC_VERSION_1:
+        models: conlist(BaseModelSO, min_items=1)
+    elif pydantic_version == PYDANTIC_VERSION_2:
+        models: conlist(BaseModelSO, min_length=1)
+    else:
+        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     def sample_proba(self, **kwargs) -> Union[List[MOProbability], List[QuantitativeMOProbability]]:
         """
@@ -162,6 +193,7 @@ class BaseModelMO(BaseModel, ABC):
         """
         return [list(p) for p in zip(*[model.sample_proba(**kwargs) for model in self.models])]
 
+    @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
     def update(self, rewards: List[List[BinaryReward]], **kwargs):
         """
         Update the model parameters.

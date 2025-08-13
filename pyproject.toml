@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "4.0.11"
+version = "4.0.12"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -93,3 +93,10 @@ extend-ignore = ["E203"]
 # Missing : Too few public methods (equivalent to R0903)
 # PLR0913: Too many arguments (equivalent to R0913)
 per-file-ignores = { "*.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "PLR0913"] }
+
+# pytest-cov exclusions
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise ValueError.*Unsupported pydantic version",
+]

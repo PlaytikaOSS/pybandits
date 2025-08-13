@@ -145,7 +145,16 @@ class Simulator(PyBanditsBaseModel, ABC):
     @classmethod
     @abstractmethod
     def _validate_probs_reward_values(cls, probability: ProbabilityValue, is_quantitative_action: bool):
-        pass
+        """
+        Validate the probability values.
+
+        Parameters
+        ----------
+        probability : ProbabilityValue
+            The probability value.
+        is_quantitative_action : bool
+            Whether the action is quantitative.
+        """
 
     @field_validator("file_prefix", mode="before")
     def maybe_alter_file_prefix(cls, value):
@@ -250,7 +259,6 @@ class Simulator(PyBanditsBaseModel, ABC):
         """
         Initialize the results DataFrame. The results DataFrame is used to store the raw simulation results.
         """
-        pass
 
     @property
     def results(self):
@@ -394,7 +402,6 @@ class Simulator(PyBanditsBaseModel, ABC):
         reward : List[BinaryReward]
             A list of binary rewards.
         """
-        pass
 
     @abstractmethod
     def _extract_ground_truth(self, *args, **kwargs) -> Probability:
@@ -406,7 +413,6 @@ class Simulator(PyBanditsBaseModel, ABC):
         Probability
             The ground truth probability for the action.
         """
-        pass
 
     @abstractmethod
     def _get_batch_step_kwargs_and_metadata(
@@ -430,7 +436,6 @@ class Simulator(PyBanditsBaseModel, ABC):
         metadata : Dict[str, List]
             Dictionary containing the association information for the batch.
         """
-        pass
 
     @abstractmethod
     def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]) -> pd.DataFrame:
@@ -449,7 +454,6 @@ class Simulator(PyBanditsBaseModel, ABC):
         batch_results : pd.DataFrame
             batch results with added columns
         """
-        pass
 
     def _finalize_results(self):
         """

@@ -39,6 +39,7 @@ from pydantic import (
     ValidationError,
     confloat,
     conint,
+    conlist,
     constr,
 )
 from pydantic.generics import GenericModel
@@ -49,7 +50,7 @@ PYDANTIC_VERSION_1 = "1"
 PYDANTIC_VERSION_2 = "2"
 
 
-def _get_major_pydantic_version():
+def _get_major_pydantic_version() -> str:
     """
     Get the major version of pydantic.
 
@@ -58,11 +59,8 @@ def _get_major_pydantic_version():
     major_version : str
         The major version of pydantic.
     """
-    try:
-        major_version = _VERSION.split(".")[0]
-        return major_version
-    except Exception as e:
-        raise ValueError(f"Error getting Pydantic version: {e}")
+    major_version = _VERSION.split(".")[0]
+    return major_version
 
 
 pydantic_version = _get_major_pydantic_version()
@@ -281,6 +279,7 @@ __all__ = [
     "confloat",
     "conint",
     "constr",
+    "conlist",
     "Field",
     "PrivateAttr",
     "GenericModel",
