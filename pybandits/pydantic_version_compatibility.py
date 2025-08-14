@@ -218,43 +218,7 @@ if pydantic_version == PYDANTIC_VERSION_1:
             warn("validate_return is not supported in pydantic v1", UserWarning)
             validate_call.warning_raised = True
 
-        for v1_name, v2_name in [
-            ("allow_population_by_field_name", "populate_by_name"),
-            ("anystr_lower", "str_to_lower"),
-            ("anystr_strip_whitespace", "str_strip_whitespace"),
-            ("anystr_upper", "str_to_upper"),
-            ("keep_untouched", "ignored_types"),
-            ("max_anystr_length", "str_max_length"),
-            ("min_anystr_length", "str_min_length"),
-            ("orm_mode", "from_attributes"),
-            ("schema_extra", "json_schema_extra"),
-            ("validate_all", "validate_default"),
-        ]:
-            config = _convert_config_param(config, v2_name, v1_name)
-
         return validate_arguments(func=func, config=config)
-
-    def _convert_config_param(config: Dict[str, Any], v2_name: str, v1_name: str) -> Dict[str, Any]:
-        """
-        Convert a config parameter from v2 to v1.
-
-        Parameters
-        ----------
-        config : Dict[str, Any]
-            The dictionary of configuration parameters.
-        v2_name : str
-            The v2 name of the configuration parameter.
-        v1_name : str
-            The v1 name of the configuration parameter.
-
-        Returns
-        -------
-        config : Dict[str, Any]
-            The converted dictionary of configuration parameters.
-        """
-        if config is not None and v2_name in config:
-            config[v1_name] = config.pop(v2_name)
-        return config
 
 elif pydantic_version == PYDANTIC_VERSION_2:
     from pydantic import (

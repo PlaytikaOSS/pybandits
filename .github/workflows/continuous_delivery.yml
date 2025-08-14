@@ -58,7 +58,7 @@ jobs:
       - name: Run tests with coverage
         if: ${{ matrix.python-version == '3.10' }}
         run: |
-          poetry run pytest -n auto -vv --durations=5 --cov=pybandits/ --cov-report=xml --cov-report=html
+          poetry run pytest -n auto -vv --durations=5 --cov=pybandits/ --cov-report=xml --cov-report=html --cov-config=.coveragerc
       - name: Upload coverage to Codecov
         if: ${{ matrix.python-version == '3.10' }}
         uses: codecov/codecov-action@v5

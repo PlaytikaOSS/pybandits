@@ -79,7 +79,10 @@ class BaseCmabBernoulli(BaseMab, ABC):
     @staticmethod
     def _extract_element_from_probability_weight(
         index: int, prob_weight: Union[ProbabilityWeight, MOProbabilityWeight]
-    ):
+    ) -> Union[float, List[float]]:
+        """
+        Extract the element from the probability weight.
+        """
         if isinstance(prob_weight, tuple):  # ProbabilityWeight
             return prob_weight[index]
         elif isinstance(prob_weight, list) and all(
