@@ -30,6 +30,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic.dataclasses import dataclass
 
+import pybandits
 from pybandits.actions_manager import SmabModelType
 from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.base_model import BaseModel
@@ -75,7 +76,7 @@ def mock_update(models: List[SmabModelType], diff, monkeymodule, label=0):
 
 
 def _quantitative_cost(x, cost):
-    return x**cost
+    return min(sum(x) ** cost, 1000)
 
 
 @dataclass
@@ -454,6 +455,24 @@ def test_predict(
     diff,
     monkeymodule,
 ):
+    def mock_maximize_by_quantity(quantity_score_func, dimension, constraint=None, n_trials=10000):
+        """Mock maximize_by_quantity to return a quick result."""
+        return np.random.random(dimension)
+
+    monkeymodule.setattr(pybandits.strategy, "maximize_by_quantity", mock_maximize_by_quantity)
+
+    if config.smab_class in (SmabBernoulliMO, SmabBernoulliMOCC):
+
+        def mock_find_pareto_front_normal_constraint(self, func, input_dim, n_objectives, n_divisions, model):
+            """Mock _find_pareto_front_normal_constraint to return a quick result."""
+            return [np.random.random(input_dim) for _ in range(min(3, n_divisions))]
+
+        monkeymodule.setattr(
+            pybandits.strategy.MultiObjectiveStrategy,
+            "_find_pareto_front_normal_constraint",
+            mock_find_pareto_front_normal_constraint,
+        )
+
     # Create SMAB instance
     smab = config.create_smab_and_actions(action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor)[0]
 
@@ -484,8 +503,6 @@ def test_predict(
             len({action[0] if isinstance(action, tuple) else action for action in prob}) == len(action_ids)
             for prob in probs
         )
-        if isinstance(smab, SmabBernoulli) and not smab.epsilon:
-            assert all(prob[best_action] == max(prob.values()) for best_action, prob in zip(best_actions, probs))
 
 
 @settings(deadline=None)

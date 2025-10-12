@@ -43,6 +43,10 @@ from pybandits.base import (
     Probability,
     ProbabilityWeight,
     PyBanditsBaseModel,
+    QuantitativeMOProbability,
+    QuantitativeMOProbabilityWeight,
+    QuantitativeProbability,
+    QuantitativeProbabilityWeight,
     Serializable,
     UnifiedActionId,
 )
@@ -52,7 +56,7 @@ from pybandits.pydantic_version_compatibility import (
     validate_call,
 )
 from pybandits.quantitative_model import QuantitativeModel
-from pybandits.strategy import Strategy
+from pybandits.strategy import BaseStrategy
 from pybandits.utils import extract_argument_names_from_function
 
 
@@ -79,12 +83,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
     """
 
     actions_manager: ActionsManager
-    strategy: Strategy
+    strategy: BaseStrategy
     epsilon: Optional[Float01] = None
     default_action: Optional[UnifiedActionId] = None
     version: Optional[str] = None
-    deprecated_adwin_keys: ClassVar[List[str]] = ["adaptive_window_size", "actions_memory", "rewards_memory"]
-    current_supported_version_th: ClassVar[str] = "3.0.0"
+    _deprecated_adwin_keys: ClassVar[List[str]] = ["adaptive_window_size", "actions_memory", "rewards_memory"]
+    _current_supported_version_th: ClassVar[str] = "3.0.0"
 
     def __init__(
         self,
@@ -232,32 +236,13 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def _transform_nested_list(lst: List[List[Dict]]):
         return [{k: v for d in single_action_dicts for k, v in d.items()} for single_action_dicts in zip(*lst)]
 
-    @staticmethod
-    def _is_so_standard_action(value: Any) -> bool:
-        #       Probability                                      ProbabilityWeight
-        return isinstance(value, float) or (isinstance(value, tuple) and isinstance(value[0], float))
-
-    @staticmethod
-    def _is_so_quantitative_action(value: Any) -> bool:
-        return isinstance(value, tuple) and isinstance(value[0], tuple)
-
-    @classmethod
-    def _is_standard_action(cls, value: Any) -> bool:
-        return cls._is_so_standard_action(value) or (isinstance(value, list) and cls._is_so_standard_action(value[0]))
-
-    @classmethod
-    def _is_quantitative_action(cls, value: Any) -> bool:
-        return cls._is_so_quantitative_action(value) or (
-            isinstance(value, list) and cls._is_so_quantitative_action(value[0])
-        )
-
     def _get_action_probabilities(
         self, forbidden_actions: Optional[Set[ActionId]] = None, **kwargs
     ) -> Union[
-        List[Dict[UnifiedActionId, Probability]],
-        List[Dict[UnifiedActionId, ProbabilityWeight]],
-        List[Dict[UnifiedActionId, MOProbability]],
-        List[Dict[UnifiedActionId, MOProbabilityWeight]],
+        List[Dict[ActionId, Union[Probability, QuantitativeProbability]]],
+        List[Dict[ActionId, Union[ProbabilityWeight, QuantitativeProbabilityWeight]]],
+        List[Dict[ActionId, Union[MOProbability, QuantitativeMOProbability]]],
+        List[Dict[ActionId, Union[MOProbabilityWeight, QuantitativeMOProbabilityWeight]]],
     ]:
         """
         Get the probability of getting a positive reward for each action.
@@ -280,34 +265,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
             action: model.sample_proba(**kwargs) for action, model in self.actions.items() if action in valid_actions
         }
         # Handle standard actions for which the value is a (probability, weight) tuple
-        actions_transformations = [
-            [{key: proba} for proba in value]
-            for key, value in action_probabilities.items()
-            if self._is_standard_action(value[0])
-        ]
-        actions_transformations = self._transform_nested_list(actions_transformations)
-        # Handle quantitative actions, for which the value is a tuple of
-        # tuples of (quantity, (probability, weight) or probability)
-        quantitative_actions_transformations = [
-            [{(key, quantity): proba for quantity, proba in sample} for sample in value]
-            for key, value in action_probabilities.items()
-            if self._is_quantitative_action(value[0])
-        ]
-        quantitative_actions_transformations = self._transform_nested_list(quantitative_actions_transformations)
-        if not actions_transformations and not quantitative_actions_transformations:
-            return []
-        if not actions_transformations:  # No standard actions
-            actions_transformations = [dict() for _ in range(len(quantitative_actions_transformations))]
-        if not quantitative_actions_transformations:  # No quantitative actions
-            quantitative_actions_transformations = [dict() for _ in range(len(actions_transformations))]
-        if len(actions_transformations) != len(quantitative_actions_transformations):
-            raise ValueError("The number of standard and quantitative actions should be the same.")
-        action_probabilities = [
-            {**actions_dict, **quantitative_actions_dict}
-            for actions_dict, quantitative_actions_dict in zip(
-                actions_transformations, quantitative_actions_transformations
-            )
-        ]
+        actions_transformations = [[{key: proba} for proba in value] for key, value in action_probabilities.items()]
+        action_probabilities = self._transform_nested_list(actions_transformations)
+
         return action_probabilities
 
     @abstractmethod
@@ -399,7 +359,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
                 if self.default_action:
                     selected_action = self.default_action
                 else:
-                    actions = list(set(a[0] if isinstance(a, tuple) else a for a in p.keys()))
+                    actions = list(p.keys())
                     selected_action = random.choice(actions)
                     if isinstance(self.actions[selected_action], QuantitativeModel):
                         selected_action = (
@@ -463,7 +423,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             state["actions_manager"]["actions"] = state.pop("actions")
             state["actions_manager"]["delta"] = delta
 
-        for key in cls.deprecated_adwin_keys:
+        for key in cls._deprecated_adwin_keys:
             if key in state["actions_manager"]:
                 state["actions_manager"].pop(key)
 
@@ -496,10 +456,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         state_dict = json.loads(state)
         if ("version" in state_dict) and (
-            version.parse(state_dict["version"]) >= version.parse(cls.current_supported_version_th)
+            version.parse(state_dict["version"]) >= version.parse(cls._current_supported_version_th)
         ):
             raise ValueError(
-                f"The state is expected to be in the old format of PyBandits < {cls.current_supported_version_th}."
+                f"The state is expected to be in the old format of PyBandits < {cls._current_supported_version_th}."
             )
         state_dict = cls.update_old_state(state_dict, delta)
         state = json.dumps(state_dict)

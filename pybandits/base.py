@@ -20,8 +20,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Any, Dict, List, Mapping, NewType, Optional, Tuple, Union, _GenericAlias, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    NewType,
+    Optional,
+    Tuple,
+    Union,
+    _GenericAlias,
+    get_args,
+    get_origin,
+)
 
+import numpy as np
 from typing_extensions import Self
 
 from pybandits.pydantic_version_compatibility import (
@@ -45,10 +59,12 @@ ProbabilityWeight = Tuple[Probability, float]
 MOProbability = List[Probability]
 MOProbabilityWeight = List[ProbabilityWeight]
 # QuantitativeProbability generalizes probability to include both action quantities and their associated probability
-QuantitativeProbability = Tuple[Tuple[Tuple[Float01, ...], Probability], ...]
-QuantitativeProbabilityWeight = Tuple[Tuple[Tuple[Float01, ...], ProbabilityWeight], ...]
-QuantitativeMOProbability = Tuple[Tuple[Tuple[Float01, ...], List[Probability]], ...]
-QuantitativeMOProbabilityWeight = Tuple[Tuple[Tuple[Float01, ...], List[ProbabilityWeight]], ...]
+QuantitativeProbability = Callable[[np.ndarray], Probability]
+QuantitativeWeight = Callable[[np.ndarray], float]
+QuantitativeProbabilityWeight = Tuple[QuantitativeProbability, QuantitativeWeight]
+QuantitativeMOProbability = Callable[[np.ndarray], MOProbability]
+QuantitativeMOProbabilityWeight = Tuple[Callable[[np.ndarray], MOProbability], Callable[[np.ndarray], float]]
+
 UnifiedProbability = Union[Probability, QuantitativeProbability]
 UnifiedProbabilityWeight = Union[ProbabilityWeight, QuantitativeProbabilityWeight]
 UnifiedMOProbability = Union[MOProbability, QuantitativeMOProbability]
@@ -79,10 +95,10 @@ BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
 ActionRewardLikelihood = NewType(
     "ActionRewardLikelihood",
     Union[
-        Dict[UnifiedActionId, float],
-        Dict[UnifiedActionId, List[float]],
-        Dict[UnifiedActionId, Probability],
-        Dict[UnifiedActionId, List[Probability]],
+        Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
+        Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
+        Dict[ActionId, Union[Probability, Callable[[np.ndarray], Probability]]],
+        Dict[ActionId, Union[List[Probability], Callable[[np.ndarray], List[Probability]]]],
     ],
 )
 ACTION_IDS_PREFIX = "action_ids_"
@@ -189,6 +205,28 @@ class PyBanditsBaseModel(BaseModel):
         if get_origin(annotation) is Union:
             annotation = get_args(annotation)
         return annotation
+
+    @classmethod
+    def _normalize_field(cls, v: Any, field_name: str) -> Any:
+        """
+        Normalize a field value to its default if None.
+
+        This utility method ensures that optional fields receive their default
+        values when not explicitly provided.
+
+        Parameters
+        ----------
+        v : Any
+            The field value to normalize.
+        field_name : str
+            Name of the field in the model.
+
+        Returns
+        -------
+        Any
+            The original value if not None, otherwise the field's default value.
+        """
+        return v if v is not None else cls.model_fields[field_name].default
 
     if pydantic_version == PYDANTIC_VERSION_1:
 

@@ -1110,6 +1110,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 axis=0,
             )
         if save_path:
+            os.makedirs(save_path, exist_ok=True)
             multi_objective_estimated_policy_value_df.to_csv(os.path.join(save_path, "estimated_policy_value.csv"))
 
         if visualize:
