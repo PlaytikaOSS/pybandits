@@ -915,9 +915,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         # finalize the dataframe shape to #samples X #mc experiments
         mc_actions = pd.DataFrame(mc_actions).T
 
+        # Get unique actions that actually appear in the test set (to match validation requirements)
+        # The action array contains encoded indices, so we need to map them back to action IDs
+        unique_actions_in_test = sorted(set(self._test_data["action_ids"]))
+
         # for each sample / each action, count the occurrence frequency during MC iteration
-        mc_action_counts = pd.DataFrame(0, index=mc_actions.index, columns=self._test_data["unique_actions"])
-        for action in self._test_data["unique_actions"]:
+        mc_action_counts = pd.DataFrame(0, index=mc_actions.index, columns=unique_actions_in_test)
+        for action in unique_actions_in_test:
             mc_action_counts[action] = (mc_actions == action).sum(axis=1)
         estimated_policy = mc_action_counts / n_mc_experiments
 
@@ -992,6 +996,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 axis=0,
             )
         if save_path:
+            os.makedirs(save_path, exist_ok=True)
             multi_objective_estimated_policy_value_df.to_csv(os.path.join(save_path, "estimated_policy_value.csv"))
 
         if visualize:

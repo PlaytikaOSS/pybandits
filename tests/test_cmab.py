@@ -184,7 +184,8 @@ def mock_update(models: Union[List[BaseBayesianNeuralNetwork], BaseBayesianNeura
 
 
 def _quantitative_cost(x, cost):
-    return x**cost
+    s = sum(x)
+    return s**cost if s >= 0 else 1e10
 
 
 @dataclass
@@ -712,6 +713,24 @@ def test_predict(
     diff,
     monkeymodule,
 ):
+    def mock_maximize_by_quantity(quantity_score_func, dimension, constraint=None, n_trials=10000):
+        """Mock maximize_by_quantity to return a quick result."""
+        return np.random.random(dimension)
+
+    monkeymodule.setattr(pybandits.strategy, "maximize_by_quantity", mock_maximize_by_quantity)
+
+    if config.cmab_class in (CmabBernoulliMO, CmabBernoulliMOCC):
+
+        def mock_find_pareto_front_normal_constraint(self, func, input_dim, n_objectives, n_divisions, model):
+            """Mock _find_pareto_front_normal_constraint to return a quick result."""
+            return [np.random.random(input_dim) for _ in range(min(3, n_divisions))]
+
+        monkeymodule.setattr(
+            pybandits.strategy.MultiObjectiveStrategy,
+            "_find_pareto_front_normal_constraint",
+            mock_find_pareto_front_normal_constraint,
+        )
+
     # Create CMAB instance
     cmab = config.create_cmab_and_actions(
         action_ids,

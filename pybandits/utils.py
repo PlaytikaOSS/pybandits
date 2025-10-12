@@ -25,11 +25,36 @@ from abc import ABC
 from types import ModuleType
 from typing import Callable, List, Optional, Tuple
 
+import numpy as np
 from bokeh.io import curdoc, output_file, output_notebook, save, show
 from bokeh.models import InlineStyleSheet, TabPanel, Tabs
-from IPython import get_ipython
 
-from pybandits.pydantic_version_compatibility import validate_call
+# check if IPython is installed
+try:
+    from IPython import get_ipython
+except ImportError:
+    get_ipython = None
+
+from loguru import logger
+from scipy.optimize import NonlinearConstraint, differential_evolution
+
+from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
+
+
+class OptimizationFailedError(Exception):
+    """Exception raised when optimization fails to converge."""
+
+    def __init__(self, message: str) -> None:
+        """
+        Initialize the exception.
+
+        Parameters
+        ----------
+        message : str
+            Error message describing why optimization failed.
+        """
+        super().__init__(message)
+        self.message = message
 
 
 @validate_call
@@ -95,7 +120,7 @@ def in_jupyter_notebook() -> bool:
 
         return shell == "ZMQInteractiveShell"
 
-    except NameError:
+    except (NameError, AttributeError):
         return False  # Probably standard Python interpreter
 
 
@@ -137,3 +162,76 @@ def visualize_via_bokeh(output_path: Optional[str], tabs: List[TabPanel]):
 class classproperty(property):
     def __get__(self, instance, owner):
         return self.fget(owner)
+
+
+def maximize_by_quantity(
+    quantity_score_func: Callable[[np.ndarray], float],
+    dimension: PositiveInt,
+    constraint: Optional[List[Callable[[np.ndarray], bool]]] = None,
+    n_trials: PositiveInt = 10000,
+) -> np.ndarray:
+    """
+    Maximize the quantity score for the given function.
+
+    Parameters
+    ----------
+    quantity_score_func : Callable[[np.ndarray], float]
+        The quantity score function.
+    dimension : PositiveInt
+        The quantity vector dimension.
+    constraint : Optional[List[Callable[[np.ndarray], bool]]]
+        The constraint functions.
+    n_trials : PositiveInt, defaults to 10000
+        The number of optimization trials.
+
+    Returns
+    -------
+    np.ndarray
+        The global maxima coordinates of quantity_score_func.
+
+    Raises
+    ------
+    OptimizationFailedError
+        If the optimization fails to converge.
+    """
+    bounds = [(0, 1) for _ in range(dimension)]
+
+    # Convert constraint to scipy format if provided
+    if constraint is not None:
+        constraints = []
+        for constraint_func in constraint:
+
+            def scipy_constraint_func(x, func=constraint_func):
+                # Return positive if constraint satisfied, negative if violated
+                return 1.0 if func(x) else -1.0
+
+            constraints.append(NonlinearConstraint(scipy_constraint_func, 0, np.inf))
+    else:
+        constraints = None
+
+    # Differential Evolution parameters
+    de_params = {
+        "func": lambda x: -quantity_score_func(x),  # Minimize negative = maximize
+        "bounds": bounds,
+        "maxiter": max(100, n_trials // 10),  # Ensure minimum iterations for convergence
+        "popsize": 15,  # Population size multiplier (total pop = popsize * len(bounds))
+        "atol": 1e-6,  # Relaxed tolerance for boundary convergence
+        "tol": 1e-6,  # Relaxed tolerance for boundary convergence
+        "strategy": "best1bin",  # Good balance of exploration/exploitation
+        "mutation": (0.5, 1),  # Mutation factor range
+        "recombination": 0.7,  # Crossover probability
+        "polish": True,  # Local polish with L-BFGS-B
+        "disp": False,
+    }
+
+    # Only add constraints if they exist
+    if constraints is not None:
+        de_params["constraints"] = constraints
+    result = differential_evolution(**de_params)
+
+    if result.success:
+        return result.x
+    else:
+        error_message = f"Optimization failed: {result.message}"
+        logger.warning(error_message)
+        raise OptimizationFailedError(error_message)

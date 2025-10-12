@@ -35,7 +35,11 @@ from pybandits.simulator import (
     ParametricActionProbability,
     Simulator,
 )
-from pybandits.utils import extract_argument_names_from_function
+from pybandits.utils import (
+    OptimizationFailedError,
+    extract_argument_names_from_function,
+    maximize_by_quantity,
+)
 
 CmabProbabilityValue = Union[ParametricActionProbability, DoubleParametricActionProbability]
 CmabActionProbabilityGroundTruth = Dict[ActionId, CmabProbabilityValue]
@@ -232,13 +236,20 @@ class CmabSimulator(Simulator):
             for a, q, g, c in zip(action_id, quantity, group_id, update_kwargs["context"])
         ]
         batch_results.loc[:, "selected_prob_reward"] = selected_prob_reward
+
+        def get_max_prob_for_action(g: str, a: ActionId, c: np.ndarray, m) -> float:
+            """Get maximum probability for an action, handling optimization failures."""
+            if isinstance(m, QuantitativeModel):
+                try:
+                    opt_q = maximize_by_quantity((lambda q: self.probs_reward[g][a](c, q)), m.dimension)
+                    return self.probs_reward[g][a](c, opt_q)
+                except OptimizationFailedError as e:
+                    raise ValueError(f"Optimization failed for action {a}: {e}")
+            else:
+                return self.probs_reward[g][a](c)
+
         max_prob_reward = [
-            max(
-                self._maximize_prob_reward((lambda q: self.probs_reward[g][a](c, q)), m.dimension)
-                if isinstance(m, QuantitativeModel)
-                else self.probs_reward[g][a](c)
-                for a, m in self.mab.actions.items()
-            )
+            max(get_max_prob_for_action(g, a, c, m) for a, m in self.mab.actions.items())
             for g, c in zip(group_id, update_kwargs["context"])
         ]
         batch_results.loc[:, "max_prob_reward"] = max_prob_reward

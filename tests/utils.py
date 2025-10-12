@@ -7,13 +7,15 @@ from typing import Any, Dict, Tuple, get_args
 import numpy as np
 from bokeh.core.serialization import Serializable
 
-from pybandits.base import PyBanditsBaseModel
+from pybandits.base import PyBanditsBaseModel, UnifiedActionId
+from pybandits.base_model import BaseModel
 from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
 from pybandits.pydantic_version_compatibility import (
     Optional,
     PositiveInt,
     PrivateAttr,
 )
+from pybandits.quantitative_model import QuantitativeModel
 
 literal_update_methods = get_args(UpdateMethods)
 
@@ -43,6 +45,17 @@ def sample_with_replacement(source: list, length: PositiveInt):
 def to_temporary_pickle(model: PyBanditsBaseModel):
     with NamedTemporaryFile("wb") as file:
         pickle.dump(model, file)
+
+
+def to_unified_action_id(action_id: str, model: BaseModel) -> UnifiedActionId:
+    if isinstance(model, QuantitativeModel):
+        return (action_id, (np.random.random(),))
+    else:
+        return action_id
+
+
+def mock_update(self, *args, **kwargs):
+    pass
 
 
 class FakeApproximation(PyBanditsBaseModel):

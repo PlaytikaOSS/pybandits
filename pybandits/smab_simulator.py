@@ -31,7 +31,11 @@ from pybandits.pydantic_version_compatibility import Field, model_validator
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.simulator import Simulator
 from pybandits.smab import BaseSmabBernoulli
-from pybandits.utils import extract_argument_names_from_function
+from pybandits.utils import (
+    OptimizationFailedError,
+    extract_argument_names_from_function,
+    maximize_by_quantity,
+)
 
 #                                        quantity
 ParametricActionProbability = Callable[[np.ndarray], Probability]
@@ -188,13 +192,18 @@ class SmabSimulator(Simulator):
         quantity = batch_results.loc[:, "quantities"]
         selected_prob_reward = [self._extract_ground_truth((a, q)) for a, q in zip(action_id, quantity)]
         batch_results.loc[:, "selected_prob_reward"] = selected_prob_reward
-        max_prob_reward = [
-            max(
-                self._maximize_prob_reward((lambda q: self.probs_reward[a](q)), m.dimension)
-                if isinstance(m, QuantitativeModel)
-                else self.probs_reward[a]
-                for a, m in self.mab.actions.items()
-            )
-        ] * len(batch_results)
+
+        def get_max_prob_for_action(a: ActionId, m) -> float:
+            """Get maximum probability for an action, handling optimization failures."""
+            if isinstance(m, QuantitativeModel):
+                try:
+                    opt_q = maximize_by_quantity(lambda q: self.probs_reward[a](q), m.dimension)
+                    return self.probs_reward[a](opt_q)
+                except OptimizationFailedError as e:
+                    raise ValueError(f"Optimization failed for action {a}: {e}")
+            else:
+                return self.probs_reward[a]
+
+        max_prob_reward = [max(get_max_prob_for_action(a, m) for a, m in self.mab.actions.items())] * len(batch_results)
         batch_results.loc[:, "max_prob_reward"] = max_prob_reward
         return batch_results

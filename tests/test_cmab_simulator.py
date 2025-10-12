@@ -36,7 +36,7 @@ from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
 from pybandits.model import BayesianLogisticRegression
 from pybandits.quantitative_model import CmabZoomingModel
-from tests.utils import FakeApproximation
+from tests.utils import mock_update, sample_with_replacement, to_unified_action_id
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
@@ -237,6 +237,16 @@ def _get_context_and_group(n_features, n_updates, batch_size, num_groups) -> Tup
     return context, group
 
 
+def mock_predict(self, context, *args, **kwargs):
+    n_samples = len(context)
+    action_ids = [to_unified_action_id(action_id, model) for action_id, model in self.actions.items()]
+    return (
+        sample_with_replacement(action_ids, n_samples),
+        [{action_id: np.random.random() for action_id in action_ids} for _ in range(n_samples)],
+        [{action_id: np.random.randn() for action_id, model in self.actions.items()} for _ in range(n_samples)],
+    )
+
+
 @settings(deadline=None)
 @given(
     st.just(["a1", "a2"]),
@@ -254,21 +264,11 @@ def _get_context_and_group(n_features, n_updates, batch_size, num_groups) -> Tup
     st.sampled_from([None, 2]),
 )
 def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, models, n_features, num_groups):
-    monkeymodule.setattr(
-        pybandits.model,
-        "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
-    )
-    monkeymodule.setattr(
-        pybandits.model,
-        "sample",
-        FakeApproximation(n_features=n_features).sample,
-    )
-    monkeymodule.setattr(
-        CmabSimulator,
-        "_maximize_prob_reward",
-        lambda *args, **kwargs: np.random.random(),
-    )
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random())
+    monkeymodule.setattr(pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random())
+    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "predict", mock_predict)
+    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_update)
+
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     n_updates = CmabSimulator.model_fields["n_updates"].default
     batch_size = CmabSimulator.model_fields["batch_size"].default
@@ -332,22 +332,11 @@ def test_cmab_e2e_simulation_with_non_default_args(
     num_groups,
     monkeymodule,
 ):
-    monkeymodule.setattr(
-        pybandits.model,
-        "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
-    )
-    monkeymodule.setattr(
-        pybandits.model,
-        "sample",
-        FakeApproximation(n_features=n_features).sample,
-    )
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random())
+    monkeymodule.setattr(pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random())
+    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "predict", mock_predict)
+    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_update)
 
-    monkeymodule.setattr(
-        CmabSimulator,
-        "_maximize_prob_reward",
-        lambda *args, **kwargs: np.random.random(),
-    )
     context, group = _get_context_and_group(n_features, n_updates, batch_size, num_groups)
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:

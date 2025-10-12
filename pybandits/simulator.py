@@ -23,11 +23,10 @@
 import os.path
 import random
 from abc import ABC, abstractmethod
-from functools import cached_property, lru_cache
+from functools import cached_property
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import optuna
 import pandas as pd
 from bokeh.core.enums import Palette
 from bokeh.layouts import layout
@@ -335,51 +334,6 @@ class Simulator(PyBanditsBaseModel, ABC):
             raise ValueError(f"The batch results must contain the {self._base_columns} columns")
         self._results = pd.concat((self._results, batch_results), ignore_index=True)
         self.mab.update(actions=actions, rewards=rewards, quantities=quantities, **update_kwargs)
-
-    @staticmethod
-    @lru_cache
-    def _maximize_prob_reward(
-        prob_reward_func: Callable[[np.ndarray], Probability], input_dimension: PositiveInt, n_trials: PositiveInt = 100
-    ) -> Probability:
-        """
-        Maximize the probability of reward for the given function.
-
-        Parameters
-        ----------
-        prob_reward_func : Callable[[np.ndarray], Probability]
-            The probability of reward function.
-        input_dimension : PositiveInt
-            The input dimension.
-        n_trials : PositiveInt, defaults to 100
-            The number of otimization trials.
-
-        Returns
-        -------
-        Probability
-            The global maxima of prob_reward_func.
-        """
-
-        def objective(trial):
-            # Sample points from [0,1] for each dimension
-            points = [trial.suggest_float(f"x{i}", 0, 1) for i in range(input_dimension)]
-            return prob_reward_func(np.array(points))
-
-        # Configure TPE sampler with multivariate optimization
-        sampler = optuna.samplers.TPESampler(
-            multivariate=True,  # Enable multivariate optimization
-            group=True,  # Sample joint distribution of parameters
-            constant_liar=True,  # Better parallel optimization handling
-        )
-
-        # Create and configure the study
-        study = optuna.create_study(sampler=sampler, direction="maximize")
-
-        # Run optimization
-        study.optimize(objective, n_jobs=-1, n_trials=n_trials)  # Use all available cores
-        best_value = study.best_value
-        if (not isinstance(best_value, float)) or (best_value < 0) or (best_value > 1):
-            raise ValueError("The best value must be a float in the interval [0, 1].")
-        return best_value
 
     @abstractmethod
     def _draw_rewards(

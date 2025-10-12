@@ -34,13 +34,23 @@ from scipy.spatial.distance import jensenshannon
 from scipy.stats import beta
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, Float01, PyBanditsBaseModel, QuantitativeProbability
+from pybandits.base import (
+    BinaryReward,
+    Float01,
+    Probability,
+    ProbabilityWeight,
+    PyBanditsBaseModel,
+    QuantitativeProbability,
+    QuantitativeProbabilityWeight,
+    QuantitativeWeight,
+)
 from pybandits.base_model import BaseModelCC, BaseModelSO
 from pybandits.model import BayesianNeuralNetwork, Beta, Model
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
     NonNegativeFloat,
+    NonNegativeInt,
     PositiveInt,
     PrivateAttr,
     field_validator,
@@ -68,6 +78,13 @@ class QuantitativeModel(BaseModelSO, ABC):
     def sample_proba(self, **kwargs) -> List[QuantitativeProbability]:
         """
         Sample the model.
+
+        Returns
+        -------
+        List[QuantitativeProbability]
+            A list of callable functions, each taking a location (Tuple[Float01, ...])
+            and returning the probability at that location.
+            List length is equal to the number of samples.
         """
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -304,7 +321,7 @@ class Segment(PyBanditsBaseModel):
         bool
             Whether the value is contained in the segment.
         """
-        if (isinstance(value, np.ndarray) and value.shape != self.intervals_array.shape[1]) or (
+        if (isinstance(value, np.ndarray) and value.shape[0] != self.intervals_array.shape[0]) or (
             isinstance(value, float) and len(self.intervals_array) != 1
         ):
             raise ValueError("Tested value must have the same shape as the intervals.")
@@ -503,17 +520,36 @@ class ZoomingModel(QuantitativeModel, ABC):
 
     def sample_proba(self, **kwargs) -> List[QuantitativeProbability]:
         """
-        Sample an action value from each of the intervals.
-        """
-        result = []
-        for segment, model in self.segmented_actions.items():
-            sampled_proba = model.sample_proba(**kwargs)
-            random_point = np.random.random((len(sampled_proba), len(segment.intervals)))
-            scaled_quantity = segment.mins.T + random_point * (segment.maxs.T - segment.mins.T)
+        Sample probability functions from the model.
 
-            result.append(tuple((tuple(quantity), prob) for quantity, prob in zip(scaled_quantity, sampled_proba)))
-        result = list(zip(*result))
-        return result
+        Returns
+        -------
+        List[QuantitativeProbability]
+            A list of functions that evaluate probability at any given location.
+        """
+        # Get sampled probabilities from each segment model
+        segment_probabilities = {}
+        for segment, model in self.segmented_actions.items():
+            segment_probabilities[segment] = model.sample_proba(**kwargs)
+        return self._to_quantitative_probabilities(segment_probabilities)
+
+    @abstractmethod
+    def _to_quantitative_probabilities(
+        self, segment_probabilities: Dict[Segment, Union[List[Probability], List[ProbabilityWeight]]]
+    ) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
+        """
+        Convert the segment probabilities to quantitative probabilities.
+
+        Parameters
+        ----------
+        segment_probabilities : Dict[Segment, Union[List[Probability], List[ProbabilityWeight]]]
+            The probabilities of each segment.
+
+        Returns
+        -------
+        Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]
+            The quantitative probabilities.
+        """
 
     def _quantitative_update(self, quantities: List[Union[float, np.ndarray]], rewards: List[BinaryReward], **kwargs):
         """
@@ -799,6 +835,42 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
         """
         self._base_model = Beta()
 
+    def _to_quantitative_probabilities(
+        self, segment_probabilities: Dict[Segment, List[Probability]]
+    ) -> List[QuantitativeProbability]:
+        """
+        Convert the segment probabilities to quantitative probabilities.
+
+        Parameters
+        ----------
+        segment_probabilities : Dict[Segment, List[Probability]]
+            The probabilities of each segment.
+
+        Returns
+        -------
+        List[QuantitativeProbability]
+            The quantitative probabilities.
+        """
+        result = []
+        max_samples = max(len(probas) for probas in segment_probabilities.values())
+        for sample_idx in range(max_samples):
+
+            def create_probability_function(sample_idx: int) -> QuantitativeProbability:
+                def probability_function(quantity: np.ndarray) -> Probability:
+                    """
+                    Evaluate probability at the given quantity.
+                    """
+                    for segment in segment_probabilities.keys():
+                        if quantity in segment:
+                            segment_probas_for_segment = segment_probabilities[segment]
+                            return segment_probas_for_segment[sample_idx]
+                    return 0.0
+
+                return probability_function
+
+            result.append(create_probability_function(sample_idx))
+        return result
+
     @validate_call
     def _quantitative_update(
         self,
@@ -925,6 +997,49 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
         Initialize the base model.
         """
         self._base_model = BayesianNeuralNetwork.cold_start(**self.base_model_cold_start_kwargs)
+
+    def _to_quantitative_probabilities(
+        self, segment_probabilities: Dict[Segment, List[ProbabilityWeight]]
+    ) -> List[QuantitativeProbabilityWeight]:
+        """
+        Convert the segment probabilities and weights to quantitative probabilities and weights.
+
+        Parameters
+        ----------
+        segment_probabilities : Dict[Segment, List[ProbabilityWeight]]
+            The probabilities and weights of each segment.
+
+        Returns
+        -------
+        List[QuantitativeProbabilityWeight]
+            The quantitative probabilities and weights.
+        """
+        result = []
+        max_samples = max(len(probas) for probas in segment_probabilities.values())
+        n_outputs = len(next(iter(segment_probabilities.values()))[0])
+        for sample_idx in range(max_samples):
+
+            def create_probability_or_weight_function(
+                sample_idx: NonNegativeInt, output_index: NonNegativeInt
+            ) -> Union[QuantitativeProbability, QuantitativeWeight]:
+                def output_function(quantity: np.ndarray) -> Union[Probability, float]:  # Probability or weight
+                    """
+                    Evaluate output at the given quantity.
+                    """
+                    for segment in segment_probabilities.keys():
+                        if quantity in segment:
+                            segment_probas_for_segment = segment_probabilities[segment]
+                            return segment_probas_for_segment[sample_idx][output_index]  # Probability or weight
+                    return 0.0
+
+                return output_function
+
+            result.append(
+                tuple(
+                    create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)
+                )
+            )
+        return result
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _quantitative_update(
