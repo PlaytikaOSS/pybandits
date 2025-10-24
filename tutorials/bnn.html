@@ -121,7 +121,7 @@
 <h3>Evaluation:<a class="headerlink" href="#Evaluation:" title="Link to this heading"></a></h3>
 <p>Evaluate the performance of the models using metrics such as: Accuracy: To measure the proportion of correct predictions. ROC-AUC: To assess the model’s ability to distinguish between classes. Visualization:</p>
 <p>Visualize the results, including decision boundaries and uncertainty estimates, to better understand the behavior of Bayesian models.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -138,15 +138,6 @@
 <span class="o">%</span><span class="k">autoreload</span> 2
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pydantic/_migration.py:283: UserWarning: `pydantic.generics:GenericModel` has been moved to `pydantic.BaseModel`.
-  warnings.warn(f&#39;`{import_path}` has been moved to `{new_location}`.&#39;)
-</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -204,7 +195,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7efc31448790&gt;
+&lt;matplotlib.legend.Legend at 0x7f06f5f60310&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -300,7 +291,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7efc2cb0bac0&gt;
+&lt;matplotlib.legend.Legend at 0x7f06f27bb9d0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -330,8 +321,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.258
-AUC: 0.2199875198003168
+Accuracy: 0.858
+AUC: 0.9469751516024256
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -411,6 +402,7 @@ AUC: 0.2199875198003168
 </div>
 <p>In the following section we will demonstrate how a bayesian neural network (BNN) can capture complex patterns and relationships in data through multiple layers of abstraction, leading to better performance on tasks with high-dimensional features. In contrast, bayesian logistic regression is limited to linear relationships and may not effectively model intricate dependencies within the data.</p>
 <p>In order to define the model structure, we set the hidden_dim_list=[5, 5], which means that the model structure will have a 2 layers network - with first and second layers having five neurons.</p>
+<p>The fit is performed using the Variational Inference algorithm with 100K iterations, and with minibatches of size 256.</p>
 <p>The neurons’ Student-T distribution are initialized with mu = 0, sigma = 1 and nu = 5</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
@@ -422,7 +414,7 @@ AUC: 0.2199875198003168
     <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">100000</span><span class="p">}},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -441,6 +433,8 @@ AUC: 0.2199875198003168
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
+  warnings.warn(
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 </pre></div></div>
@@ -508,8 +502,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.97
-AUC: 0.9938719019504312
+Accuracy: 0.918
+AUC: 0.9785916574665194
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>

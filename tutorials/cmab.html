@@ -100,7 +100,7 @@
 <p>For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on PyMC.</p>
 <img alt="title" src="../_images/cmab.png" />
 <p>The following notebook contains an example of usage of the class Cmab, which implements the algorithm above.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -110,15 +110,6 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pydantic/_migration.py:283: UserWarning: `pydantic.generics:GenericModel` has been moved to `pydantic.BaseModel`.
-  warnings.warn(f&#39;`{import_path}` has been moved to `{new_location}`.&#39;)
-</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -147,16 +138,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.61970578 -0.55878359 -0.37253378 -0.98865928 -0.63567949]
- [ 0.25033019 -0.74998961  0.44114183  0.65103107  0.42711191]
- [ 0.98467286 -0.83205712 -0.81067689  0.24778536 -0.06913485]
- [ 0.14651959 -0.63253858 -0.86042865 -0.3056313  -0.83283427]
- [ 0.94850655  0.64040186  0.66022441  0.16906886 -0.13418886]
- [ 0.79511079  0.17064671  0.81225684  0.31411974  0.69800277]
- [ 0.5542941   0.21259852  0.15735347 -0.25447328  0.2871204 ]
- [ 0.04756799  0.30897066  0.04291899  0.95408222 -0.97939223]
- [ 0.09924045 -0.10943301 -0.50663448 -0.84408342  0.65315606]
- [ 0.2043345   0.32746909  0.50263065  0.67370545 -0.45039193]]
+[[-0.93409528 -0.9403459   0.47852706  0.5525211  -0.03963126]
+ [ 0.93424435 -0.83547362 -0.84909429  0.46882699 -0.56749979]
+ [-0.19622928  0.42674069 -0.8832049  -0.08172653  0.71094778]
+ [ 0.22986018  0.79348004  0.07337687  0.23537143 -0.60287505]
+ [ 0.46668681 -0.62990486  0.92451383  0.40213151  0.76726894]
+ [ 0.36655257 -0.74332775  0.18602181 -0.64460559 -0.29554424]
+ [-0.35746245 -0.08310042 -0.64324881  0.76290388 -0.20545704]
+ [ 0.55861908  0.22298469  0.94481992  0.40167037 -0.6040605 ]
+ [ 0.33477133  0.71551561 -0.42992295 -0.9771798  -0.52086707]
+ [-0.77874105 -0.06849642 -0.59989875  0.84877574  0.7242384 ]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -202,7 +193,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -221,7 +212,7 @@ Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 1, 0, 1, 0, 1, 1, 0, 0, 1]
+Simulated rewards: [1, 0, 1, 1, 0, 1, 0, 0, 1, 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
