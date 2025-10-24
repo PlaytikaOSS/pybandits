@@ -23,12 +23,13 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from random import betavariate
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
+import pymc
 from numpy import sqrt
 from numpy.typing import ArrayLike
-from pymc import Bernoulli, Data, Deterministic, fit, math, sample
+from pymc import Bernoulli, Data, Deterministic, Minibatch, fit, math, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
 from scipy.stats import t
@@ -421,6 +422,17 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _prob_var_name: ClassVar[str] = "prob"
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
+    _vi_update_params: ClassVar[list] = ["optimizer_type", "optimizer_kwargs", "batch_size"]
+    _supported_optimizers: ClassVar[list] = [
+        "sgd",
+        "momentum",
+        "nesterov_momentum",
+        "adagrad",
+        "rmsprop",
+        "adadelta",
+        "adam",
+        "adamax",
+    ]
 
     update_method: str = "VI"
     update_kwargs: Optional[dict] = None
@@ -464,7 +476,21 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 }
                 update_kwargs["fit"] = {**cls._default_variational_inference_fit_kwargs, **update_kwargs.get("fit", {})}
 
+                optimizer_type = update_kwargs.get("optimizer_type", None)
+
+                if optimizer_type is not None:
+                    if optimizer_type not in cls._supported_optimizers:
+                        raise ValueError(
+                            f"Invalid optimizer type: {optimizer_type}. Supported optimizers are: {cls._supported_optimizers}"
+                        )
+
             elif update_method == "MCMC":
+                for param in cls._vi_update_params:
+                    if param in update_kwargs:
+                        raise ValueError(
+                            f"Invalid update MCMC parameter: {param}. {cls._vi_update_params} are VI parameters."
+                        )
+
                 update_kwargs["trace"] = {**cls._default_mcmc_trace_kwargs, **update_kwargs.get("trace", {})}
             else:
                 raise ValueError("Invalid update method.")
@@ -489,8 +515,20 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     **self._default_variational_inference_fit_kwargs,
                     **self.update_kwargs.get("fit", {}),
                 }
+                optimizer_type = self.update_kwargs.get("optimizer_type", None)
+                if optimizer_type is not None:
+                    if optimizer_type not in self._supported_optimizers:
+                        raise ValueError(
+                            f"Invalid optimizer type: {optimizer_type}. Supported optimizers are: {self._supported_optimizers}"
+                        )
 
             elif self.update_method == "MCMC":
+                for param in self._vi_update_params:
+                    if param in self.update_kwargs:
+                        raise ValueError(
+                            f"Invalid update MCMC parameter: {param}. {self._vi_update_params} are VI parameters."
+                        )
+
                 self.update_kwargs["trace"] = {**self._default_mcmc_trace_kwargs, **self.update_kwargs.get("trace", {})}
             else:
                 raise ValueError("Invalid update method.")
@@ -502,6 +540,18 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @property
     def approx_history(self) -> Optional[np.ndarray]:
         return self._approx_history
+
+    @property
+    def optimizer(self) -> Callable:
+        optimizer_type = self.update_kwargs.get("optimizer_type", None)
+        if optimizer_type is not None:
+            optimizer = getattr(pymc, optimizer_type)
+            optimizer_kwargs = self.update_kwargs.get("optimizer_kwargs", {})
+            _optimizer = optimizer(**optimizer_kwargs)
+        else:
+            _optimizer = None
+
+        return _optimizer
 
     @classmethod
     def _stable_sigmoid(cls, x):
@@ -594,7 +644,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         return self.model_params.bnn_layer_params[0].weight.shape[0]
 
-    def create_update_model(self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray]) -> PymcModel:
+    def create_update_model(
+        self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], batch_size: Optional[PositiveInt] = None
+    ) -> PymcModel:
         """
         Create a PyMC model for Bayesian Neural Network.
 
@@ -624,8 +676,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         with PymcModel() as _model:
             # Define data variables
-            bnn_output = Data("bnn_output", y)
-            bnn_input = Data("bnn_input", x)
+            if batch_size is None:
+                bnn_output = Data("bnn_output", y)
+                bnn_input = Data("bnn_input", x)
+            else:
+                bnn_input, bnn_output = Minibatch(x, np.array(y).astype("int32"), batch_size=batch_size)
 
             next_layer_input = bnn_input
 
@@ -728,14 +783,20 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if len(context) != len(rewards):
             raise AttributeError("Shape mismatch: context and rewards must have the same length.")
 
+        batch_size = self.update_kwargs.get("batch_size", None)
         _context = np.atleast_2d(context)
-        _model = self.create_update_model(x=_context, y=rewards)
+        _model = self.create_update_model(x=_context, y=rewards, batch_size=batch_size)
         with _model:
             # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
                 # variational inference
                 update_kwargs = self.update_kwargs.copy()
-                approx = fit(**update_kwargs["fit"])
+
+                if self.optimizer is not None:
+                    approx = fit(obj_optimizer=self.optimizer, **update_kwargs["fit"])
+                else:
+                    approx = fit(**update_kwargs["fit"])
+
                 trace = approx.sample(**update_kwargs["trace"])
                 self._approx_history = approx.hist
             elif self.update_method == "MCMC":

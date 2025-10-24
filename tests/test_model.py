@@ -22,6 +22,7 @@
 
 import numpy as np
 import pandas as pd
+import pymc
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -412,6 +413,95 @@ def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
             n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
         )
         bnn.update(context=context, rewards=rewards[1:])
+
+
+@settings(deadline=None, max_examples=100)
+@given(
+    n_features=st.just(10),
+    hidden_dim_list=st.just([1]),
+    n_samples=st.just(1000),
+    update_method=st.sampled_from(("VI", "MCMC")),
+    batch_size=st.one_of(st.none(), st.integers(min_value=1, max_value=256)),
+    optimizer_type=st.one_of(st.none(), st.just("adam"), st.just("dummy_optimizer")),
+    lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
+    beta1=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
+    beta2=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
+    epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
+)
+def test_bnn_vi_update_parameters(
+    n_features, hidden_dim_list, n_samples, update_method, batch_size, optimizer_type, lr, beta1, beta2, epsilon
+):
+    def create_update_kwargs(batch_size, optimizer_type, lr, beta1, beta2, epsilon):
+        update_kwargs = {}
+        if batch_size is not None:
+            update_kwargs["batch_size"] = batch_size
+        if optimizer_type is not None:
+            update_kwargs["optimizer_type"] = optimizer_type
+            update_kwargs["optimizer_kwargs"] = {}
+            if lr is not None:
+                update_kwargs["optimizer_kwargs"]["learning_rate"] = lr
+            if beta1 is not None:
+                update_kwargs["optimizer_kwargs"]["beta1"] = beta1
+            if beta2 is not None:
+                update_kwargs["optimizer_kwargs"]["beta2"] = beta2
+            if epsilon is not None:
+                update_kwargs["optimizer_kwargs"]["epsilon"] = epsilon
+            if len(update_kwargs["optimizer_kwargs"]) == 0:
+                update_kwargs.pop("optimizer_kwargs")
+
+        return update_kwargs
+
+    update_kwargs = create_update_kwargs(batch_size, optimizer_type, lr, beta1, beta2, epsilon)
+    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    if update_method == "MCMC":
+        if (
+            ("batch_size" in update_kwargs)
+            or ("optimizer_kwargs" in update_kwargs)
+            or ("optimizer_type" in update_kwargs)
+        ):
+            with pytest.raises(ValueError):
+                bnn = BayesianNeuralNetwork.cold_start(
+                    n_features=n_features,
+                    hidden_dim_list=hidden_dim_list,
+                    update_method=update_method,
+                    update_kwargs=update_kwargs,
+                )
+
+    else:
+        if optimizer_type == "dummy_optimizer":
+            with pytest.raises(ValueError):
+                bnn = BayesianNeuralNetwork.cold_start(
+                    n_features=n_features,
+                    hidden_dim_list=hidden_dim_list,
+                    update_method=update_method,
+                    update_kwargs=update_kwargs,
+                )
+        else:
+            bnn = BayesianNeuralNetwork.cold_start(
+                n_features=n_features,
+                hidden_dim_list=hidden_dim_list,
+                update_method=update_method,
+                update_kwargs=update_kwargs,
+            )
+
+            pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=batch_size)
+
+            if batch_size is None:
+                assert pymc_model["out"].eval().shape[0] == n_samples
+            else:
+                assert pymc_model["out"].eval().shape[0] == batch_size
+
+            if optimizer_type is not None:
+                optimizer = getattr(pymc, optimizer_type)
+                optimizer_kwargs = update_kwargs.get("optimizer_kwargs", {})
+                optimizer = optimizer(**optimizer_kwargs)
+                assert (
+                    (optimizer.func == bnn.optimizer.func)
+                    and (optimizer.args == bnn.optimizer.args)
+                    and (optimizer.keywords == bnn.optimizer.keywords)
+                )
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
