@@ -19,9 +19,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+import random
 from tempfile import TemporaryDirectory
-from typing import Dict, List, Optional, Union, get_args, get_type_hints
+from typing import List, Optional, Union, get_args, get_type_hints
 
 import numpy as np
 import pandas as pd
@@ -31,7 +31,6 @@ from hypothesis import strategies as st
 from matplotlib.pyplot import close
 from pydantic import PositiveInt
 from pytest_mock import MockerFixture
-from sklearn.base import TransformerMixin
 from sklearn.preprocessing import MinMaxScaler
 
 import pybandits
@@ -224,8 +223,6 @@ def generate_random_bool() -> bool:
 @given(
     split_prop=st.just(0.5),
     n_trials=st.just(2),
-    fast_fit=st.booleans(),
-    scaler=st.sampled_from([None, MinMaxScaler()]),
     propensity_score_model_type=st.sampled_from(
         get_args(get_type_hints(OfflinePolicyEvaluator)["propensity_score_model_type"])
     ),
@@ -249,8 +246,6 @@ def test_running_configuration(
     logged_data: MockerFixture,
     split_prop: float,
     n_trials: PositiveInt,
-    fast_fit: bool,
-    scaler: Optional[Union[TransformerMixin, Dict[str, TransformerMixin]]],
     propensity_score_model_type: str,
     expected_reward_model_type: str,
     importance_weights_model_type: str,
@@ -264,13 +259,15 @@ def test_running_configuration(
     n_mc_experiments: int,
     monkeymodule,
 ):
-    ope_estimators = np.random.choice(get_non_abstract_classes(offline_policy_estimator) + [None])
+    ope_estimators = random.choice(get_non_abstract_classes(offline_policy_estimator) + [None])
+    scaler = random.choice([None, MinMaxScaler()])
     if ope_estimators is not None:
-        ope_estimators = [ope_estimators]
+        ope_estimators = [ope_estimators()]
     shuffle = generate_random_bool()
     update = generate_random_bool()
     visualize = generate_random_bool()
     verbose = generate_random_bool()
+    fast_fit = generate_random_bool()
 
     true_reward_feature = (
         f"true_{reward_feature}" if isinstance(reward_feature, str) else [f"true_{r}" for r in reward_feature]

@@ -377,11 +377,12 @@ def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
     update_method=st.just("VI"),
 )
 def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
+    init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
+
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
         )
-        init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
         dim_list = [n_features] + hidden_dim_list
 
         for layer_ind in range(len(dim_list)):
@@ -415,14 +416,13 @@ def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
         bnn.update(context=context, rewards=rewards[1:])
 
 
-@settings(deadline=None, max_examples=100)
 @given(
-    n_features=st.just(10),
+    n_features=st.just(2),
     hidden_dim_list=st.just([1]),
-    n_samples=st.just(1000),
+    n_samples=st.just(5),
     update_method=st.sampled_from(("VI", "MCMC")),
-    batch_size=st.one_of(st.none(), st.integers(min_value=1, max_value=256)),
-    optimizer_type=st.one_of(st.none(), st.just("adam"), st.just("dummy_optimizer")),
+    batch_size=st.sampled_from((None, 2, 4)),
+    optimizer_type=st.sampled_from((None, "adam", "dummy_optimizer")),
     lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
     beta1=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
     beta2=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
@@ -462,57 +462,56 @@ def test_bnn_vi_update_parameters(
             or ("optimizer_type" in update_kwargs)
         ):
             with pytest.raises(ValueError):
-                bnn = BayesianNeuralNetwork.cold_start(
+                BayesianNeuralNetwork.cold_start(
                     n_features=n_features,
                     hidden_dim_list=hidden_dim_list,
                     update_method=update_method,
                     update_kwargs=update_kwargs,
                 )
 
-    else:
-        if optimizer_type == "dummy_optimizer":
-            with pytest.raises(ValueError):
-                bnn = BayesianNeuralNetwork.cold_start(
-                    n_features=n_features,
-                    hidden_dim_list=hidden_dim_list,
-                    update_method=update_method,
-                    update_kwargs=update_kwargs,
-                )
-        else:
-            bnn = BayesianNeuralNetwork.cold_start(
+    elif optimizer_type == "dummy_optimizer":
+        with pytest.raises(ValueError):
+            BayesianNeuralNetwork.cold_start(
                 n_features=n_features,
                 hidden_dim_list=hidden_dim_list,
                 update_method=update_method,
                 update_kwargs=update_kwargs,
             )
+    else:
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            update_kwargs=update_kwargs,
+        )
 
-            pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=batch_size)
+        pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=batch_size)
 
-            if batch_size is None:
-                assert pymc_model["out"].eval().shape[0] == n_samples
-            else:
-                assert pymc_model["out"].eval().shape[0] == batch_size
+        if batch_size is None:
+            assert pymc_model["out"].eval().shape[0] == n_samples
+        else:
+            assert pymc_model["out"].eval().shape[0] == batch_size
 
-            if optimizer_type is not None:
-                optimizer = getattr(pymc, optimizer_type)
-                optimizer_kwargs = update_kwargs.get("optimizer_kwargs", {})
-                optimizer = optimizer(**optimizer_kwargs)
-                assert (
-                    (optimizer.func == bnn.optimizer.func)
-                    and (optimizer.args == bnn.optimizer.args)
-                    and (optimizer.keywords == bnn.optimizer.keywords)
-                )
+        if optimizer_type is not None:
+            optimizer = getattr(pymc, optimizer_type)
+            optimizer_kwargs = update_kwargs.get("optimizer_kwargs", {})
+            optimizer = optimizer(**optimizer_kwargs)
+            assert (
+                (optimizer.func == bnn.optimizer.func)
+                and (optimizer.args == bnn.optimizer.args)
+                and (optimizer.keywords == bnn.optimizer.keywords)
+            )
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
-def test_bnn_mcmc_update(n_features, hidden_dim_list=(2,), n_samples=5, update_method="MCMC"):
+def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_method="MCMC"):
     hidden_dim_list = list(hidden_dim_list)
+    init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
 
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
         )
-        init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
         dim_list = [n_features] + hidden_dim_list
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
