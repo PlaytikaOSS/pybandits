@@ -274,7 +274,7 @@ class StudentTArray(PyBanditsBaseModel):
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
     @staticmethod
-    def convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> bool:
+    def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> bool:
         if len(input_list) == 0:
             is_valid_input = False
 
@@ -292,19 +292,16 @@ class StudentTArray(PyBanditsBaseModel):
         else:
             raise ValueError("Input list must be a 1D or 2D list with the same length for all inner lists.")
 
-    @model_validator(mode="after")
+    @model_validator(mode="before")
     @classmethod
     def validate_input_shapes(cls, values):
-        if pydantic_version == PYDANTIC_VERSION_1:
-            mu_arr = cls.convert_list_to_array(values.get("mu"))
-            sigma_arr = cls.convert_list_to_array(values.get("sigma"))
-            nu_arr = cls.convert_list_to_array(values.get("nu"))
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            mu_arr = cls.convert_list_to_array(values.mu)
-            sigma_arr = cls.convert_list_to_array(values.sigma)
-            nu_arr = cls.convert_list_to_array(values.nu)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        mu_input = values.get("mu")
+        sigma_input = values.get("sigma")
+        nu_input = values.get("nu")
+
+        mu_arr = cls.maybe_convert_list_to_array(mu_input)
+        sigma_arr = cls.maybe_convert_list_to_array(sigma_input)
+        nu_arr = cls.maybe_convert_list_to_array(nu_input)
 
         if (mu_arr.shape != sigma_arr.shape) or (mu_arr.shape != nu_arr.shape):
             raise ValueError(
@@ -315,6 +312,9 @@ class StudentTArray(PyBanditsBaseModel):
         if any(dim_len == 0 for dim_len in mu_arr.shape):
             raise ValueError("mu, sigma, and nu must have at least one element in every dimension.")
 
+        for key, value in zip(["mu", "sigma", "nu"], [mu_input, sigma_input, nu_input]):
+            if isinstance(value, np.ndarray):
+                values[key] = value.tolist()
         return values
 
     @classmethod
@@ -331,9 +331,9 @@ class StudentTArray(PyBanditsBaseModel):
         if any(dim_len == 0 for dim_len in shape):
             raise ValueError("shape of mu, sigma, and nu must have at least one element in every dimension.")
 
-        mu = np.full(shape, mu).tolist()
-        sigma = np.full(shape, sigma).tolist()
-        nu = np.full(shape, nu).tolist()
+        mu = np.full(shape, mu)
+        sigma = np.full(shape, sigma)
+        nu = np.full(shape, nu)
         return cls(mu=mu, sigma=sigma, nu=nu)
 
     @property
@@ -449,9 +449,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     )
 
     _default_variational_inference_fit_kwargs: ClassVar[dict] = dict(method="advi")
-    _default_variational_inference_trace_kwargs: ClassVar[dict] = dict(
-        draws=1000, progressbar=False, return_inferencedata=False
-    )
 
     _approx_history: np.ndarray = PrivateAttr(None)
 
@@ -470,12 +467,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 update_kwargs = dict()
 
             if update_method == "VI":
-                update_kwargs["trace"] = {
-                    **cls._default_variational_inference_trace_kwargs,
-                    **update_kwargs.get("trace", {}),
-                }
                 update_kwargs["fit"] = {**cls._default_variational_inference_fit_kwargs, **update_kwargs.get("fit", {})}
-
                 optimizer_type = update_kwargs.get("optimizer_type", None)
 
                 if optimizer_type is not None:
@@ -507,10 +499,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 self.update_kwargs = dict()
 
             if self.update_method == "VI":
-                self.update_kwargs["trace"] = {
-                    **self._default_variational_inference_trace_kwargs,
-                    **self.update_kwargs.get("trace", {}),
-                }
                 self.update_kwargs["fit"] = {
                     **self._default_variational_inference_fit_kwargs,
                     **self.update_kwargs.get("fit", {}),
@@ -673,14 +661,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         3. Apply sigmoid activation at the output
         4. Use Bernoulli likelihood for binary classification
         """
-
+        y = np.array(y, dtype=np.int32)
         with PymcModel() as _model:
             # Define data variables
             if batch_size is None:
                 bnn_output = Data("bnn_output", y)
                 bnn_input = Data("bnn_input", x)
             else:
-                bnn_input, bnn_output = Minibatch(x, np.array(y).astype("int32"), batch_size=batch_size)
+                bnn_input, bnn_output = Minibatch(x, y, batch_size=batch_size)
 
             next_layer_input = bnn_input
 
@@ -750,7 +738,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             )
 
             # Linear transformation
-            linear_transform = np.sum(next_layer_input[..., None] * w, axis=1) + b
+            linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
 
             # Apply activation function (tanh for hidden layers, sigmoid for output)
             if layer_ind < len(self.model_params.bnn_layer_params) - 1:
@@ -797,28 +785,52 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 else:
                     approx = fit(**update_kwargs["fit"])
 
-                trace = approx.sample(**update_kwargs["trace"])
                 self._approx_history = approx.hist
+                approx_mean_eval = approx.mean.eval()
+                approx_std_eval = approx.std.eval()
+                approx_posterior_mapping = {
+                    param: (approx_mean_eval[slice_], approx_std_eval[slice_])
+                    for (param, (_, slice_, _, _)) in approx.ordering.items()
+                }
+                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+                    weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
+                    w_shape = layer_params.weight.shape
+                    b_shape = layer_params.bias.shape
+                    w_mu = approx_posterior_mapping[weight_layer_params_name][0].reshape(w_shape)
+                    w_sigma = approx_posterior_mapping[weight_layer_params_name][1].reshape(w_shape)
+                    b_mu = approx_posterior_mapping[bias_layer_params_name][0].reshape(b_shape)
+                    b_sigma = approx_posterior_mapping[bias_layer_params_name][1].reshape(b_shape)
+                    layer_params.weight = StudentTArray(
+                        mu=w_mu, sigma=w_sigma, nu=self.model_params.bnn_layer_params[layer_ind].weight.nu
+                    )
+                    layer_params.bias = StudentTArray(
+                        mu=b_mu, sigma=b_sigma, nu=self.model_params.bnn_layer_params[layer_ind].bias.nu
+                    )
+                    self.model_params.bnn_layer_params[layer_ind] = layer_params
             elif self.update_method == "MCMC":
                 # MCMC
                 trace = sample(**self.update_kwargs["trace"])
+
+                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+                    weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
+
+                    w_mu = np.mean(trace[weight_layer_params_name], axis=0)
+                    w_sigma = np.std(trace[weight_layer_params_name], axis=0)
+                    layer_params.weight = StudentTArray(
+                        mu=w_mu.tolist(),
+                        sigma=w_sigma.tolist(),
+                        nu=self.model_params.bnn_layer_params[layer_ind].weight.nu,
+                    )
+
+                    b_mu = np.mean(trace[bias_layer_params_name], axis=0)
+                    b_sigma = np.std(trace[bias_layer_params_name], axis=0)
+                    layer_params.bias = StudentTArray(
+                        mu=b_mu.tolist(),
+                        sigma=b_sigma.tolist(),
+                        nu=self.model_params.bnn_layer_params[layer_ind].bias.nu,
+                    )
             else:
                 raise ValueError("Invalid update method.")
-
-        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
-
-            w_mu = np.mean(trace[weight_layer_params_name], axis=0)
-            w_sigma = np.std(trace[weight_layer_params_name], axis=0)
-            layer_params.weight = StudentTArray(
-                mu=w_mu.tolist(), sigma=w_sigma.tolist(), nu=self.model_params.bnn_layer_params[layer_ind].weight.nu
-            )
-
-            b_mu = np.mean(trace[bias_layer_params_name], axis=0)
-            b_sigma = np.std(trace[bias_layer_params_name], axis=0)
-            layer_params.bias = StudentTArray(
-                mu=b_mu.tolist(), sigma=b_sigma.tolist(), nu=self.model_params.bnn_layer_params[layer_ind].bias.nu
-            )
 
     @classmethod
     def cold_start(
