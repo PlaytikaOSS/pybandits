@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Introduction &mdash; PyBandits 1.0 documentation</title>
+  <title>Offline Policy Evaluation &mdash; PyBandits 1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -60,12 +60,10 @@
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#Objectives">Objectives</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#Evaluation:">Evaluation:</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#Generate-data">Generate data</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#Generate-Model">Generate Model</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#OPE">OPE</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Offline Policy Evaluation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Introduction">Introduction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Objectives">Objectives</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Evaluation:">Evaluation:</a></li>
 </ul>
 </li>
 </ul>
@@ -93,7 +91,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../tutorials.html">Tutorials</a></li>
-      <li class="breadcrumb-item active">Introduction</li>
+      <li class="breadcrumb-item active">Offline Policy Evaluation</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/tutorials/ope.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -103,14 +101,16 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="Introduction">
-<h1>Introduction<a class="headerlink" href="#Introduction" title="Link to this heading"></a></h1>
+  <section id="Offline-Policy-Evaluation">
+<h1>Offline Policy Evaluation<a class="headerlink" href="#Offline-Policy-Evaluation" title="Link to this heading"></a></h1>
+<section id="Introduction">
+<h2>Introduction<a class="headerlink" href="#Introduction" title="Link to this heading"></a></h2>
 <p>This notebook demonstrates the use of offline policy evaluation for MABs.</p>
 </section>
 <section id="Objectives">
-<h1>Objectives<a class="headerlink" href="#Objectives" title="Link to this heading"></a></h1>
+<h2>Objectives<a class="headerlink" href="#Objectives" title="Link to this heading"></a></h2>
 <section id="Evaluation:">
-<h2>Evaluation:<a class="headerlink" href="#Evaluation:" title="Link to this heading"></a></h2>
+<h3>Evaluation:<a class="headerlink" href="#Evaluation:" title="Link to this heading"></a></h3>
 <p>Evaluate the performance of a MAB using multiple offline policy estimators.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
@@ -138,7 +138,7 @@
 </pre></div></div>
 </div>
 <section id="Generate-data">
-<h3>Generate data<a class="headerlink" href="#Generate-data" title="Link to this heading"></a></h3>
+<h4>Generate data<a class="headerlink" href="#Generate-data" title="Link to this heading"></a></h4>
 <p>We first generate a binarly labeled data set, with a two dimensional feature space, and is not lineraly seprabale. We then split the data set to a training data setm and a test data set.</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -189,7 +189,7 @@
 </div>
 </section>
 <section id="Generate-Model">
-<h3>Generate Model<a class="headerlink" href="#Generate-Model" title="Link to this heading"></a></h3>
+<h4>Generate Model<a class="headerlink" href="#Generate-Model" title="Link to this heading"></a></h4>
 <p>Using the cold_start method of CmabBernoulliCC, we can create a model to be used for offline policy evaluation.</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
@@ -203,7 +203,7 @@
 </div>
 </section>
 <section id="OPE">
-<h3>OPE<a class="headerlink" href="#OPE" title="Link to this heading"></a></h3>
+<h4>OPE<a class="headerlink" href="#OPE" title="Link to this heading"></a></h4>
 <p>Given the model and the OPE data from the logging policy, we can either evaluate the model using the logging policy, or update it with the logging policy data prior to the evaluation.</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
@@ -245,9 +245,9 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-100%|██████████| 2/2 [00:00&lt;00:00, 274.25it/s]
-2025-10-24 09:11:18.670 | INFO     | pybandits.offline_policy_evaluator:_estimate_propensity_score:752 - Data batch-empirical estimation of propensity score.
-2025-10-24 09:11:18.682 | INFO     | pybandits.offline_policy_evaluator:_estimate_expected_reward:802 - Data prediction of expected reward based on gbm model.
+100%|██████████| 2/2 [00:00&lt;00:00, 268.97it/s]
+2025-11-04 08:26:15.912 | INFO     | pybandits.offline_policy_evaluator:_estimate_propensity_score:752 - Data batch-empirical estimation of propensity score.
+2025-11-04 08:26:15.920 | INFO     | pybandits.offline_policy_evaluator:_estimate_expected_reward:802 - Data prediction of expected reward based on gbm model.
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
@@ -263,10 +263,10 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2025-10-24 09:11:18.992 | INFO     | pybandits.offline_policy_evaluator:estimate_policy:898 - Data prediction of expected policy based on Monte Carlo experiments.
-1000it [00:15, 63.72it/s]
-2025-10-24 09:11:34.907 | INFO     | pybandits.offline_policy_evaluator:_estimate_importance_weight:841 - Data prediction of importance weights based on logreg model.
-2025-10-24 09:11:34.983 | INFO     | pybandits.offline_policy_evaluator:evaluate:971 - Offline Policy Evaluation for reward_0.
+2025-11-04 08:26:16.234 | INFO     | pybandits.offline_policy_evaluator:estimate_policy:898 - Data prediction of expected policy based on Monte Carlo experiments.
+1000it [00:15, 62.92it/s]
+2025-11-04 08:26:32.357 | INFO     | pybandits.offline_policy_evaluator:_estimate_importance_weight:841 - Data prediction of importance weights based on logreg model.
+2025-11-04 08:26:32.433 | INFO     | pybandits.offline_policy_evaluator:evaluate:971 - Offline Policy Evaluation for reward_0.
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/scipy/stats/_resampling.py:147: RuntimeWarning: invalid value encountered in scalar divide
   a_hat = 1/6 * sum(nums) / sum(dens)**(3/2)
 /home/runner/work/pybandits/pybandits/pybandits/offline_policy_estimator.py:138: DegenerateDataWarning: The BCa confidence interval cannot be calculated. This problem is known to occur when the distribution is degenerate or the statistic is np.min.
@@ -287,7 +287,7 @@
 </style>
 <div>
     <a href="https://bokeh.org" target="_blank" class="bk-notebook-logo"></a>
-    <span id="e5dab4a2-8602-4dcd-b069-bbff60964f2d">Loading BokehJS ...</span>
+    <span id="f8cd54c8-0a7d-412b-840f-321e567163e7">Loading BokehJS ...</span>
 </div></div>
 </div>
 <div class="nboutput docutils container">
@@ -460,7 +460,7 @@ const JS_MIME_TYPE = 'application/javascript';
      "</div>"}};
 
   function display_loaded(error = null) {
-    const el = document.getElementById("e5dab4a2-8602-4dcd-b069-bbff60964f2d");
+    const el = document.getElementById("f8cd54c8-0a7d-412b-840f-321e567163e7");
     if (el != null) {
       const html = (() => {
         if (typeof root.Bokeh === "undefined") {
@@ -594,7 +594,7 @@ function(Bokeh) {
       console.log("Bokeh: BokehJS failed to load within specified timeout.");
       root._bokeh_failed_load = true;
     } else if (force !== true) {
-      const cell = $(document.getElementById("e5dab4a2-8602-4dcd-b069-bbff60964f2d")).parents('.cell').data().cell;
+      const cell = $(document.getElementById("f8cd54c8-0a7d-412b-840f-321e567163e7")).parents('.cell').data().cell;
       cell.output_area.append_execute_result(NB_LOAD_WARNING)
     }
   }
@@ -615,7 +615,7 @@ function(Bokeh) {
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area rendered_html docutils container">
-<div id="f650d879-d926-4800-8df9-24871bc4b06d" data-root-id="p1077" style="display: contents;"></div></div>
+<div id="b35c9168-6622-4cc4-861d-9b9127a6674b" data-root-id="p1077" style="display: contents;"></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -626,8 +626,8 @@ function(Bokeh) {
 var element = document.currentScript.previousSibling.previousSibling;
 (function(root) {
   function embed_document(root) {
-  const docs_json = {"6e79a2cf-941c-4934-8977-13868a34b3c1":{"version":"3.8.0","title":"Bokeh Application","config":{"type":"object","name":"DocumentConfig","id":"p1078","attributes":{"notifications":{"type":"object","name":"Notifications","id":"p1079"}}},"roots":[{"type":"object","name":"Tabs","id":"p1077","attributes":{"stylesheets":[{"type":"object","name":"InlineStyleSheet","id":"p1076","attributes":{"css":"\n                 :host(.bk-Tabs) .bk-header {\n                     flex-wrap: wrap !important;\n                 }\n             "}}],"sizing_mode":"stretch_both","tabs":[{"type":"object","name":"TabPanel","id":"p1073","attributes":{"title":"reward_0","child":{"type":"object","name":"Figure","id":"p1009","attributes":{"x_range":{"type":"object","name":"FactorRange","id":"p1019","attributes":{"factors":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"]}},"y_range":{"type":"object","name":"DataRange1d","id":"p1011"},"x_scale":{"type":"object","name":"CategoricalScale","id":"p1020"},"y_scale":{"type":"object","name":"LinearScale","id":"p1021"},"title":{"type":"object","name":"Title","id":"p1012","attributes":{"text":"Policy value estimates for reward_0 objective"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1052","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1006","attributes":{"selected":{"type":"object","name":"Selection","id":"p1007","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1008"},"data":{"type":"map","entries":[["estimator",{"type":"ndarray","array":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"],"shape":[12],"dtype":"object","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/2PbePFz7YR79i+Z2h0//rxnv4X/oQQn130M/jdFXu2HEvftGaCgfyszGzNQfE181EoV3vsY6mD6AdEXQi1gAAAA"},"shape":[12],"dtype":"float64","order":"little"}],["lower",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC//u3+K5v5vQ79qzHaqbVzblnz1e5TiqO8a69V9r2Kr659+zv7H9x4sqfO/ZLXm2sWfnujj0DGPyoP3PJNKfv6R374tr3Mskv79gfOGRwe93nO/bzJ6yauPorUH3JvrzoeffsAY070NZgAAAA"},"shape":[12],"dtype":"float64","order":"little"}],["upper",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/7MqNBNf7f/AvuIL089F4fftl5RXOsyd/MA+XuPKnoUR9+0f7p76q3HSA/ufkufEJi9+YM8ABj/q1zffrP7b8sC+IcOlLm/OA/suHa+VolMe2IfvLuniXvHA/mzq/1sPgfoBIX+3P2AAAAA="},"shape":[12],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1053","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1054"}}},"glyph":{"type":"object","name":"VBar","id":"p1049","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1050","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1051","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1061","attributes":{"data_source":{"id":"p1006"},"view":{"type":"object","name":"CDSView","id":"p1062","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1063"}}},"glyph":{"type":"object","name":"Segment","id":"p1058","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_width":{"type":"value","value":2}}},"nonselection_glyph":{"type":"object","name":"Segment","id":"p1059","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"line_width":{"type":"value","value":2}}},"muted_glyph":{"type":"object","name":"Segment","id":"p1060","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"line_width":{"type":"value","value":2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1070","attributes":{"data_source":{"id":"p1006"},"view":{"type":"object","name":"CDSView","id":"p1071","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1072"}}},"glyph":{"type":"object","name":"VBar","id":"p1067","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"fill_color":{"type":"value","value":"black"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1068","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1069","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1018","attributes":{"tools":[{"type":"object","name":"CrosshairTool","id":"p1032"},{"type":"object","name":"PanTool","id":"p1033"},{"type":"object","name":"WheelZoomTool","id":"p1034","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1035","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1036","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1042","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1041","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"ResetTool","id":"p1043"},{"type":"object","name":"HoverTool","id":"p1044","attributes":{"renderers":"auto","tooltips":[["Estimator","@estimator"],["Estimated policy value","@value"],["Lower CI","@lower"],["Upper CI","@upper"]],"sort_by":null}},{"type":"object","name":"SaveTool","id":"p1045"}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1027","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1028","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1029"},"axis_label":"Estimated policy value (\u00b1 CI)","major_label_policy":{"type":"object","name":"AllLabels","id":"p1030"}}}],"below":[{"type":"object","name":"CategoricalAxis","id":"p1022","attributes":{"ticker":{"type":"object","name":"CategoricalTicker","id":"p1023"},"formatter":{"type":"object","name":"CategoricalTickFormatter","id":"p1024"},"axis_label":"Estimator","major_label_policy":{"type":"object","name":"AllLabels","id":"p1025"}}}],"center":[{"type":"object","name":"Grid","id":"p1026","attributes":{"axis":{"id":"p1022"},"grid_line_color":null}},{"type":"object","name":"Grid","id":"p1031","attributes":{"dimension":1,"axis":{"id":"p1027"}}}]}}}}]}}]}};
-  const render_items = [{"docid":"6e79a2cf-941c-4934-8977-13868a34b3c1","roots":{"p1077":"f650d879-d926-4800-8df9-24871bc4b06d"},"root_ids":["p1077"]}];
+  const docs_json = {"6fbb171a-8d2e-4d20-bc4c-61b5e93ea66b":{"version":"3.8.0","title":"Bokeh Application","config":{"type":"object","name":"DocumentConfig","id":"p1078","attributes":{"notifications":{"type":"object","name":"Notifications","id":"p1079"}}},"roots":[{"type":"object","name":"Tabs","id":"p1077","attributes":{"stylesheets":[{"type":"object","name":"InlineStyleSheet","id":"p1076","attributes":{"css":"\n                 :host(.bk-Tabs) .bk-header {\n                     flex-wrap: wrap !important;\n                 }\n             "}}],"sizing_mode":"stretch_both","tabs":[{"type":"object","name":"TabPanel","id":"p1073","attributes":{"title":"reward_0","child":{"type":"object","name":"Figure","id":"p1009","attributes":{"x_range":{"type":"object","name":"FactorRange","id":"p1019","attributes":{"factors":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"]}},"y_range":{"type":"object","name":"DataRange1d","id":"p1011"},"x_scale":{"type":"object","name":"CategoricalScale","id":"p1020"},"y_scale":{"type":"object","name":"LinearScale","id":"p1021"},"title":{"type":"object","name":"Title","id":"p1012","attributes":{"text":"Policy value estimates for reward_0 objective"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1052","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1006","attributes":{"selected":{"type":"object","name":"Selection","id":"p1007","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1008"},"data":{"type":"map","entries":[["estimator",{"type":"ndarray","array":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"],"shape":[12],"dtype":"object","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC//vSsOyBWcwD+78WFqeLzR/Yz8k78PV4JCbfp80jrQ5IM0DB9TmzZ+8D8k3CrdS5QjHVwfQDAHQA4T9gAAAA"},"shape":[12],"dtype":"float64","order":"little"}],["lower",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/zsn8kh078R79orBN4zYOR/Yn/xf+yxrzj37ApvrGou5HthvldidmL3snv32liRhvmn37BnA4Ee9+1nRBQuA4n+cT5icmnDPvjx3e5j72nv2Mal7RCQX3LNvUXm6xxpoHgBTc1vmYAAAAA=="},"shape":[12],"dtype":"float64","order":"little"}],["upper",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/zuyeMtCu5yH9p0bisS5Mh7YC2tKT5wc89D+shZ/kS+Qn2w2eSNj8kP7UME9YYIJD+0ZwOBH/cx5gRP/pzy035K6ctfHjIf221OnnE4Cyne6rk/Kz3xof+bi3I816Q/sAVy0lW5gAAAA"},"shape":[12],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1053","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1054"}}},"glyph":{"type":"object","name":"VBar","id":"p1049","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1050","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1051","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1061","attributes":{"data_source":{"id":"p1006"},"view":{"type":"object","name":"CDSView","id":"p1062","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1063"}}},"glyph":{"type":"object","name":"Segment","id":"p1058","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_width":{"type":"value","value":2}}},"nonselection_glyph":{"type":"object","name":"Segment","id":"p1059","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"line_width":{"type":"value","value":2}}},"muted_glyph":{"type":"object","name":"Segment","id":"p1060","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"line_width":{"type":"value","value":2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1070","attributes":{"data_source":{"id":"p1006"},"view":{"type":"object","name":"CDSView","id":"p1071","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1072"}}},"glyph":{"type":"object","name":"VBar","id":"p1067","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"fill_color":{"type":"value","value":"black"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1068","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1069","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1018","attributes":{"tools":[{"type":"object","name":"CrosshairTool","id":"p1032"},{"type":"object","name":"PanTool","id":"p1033"},{"type":"object","name":"WheelZoomTool","id":"p1034","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1035","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1036","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1042","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1041","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"ResetTool","id":"p1043"},{"type":"object","name":"HoverTool","id":"p1044","attributes":{"renderers":"auto","tooltips":[["Estimator","@estimator"],["Estimated policy value","@value"],["Lower CI","@lower"],["Upper CI","@upper"]],"sort_by":null}},{"type":"object","name":"SaveTool","id":"p1045"}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1027","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1028","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1029"},"axis_label":"Estimated policy value (\u00b1 CI)","major_label_policy":{"type":"object","name":"AllLabels","id":"p1030"}}}],"below":[{"type":"object","name":"CategoricalAxis","id":"p1022","attributes":{"ticker":{"type":"object","name":"CategoricalTicker","id":"p1023"},"formatter":{"type":"object","name":"CategoricalTickFormatter","id":"p1024"},"axis_label":"Estimator","major_label_policy":{"type":"object","name":"AllLabels","id":"p1025"}}}],"center":[{"type":"object","name":"Grid","id":"p1026","attributes":{"axis":{"id":"p1022"},"grid_line_color":null}},{"type":"object","name":"Grid","id":"p1031","attributes":{"dimension":1,"axis":{"id":"p1027"}}}]}}}}]}}]}};
+  const render_items = [{"docid":"6fbb171a-8d2e-4d20-bc4c-61b5e93ea66b","roots":{"p1077":"b35c9168-6622-4cc4-861d-9b9127a6674b"},"root_ids":["p1077"]}];
   void root.Bokeh.embed.embed_items_notebook(docs_json, render_items);
   }
   if (root.Bokeh !== undefined) {
@@ -684,55 +684,55 @@ var element = document.currentScript.previousSibling.previousSibling;
   <tbody>
     <tr>
       <th>0</th>
-      <td>0.477569</td>
-      <td>0.446741</td>
-      <td>0.509725</td>
-      <td>0.016258</td>
+      <td>0.511257</td>
+      <td>0.477645</td>
+      <td>0.544463</td>
+      <td>0.016996</td>
       <td>b-ipw</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.484005</td>
-      <td>0.478302</td>
-      <td>0.489724</td>
-      <td>0.002941</td>
+      <td>0.506769</td>
+      <td>0.501102</td>
+      <td>0.512700</td>
+      <td>0.002930</td>
       <td>dm</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.484988</td>
-      <td>0.453208</td>
-      <td>0.518019</td>
-      <td>0.016680</td>
+      <td>0.510960</td>
+      <td>0.478297</td>
+      <td>0.542551</td>
+      <td>0.016444</td>
       <td>dr</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>0.484005</td>
-      <td>0.478336</td>
-      <td>0.489785</td>
-      <td>0.002923</td>
+      <td>0.506769</td>
+      <td>0.501299</td>
+      <td>0.512732</td>
+      <td>0.002908</td>
       <td>dros-opt</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>0.484988</td>
-      <td>0.452932</td>
-      <td>0.517884</td>
-      <td>0.016710</td>
+      <td>0.510960</td>
+      <td>0.478907</td>
+      <td>0.543336</td>
+      <td>0.016503</td>
       <td>dros-pess</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>5</th>
-      <td>0.485894</td>
-      <td>0.452067</td>
-      <td>0.519968</td>
-      <td>0.017371</td>
+      <td>0.510925</td>
+      <td>0.477909</td>
+      <td>0.542977</td>
+      <td>0.016668</td>
       <td>ipw</td>
       <td>reward_0</td>
     </tr>
@@ -747,46 +747,46 @@ var element = document.currentScript.previousSibling.previousSibling;
     </tr>
     <tr>
       <th>7</th>
-      <td>0.484986</td>
-      <td>0.451511</td>
-      <td>0.516234</td>
-      <td>0.016460</td>
+      <td>0.510955</td>
+      <td>0.478920</td>
+      <td>0.543579</td>
+      <td>0.016429</td>
       <td>sndr</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>8</th>
-      <td>0.485177</td>
-      <td>0.451745</td>
-      <td>0.519096</td>
-      <td>0.017265</td>
+      <td>0.510381</td>
+      <td>0.477587</td>
+      <td>0.544061</td>
+      <td>0.016796</td>
       <td>snips</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>9</th>
-      <td>0.484988</td>
-      <td>0.452373</td>
-      <td>0.518077</td>
-      <td>0.016534</td>
+      <td>0.510960</td>
+      <td>0.479326</td>
+      <td>0.543016</td>
+      <td>0.016261</td>
       <td>sg-dr</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>10</th>
-      <td>0.485894</td>
-      <td>0.452495</td>
-      <td>0.520513</td>
-      <td>0.017253</td>
+      <td>0.510925</td>
+      <td>0.478522</td>
+      <td>0.544120</td>
+      <td>0.016873</td>
       <td>sg-ipw</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>11</th>
-      <td>0.484005</td>
-      <td>0.478415</td>
-      <td>0.489800</td>
-      <td>0.002906</td>
+      <td>0.506769</td>
+      <td>0.501127</td>
+      <td>0.512633</td>
+      <td>0.002912</td>
       <td>switch-dr</td>
       <td>reward_0</td>
     </tr>
@@ -807,7 +807,7 @@ var element = document.currentScript.previousSibling.previousSibling;
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2025-10-24 09:11:36.185 | INFO     | pybandits.offline_policy_evaluator:_update_mab:1050 - Offline policy update for &lt;class &#39;pybandits.cmab.CmabBernoulliCC&#39;&gt;.
+2025-11-04 08:26:33.678 | INFO     | pybandits.offline_policy_evaluator:_update_mab:1050 - Offline policy update for &lt;class &#39;pybandits.cmab.CmabBernoulliCC&#39;&gt;.
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
@@ -850,10 +850,10 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2025-10-24 09:11:43.581 | INFO     | pybandits.offline_policy_evaluator:estimate_policy:898 - Data prediction of expected policy based on Monte Carlo experiments.
-1000it [00:16, 61.36it/s]
-2025-10-24 09:12:00.105 | INFO     | pybandits.offline_policy_evaluator:_estimate_importance_weight:841 - Data prediction of importance weights based on logreg model.
-2025-10-24 09:12:00.183 | INFO     | pybandits.offline_policy_evaluator:evaluate:971 - Offline Policy Evaluation for reward_0.
+2025-11-04 08:26:40.819 | INFO     | pybandits.offline_policy_evaluator:estimate_policy:898 - Data prediction of expected policy based on Monte Carlo experiments.
+1000it [00:17, 57.33it/s]
+2025-11-04 08:26:58.477 | INFO     | pybandits.offline_policy_evaluator:_estimate_importance_weight:841 - Data prediction of importance weights based on logreg model.
+2025-11-04 08:26:58.564 | INFO     | pybandits.offline_policy_evaluator:evaluate:971 - Offline Policy Evaluation for reward_0.
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -870,7 +870,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </style>
 <div>
     <a href="https://bokeh.org" target="_blank" class="bk-notebook-logo"></a>
-    <span id="e3f07c5a-b880-46cb-971e-58e57d5e6ac2">Loading BokehJS ...</span>
+    <span id="b8291155-b061-44e5-a6a5-f8532fd96196">Loading BokehJS ...</span>
 </div></div>
 </div>
 <div class="nboutput docutils container">
@@ -1043,7 +1043,7 @@ const JS_MIME_TYPE = 'application/javascript';
      "</div>"}};
 
   function display_loaded(error = null) {
-    const el = document.getElementById("e3f07c5a-b880-46cb-971e-58e57d5e6ac2");
+    const el = document.getElementById("b8291155-b061-44e5-a6a5-f8532fd96196");
     if (el != null) {
       const html = (() => {
         if (typeof root.Bokeh === "undefined") {
@@ -1177,7 +1177,7 @@ function(Bokeh) {
       console.log("Bokeh: BokehJS failed to load within specified timeout.");
       root._bokeh_failed_load = true;
     } else if (force !== true) {
-      const cell = $(document.getElementById("e3f07c5a-b880-46cb-971e-58e57d5e6ac2")).parents('.cell').data().cell;
+      const cell = $(document.getElementById("b8291155-b061-44e5-a6a5-f8532fd96196")).parents('.cell').data().cell;
       cell.output_area.append_execute_result(NB_LOAD_WARNING)
     }
   }
@@ -1198,7 +1198,7 @@ function(Bokeh) {
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area rendered_html docutils container">
-<div id="d42d3b76-340a-4012-923a-a1a88d301d7a" data-root-id="p1152" style="display: contents;"></div></div>
+<div id="beb9be3f-868e-4c10-a002-c54f5ae9e277" data-root-id="p1152" style="display: contents;"></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
@@ -1209,8 +1209,8 @@ function(Bokeh) {
 var element = document.currentScript.previousSibling.previousSibling;
 (function(root) {
   function embed_document(root) {
-  const docs_json = {"a06a511c-2cf2-4eb4-9d18-c215d91cdd32":{"version":"3.8.0","title":"Bokeh Application","config":{"type":"object","name":"DocumentConfig","id":"p1153","attributes":{"notifications":{"type":"object","name":"Notifications","id":"p1154"}}},"roots":[{"type":"object","name":"Tabs","id":"p1152","attributes":{"stylesheets":[{"type":"object","name":"InlineStyleSheet","id":"p1151","attributes":{"css":"\n                 :host(.bk-Tabs) .bk-header {\n                     flex-wrap: wrap !important;\n                 }\n             "}}],"sizing_mode":"stretch_both","tabs":[{"type":"object","name":"TabPanel","id":"p1150","attributes":{"title":"reward_0","child":{"type":"object","name":"Figure","id":"p1086","attributes":{"x_range":{"type":"object","name":"FactorRange","id":"p1096","attributes":{"factors":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"]}},"y_range":{"type":"object","name":"DataRange1d","id":"p1088"},"x_scale":{"type":"object","name":"CategoricalScale","id":"p1097"},"y_scale":{"type":"object","name":"LinearScale","id":"p1098"},"title":{"type":"object","name":"Title","id":"p1089","attributes":{"text":"Policy value estimates for reward_0 objective"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1129","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1083","attributes":{"selected":{"type":"object","name":"Selection","id":"p1084","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1085"},"data":{"type":"map","entries":[["estimator",{"type":"ndarray","array":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"],"shape":[12],"dtype":"object","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/9snudlRrei+/XP+Xzd1n96zL3f0zHa9eg+D/2zepqcPEu7bz5zvaui38679rSe5d6uB4sq2rE+qv2Kqg+kHAK0DzZhgAAAA"},"shape":[12],"dtype":"float64","order":"little"}],["lower",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/wFgAJ///Sk/eA0Q3T8/aXN76YbeP3HzztVCH9w/ST5oOQaH3j9AMewdNSLcP1v5OKm0QNw/SvWVzM+i2D/ad9GbuDLcP92DD9bH4ts/GpbjOkUf3D8dtHnTlCrcP9xTNMRghN4/fr4m92AAAAA="},"shape":[12],"dtype":"float64","order":"little"}],["upper",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/wFgAJ//aiwdOu7t4D+Y/bFmwUTfP7lwbqSGxOA/fT+a0SBE3z+/g6xzF8fgPyeaht2HYeE/VF/J/CyK4T/+ivTewMvgP0ZRF1IaIuE/rh4Iqg7I4D+nb+feJE3hPwwq52H6Qt8/BffbEmAAAAA="},"shape":[12],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1130","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1131"}}},"glyph":{"type":"object","name":"VBar","id":"p1126","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1127","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1128","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1138","attributes":{"data_source":{"id":"p1083"},"view":{"type":"object","name":"CDSView","id":"p1139","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1140"}}},"glyph":{"type":"object","name":"Segment","id":"p1135","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_width":{"type":"value","value":2}}},"nonselection_glyph":{"type":"object","name":"Segment","id":"p1136","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"line_width":{"type":"value","value":2}}},"muted_glyph":{"type":"object","name":"Segment","id":"p1137","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"line_width":{"type":"value","value":2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1147","attributes":{"data_source":{"id":"p1083"},"view":{"type":"object","name":"CDSView","id":"p1148","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1149"}}},"glyph":{"type":"object","name":"VBar","id":"p1144","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"fill_color":{"type":"value","value":"black"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1145","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1146","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1095","attributes":{"tools":[{"type":"object","name":"CrosshairTool","id":"p1109"},{"type":"object","name":"PanTool","id":"p1110"},{"type":"object","name":"WheelZoomTool","id":"p1111","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1112","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1113","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1119","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1118","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"ResetTool","id":"p1120"},{"type":"object","name":"HoverTool","id":"p1121","attributes":{"renderers":"auto","tooltips":[["Estimator","@estimator"],["Estimated policy value","@value"],["Lower CI","@lower"],["Upper CI","@upper"]],"sort_by":null}},{"type":"object","name":"SaveTool","id":"p1122"}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1104","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1105","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1106"},"axis_label":"Estimated policy value (\u00b1 CI)","major_label_policy":{"type":"object","name":"AllLabels","id":"p1107"}}}],"below":[{"type":"object","name":"CategoricalAxis","id":"p1099","attributes":{"ticker":{"type":"object","name":"CategoricalTicker","id":"p1100"},"formatter":{"type":"object","name":"CategoricalTickFormatter","id":"p1101"},"axis_label":"Estimator","major_label_policy":{"type":"object","name":"AllLabels","id":"p1102"}}}],"center":[{"type":"object","name":"Grid","id":"p1103","attributes":{"axis":{"id":"p1099"},"grid_line_color":null}},{"type":"object","name":"Grid","id":"p1108","attributes":{"dimension":1,"axis":{"id":"p1104"}}}]}}}}]}}]}};
-  const render_items = [{"docid":"a06a511c-2cf2-4eb4-9d18-c215d91cdd32","roots":{"p1152":"d42d3b76-340a-4012-923a-a1a88d301d7a"},"root_ids":["p1152"]}];
+  const docs_json = {"e7982e99-b8ea-4ffd-8245-14537deb1be3":{"version":"3.8.0","title":"Bokeh Application","config":{"type":"object","name":"DocumentConfig","id":"p1153","attributes":{"notifications":{"type":"object","name":"Notifications","id":"p1154"}}},"roots":[{"type":"object","name":"Tabs","id":"p1152","attributes":{"stylesheets":[{"type":"object","name":"InlineStyleSheet","id":"p1151","attributes":{"css":"\n                 :host(.bk-Tabs) .bk-header {\n                     flex-wrap: wrap !important;\n                 }\n             "}}],"sizing_mode":"stretch_both","tabs":[{"type":"object","name":"TabPanel","id":"p1150","attributes":{"title":"reward_0","child":{"type":"object","name":"Figure","id":"p1086","attributes":{"x_range":{"type":"object","name":"FactorRange","id":"p1096","attributes":{"factors":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"]}},"y_range":{"type":"object","name":"DataRange1d","id":"p1088"},"x_scale":{"type":"object","name":"CategoricalScale","id":"p1097"},"y_scale":{"type":"object","name":"LinearScale","id":"p1098"},"title":{"type":"object","name":"Title","id":"p1089","attributes":{"text":"Policy value estimates for reward_0 objective"}},"renderers":[{"type":"object","name":"GlyphRenderer","id":"p1129","attributes":{"data_source":{"type":"object","name":"ColumnDataSource","id":"p1083","attributes":{"selected":{"type":"object","name":"Selection","id":"p1084","attributes":{"indices":[],"line_indices":[]}},"selection_policy":{"type":"object","name":"UnionRenderers","id":"p1085"},"data":{"type":"map","entries":[["estimator",{"type":"ndarray","array":["b-ipw","dm","dr","dros-opt","dros-pess","ipw","rep","sndr","snips","sg-dr","sg-ipw","switch-dr"],"shape":[12],"dtype":"object","order":"little"}],["value",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/9v6McPqkvsDe9+1h5KdVR7Y33latMHABJOvAAYIGl0cnQ/TDwCvEuVjYAAAAA=="},"shape":[12],"dtype":"float64","order":"little"}],["lower",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC/1N1viTYoXjX/nToxBazV/ftf2QEXX2w6K79zbK6gtkv79v/qst29pl21/4PGNyB05UrO4yt5iLE379l2HdxLYIvkJP3QvjNfXsAqlyMuGAAAAA="},"shape":[12],"dtype":"float64","order":"little"}],["upper",{"type":"ndarray","array":{"type":"bytes","data":"H4sIAAEAAAAC//sT0+O4nP2R/aFnW1nmBz+w9yyfcLJm/kN7r1iWPOuQB/auKlwf+2Y9tH8IAXB6R2mc7vH5CP707pane+Y+tL90EQQe2gu9P1tfCtQPAFgl9txgAAAA"},"shape":[12],"dtype":"float64","order":"little"}]]}}},"view":{"type":"object","name":"CDSView","id":"p1130","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1131"}}},"glyph":{"type":"object","name":"VBar","id":"p1126","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"fill_color":{"type":"value","value":"#1f77b4"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1127","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1128","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.9},"top":{"type":"field","field":"value"},"line_color":{"type":"value","value":"#1f77b4"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"#1f77b4"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1138","attributes":{"data_source":{"id":"p1083"},"view":{"type":"object","name":"CDSView","id":"p1139","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1140"}}},"glyph":{"type":"object","name":"Segment","id":"p1135","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_width":{"type":"value","value":2}}},"nonselection_glyph":{"type":"object","name":"Segment","id":"p1136","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"line_width":{"type":"value","value":2}}},"muted_glyph":{"type":"object","name":"Segment","id":"p1137","attributes":{"x0":{"type":"field","field":"estimator"},"y0":{"type":"field","field":"lower"},"x1":{"type":"field","field":"estimator"},"y1":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"line_width":{"type":"value","value":2}}}}},{"type":"object","name":"GlyphRenderer","id":"p1147","attributes":{"data_source":{"id":"p1083"},"view":{"type":"object","name":"CDSView","id":"p1148","attributes":{"filter":{"type":"object","name":"AllIndices","id":"p1149"}}},"glyph":{"type":"object","name":"VBar","id":"p1144","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"fill_color":{"type":"value","value":"black"}}},"nonselection_glyph":{"type":"object","name":"VBar","id":"p1145","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.1},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.1},"hatch_alpha":{"type":"value","value":0.1}}},"muted_glyph":{"type":"object","name":"VBar","id":"p1146","attributes":{"x":{"type":"field","field":"estimator"},"width":{"type":"value","value":0.1},"bottom":{"type":"field","field":"lower"},"top":{"type":"field","field":"upper"},"line_alpha":{"type":"value","value":0.2},"fill_color":{"type":"value","value":"black"},"fill_alpha":{"type":"value","value":0.2},"hatch_alpha":{"type":"value","value":0.2}}}}}],"toolbar":{"type":"object","name":"Toolbar","id":"p1095","attributes":{"tools":[{"type":"object","name":"CrosshairTool","id":"p1109"},{"type":"object","name":"PanTool","id":"p1110"},{"type":"object","name":"WheelZoomTool","id":"p1111","attributes":{"renderers":"auto"}},{"type":"object","name":"BoxZoomTool","id":"p1112","attributes":{"dimensions":"both","overlay":{"type":"object","name":"BoxAnnotation","id":"p1113","attributes":{"syncable":false,"line_color":"black","line_alpha":1.0,"line_width":2,"line_dash":[4,4],"fill_color":"lightgrey","fill_alpha":0.5,"level":"overlay","visible":false,"left":{"type":"number","value":"nan"},"right":{"type":"number","value":"nan"},"top":{"type":"number","value":"nan"},"bottom":{"type":"number","value":"nan"},"left_units":"canvas","right_units":"canvas","top_units":"canvas","bottom_units":"canvas","handles":{"type":"object","name":"BoxInteractionHandles","id":"p1119","attributes":{"all":{"type":"object","name":"AreaVisuals","id":"p1118","attributes":{"fill_color":"white","hover_fill_color":"lightgray"}}}}}}}},{"type":"object","name":"ResetTool","id":"p1120"},{"type":"object","name":"HoverTool","id":"p1121","attributes":{"renderers":"auto","tooltips":[["Estimator","@estimator"],["Estimated policy value","@value"],["Lower CI","@lower"],["Upper CI","@upper"]],"sort_by":null}},{"type":"object","name":"SaveTool","id":"p1122"}]}},"left":[{"type":"object","name":"LinearAxis","id":"p1104","attributes":{"ticker":{"type":"object","name":"BasicTicker","id":"p1105","attributes":{"mantissas":[1,2,5]}},"formatter":{"type":"object","name":"BasicTickFormatter","id":"p1106"},"axis_label":"Estimated policy value (\u00b1 CI)","major_label_policy":{"type":"object","name":"AllLabels","id":"p1107"}}}],"below":[{"type":"object","name":"CategoricalAxis","id":"p1099","attributes":{"ticker":{"type":"object","name":"CategoricalTicker","id":"p1100"},"formatter":{"type":"object","name":"CategoricalTickFormatter","id":"p1101"},"axis_label":"Estimator","major_label_policy":{"type":"object","name":"AllLabels","id":"p1102"}}}],"center":[{"type":"object","name":"Grid","id":"p1103","attributes":{"axis":{"id":"p1099"},"grid_line_color":null}},{"type":"object","name":"Grid","id":"p1108","attributes":{"dimension":1,"axis":{"id":"p1104"}}}]}}}}]}}]}};
+  const render_items = [{"docid":"e7982e99-b8ea-4ffd-8245-14537deb1be3","roots":{"p1152":"beb9be3f-868e-4c10-a002-c54f5ae9e277"},"root_ids":["p1152"]}];
   void root.Bokeh.embed.embed_items_notebook(docs_json, render_items);
   }
   if (root.Bokeh !== undefined) {
@@ -1267,109 +1267,109 @@ var element = document.currentScript.previousSibling.previousSibling;
   <tbody>
     <tr>
       <th>0</th>
-      <td>0.491342</td>
-      <td>0.454105</td>
-      <td>0.529044</td>
-      <td>0.019133</td>
+      <td>0.508767</td>
+      <td>0.455172</td>
+      <td>0.563434</td>
+      <td>0.027416</td>
       <td>b-ipw</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.482738</td>
-      <td>0.476984</td>
-      <td>0.488572</td>
-      <td>0.002960</td>
+      <td>0.504427</td>
+      <td>0.498670</td>
+      <td>0.510208</td>
+      <td>0.002926</td>
       <td>dm</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.481767</td>
-      <td>0.439408</td>
-      <td>0.523990</td>
-      <td>0.021637</td>
+      <td>0.506371</td>
+      <td>0.463066</td>
+      <td>0.550719</td>
+      <td>0.022407</td>
       <td>dr</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>0.482738</td>
-      <td>0.476991</td>
-      <td>0.488533</td>
-      <td>0.002952</td>
+      <td>0.504427</td>
+      <td>0.498633</td>
+      <td>0.510282</td>
+      <td>0.002946</td>
       <td>dros-opt</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>0.481767</td>
-      <td>0.439588</td>
-      <td>0.524303</td>
-      <td>0.021610</td>
+      <td>0.506371</td>
+      <td>0.462298</td>
+      <td>0.550117</td>
+      <td>0.022343</td>
       <td>dros-pess</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>5</th>
-      <td>0.490288</td>
-      <td>0.441449</td>
-      <td>0.543156</td>
-      <td>0.025790</td>
+      <td>0.503922</td>
+      <td>0.452941</td>
+      <td>0.558824</td>
+      <td>0.027521</td>
       <td>ipw</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>6</th>
-      <td>0.464435</td>
-      <td>0.384937</td>
-      <td>0.548117</td>
-      <td>0.041664</td>
+      <td>0.503922</td>
+      <td>0.452941</td>
+      <td>0.558824</td>
+      <td>0.027025</td>
       <td>rep</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>7</th>
-      <td>0.481780</td>
-      <td>0.440596</td>
-      <td>0.524872</td>
-      <td>0.021449</td>
+      <td>0.506371</td>
+      <td>0.462721</td>
+      <td>0.550754</td>
+      <td>0.022434</td>
       <td>sndr</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>8</th>
-      <td>0.483733</td>
-      <td>0.435717</td>
-      <td>0.535413</td>
-      <td>0.025216</td>
+      <td>0.503922</td>
+      <td>0.452941</td>
+      <td>0.558824</td>
+      <td>0.027034</td>
       <td>snips</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>9</th>
-      <td>0.481767</td>
-      <td>0.439409</td>
-      <td>0.524421</td>
-      <td>0.021638</td>
+      <td>0.506371</td>
+      <td>0.463734</td>
+      <td>0.550505</td>
+      <td>0.022215</td>
       <td>sg-dr</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>10</th>
-      <td>0.490288</td>
-      <td>0.440099</td>
-      <td>0.540667</td>
-      <td>0.025752</td>
+      <td>0.503922</td>
+      <td>0.452941</td>
+      <td>0.556863</td>
+      <td>0.027008</td>
       <td>sg-ipw</td>
       <td>reward_0</td>
     </tr>
     <tr>
       <th>11</th>
-      <td>0.482738</td>
-      <td>0.476830</td>
-      <td>0.488463</td>
-      <td>0.002971</td>
+      <td>0.504427</td>
+      <td>0.498784</td>
+      <td>0.510310</td>
+      <td>0.002935</td>
       <td>switch-dr</td>
       <td>reward_0</td>
     </tr>
@@ -1377,6 +1377,7 @@ var element = document.currentScript.previousSibling.previousSibling;
 </table>
 </div></div>
 </div>
+</section>
 </section>
 </section>
 </section>

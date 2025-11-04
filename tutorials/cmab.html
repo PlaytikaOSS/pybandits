@@ -60,8 +60,7 @@
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
-<li class="toctree-l2"><a class="reference internal" href="ope.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="ope.html#Objectives">Objectives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ope.html">Offline Policy Evaluation</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../api.html">API documentation</a></li>
@@ -138,16 +137,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.93409528 -0.9403459   0.47852706  0.5525211  -0.03963126]
- [ 0.93424435 -0.83547362 -0.84909429  0.46882699 -0.56749979]
- [-0.19622928  0.42674069 -0.8832049  -0.08172653  0.71094778]
- [ 0.22986018  0.79348004  0.07337687  0.23537143 -0.60287505]
- [ 0.46668681 -0.62990486  0.92451383  0.40213151  0.76726894]
- [ 0.36655257 -0.74332775  0.18602181 -0.64460559 -0.29554424]
- [-0.35746245 -0.08310042 -0.64324881  0.76290388 -0.20545704]
- [ 0.55861908  0.22298469  0.94481992  0.40167037 -0.6040605 ]
- [ 0.33477133  0.71551561 -0.42992295 -0.9771798  -0.52086707]
- [-0.77874105 -0.06849642 -0.59989875  0.84877574  0.7242384 ]]
+[[-0.47476914  0.21310973  0.67686328 -0.90168994  0.16919191]
+ [ 0.33480043 -0.55288815 -0.3696853  -0.18708838 -0.91570279]
+ [ 0.86596918  0.50070447 -0.4482846   0.61323877 -0.4960598 ]
+ [-0.65394754  0.08894381  0.28616482 -0.93206889  0.78848705]
+ [-0.76030639 -0.01533209 -0.95446111 -0.63853076 -0.60770894]
+ [ 0.51262998  0.84923232 -0.11037904  0.69704743 -0.77138   ]
+ [ 0.20450492  0.78775826 -0.77862235  0.33683682  0.57004724]
+ [-0.44894044 -0.62704305 -0.74496984 -0.90176653  0.13713019]
+ [-0.37669721  0.30904123  0.86168634 -0.66518248 -0.7230875 ]
+ [-0.19416685  0.44507354 -0.51494108  0.24328114  0.56383995]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -160,9 +159,16 @@ X: context matrix of shape (n_samples, n_features)
 <span class="n">layer_params</span> <span class="o">=</span> <span class="n">BnnLayerParams</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="n">weight</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
 <span class="n">model_params</span> <span class="o">=</span> <span class="n">BnnParams</span><span class="p">(</span><span class="n">bnn_layer_params</span><span class="o">=</span><span class="p">[</span><span class="n">layer_params</span><span class="p">])</span>
 
+<span class="n">update_method</span> <span class="o">=</span> <span class="s2">&quot;VI&quot;</span>
+<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
+
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span><span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">),</span>
-    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span><span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">),</span>
+    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
+        <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span> <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span>
+    <span class="p">),</span>
+    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
+        <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span> <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span>
+    <span class="p">),</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -193,7 +199,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -212,7 +218,7 @@ Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 0, 1, 1, 0, 1, 0, 0, 1, 1]
+Simulated rewards: [0, 0, 0, 0, 0, 1, 1, 1, 0, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -230,6 +236,8 @@ Simulated rewards: [1, 0, 1, 1, 0, 1, 0, 0, 1, 1]
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
+  warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
@@ -251,6 +259,15 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
+  warnings.warn(
+</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">

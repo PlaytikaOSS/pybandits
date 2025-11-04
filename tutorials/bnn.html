@@ -25,7 +25,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Introduction" href="ope.html" />
+    <link rel="next" title="Offline Policy Evaluation" href="ope.html" />
     <link rel="prev" title="cMAB Simulation" href="cmab_simulator.html" /> 
 </head>
 
@@ -70,8 +70,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#id1">Predictions + uncertainty map</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="ope.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="ope.html#Objectives">Objectives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ope.html">Offline Policy Evaluation</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../api.html">API documentation</a></li>
@@ -195,7 +194,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f06f5f60310&gt;
+&lt;matplotlib.legend.Legend at 0x7f2333ebaec0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -214,7 +213,9 @@
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">blr</span> <span class="o">=</span> <span class="n">BayesianLogisticRegression</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">40000</span><span class="p">}})</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">blr</span> <span class="o">=</span> <span class="n">BayesianLogisticRegression</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+    <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -232,6 +233,8 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
+  warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
@@ -291,7 +294,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f06f27bb9d0&gt;
+&lt;matplotlib.legend.Legend at 0x7f23304dbac0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -321,8 +324,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.858
-AUC: 0.9469751516024256
+Accuracy: 0.518
+AUC: 0.526515818277832
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -411,7 +414,7 @@ AUC: 0.9469751516024256
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>
 <span class="n">bnn</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
     <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-    <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+    <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
@@ -502,8 +505,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.918
-AUC: 0.9785916574665194
+Accuracy: 0.86
+AUC: 0.943607879534653
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
@@ -586,7 +589,7 @@ AUC: 0.9785916574665194
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="cmab_simulator.html" class="btn btn-neutral float-left" title="cMAB Simulation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="ope.html" class="btn btn-neutral float-right" title="Introduction" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="ope.html" class="btn btn-neutral float-right" title="Offline Policy Evaluation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
