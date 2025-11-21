@@ -273,6 +273,20 @@ class StudentTArray(PyBanditsBaseModel):
     sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
+    _mu_array: np.ndarray = PrivateAttr()
+    _sigma_array: np.ndarray = PrivateAttr()
+    _nu_array: np.ndarray = PrivateAttr()
+    _params: Dict[str, np.ndarray] = PrivateAttr()
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, StudentTArray):
+            return False
+        return (
+            np.all(self._mu_array == other._mu_array)
+            and np.all(self._sigma_array == other._sigma_array)
+            and np.all(self._nu_array == other._nu_array)
+        )
+
     @staticmethod
     def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> bool:
         if len(input_list) == 0:
@@ -336,13 +350,43 @@ class StudentTArray(PyBanditsBaseModel):
         nu = np.full(shape, nu)
         return cls(mu=mu, sigma=sigma, nu=nu)
 
-    @property
-    def shape(self) -> Tuple[PositiveInt, ...]:
-        return np.array(self.mu).shape
+    def model_post_init(self, __context: Any) -> None:
+        """
+        Initialize private numpy array attributes by converting lists to arrays once at initialization.
+
+        Parameters
+        ----------
+        __context : Any
+            Pydantic context (unused).
+        """
+        self._mu_array = np.array(self.mu)
+        self._sigma_array = np.array(self.sigma)
+        self._nu_array = np.array(self.nu)
+        self._params = dict(mu=self._mu_array, sigma=self._sigma_array, nu=self._nu_array)
 
     @property
-    def params(self):
-        return dict(mu=np.array(self.mu), sigma=np.array(self.sigma), nu=np.array(self.nu))
+    def shape(self) -> Tuple[PositiveInt, ...]:
+        """
+        Get the shape of the mu array.
+
+        Returns
+        -------
+        Tuple[PositiveInt, ...]
+            The shape of the mu array.
+        """
+        return self._mu_array.shape
+
+    @property
+    def params(self) -> Dict[str, np.ndarray]:
+        """
+        Get the parameters as a dictionary of numpy arrays.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary containing 'mu', 'sigma', and 'nu' as numpy arrays.
+        """
+        return self._params
 
 
 class BnnLayerParams(PyBanditsBaseModel):
