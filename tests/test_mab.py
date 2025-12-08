@@ -220,15 +220,11 @@ def test_mab_model_post_init_invalid_default_action(epsilon=0.1):
 def test_mab_model_post_init_quantitative_default_action_validation(epsilon=0.1):
     """Test model_post_init validation for quantitative default action requirements."""
 
-    # This test is demonstrating that the current validation logic has an issue:
-    # When default_action is a tuple, it checks if the entire tuple is in self.actions keys,
-    # but actions only contains string keys. This causes the validation to fail at line 138-139
-    # before it reaches the quantitative validation at lines 140-145.
-
-    # Test case: quantitative default action (tuple) with any actions will fail the basic validation
+    # Test case: quantitative default action (tuple) with standard (non-quantitative) actions
+    # should fail the quantitative model validation
     actions = {"action1": Beta(), "action2": Beta()}
 
-    with pytest.raises(AttributeError, match="The default action must be valid action defined in the actions set."):
+    with pytest.raises(AttributeError, match="Quantitative default action requires a quantitative action model."):
         DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action=("action1", (0.5, 0.5)))
 
 

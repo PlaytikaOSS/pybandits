@@ -299,7 +299,7 @@ class ModelTestConfig:
             action_ids, costs, n_features, hidden_dim_list, update_method, update_kwargs, n_objectives
         )
         default_action = action_ids[0] if epsilon and not delta else None
-        if default_action and isinstance(self.model_types[0], QuantitativeModel):
+        if default_action and isinstance(actions[default_action], QuantitativeModel):
             default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
         epsilon = epsilon if not delta else 0.1
         kwargs = {

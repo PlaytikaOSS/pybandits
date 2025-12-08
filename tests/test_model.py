@@ -331,19 +331,23 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
 
 
 @settings(deadline=20000)
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
     n_samples=st.integers(min_value=1, max_value=1000),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
-def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
+def test_bnn_sample_proba(activation, use_residual_connections, n_samples, n_features, hidden_dim_list):
     def sample_proba(context):
         prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
-    bnn = BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list)
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features, hidden_dim_list, activation=activation, use_residual_connections=use_residual_connections
+    )
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
@@ -370,18 +374,24 @@ def test_bnn_sample_proba(n_samples, n_features, hidden_dim_list):
 
 
 @settings(deadline=None)
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(5),
     update_method=st.just("VI"),
 )
-def test_bnn_vi_update(n_features, hidden_dim_list, n_samples, update_method):
+def test_bnn_vi_update(activation, use_residual_connections, n_features, hidden_dim_list, n_samples, update_method):
     init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
 
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
         )
         dim_list = [n_features] + hidden_dim_list
 
@@ -547,44 +557,129 @@ def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_m
 ########################################################################################################################
 
 
+# BayesianNeuralNetwork - Activation Functions
+
+
+@pytest.mark.parametrize("invalid_activation", ["invalid", "elu", "selu", "leaky_relu", ""])
+@pytest.mark.parametrize("n_features", [1, 2, 3])
+@pytest.mark.parametrize("hidden_dim_list", [[], [3], [2, 3]])
+def test_bnn_invalid_activation_raises_error(invalid_activation, n_features, hidden_dim_list):
+    """Test that invalid activation functions raise ValueError."""
+    with pytest.raises(ValidationError) as exc_info:
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, activation=invalid_activation
+        )
+    # Check that the error message contains information about invalid activation
+    error_str = str(exc_info.value)
+    assert "Invalid activation function" in error_str or "activation" in error_str.lower()
+
+
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+def test_bayesian_logistic_regression_with_different_activations(activation):
+    """Test that BayesianLogisticRegression works with different activation functions."""
+    blr = BayesianLogisticRegression.cold_start(n_features=3, hidden_dim_list=[], activation=activation)
+    assert blr.activation == activation
+    assert len(blr.model_params.bnn_layer_params) == 1
+
+
+def test_bnn_pymc_and_numpy_activation_keys_match():
+    """Test that the keys of _pymc_activations and _numpy_activations dictionaries match."""
+    pymc_keys = set(BayesianNeuralNetwork._pymc_activations.keys())
+    numpy_keys = set(BayesianNeuralNetwork._numpy_activations.keys())
+
+    assert pymc_keys == numpy_keys, (
+        f"Keys mismatch between _pymc_activations and _numpy_activations. "
+        f"PyMC keys: {pymc_keys}, NumPy keys: {numpy_keys}"
+    )
+
+
+def test_bayesian_logistic_regression_with_residual_connections():
+    """Test that BayesianLogisticRegression works with residual connections."""
+    # Logistic regression has only one layer (input -> output), so no residual connections
+    # But it should still work without errors
+    blr = BayesianLogisticRegression.cold_start(n_features=3, hidden_dim_list=[], use_residual_connections=True)
+    assert blr.use_residual_connections is True
+    assert len(blr.model_params.bnn_layer_params) == 1
+
+    context = np.random.uniform(low=-1.0, high=1.0, size=(5, 3))
+    prob_and_weighted_sum = blr.sample_proba(context=context)
+    prob, weighted_sum = zip(*prob_and_weighted_sum)
+
+    assert len(prob) == 5
+    assert all([0 <= p <= 1 for p in prob])
+
+
+########################################################################################################################
+
+
 # BayesianNeuralNetworkCC
 @settings(deadline=500)
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
 @given(
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
-def test_can_init_bayesian_neural_network_cc(n_features, hidden_dim_list, cost):
+def test_can_init_bayesian_neural_network_cc(activation, n_features, hidden_dim_list, cost):
     # at least one beta must be specified
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
             model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-            bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
+            bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost, activation=activation)
     else:
         model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-        bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
+        bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost, activation=activation)
         assert bnn.model_params == model_params
+        assert bnn.activation == activation
 
 
 @settings(deadline=500)
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
-def test_create_default_instance_bayesian_neural_network_cc(n_features, hidden_dim_list, cost):
+def test_create_default_instance_bayesian_neural_network_cc(
+    activation, use_residual_connections, n_features, hidden_dim_list, cost
+):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
-            BayesianNeuralNetworkCC.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost)
+            BayesianNeuralNetworkCC.cold_start(
+                n_features=n_features,
+                hidden_dim_list=hidden_dim_list,
+                cost=cost,
+                activation=activation,
+                use_residual_connections=use_residual_connections,
+            )
     else:
         bnn_cold_start = BayesianNeuralNetworkCC.cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            cost=cost,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
         )
         model_params = BayesianNeuralNetwork.create_model_params(n_features=n_features, hidden_dim_list=hidden_dim_list)
-        bnn_init = BayesianNeuralNetworkCC(model_params=model_params, cost=cost)
+        bnn_init = BayesianNeuralNetworkCC(
+            model_params=model_params,
+            cost=cost,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+        )
         assert bnn_cold_start == bnn_init
+        assert bnn_cold_start.activation == activation
+        assert bnn_cold_start.use_residual_connections == use_residual_connections
+
+        # Test sample_proba works
+        context = np.random.uniform(low=-1.0, high=1.0, size=(5, n_features))
+        prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context)
+        prob, weighted_sum = zip(*prob_and_weighted_sum)
+        assert len(prob) == 5
+        assert all([0 <= p <= 1 for p in prob])
 
 
 ########################################################################################################################
@@ -680,15 +775,28 @@ def test_can_init_bayesian_neural_network_mo(n_features, hidden_dim_list, n_obje
 
 
 @settings(deadline=500)
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
     n_samples=st.integers(min_value=1, max_value=1000),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     n_objectives=st.integers(min_value=1, max_value=3),
 )
-def test_bayesian_neural_network_mo_sample_proba(n_samples, n_features, hidden_dim_list, n_objectives):
-    models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+def test_bayesian_neural_network_mo_sample_proba(
+    activation, use_residual_connections, n_samples, n_features, hidden_dim_list, n_objectives
+):
+    models = [
+        BayesianNeuralNetwork.cold_start(
+            n_features, hidden_dim_list, activation=activation, use_residual_connections=use_residual_connections
+        )
+        for _ in range(n_objectives)
+    ]
     bnn_mo = BayesianNeuralNetworkMO(models=models)
+    # Verify all models have the same activation and residual connections setting
+    for model in bnn_mo.models:
+        assert model.activation == activation
+        assert model.use_residual_connections == use_residual_connections
 
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     prob_weights = bnn_mo.sample_proba(context=context)
@@ -702,6 +810,8 @@ def test_bayesian_neural_network_mo_sample_proba(n_samples, n_features, hidden_d
             assert 0 <= prob <= 1
 
 
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+@settings(deadline=None)
 @given(
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
@@ -709,12 +819,19 @@ def test_bayesian_neural_network_mo_sample_proba(n_samples, n_features, hidden_d
     update_method=st.just("VI"),
     n_objectives=st.integers(min_value=1, max_value=2),
 )
-def test_bayesian_neural_network_mo_update(n_features, hidden_dim_list, n_samples, update_method, n_objectives):
+def test_bayesian_neural_network_mo_update(
+    activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives
+):
     models = [
-        BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list, update_method=update_method)
+        BayesianNeuralNetwork.cold_start(
+            n_features, hidden_dim_list, update_method=update_method, activation=activation
+        )
         for _ in range(n_objectives)
     ]
     bnn_mo = BayesianNeuralNetworkMO(models=models)
+    # Verify all models have the same activation
+    for model in bnn_mo.models:
+        assert model.activation == activation
 
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     rewards = [[np.random.randint(0, 2) for _ in range(n_objectives)] for _ in range(n_samples)]
@@ -735,21 +852,42 @@ def test_bayesian_neural_network_mo_update(n_features, hidden_dim_list, n_sample
 
 
 @settings(deadline=500)
+@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
+@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     n_objectives=st.integers(min_value=1, max_value=3),
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
-def test_can_init_bayesian_neural_network_mo_cc(n_features, hidden_dim_list, n_objectives, cost):
+def test_can_init_bayesian_neural_network_mo_cc(
+    activation, use_residual_connections, n_features, hidden_dim_list, n_objectives, cost
+):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or n_objectives <= 0 or cost < 0:
         with pytest.raises((ValidationError, ValueError)):
-            models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+            models = [
+                BayesianNeuralNetwork.cold_start(
+                    n_features,
+                    hidden_dim_list,
+                    activation=activation,
+                    use_residual_connections=use_residual_connections,
+                )
+                for _ in range(n_objectives)
+            ]
             BayesianNeuralNetworkMOCC(models=models, cost=cost)
     else:
-        models = [BayesianNeuralNetwork.cold_start(n_features, hidden_dim_list) for _ in range(n_objectives)]
+        models = [
+            BayesianNeuralNetwork.cold_start(
+                n_features, hidden_dim_list, activation=activation, use_residual_connections=use_residual_connections
+            )
+            for _ in range(n_objectives)
+        ]
         bnn_mo_cc = BayesianNeuralNetworkMOCC(models=models, cost=cost)
         assert len(bnn_mo_cc.models) == n_objectives
         assert bnn_mo_cc.cost == cost
         assert all(isinstance(model, BayesianNeuralNetwork) for model in bnn_mo_cc.models)
+        # Verify all models have the same activation and residual connections setting
+        for model in bnn_mo_cc.models:
+            assert model.activation == activation
+            assert model.use_residual_connections == use_residual_connections

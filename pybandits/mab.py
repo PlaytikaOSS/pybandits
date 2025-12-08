@@ -135,8 +135,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
         if not self.epsilon and self.default_action:
             raise AttributeError("A default action should only be defined when epsilon is defined.")
-        if self.default_action and self.default_action not in self.actions:
-            raise AttributeError("The default action must be valid action defined in the actions set.")
+        if self.default_action:
+            action_id = self.default_action[0] if isinstance(self.default_action, tuple) else self.default_action
+            if action_id not in self.actions:
+                raise AttributeError("The default action must be valid action defined in the actions set.")
         if (
             self.default_action
             and isinstance(self.default_action, tuple)
@@ -174,8 +176,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
         valid_actions = action_ids - forbidden_actions
         if len(valid_actions) == 0:
             raise ValueError("All actions are forbidden. You must allow at least 1 action.")
-        if self.default_action and self.default_action not in valid_actions:
-            raise ValueError("The default action is forbidden.")
+        if self.default_action:
+            action_id = self.default_action[0] if isinstance(self.default_action, tuple) else self.default_action
+            if action_id not in valid_actions:
+                raise ValueError("The default action is forbidden.")
 
         return valid_actions
 
@@ -380,8 +384,17 @@ class BaseMab(PyBanditsBaseModel, ABC):
         """
 
         if self.epsilon:
-            if self.default_action and self.default_action not in p.keys():
-                raise KeyError(f"Default action {self.default_action} not in actions.")
+            if self.default_action:
+                if isinstance(self.default_action, tuple):
+                    # For quantitative models, check if any key has the same action_id
+                    default_action_id = self.default_action[0]
+                    if not any(
+                        (isinstance(key, tuple) and key[0] == default_action_id) or key == default_action_id
+                        for key in p.keys()
+                    ):
+                        raise KeyError(f"Default action {self.default_action} not in actions.")
+                elif self.default_action not in p.keys():
+                    raise KeyError(f"Default action {self.default_action} not in actions.")
             if np.random.binomial(1, self.epsilon):
                 if self.default_action:
                     selected_action = self.default_action
