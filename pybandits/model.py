@@ -32,6 +32,7 @@ from numpy.typing import ArrayLike
 from pymc import Bernoulli, Data, Deterministic, Minibatch, fit, math, sample
 from pymc import Model as PymcModel
 from pymc import StudentT as PymcStudentT
+from scipy.special import erf
 from scipy.stats import t
 from typing_extensions import Self
 
@@ -53,6 +54,33 @@ from pybandits.pydantic_version_compatibility import (
 )
 
 UpdateMethods = Literal["VI", "MCMC"]
+ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
+
+
+# Module-level activation functions for pickling compatibility
+def _pymc_relu(x):
+    """ReLU activation function for PyMC."""
+    return math.maximum(0, x)
+
+
+def _pymc_gelu(x):
+    """GELU activation function for PyMC."""
+    return 0.5 * x * (1 + math.erf(x / np.sqrt(2.0)))
+
+
+def _numpy_relu(x: np.ndarray) -> np.ndarray:
+    """ReLU activation function for NumPy."""
+    return np.maximum(0, x)
+
+
+def _numpy_gelu(x: np.ndarray) -> np.ndarray:
+    """GELU activation function for NumPy."""
+    return 0.5 * x * (1 + erf(x / np.sqrt(2.0)))
+
+
+def _stable_sigmoid(x):
+    """Stable sigmoid activation function for NumPy."""
+    return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
 
 class Model(BaseModelSO, ABC):
@@ -452,12 +480,19 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     update_kwargs : Optional[dict], optional
         A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
         For VI, it contains both 'trace' and 'fit' settings.
+    activation : str, optional
+        The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
+    use_residual_connections : bool, optional
+        Whether to use residual connections in the network. Residual connections are only added when
+        the layer output dimension is greater than or equal to the input dimension (default is False).
 
     Notes
     -----
-    - The model uses tanh activation for hidden layers and sigmoid activation for the output layer.
+    - The model uses the specified activation function for hidden layers and sigmoid activation for the output layer.
     - The output layer is designed for binary classification tasks, with probabilities modeled
       using a Bernoulli likelihood.
+    - When use_residual_connections is True, residual connections are added to hidden layers where the output
+      dimension is >= input dimension. For expanding dimensions, the residual is zero-padded.
     """
 
     model_params: BnnParams
@@ -477,9 +512,23 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "adam",
         "adamax",
     ]
+    _pymc_activations: ClassVar[dict] = {
+        "tanh": math.tanh,
+        "relu": _pymc_relu,
+        "sigmoid": math.sigmoid,
+        "gelu": _pymc_gelu,
+    }
+    _numpy_activations: ClassVar[dict] = {
+        "tanh": np.tanh,
+        "relu": _numpy_relu,
+        "sigmoid": _stable_sigmoid,
+        "gelu": _numpy_gelu,
+    }
 
     update_method: str = "VI"
     update_kwargs: Optional[dict] = None
+    activation: ActivationFunctions = "tanh"
+    use_residual_connections: bool = False
 
     _default_mcmc_trace_kwargs: ClassVar[dict] = dict(
         tune=500,
@@ -495,6 +544,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _default_variational_inference_fit_kwargs: ClassVar[dict] = dict(method="advi")
 
     _approx_history: np.ndarray = PrivateAttr(None)
+    _numpy_activation_fn: Callable = PrivateAttr(None)
+    _pymc_activation_fn: Callable = PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -569,6 +620,15 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
+    @field_validator("activation")
+    @classmethod
+    def validate_activation(cls, v):
+        if v not in cls._pymc_activations.keys():
+            raise ValueError(
+                f"Invalid activation function: {v}. Supported activations are: {list(cls._pymc_activations.keys())}"
+            )
+        return v
+
     @property
     def approx_history(self) -> Optional[np.ndarray]:
         return self._approx_history
@@ -584,10 +644,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             _optimizer = None
 
         return _optimizer
-
-    @classmethod
-    def _stable_sigmoid(cls, x):
-        return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
@@ -676,6 +732,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         return self.model_params.bnn_layer_params[0].weight.shape[0]
 
+    def model_post_init(self, __context: Any) -> None:
+        """
+        Initialize activation function PrivateAttr based on the activation setting.
+        """
+        # Initialize activation functions (always set to ensure they're available after model_copy)
+        self._numpy_activation_fn = self._numpy_activations[self.activation]
+        self._pymc_activation_fn = self._pymc_activations[self.activation]
+
     def create_update_model(
         self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], batch_size: Optional[PositiveInt] = None
     ) -> PymcModel:
@@ -720,6 +784,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
                 b_shape = layer_params.bias.shape
                 weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
+                input_dim = w_shape[0]
+                output_dim = w_shape[1]
 
                 # For training, use shared weights and biases
                 w = PymcStudentT(
@@ -732,7 +798,20 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 linear_transform = math.dot(next_layer_input, w) + b
 
                 if layer_ind < len(self.model_params.bnn_layer_params) - 1:
-                    next_layer_input = math.tanh(linear_transform)
+                    activated_output = self._pymc_activation_fn(linear_transform)
+
+                    # Add residual connection if enabled and dimensions allow
+                    if self.use_residual_connections and output_dim >= input_dim:
+                        if output_dim == input_dim:
+                            next_layer_input = activated_output + next_layer_input
+                        else:
+                            residual_padded = math.concatenate(
+                                [next_layer_input, math.zeros((next_layer_input.shape[0], output_dim - input_dim))],
+                                axis=1,
+                            )
+                            next_layer_input = activated_output + residual_padded
+                    else:
+                        next_layer_input = activated_output
 
             # Final output processing
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
@@ -769,6 +848,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # Sample weights and biases from StudentT distributions
             w_params = layer_params.weight.params
             b_params = layer_params.bias.params
+            input_dim = layer_params.weight.shape[0]
+            output_dim = layer_params.weight.shape[1]
 
             # Sample weights and biases using scipy.stats
             w = t.rvs(
@@ -784,13 +865,25 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # Linear transformation
             linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
 
-            # Apply activation function (tanh for hidden layers, sigmoid for output)
+            # Apply activation function for hidden layers, sigmoid for output
             if layer_ind < len(self.model_params.bnn_layer_params) - 1:
-                next_layer_input = np.tanh(linear_transform)
+                activated_output = self._numpy_activation_fn(linear_transform)
+
+                # Add residual connection if enabled and dimensions allow
+                if self.use_residual_connections and output_dim >= input_dim:
+                    if output_dim == input_dim:
+                        next_layer_input = activated_output + next_layer_input
+                    else:
+                        residual_padded = np.pad(
+                            next_layer_input, ((0, 0), (0, output_dim - input_dim)), mode="constant", constant_values=0
+                        )
+                        next_layer_input = activated_output + residual_padded
+                else:
+                    next_layer_input = activated_output
             else:
                 # Output layer - apply sigmoid
                 weighted_sum = linear_transform.squeeze(-1)
-                prob = self._stable_sigmoid(weighted_sum)
+                prob = _stable_sigmoid(weighted_sum)
 
         return list(zip(prob, weighted_sum))
 
@@ -884,6 +977,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
         dist_params_init: Optional[Dict[str, float]] = None,
+        activation: ActivationFunctions = "tanh",
+        use_residual_connections: bool = False,
         **kwargs,
     ) -> Self:
         """
@@ -901,6 +996,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Additional keyword arguments for the update method. Default is None.
         dist_params_init : Optional[Dict[str, float]], optional
             Initial distribution parameters for the network weights and biases. Default is None.
+        activation : str
+            The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
+        use_residual_connections : bool
+            Whether to use residual connections in the network (default is False).
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
@@ -916,7 +1015,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         model_params = cls.create_model_params(
             n_features=n_features, hidden_dim_list=hidden_dim_list, **dist_params_init
         )
-        return cls(model_params=model_params, update_method=update_method, update_kwargs=update_kwargs, **kwargs)
+        return cls(
+            model_params=model_params,
+            update_method=update_method,
+            update_kwargs=update_kwargs,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+            **kwargs,
+        )
 
     def _reset(self):
         """
@@ -1001,6 +1107,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
         dist_params_init: Optional[Dict[str, float]] = None,
+        activation: ActivationFunctions = "tanh",
+        use_residual_connections: bool = False,
         **kwargs,
     ) -> Self:
         """
@@ -1020,6 +1128,10 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Additional keyword arguments for the update method.
         dist_params_init : Optional[Dict[str, float]], optional
             Initial distribution parameters for the network weights and biases.
+        activation : str
+            The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
+        use_residual_connections : bool
+            Whether to use residual connections in the network (default is False).
         **kwargs
             Additional keyword arguments.
 
@@ -1028,6 +1140,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         BayesianNeuralNetworkMO
             A multi-objective BNN with the specified number of objectives.
         """
+
         models = [
             BayesianNeuralNetwork.cold_start(
                 n_features=n_features,
@@ -1035,6 +1148,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 update_method=update_method,
                 update_kwargs=update_kwargs,
                 dist_params_init=dist_params_init,
+                activation=activation,
+                use_residual_connections=use_residual_connections,
             )
             for _ in range(n_objectives)
         ]
