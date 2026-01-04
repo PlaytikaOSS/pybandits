@@ -38,7 +38,7 @@ jobs:
       - name: Install project dependencies with Poetry
         run: |
           poetry add pydantic@${{ matrix.pydantic-version }}
-          poetry install
+          poetry install --all-extras
       - name: Style check
         run: |
           # run pre-commit hooks

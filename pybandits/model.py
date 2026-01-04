@@ -79,7 +79,7 @@ def _numpy_gelu(x: np.ndarray) -> np.ndarray:
     return 0.5 * x * (1 + erf(x / np.sqrt(2.0)))
 
 
-def _stable_sigmoid(x):
+def _numpy_sigmoid(x):
     """Stable sigmoid activation function for NumPy."""
     return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
@@ -850,7 +850,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _numpy_activations: ClassVar[dict] = {
         "tanh": np.tanh,
         "relu": _numpy_relu,
-        "sigmoid": _stable_sigmoid,
+        "sigmoid": _numpy_sigmoid,
         "gelu": _numpy_gelu,
     }
 
@@ -1208,7 +1208,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             else:
                 # Output layer - apply sigmoid
                 weighted_sum = linear_transform.squeeze(-1)
-                prob = _stable_sigmoid(weighted_sum)
+                prob = _numpy_sigmoid(weighted_sum)
 
         return list(zip(prob, weighted_sum))
 

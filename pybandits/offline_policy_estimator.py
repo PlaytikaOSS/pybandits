@@ -78,11 +78,18 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
                 raise ValueError(f"{name} must be a {ndim}D array.")
             if array.shape[0] != n_samples:
                 raise ValueError(f"action and {name} must have the same length.")
-            if array.dtype != dtype:
+            # Check dtype compatibility: use issubdtype for numpy dtypes
+            if dtype is float:
+                if not np.issubdtype(array.dtype, np.floating):
+                    raise ValueError(f"{name} must be a {dtype} array")
+            elif dtype is int:
+                if not np.issubdtype(array.dtype, np.integer):
+                    raise ValueError(f"{name} must be a {dtype} array")
+            elif array.dtype is not dtype:
                 raise ValueError(f"{name} must be a {dtype} array")
             if ndim > 1:
-                if array.shape[1] != n_actions:
-                    raise ValueError(f"{name} must have the same number of actions as the action array.")
+                if array.shape[1] < n_actions:
+                    raise ValueError(f"{name} must have at least number of actions as the action array.")
 
     @classmethod
     def _check_sum(cls, name: str, data: Dict[str, np.ndarray]):

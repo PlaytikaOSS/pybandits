@@ -43,7 +43,7 @@ jobs:
             ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ matrix.pydantic-version }}-
       - name: Install project dependencies with Poetry
         run: |
-          poetry install
+          poetry install --all-extras
       - name: Restore pyproject.toml
         run: |
           mv pyproject.toml.bak pyproject.toml

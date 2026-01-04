@@ -20,13 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import importlib
 import os
+import random
 from copy import deepcopy
 from functools import partial
 from itertools import product
 from math import floor
 from multiprocessing import Pool, cpu_count
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import optuna
@@ -42,6 +44,14 @@ from sklearn.model_selection import cross_val_score
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from tqdm import tqdm
+
+try:
+    from xgboost import XGBClassifier
+
+    _XGBOOST_AVAILABLE = True
+except ImportError:
+    _XGBOOST_AVAILABLE = False
+    XGBClassifier = None  # type: ignore
 from typing_extensions import Self
 
 from pybandits import offline_policy_estimator
@@ -76,7 +86,7 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
 
     Parameters
     ----------
-    estimator_type : Optional[Literal["logreg", "gbm", "rf", "mlp"]]
+    estimator_type : Optional[Literal["logreg", "gbm", "rf", "mlp", "xgb"]]
         The model type to optimize.
 
     fast_fit : bool
@@ -97,27 +107,81 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
     multi_action_prediction : bool
         Whether to predict for all actions or only for real action.
 
+    include_action_in_features : bool
+        Whether to include action in feature set. Should be set False only for propensity score.
+        If True, the model will be trained to predict the probability of the actual action taken.
+        If False, the model will be trained to predict the probability of the action that was taken.
     """
 
-    estimator_type: Literal["logreg", "gbm", "rf", "mlp"]
+    if _XGBOOST_AVAILABLE:
+        estimator_type: Literal["logreg", "gbm", "rf", "mlp", "xgb"]
+    else:
+        estimator_type: Literal["logreg", "gbm", "rf", "mlp"]
     fast_fit: bool
     action_one_hot_encoder: OneHotEncoder = OneHotEncoder(sparse_output=False)
     n_trials: int
     verbose: bool
     study_name: Optional[str] = None
     multi_action_prediction: bool
-    _model: Union[LogisticRegression, GradientBoostingClassifier, RandomForestClassifier, MLPClassifier] = PrivateAttr()
-    _model_mapping = {
+    include_action_in_features: bool = True
+    _model_mapping: ClassVar[Dict[str, type[ClassifierMixin]]] = {
         "mlp": MLPClassifier,
         "rf": RandomForestClassifier,
         "logreg": LogisticRegression,
         "gbm": GradientBoostingClassifier,
     }
+    if _XGBOOST_AVAILABLE:
+        _model: Union[
+            LogisticRegression, GradientBoostingClassifier, RandomForestClassifier, MLPClassifier, XGBClassifier
+        ] = PrivateAttr()
+        _model_mapping.update(
+            {
+                "xgb": XGBClassifier,
+            }
+        )
+    else:
+        _model: Union[LogisticRegression, GradientBoostingClassifier, RandomForestClassifier, MLPClassifier] = (
+            PrivateAttr()
+        )
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_action_prediction_config(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate that multi_action_prediction and include_action_in_features are compatible.
+
+        When include_action_in_features is False, we're doing multiclass classification
+        (context -> action), so multi_action_prediction must be False to extract the
+        probability of the actual action taken.
+
+        Parameters
+        ----------
+        values : Dict[str, Any]
+            The raw input dictionary before field validation.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The validated values dictionary.
+
+        Raises
+        ------
+        ValueError
+            If include_action_in_features is False and multi_action_prediction is True.
+        """
+        include_action_in_features = cls._get_value_with_default("include_action_in_features", values)
+        multi_action_prediction = values["multi_action_prediction"]
+        if not include_action_in_features and multi_action_prediction:
+            raise ValueError(
+                "When include_action_in_features is False (multiclass classification: context -> action), "
+                "multi_action_prediction must be False to extract the probability of the actual action taken."
+            )
+        return values
 
     def _pre_process(self, batch: Dict[str, Any]) -> np.ndarray:
         """
         Preprocess the feature vectors to be used for regression model training.
-        This method concatenates the context vector and action context vectors.
+        This method concatenates the context vector and optionally action context vectors.
 
         Parameters
         ----------
@@ -127,11 +191,14 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         Returns
         -------
         np.ndarray
-            A concatenated array of context and action context, shape (n_rounds, n_features_context + dim_action_context).
+            A concatenated array of context and optionally action context, shape (n_rounds, n_features_context + dim_action_context) or (n_rounds, n_features_context).
         """
         context = batch["context"]
-        action = batch["action_ids"]
-        return np.concatenate([context, self.action_one_hot_encoder.transform(action.reshape((-1, 1)))], axis=1)
+        if self.include_action_in_features:
+            action = batch["action_ids"]
+            return np.concatenate([context, self.action_one_hot_encoder.transform(action.reshape((-1, 1)))], axis=1)
+        else:
+            return context
 
     def _sample_parameter_space(self, trial: Trial) -> Dict[str, Union[str, int, float]]:
         """
@@ -180,6 +247,17 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
                 "n_estimators": trial.suggest_int("n_estimators", 10, 100),
                 "learning_rate": np.sqrt(10) ** -trial.suggest_int("learning_rate_init", 0, 6),
                 "max_depth": trial.suggest_int("max_depth", 2, 10),
+            }
+        elif self.estimator_type == "xgb":
+            return {
+                "n_estimators": trial.suggest_int("n_estimators", 10, 50),
+                "max_depth": trial.suggest_int("max_depth", 2, 5),
+                "learning_rate": np.sqrt(10) ** -trial.suggest_int("learning_rate", 0, 6),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 1.0),
+                "n_jobs": -1,
             }
 
     def _objective(self, trial: Trial, feature_set: np.ndarray, label: np.ndarray) -> float:
@@ -299,7 +377,22 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
                 prediction[:, action_index] = specific_action_prediction
         else:
             feature_set = self._pre_process(X)
-            prediction = self._model.predict_proba(feature_set)[:, 1]
+            if not self.include_action_in_features:
+                # Multiclass classification: predict probability of the actual action taken
+                # Get multiclass probabilities and extract probability of the action that was taken
+                action_proba = self._model.predict_proba(feature_set)  # Shape: (n_samples, n_classes)
+                # The model was trained on encoded actions (integers), and X["action"] contains the encoded actions
+                # The model's classes_ attribute contains the class labels (sorted unique values from training)
+                # Create a mapping from encoded action to class index for efficient lookup
+                encoded_actions = X["action"]  # Encoded integer actions
+                action_to_class_idx = {action: idx for idx, action in enumerate(self._model.classes_)}
+                # Map encoded_actions to indices in classes_
+                class_indices = np.array([action_to_class_idx[action] for action in encoded_actions])
+                # Extract probability of the actual action taken
+                prediction = action_proba[np.arange(len(encoded_actions)), class_indices]
+            else:
+                # Binary classification: action in features
+                prediction = self._model.predict_proba(feature_set)[:, 1]
         return prediction
 
 
@@ -318,9 +411,9 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         Logging data set
     split_prop: Float01
         Proportion of dataset used as training set
-    propensity_score_model_type: Literal["logreg", "gbm", "rf", "mlp", "batch_empirical", "empirical", "propensity_score"]
+    propensity_score_model_type: Literal["logreg", "gbm", "rf", "mlp", "xgb", "batch_empirical", "empirical", "propensity_score"]
         Method used to compute/estimate propensity score pi_b (propensity_score, logging / behavioral policy).
-    expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp"]
+    expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp", "xgb"]
         Method used to estimate expected reward for each action a in the training set.
     n_trials : Optional[int]
         Number of trials for the Optuna optimization process.
@@ -354,11 +447,18 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
     logged_data: pd.DataFrame
     split_prop: Float01
-    propensity_score_model_type: Literal[
-        "logreg", "gbm", "rf", "mlp", "batch_empirical", "empirical", "propensity_score"
-    ]
-    expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp"]
-    importance_weights_model_type: Literal["logreg", "gbm", "rf", "mlp"]
+    if _XGBOOST_AVAILABLE:
+        propensity_score_model_type: Literal[
+            "logreg", "gbm", "rf", "mlp", "xgb", "batch_empirical", "empirical", "propensity_score"
+        ]
+        expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp", "xgb"]
+        importance_weights_model_type: Literal["logreg", "gbm", "rf", "mlp", "xgb"]
+    else:
+        propensity_score_model_type: Literal[
+            "logreg", "gbm", "rf", "mlp", "batch_empirical", "empirical", "propensity_score"
+        ]
+        expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp"]
+        importance_weights_model_type: Literal["logreg", "gbm", "rf", "mlp"]
     scaler: Optional[Union[TransformerMixin, Dict[str, TransformerMixin]]] = None
     n_trials: Optional[int] = 100
     fast_fit: bool = False
@@ -479,6 +579,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             "gbm",
             "rf",
             "mlp",
+            "xgb",
         ]:
             raise ValueError("The requested propensity score model requires n_trials and fast_fit to be well defined")
         if (n_trials_value is None or fast_fit_value is None) and cls._check_argument_required_by_estimators(
@@ -706,7 +807,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         Returns
         ------
-        : np.ndarray
+        np.ndarray
             estimated propensity_score
         """
 
@@ -770,7 +871,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 train_propensity_score = self._train_data["propensity_score"]
                 test_propensity_score = self._test_data["propensity_score"]
 
-            else:  # self.propensity_score_model_type in ["gbm", "rf", "logreg", "mlp"]
+            else:  # self.propensity_score_model_type in ["gbm", "rf", "logreg", "mlp", "xgb"]
                 if self.verbose:
                     logger.info(
                         f"Data prediction of propensity score based on {self.propensity_score_model_type} model."
@@ -783,6 +884,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                     verbose=self.verbose,
                     study_name=f"{self.propensity_score_model_type}_propensity_score",
                     multi_action_prediction=False,
+                    include_action_in_features=False,
                 )
                 propensity_score_estimator.fit(X=self._train_data, y=self._train_data["action"])
                 train_propensity_score = np.clip(
@@ -894,23 +996,29 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         estimated_policy: np.ndarray (nb samples, nb actions)
             action probabilities for each action and samples
         """
+        n_cores = cpu_count() if n_cores is None else n_cores
         if self.verbose:
-            logger.info("Data prediction of expected policy based on Monte Carlo experiments.")
-        n_cores = n_cores or cpu_count()
+            logger.info(f"Data prediction of expected policy based on Monte Carlo experiments using {n_cores} cores.")
 
         # using MC, create a () best actions matrix
         mc_actions = []
         mab_data = self._test_data["context"] if self.contextual_features else self._test_data["n_rounds"]
-        predict_func = partial(_mab_predict, mab, mab_data)
+        # Serialize MAB to avoid pickling issues with PyMC function references in BayesianNeuralNetwork
+        mab_class_name, mab_state = mab.get_state()
+        predict_func = partial(_mab_predict_serialized, mab_class_name, mab_state, mab_data, self.verbose)
         # predict best action for a new prior parameters draw
         # using argmax(p(r|a, x)) with a in the list of actions
         if n_cores:
-            with Pool(processes=n_cores) as pool:
-                for mc_action in tqdm(pool.imap_unordered(predict_func, range(n_mc_experiments))):
+            # Use maxtasksperchild to recycle workers and prevent resource accumulation
+            # Without this, workers can accumulate memory/resources and cause hangs
+            with Pool(processes=n_cores, maxtasksperchild=1) as pool:
+                for mc_action in tqdm(
+                    pool.imap_unordered(predict_func, range(n_mc_experiments), chunksize=1), total=n_mc_experiments
+                ):
                     mc_actions.append(mc_action)
         else:
-            for mc_action in tqdm(range(n_mc_experiments)):
-                mc_actions.append(predict_func(mc_action))
+            for mc_action in tqdm(map(predict_func, range(n_mc_experiments)), total=n_mc_experiments):
+                mc_actions.append(mc_action)
 
         # finalize the dataframe shape to #samples X #mc experiments
         mc_actions = pd.DataFrame(mc_actions).T
@@ -929,6 +1037,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         n_mc_experiments: int = 1000,
         save_path: Optional[str] = None,
         visualize: bool = True,
+        n_cores: Optional[NonNegativeInt] = None,
     ) -> pd.DataFrame:
         """
         Execute the OPE process with multiple estimators simultaneously.
@@ -943,6 +1052,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             Path to save the results. Nothing is saved if not specified.
         visualize : bool, defaults to True.
             Whether to visualize the results of the OPE process
+        n_cores : Optional[NonNegativeInt], all available cores if not specified.
+            Number of cores used for multiprocessing. If None, uses all available cores.
 
         Returns
         -------
@@ -952,12 +1063,19 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         if visualize and not save_path and not in_jupyter_notebook():
             raise ValueError("save_path is required for visualization when not running in a Jupyter notebook")
 
+        if save_path and not os.path.exists(save_path):
+            os.makedirs(save_path)
+            if self.verbose:
+                logger.info(f"Created directory {save_path} for saving results.")
+
         # Define OPE keyword arguments
         kwargs = {}
         if self._check_argument_required_by_estimators("action", self.ope_estimators):
             kwargs["action"] = self._test_data["action"]
         if self._check_argument_required_by_estimators("estimated_policy", self.ope_estimators):
-            kwargs["estimated_policy"] = self.estimate_policy(mab=mab, n_mc_experiments=n_mc_experiments).values
+            kwargs["estimated_policy"] = self.estimate_policy(
+                mab=mab, n_mc_experiments=n_mc_experiments, n_cores=n_cores
+            ).values
         if self._check_argument_required_by_estimators("propensity_score", self.ope_estimators):
             kwargs["propensity_score"] = self._test_data["propensity_score"]
         if self._check_argument_required_by_estimators("expected_importance_weight", self.ope_estimators):
@@ -1006,6 +1124,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         save_path: Optional[str] = None,
         visualize: bool = True,
         with_test: bool = False,
+        n_cores: Optional[NonNegativeInt] = None,
     ) -> pd.DataFrame:
         """
         Execute update of the multi-armed bandit based on the logged data,
@@ -1023,6 +1142,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             Whether to visualize the results of the OPE process
         with_test : bool
             Whether to update the bandit model with the test data
+        n_cores : Optional[NonNegativeInt], all available cores if not specified.
+            Number of cores used for multiprocessing. If None, uses all available cores.
 
         Returns
         -------
@@ -1032,7 +1153,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         self._update_mab(mab, self._train_data)
         if with_test:
             self._update_mab(mab, self._test_data)
-        estimated_policy_value_df = self.evaluate(mab, n_mc_experiments, save_path, visualize)
+        estimated_policy_value_df = self.evaluate(mab, n_mc_experiments, save_path, visualize, n_cores)
         return estimated_policy_value_df
 
     def _update_mab(self, mab: BaseMab, data: Dict[str, Any]):
@@ -1128,4 +1249,69 @@ def _mab_predict(mab: BaseMab, mab_data: Union[np.ndarray, PositiveInt], mc_expe
     """
     mab_output = mab.predict(context=mab_data) if type(mab_data) is np.ndarray else mab.predict(n_samples=mab_data)
     actions = mab_output[0]
+    return actions
+
+
+def _mab_predict_serialized(
+    mab_class_name: str,
+    mab_state: str,
+    mab_data: Union[np.ndarray, PositiveInt],
+    verbose: bool,
+    mc_experiment: int = 0,
+) -> List[ActionId]:
+    """
+    bandit action probabilities prediction in test set using serialized MAB state.
+    This function recreates the MAB from its serialized state to avoid pickling issues
+    with PyMC function references in BayesianNeuralNetwork models.
+
+    Parameters
+    ----------
+    mab_class_name : str
+        The class name of the MAB model.
+    mab_state : str
+        The serialized state of the MAB model (JSON string).
+    mab_data : Union[np.ndarray, PositiveInt]
+        test data used to update the bandit model; context or number of samples.
+    verbose : bool
+        Whether to log detailed information during the prediction process.
+    mc_experiment : int
+        placeholder for multiprocessing
+
+    Returns
+    -------
+    actions: List[ActionId] of shape (n_samples,)
+        The actions selected by the multi-armed bandit model.
+    """
+    if verbose:
+        logger.info(f"Predicting actions for MC experiment {mc_experiment}.")
+
+    # Seeding
+    np.random.seed(mc_experiment)
+    random.seed(mc_experiment)
+
+    # Try to find the MAB class in common modules
+    mab_class = None
+    for module_name in ["pybandits.cmab", "pybandits.smab", "pybandits.mab"]:
+        try:
+            module = importlib.import_module(module_name)
+            if hasattr(module, mab_class_name):
+                mab_class = getattr(module, mab_class_name)
+                break
+        except (ImportError, AttributeError):
+            continue
+
+    if mab_class is None:
+        raise ValueError(f"Could not find MAB class: {mab_class_name} in pybandits modules")
+
+    # Recreate MAB from serialized state to avoid pickling PyMC function references
+    mab = mab_class.from_state(mab_state)
+
+    # Predict using the recreated MAB
+    actions = _mab_predict(mab, mab_data, mc_experiment)
+
+    # Explicitly delete MAB to free memory immediately (helps with long-running workers)
+    del mab
+    if verbose:
+        logger.info(f"Finished predicting actions for MC experiment {mc_experiment}.")
+
     return actions

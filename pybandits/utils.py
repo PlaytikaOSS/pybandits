@@ -27,7 +27,14 @@ from typing import Callable, List, Optional, Tuple
 
 from bokeh.io import curdoc, output_file, output_notebook, save, show
 from bokeh.models import InlineStyleSheet, TabPanel, Tabs
-from IPython import get_ipython
+
+try:
+    from IPython import get_ipython
+
+    _IPYTHON_AVAILABLE = True
+except ImportError:
+    _IPYTHON_AVAILABLE = False
+    get_ipython = None  # type: ignore
 
 from pybandits.pydantic_version_compatibility import validate_call
 
@@ -83,19 +90,17 @@ def in_jupyter_notebook() -> bool:
     -------
     bool
         True if the code is running in a Jupyter notebook, False otherwise.
-
-    Raises
-    ------
-    NotImplementedError
-        If the shell type is neither Jupyter notebook nor terminal.
     """
+    if not _IPYTHON_AVAILABLE:
+        return False
 
     try:
-        shell = get_ipython().__class__.__name__
-
+        ipython = get_ipython()
+        if ipython is None:
+            return False
+        shell = ipython.__class__.__name__
         return shell == "ZMQInteractiveShell"
-
-    except NameError:
+    except (NameError, AttributeError):
         return False  # Probably standard Python interpreter
 
 
