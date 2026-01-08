@@ -26,8 +26,11 @@ import pymc
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pymc.distributions.continuous import Normal as PymcNormal
+from pymc.distributions.continuous import StudentT as PymcStudentT
 
 from pybandits.model import (
+    BaseLocationScaleArray,
     BayesianLogisticRegression,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
@@ -37,6 +40,7 @@ from pybandits.model import (
     BetaCC,
     BetaMO,
     BetaMOCC,
+    NormalArray,
     StudentTArray,
 )
 from pybandits.pydantic_version_compatibility import ValidationError
@@ -213,31 +217,73 @@ def test_can_init_beta_mo_cc(a_float):
 ########################################################################################################################
 
 
-# StudentTArray
+# NormalArray and StudentTArray
 @settings(deadline=500)
+@pytest.mark.parametrize("array_class", [NormalArray, StudentTArray])
 @given(
-    st.one_of(
+    shape=st.one_of(
         st.integers(min_value=1, max_value=10),
         st.tuples(st.integers(min_value=1, max_value=10)),
         st.tuples(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=10)),
     ),
-    st.floats(allow_nan=False, allow_infinity=False),
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-    st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
+    mu=st.floats(allow_nan=False, allow_infinity=False),
+    sigma=st.floats(min_value=0, allow_nan=False, allow_infinity=False),
+    nu=st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
 )
-def test_can_init_studenttarray(shape, mu, sigma, nu):
-    # init with default args
-    s = StudentTArray.cold_start(shape=shape)
-    assert s.mu == np.full(shape, 0.0).tolist()
-    assert s.sigma == np.full(shape, 10.0).tolist()
-    assert s.nu == np.full(shape, 5.0).tolist()
-    # assert s.shape == shape
+def test_can_init_location_scale_array(array_class, shape, mu, sigma, nu):
+    # Test with default args
+    a = array_class.cold_start(shape=shape)
+    expected_shape = shape if isinstance(shape, tuple) else (shape,)
+    assert a.shape == expected_shape
+    if array_class == NormalArray:
+        assert not hasattr(a, "nu")
+    else:
+        assert hasattr(a, "nu")
 
-    s = StudentTArray.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
-    assert s.mu == np.full(shape, mu).tolist()
-    assert s.sigma == np.full(shape, sigma).tolist()
-    assert s.nu == np.full(shape, nu).tolist()
-    # assert s.shape == shape
+    # Test with custom args
+    if array_class == NormalArray:
+        a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma)
+        assert a.mu == np.full(shape, mu).tolist()
+        assert a.sigma == np.full(shape, sigma).tolist()
+    else:
+        a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
+        assert a.mu == np.full(shape, mu).tolist()
+        assert a.sigma == np.full(shape, sigma).tolist()
+        assert a.nu == np.full(shape, nu).tolist()
+
+
+@settings(deadline=500)
+@pytest.mark.parametrize("array_class,other_class", [(NormalArray, StudentTArray), (StudentTArray, NormalArray)])
+@given(shape=st.one_of(st.integers(min_value=1, max_value=10), st.tuples(st.integers(min_value=1, max_value=10))))
+def test_location_scale_array_inherits_from_base(array_class, other_class, shape):
+    a = array_class.cold_start(shape=shape)
+    assert isinstance(a, BaseLocationScaleArray)
+    assert not isinstance(a, other_class)
+
+
+@settings(deadline=500)
+@pytest.mark.parametrize(
+    "array_class,expected_pymc_class",
+    [(NormalArray, PymcNormal), (StudentTArray, PymcStudentT)],
+)
+@given(
+    shape=st.one_of(
+        st.tuples(st.integers(min_value=1, max_value=5), st.integers(min_value=1, max_value=5)),
+    ),
+    mu=st.floats(allow_nan=False, allow_infinity=False),
+    sigma=st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
+    nu=st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
+)
+def test_location_scale_array_to_pymc_distribution(array_class, expected_pymc_class, shape, mu, sigma, nu):
+    if array_class == NormalArray:
+        a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma)
+    else:
+        a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
+
+    with pymc.Model():
+        pymc_dist = a.to_pymc_distribution(name="test", shape=shape, initval="prior")
+        assert pymc_dist.owner is not None
+        assert isinstance(pymc_dist.owner.op, expected_pymc_class)
 
 
 ########################################################################################################################
@@ -268,7 +314,10 @@ def test_can_init_bayesian_neural_network(n_features, hidden_dim_list):
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
 def test_check_context_matrix(n_samples, n_features, hidden_dim_list):
-    bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+    )
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
@@ -325,7 +374,10 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
         if invalid_n_features == n_features:
             continue  # skip if by chance delta is 0
         invalid_context = np.random.rand(n_rows, invalid_n_features)
-        bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=[])
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=[],
+        )
         with pytest.raises(AttributeError):
             bnn.check_context_matrix(context=invalid_context)
 
@@ -333,12 +385,13 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
 @settings(deadline=20000)
 @pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
 @pytest.mark.parametrize("use_residual_connections", [True, False])
+@pytest.mark.parametrize("dist_type", ["studentt", "normal"])
 @given(
     n_samples=st.integers(min_value=1, max_value=1000),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
-def test_bnn_sample_proba(activation, use_residual_connections, n_samples, n_features, hidden_dim_list):
+def test_bnn_sample_proba(activation, use_residual_connections, dist_type, n_samples, n_features, hidden_dim_list):
     def sample_proba(context):
         prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
         prob, weighted_sum = zip(*prob_and_weighted_sum)
@@ -346,8 +399,18 @@ def test_bnn_sample_proba(activation, use_residual_connections, n_samples, n_fea
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
 
     bnn = BayesianNeuralNetwork.cold_start(
-        n_features, hidden_dim_list, activation=activation, use_residual_connections=use_residual_connections
+        n_features,
+        hidden_dim_list,
+        activation=activation,
+        use_residual_connections=use_residual_connections,
+        dist_type=dist_type,
     )
+
+    # Verify distribution type
+    expected_array = NormalArray if dist_type == "normal" else StudentTArray
+    for layer_params in bnn.model_params.bnn_layer_params:
+        assert isinstance(layer_params.weight, expected_array)
+        assert isinstance(layer_params.bias, expected_array)
 
     # context is numpy array
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
@@ -376,14 +439,20 @@ def test_bnn_sample_proba(activation, use_residual_connections, n_samples, n_fea
 @settings(deadline=None)
 @pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
 @pytest.mark.parametrize("use_residual_connections", [True, False])
+@pytest.mark.parametrize("dist_type", ["studentt", "normal"])
 @given(
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(5),
     update_method=st.just("VI"),
 )
-def test_bnn_vi_update(activation, use_residual_connections, n_features, hidden_dim_list, n_samples, update_method):
-    init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
+def test_bnn_vi_update(
+    activation, use_residual_connections, dist_type, n_features, hidden_dim_list, n_samples, update_method
+):
+    init_params = dict(mu=0.0, sigma=10.0)
+    if dist_type == "studentt":
+        init_params["nu"] = 5.0
+    dist_params = init_params.copy()
 
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
@@ -392,6 +461,8 @@ def test_bnn_vi_update(activation, use_residual_connections, n_features, hidden_
             update_method=update_method,
             activation=activation,
             use_residual_connections=use_residual_connections,
+            dist_type=dist_type,
+            dist_params_init=dist_params,
         )
         dim_list = [n_features] + hidden_dim_list
 
@@ -402,15 +473,26 @@ def test_bnn_vi_update(activation, use_residual_connections, n_features, hidden_
                 assert np.all(np.array(layer_w[param]) == init_params[param])
                 assert np.all(np.array(layer_b[param]) == init_params[param])
 
+            # Verify distribution type
+            expected_array = NormalArray if dist_type == "normal" else StudentTArray
+            assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].weight, expected_array)
+            assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].bias, expected_array)
+
         bnn.update(context=context, rewards=rewards)
 
-        # nu is not updated:
+        # mu and sigma are updated:
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
             for param in ["mu", "sigma"]:
                 assert np.all(np.array(layer_w[param]) != init_params[param])
                 assert np.all(np.array(layer_b[param]) != init_params[param])
+
+        # Verify distribution type is preserved after update
+        expected_array = NormalArray if dist_type == "normal" else StudentTArray
+        for layer_ind in range(len(dim_list)):
+            assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].weight, expected_array)
+            assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].bias, expected_array)
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
 
@@ -517,10 +599,14 @@ def test_bnn_vi_update_parameters(
 def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_method="MCMC"):
     hidden_dim_list = list(hidden_dim_list)
     init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
+    dist_params = init_params.copy()
 
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            dist_params_init=dist_params,
         )
         dim_list = [n_features] + hidden_dim_list
         for layer_ind in range(len(dim_list)):
@@ -532,7 +618,6 @@ def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_m
 
         bnn.update(context=context, rewards=rewards)
 
-        # nu is not updated:
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
@@ -541,8 +626,6 @@ def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_m
                 assert np.all(np.array(layer_b[param]) != init_params[param])
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
-
-    # context is numpy array
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
