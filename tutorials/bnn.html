@@ -68,6 +68,7 @@
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#id1">Predictions + uncertainty map</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Using-Normal-Priors-Instead-of-Student-t">Using Normal Priors Instead of Student-t</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html">Offline Policy Evaluation</a></li>
@@ -194,7 +195,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f0215f1ff70&gt;
+&lt;matplotlib.legend.Legend at 0x7fb582cbf4c0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -294,7 +295,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f0212a7d990&gt;
+&lt;matplotlib.legend.Legend at 0x7fb57f2cca60&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -324,8 +325,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.86
-AUC: 0.9392770235655737
+Accuracy: 0.626
+AUC: 0.6721067537080594
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -404,19 +405,27 @@ AUC: 0.9392770235655737
 </div>
 </div>
 <p>In the following section we will demonstrate how a bayesian neural network (BNN) can capture complex patterns and relationships in data through multiple layers of abstraction, leading to better performance on tasks with high-dimensional features. In contrast, bayesian logistic regression is limited to linear relationships and may not effectively model intricate dependencies within the data.</p>
-<p>In order to define the model structure, we set the hidden_dim_list=[5, 5], which means that the model structure will have a 2 layers network - with first and second layers having five neurons.</p>
-<p>The fit is performed using the Variational Inference algorithm with 100K iterations, and with minibatches of size 256.</p>
-<p>The neurons’ Student-T distribution are initialized with mu = 0, sigma = 1 and nu = 5</p>
+<p>In order to define the model structure, we set:</p>
+<ul class="simple">
+<li><p><strong>Model structure</strong>: The <code class="docutils literal notranslate"><span class="pre">hidden_dim_list=[16,</span> <span class="pre">16]</span></code>, which means that the model structure will have a 2-layer network with 16 neurons in each hidden layer.</p></li>
+<li><p><strong>Activation function</strong>: We use <code class="docutils literal notranslate"><span class="pre">activation=&quot;tanh&quot;</span></code> for tanh activation (other options: “relu”, “sigmoid”, “gelu”)</p></li>
+<li><p><strong>Residual connections</strong>: We enable <code class="docutils literal notranslate"><span class="pre">use_residual_connections=True</span></code> to help with gradient flow in deeper networks</p></li>
+</ul>
+<p>The fit is performed using the <strong>Variational Inference</strong> algorithm with <code class="docutils literal notranslate"><span class="pre">10K</span></code> iterations, and with minibatches of size <code class="docutils literal notranslate"><span class="pre">256</span></code>.</p>
+<p>The neurons’ <strong>Student-t distribution</strong> are initialized with <code class="docutils literal notranslate"><span class="pre">mu</span> <span class="pre">=</span> <span class="pre">0,</span> <span class="pre">sigma</span> <span class="pre">=</span> <span class="pre">1</span> <span class="pre">and</span> <span class="pre">nu</span> <span class="pre">=</span> <span class="pre">5</span></code> (Student-t is the default distribution type).</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dist_params</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>  <span class="c1"># dist_type defaults to &quot;studentt&quot;</span>
 <span class="n">bnn</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
     <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
     <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
+    <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
+    <span class="n">use_residual_connections</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
-    <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
+    <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
+    <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params</span><span class="p">,</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 </pre></div>
@@ -505,8 +514,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.86
-AUC: 0.9370357325819672
+Accuracy: 0.928
+AUC: 0.9818237091793469
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
@@ -580,6 +589,93 @@ AUC: 0.9370357325819672
 <div class="output_area docutils container">
 <img alt="../_images/tutorials_bnn_44_0.png" src="../_images/tutorials_bnn_44_0.png" />
 </div>
+</div>
+</section>
+<section id="Using-Normal-Priors-Instead-of-Student-t">
+<h2>Using Normal Priors Instead of Student-t<a class="headerlink" href="#Using-Normal-Priors-Instead-of-Student-t" title="Link to this heading"></a></h2>
+<p>By default, BNN uses Student-t distributions for weight priors. You can use Normal priors by setting <code class="docutils literal notranslate"><span class="pre">dist_type=&quot;normal&quot;</span></code> and providing <code class="docutils literal notranslate"><span class="pre">dist_params_init</span></code> without the <code class="docutils literal notranslate"><span class="pre">nu</span></code> parameter. Normal priors are simpler and faster, but less robust to outliers compared to Student-t.</p>
+<p><strong>When to use Normal priors:</strong></p>
+<ul class="simple">
+<li><p>When you want faster computation</p></li>
+<li><p>When you don’t expect heavy-tailed distributions</p></li>
+<li><p>For standard regularization (L2-like)</p></li>
+</ul>
+<p><strong>When to use Student-t priors (default):</strong></p>
+<ul class="simple">
+<li><p>When you need robustness to outliers</p></li>
+<li><p>When you want stronger regularization</p></li>
+<li><p>For better generalization in noisy data</p></li>
+</ul>
+<p>BNN with Normal priors</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create BNN with Normal priors</span>
+<span class="n">bnn_normal</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+    <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
+    <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;relu&quot;</span><span class="p">,</span>
+    <span class="n">use_residual_connections</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
+    <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
+    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+
+<span class="n">bnn_normal</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
+
+<span class="c1"># Quick evaluation</span>
+<span class="n">batch_predictions_normal</span> <span class="o">=</span> <span class="p">[</span><span class="n">bnn_normal</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_normal</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions_normal</span><span class="p">]</span>
+<span class="p">)</span>
+<span class="n">pred_proba_normal</span> <span class="o">=</span> <span class="n">batch_proba_normal</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">pred_normal</span> <span class="o">=</span> <span class="n">pred_proba_normal</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
+
+<span class="n">accuracy_normal</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_normal</span><span class="p">)</span>
+<span class="n">auc_normal</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba_normal</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">BNN with Normal Priors - Accuracy: </span><span class="si">{</span><span class="n">accuracy_normal</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_normal</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BNN with Student-t Priors - Accuracy: </span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
+  warnings.warn(
+WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:256:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+
+BNN with Normal Priors - Accuracy: 0.854, AUC: 0.947
+BNN with Student-t Priors - Accuracy: 0.928, AUC: 0.982
+</pre></div></div>
 </div>
 </section>
 </section>
