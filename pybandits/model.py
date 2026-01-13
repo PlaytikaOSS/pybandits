@@ -33,6 +33,7 @@ from pymc import Bernoulli, Data, Deterministic, Minibatch, fit, math, sample
 from pymc import Model as PymcModel
 from pymc import Normal as PymcNormal
 from pymc import StudentT as PymcStudentT
+from pymc.variational.callbacks import CheckParametersConvergence
 from scipy.special import erf
 from scipy.stats import norm, t
 from typing_extensions import Self
@@ -539,6 +540,90 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             and type(self) is type(other)
         )
 
+    @classmethod
+    def cold_start(
+        cls,
+        shape: Union[PositiveInt, Tuple[PositiveInt, ...]],
+        mu: float = 0.0,
+        sigma: NonNegativeFloat = 10.0,
+        use_layerwise_scaling: bool = False,
+        **kwargs,
+    ) -> "BaseLocationScaleArray":
+        """
+        Template method for cold start initialization.
+
+        Common logic for shape normalization, validation, and parameter array creation
+        is handled here. Subclasses override `_get_distribution_specific_params` to
+        provide distribution-specific parameters.
+
+        Parameters
+        ----------
+        shape : Union[PositiveInt, Tuple[PositiveInt, ...]]
+            Dimensions of the distribution array.
+        mu : float
+            Mean of the distribution, by default 0.0.
+        sigma : NonNegativeFloat
+            Standard deviation of the distribution, by default 10.0.
+        use_layerwise_scaling : bool
+            Whether to use layerwise scaling in the network (default is False).
+            When applied, the sigma is scaled by the square root of the input dimension.
+            This is useful to enable smoother convergence with Gaussian Process-like behavior.
+        **kwargs
+            Additional keyword arguments for distribution-specific parameters
+            (e.g., `nu` for StudentTArray).
+
+        Returns
+        -------
+        BaseLocationScaleArray
+            An instance of the distribution array with the specified parameters.
+
+        Raises
+        ------
+        ValueError
+            If shape has empty dimensions.
+        """
+        if isinstance(shape, int):
+            shape = (shape,)
+
+        if any(dim_len == 0 for dim_len in shape):
+            raise ValueError("shape must have at least one element in every dimension.")
+
+        mu_array = np.full(shape, mu)
+        sigma_array = np.full(shape, sigma / np.sqrt(shape[0]) if use_layerwise_scaling else sigma)
+
+        # Get distribution-specific parameters from subclass
+        dist_params = cls._get_distribution_specific_params(shape, **kwargs)
+
+        return cls(mu=mu_array, sigma=sigma_array, **dist_params)
+
+    @classmethod
+    @abstractmethod
+    def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...], **kwargs) -> Dict[str, np.ndarray]:
+        """
+        Get distribution-specific parameters for cold start initialization.
+
+        Subclasses must implement this method to provide distribution-specific
+        parameters (e.g., `nu` for StudentTArray).
+
+        Note: Subclasses can omit `**kwargs` from their signature if they don't
+        need to accept additional parameters. This provides stricter validation
+        by raising TypeError for unexpected arguments.
+
+        Parameters
+        ----------
+        shape : Tuple[PositiveInt, ...]
+            Shape of the distribution array.
+        **kwargs
+            Additional keyword arguments containing distribution-specific parameters.
+            May be omitted in subclass implementations if not needed.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary mapping parameter names to numpy arrays of the specified shape.
+        """
+        pass
+
 
 class StudentTArray(BaseLocationScaleArray):
     """
@@ -577,23 +662,25 @@ class StudentTArray(BaseLocationScaleArray):
         return super().__eq__(other) and np.all(self._nu_array == other._nu_array)
 
     @classmethod
-    def cold_start(
-        cls,
-        shape: Union[PositiveInt, Tuple[PositiveInt, ...]],
-        mu: float = 0.0,
-        sigma: NonNegativeFloat = 10.0,
-        nu: PositiveFloat = 5.0,
-    ) -> "StudentTArray":
-        if isinstance(shape, int):
-            shape = (shape,)
+    def _get_distribution_specific_params(
+        cls, shape: Tuple[PositiveInt, ...], nu: PositiveFloat = 5.0
+    ) -> Dict[str, np.ndarray]:
+        """
+        Get distribution-specific parameters for Student's t-distribution.
 
-        if any(dim_len == 0 for dim_len in shape):
-            raise ValueError("shape of mu, sigma, and nu must have at least one element in every dimension.")
+        Parameters
+        ----------
+        shape : Tuple[PositiveInt, ...]
+            Shape of the distribution array.
+        nu : PositiveFloat
+            Degrees of freedom of the Student's t-distribution, by default 5.0.
 
-        mu = np.full(shape, mu)
-        sigma = np.full(shape, sigma)
-        nu = np.full(shape, nu)
-        return cls(mu=mu, sigma=sigma, nu=nu)
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary containing 'nu' parameter as a numpy array.
+        """
+        return {"nu": np.full(shape, nu)}
 
     def model_post_init(self, __context: Any) -> None:
         """
@@ -674,38 +761,24 @@ class NormalArray(BaseLocationScaleArray):
     _pymc_class: ClassVar[type] = PymcNormal
 
     @classmethod
-    def cold_start(
-        cls,
-        shape: Union[PositiveInt, Tuple[PositiveInt, ...]],
-        mu: float = 0.0,
-        sigma: NonNegativeFloat = 10.0,
-    ) -> "NormalArray":
+    def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
         """
-        Create a NormalArray with the specified parameters.
+        Get distribution-specific parameters for Normal distribution.
+
+        Normal distributions only require mu and sigma, which are handled
+        by the base class, so this method returns an empty dictionary.
 
         Parameters
         ----------
-        shape : Union[PositiveInt, Tuple[PositiveInt, ...]]
-            Shape of the array.
-        mu : float, optional
-            Mean value, by default 0.0.
-        sigma : NonNegativeFloat, optional
-            Standard deviation value, by default 10.0.
+        shape : Tuple[PositiveInt, ...]
+            Shape of the distribution array.
 
         Returns
         -------
-        NormalArray
-            A NormalArray instance with the specified parameters.
+        Dict[str, np.ndarray]
+            Empty dictionary (no additional parameters needed for Normal distribution).
         """
-        if isinstance(shape, int):
-            shape = (shape,)
-
-        if any(dim_len == 0 for dim_len in shape):
-            raise ValueError("shape of mu and sigma must have at least one element in every dimension.")
-
-        mu = np.full(shape, mu)
-        sigma = np.full(shape, sigma)
-        return cls(mu=mu, sigma=sigma)
+        return {}
 
     def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
         """
@@ -796,6 +869,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     use_residual_connections : bool, optional
         Whether to use residual connections in the network. Residual connections are only added when
         the layer output dimension is greater than or equal to the input dimension (default is False).
+    early_stopping_config : Optional[EarlyStoppingConfig], optional
+        Configuration for early stopping during VI training. If None, no early stopping is used (default is None).
+        Only applicable when update_method is "VI".
 
     Examples
     --------
@@ -829,7 +905,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _prob_var_name: ClassVar[str] = "prob"
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
-    _vi_update_params: ClassVar[list] = ["optimizer_type", "optimizer_kwargs", "batch_size"]
+    _vi_update_params: ClassVar[list] = ["optimizer_type", "optimizer_kwargs", "batch_size", "early_stopping_kwargs"]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _supported_optimizers: ClassVar[list] = [
         "sgd",
@@ -854,7 +930,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "gelu": _numpy_gelu,
     }
 
-    update_method: str = "VI"
+    update_method: UpdateMethods = "VI"
     update_kwargs: Optional[dict] = None
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
@@ -875,79 +951,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _approx_history: np.ndarray = PrivateAttr(None)
     _numpy_activation_fn: Callable = PrivateAttr(None)
     _pymc_activation_fn: Callable = PrivateAttr(None)
+    _obj_optimizer: Optional[Callable] = PrivateAttr(None)
+    _early_stopping_callback: Optional[CheckParametersConvergence] = PrivateAttr(None)
+    _update_kwargs: Dict[str, Any] = PrivateAttr(default_factory=dict)
 
     class Config:
         arbitrary_types_allowed = True
-
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @model_validator(mode="before")
-        @classmethod
-        def arrange_update_kwargs(cls, values):
-            update_kwargs = cls._get_value_with_default("update_kwargs", values)
-            update_method = cls._get_value_with_default("update_method", values)
-
-            if update_kwargs is None:
-                update_kwargs = dict()
-
-            if update_method == "VI":
-                update_kwargs["fit"] = {**cls._default_variational_inference_fit_kwargs, **update_kwargs.get("fit", {})}
-                optimizer_type = update_kwargs.get("optimizer_type", None)
-
-                if optimizer_type is not None:
-                    if optimizer_type not in cls._supported_optimizers:
-                        raise ValueError(
-                            f"Invalid optimizer type: {optimizer_type}. Supported optimizers are: {cls._supported_optimizers}"
-                        )
-
-            elif update_method == "MCMC":
-                for param in cls._vi_update_params:
-                    if param in update_kwargs:
-                        raise ValueError(
-                            f"Invalid update MCMC parameter: {param}. {cls._vi_update_params} are VI parameters."
-                        )
-
-                update_kwargs["trace"] = {**cls._default_mcmc_trace_kwargs, **update_kwargs.get("trace", {})}
-            else:
-                raise ValueError("Invalid update method.")
-
-            values["update_kwargs"] = update_kwargs
-            values["update_method"] = update_method
-            return values
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @model_validator(mode="after")
-        def arrange_update_kwargs(self):
-            if self.update_kwargs is None:
-                self.update_kwargs = dict()
-
-            if self.update_method == "VI":
-                self.update_kwargs["fit"] = {
-                    **self._default_variational_inference_fit_kwargs,
-                    **self.update_kwargs.get("fit", {}),
-                }
-                optimizer_type = self.update_kwargs.get("optimizer_type", None)
-                if optimizer_type is not None:
-                    if optimizer_type not in self._supported_optimizers:
-                        raise ValueError(
-                            f"Invalid optimizer type: {optimizer_type}. Supported optimizers are: {self._supported_optimizers}"
-                        )
-
-            elif self.update_method == "MCMC":
-                for param in self._vi_update_params:
-                    if param in self.update_kwargs:
-                        raise ValueError(
-                            f"Invalid update MCMC parameter: {param}. {self._vi_update_params} are VI parameters."
-                        )
-
-                self.update_kwargs["trace"] = {**self._default_mcmc_trace_kwargs, **self.update_kwargs.get("trace", {})}
-            else:
-                raise ValueError("Invalid update method.")
-            return self
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @field_validator("activation")
     @classmethod
@@ -962,17 +971,38 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     def approx_history(self) -> Optional[np.ndarray]:
         return self._approx_history
 
-    @property
-    def optimizer(self) -> Callable:
+    def _get_obj_optimizer(self) -> Optional[Callable]:
+        if self.update_kwargs is None:
+            return None
         optimizer_type = self.update_kwargs.get("optimizer_type", None)
         if optimizer_type is not None:
+            if optimizer_type not in self._supported_optimizers:
+                raise ValueError(
+                    f"Invalid optimizer type: {optimizer_type}. Supported optimizers are: {self._supported_optimizers}"
+                )
             optimizer = getattr(pymc, optimizer_type)
             optimizer_kwargs = self.update_kwargs.get("optimizer_kwargs", {})
-            _optimizer = optimizer(**optimizer_kwargs)
+            try:
+                _optimizer = optimizer(**optimizer_kwargs)
+            except (TypeError, ValueError, KeyError) as e:
+                raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}")
         else:
             _optimizer = None
 
         return _optimizer
+
+    def _get_early_stopping_callback(self) -> Optional[CheckParametersConvergence]:
+        if self.update_kwargs is None:
+            return None
+        early_stopping_kwargs = self.update_kwargs.get("early_stopping_kwargs", None)
+        if early_stopping_kwargs is not None:
+            try:
+                early_stopping_callback = CheckParametersConvergence(**early_stopping_kwargs)
+            except (TypeError, ValueError, KeyError) as e:
+                raise e.__class__(f"Invalid early stopping kwargs: {early_stopping_kwargs}.\n{e}")
+        else:
+            early_stopping_callback = None
+        return early_stopping_callback
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
@@ -984,7 +1014,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     def create_model_params(
         cls,
         n_features: PositiveInt,
-        hidden_dim_list: List[PositiveInt],
+        hidden_dim_list: Optional[List[PositiveInt]],
+        use_layerwise_scaling: bool = False,
         dist_class: type[BaseLocationScaleArray] = StudentTArray,
         **dist_params_init,
     ) -> BnnParams:
@@ -998,13 +1029,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ----------
         n_features : PositiveInt
             The number of input features for the BNN.
-        hidden_dim_list : List[PositiveInt]
+        hidden_dim_list : Optional[List[PositiveInt]]
             A list of integers specifying the number of hidden units in each hidden layer.
             If None, no hidden layers are added.
+        use_layerwise_scaling : bool
+            Whether to use layerwise scaling in the network (default is False).
         dist_class : type[BaseLocationScaleArray], optional
             The distribution class to use (StudentTArray or NormalArray), by default StudentTArray.
         **dist_params_init : dict, optional
             Additional parameters for initializing the distribution of weights and biases.
+
         Returns
         -------
         BnnParams
@@ -1022,7 +1056,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         for layer_ind in range(len(_dim_list) - 1):
             input_dim = _dim_list[layer_ind]
             output_dim = _dim_list[layer_ind + 1]
-            w_param = dist_class.cold_start(shape=(input_dim, output_dim), **dist_params_init)
+            w_param = dist_class.cold_start(
+                shape=(input_dim, output_dim), use_layerwise_scaling=use_layerwise_scaling, **dist_params_init
+            )
             b_param = dist_class.cold_start(shape=output_dim, **dist_params_init)
             layer_params_init.append(BnnLayerParams(weight=w_param, bias=b_param))
 
@@ -1067,6 +1103,27 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         return self.model_params.bnn_layer_params[0].weight.shape[0]
 
+    def _arrange_update_kwargs(self):
+        if self.update_kwargs is None:
+            self.update_kwargs = dict()
+
+        if self.update_method == "VI":
+            self.update_kwargs["fit"] = {
+                **self._default_variational_inference_fit_kwargs,
+                **self.update_kwargs.get("fit", {}),
+            }
+
+        elif self.update_method == "MCMC":
+            for param in self._vi_update_params:
+                if param in self.update_kwargs:
+                    raise ValueError(
+                        f"Invalid update MCMC parameter: {param}. {self._vi_update_params} are VI parameters."
+                    )
+
+            self.update_kwargs["trace"] = {**self._default_mcmc_trace_kwargs, **self.update_kwargs.get("trace", {})}
+        else:
+            raise ValueError("Invalid update method.")
+
     def model_post_init(self, __context: Any) -> None:
         """
         Initialize activation function PrivateAttr based on the activation setting.
@@ -1074,6 +1131,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # Initialize activation functions (always set to ensure they're available after model_copy)
         self._numpy_activation_fn = self._numpy_activations[self.activation]
         self._pymc_activation_fn = self._pymc_activations[self.activation]
+        self._arrange_update_kwargs()
+        self._obj_optimizer = self._get_obj_optimizer()
+        self._early_stopping_callback = self._get_early_stopping_callback()
+        self._update_kwargs = deepcopy(self.update_kwargs)
+        if self._obj_optimizer is not None:
+            self._update_kwargs["fit"]["obj_optimizer"] = self._obj_optimizer
+        if self._early_stopping_callback is not None:
+            self._update_kwargs["fit"]["callbacks"] = [self._early_stopping_callback]
 
     def create_update_model(
         self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], batch_size: Optional[PositiveInt] = None
@@ -1110,8 +1175,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             if batch_size is None:
                 bnn_output = Data("bnn_output", y)
                 bnn_input = Data("bnn_input", x)
+                likelihood_kwargs = {}
             else:
                 bnn_input, bnn_output = Minibatch(x, y, batch_size=batch_size)
+                # total_size is the total number of samples in the dataset
+                likelihood_kwargs = dict(total_size=x.shape[0])
 
             next_layer_input = bnn_input
 
@@ -1150,7 +1218,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # Final output processing
             logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
 
-            Bernoulli("out", logit_p=logit, observed=bnn_output)
+            Bernoulli("out", logit_p=logit, observed=bnn_output, **likelihood_kwargs)
 
         return _model
 
@@ -1271,17 +1339,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if len(context) != len(rewards):
             raise AttributeError("Shape mismatch: context and rewards must have the same length.")
 
-        batch_size = self.update_kwargs.get("batch_size", None)
+        batch_size = self._update_kwargs.get("batch_size", None)
         _context = np.atleast_2d(context)
         _model = self.create_update_model(x=_context, y=rewards, batch_size=batch_size)
         with _model:
+            # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
-                update_kwargs = self.update_kwargs.copy()
-
-                if self.optimizer is not None:
-                    approx = fit(obj_optimizer=self.optimizer, **update_kwargs["fit"])
-                else:
-                    approx = fit(**update_kwargs["fit"])
+                # variational inference
+                approx = fit(**self._update_kwargs["fit"])
 
                 self._approx_history = approx.hist
                 approx_mean_eval = approx.mean.eval()
@@ -1341,6 +1406,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         dist_params_init: Optional[Dict[str, float]] = None,
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
+        use_layerwise_scaling: bool = False,
         **kwargs,
     ) -> Self:
         """
@@ -1366,6 +1432,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
         use_residual_connections : bool
             Whether to use residual connections in the network (default is False).
+        use_layerwise_scaling : bool
+            Whether to use layerwise scaling in the network (default is False).
+            When applied, the sigma is scaled by the square root of the input dimension.
+            This is useful to enable smoother convergence with Gaussian Process-like behavior.
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
@@ -1387,7 +1457,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         dist_class = cls._distribution_mapping[dist_type]
 
         model_params = cls.create_model_params(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, dist_class=dist_class, **dist_params_init
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            use_layerwise_scaling=use_layerwise_scaling,
+            dist_class=dist_class,
+            **dist_params_init,
         )
         return cls(
             model_params=model_params,
@@ -1420,11 +1494,6 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork, ModelCC):
     This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
     using PyMC for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
     and Variational Inference (VI) methods for posterior inference.
-
-    References
-    ----------
-    Bayesian Learning for Neural Networks (Radford M. Neal, 1995)
-    https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=db869fa192a3222ae4f2d766674a378e47013b1b
 
     Parameters
     ----------
@@ -1484,6 +1553,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         dist_params: Optional[Dict[str, float]] = None,
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
+        use_layerwise_scaling: bool = False,
         **kwargs,
     ) -> Self:
         """
@@ -1509,6 +1579,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
         use_residual_connections : bool
             Whether to use residual connections in the network (default is False).
+        use_layerwise_scaling : bool
+            Whether to use layerwise scaling in the network (default is False).
         **kwargs
             Additional keyword arguments.
 
@@ -1528,6 +1600,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 dist_params_init=dist_params,
                 activation=activation,
                 use_residual_connections=use_residual_connections,
+                use_layerwise_scaling=use_layerwise_scaling,
             )
             for _ in range(n_objectives)
         ]

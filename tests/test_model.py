@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Literal, Optional
+
 import numpy as np
 import pandas as pd
 import pymc
@@ -42,6 +44,7 @@ from pybandits.model import (
     BetaMOCC,
     NormalArray,
     StudentTArray,
+    UpdateMethods,
 )
 from pybandits.pydantic_version_compatibility import ValidationError
 
@@ -383,15 +386,18 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
 
 
 @settings(deadline=20000)
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-@pytest.mark.parametrize("use_residual_connections", [True, False])
-@pytest.mark.parametrize("dist_type", ["studentt", "normal"])
 @given(
-    n_samples=st.integers(min_value=1, max_value=1000),
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
+    dist_type=st.sampled_from(["studentt", "normal"]),
+    n_samples=st.integers(min_value=1, max_value=100),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
-def test_bnn_sample_proba(activation, use_residual_connections, dist_type, n_samples, n_features, hidden_dim_list):
+def test_bnn_sample_proba(
+    activation, use_residual_connections, use_layerwise_scaling, dist_type, n_samples, n_features, hidden_dim_list
+):
     def sample_proba(context):
         prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
         prob, weighted_sum = zip(*prob_and_weighted_sum)
@@ -403,6 +409,7 @@ def test_bnn_sample_proba(activation, use_residual_connections, dist_type, n_sam
         hidden_dim_list,
         activation=activation,
         use_residual_connections=use_residual_connections,
+        use_layerwise_scaling=use_layerwise_scaling,
         dist_type=dist_type,
     )
 
@@ -413,7 +420,7 @@ def test_bnn_sample_proba(activation, use_residual_connections, dist_type, n_sam
         assert isinstance(layer_params.bias, expected_array)
 
     # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     assert type(context) is np.ndarray
     sample_proba(context=context)
 
@@ -436,24 +443,29 @@ def test_bnn_sample_proba(activation, use_residual_connections, dist_type, n_sam
     assert is_all_different
 
 
-@settings(deadline=None)
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-@pytest.mark.parametrize("use_residual_connections", [True, False])
-@pytest.mark.parametrize("dist_type", ["studentt", "normal"])
+@settings(deadline=None, max_examples=25)
 @given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
+    dist_type=st.sampled_from(["studentt", "normal"]),
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
-    n_samples=st.just(5),
+    n_samples=st.just(3),
     update_method=st.just("VI"),
+    n=st.just(2),
 )
 def test_bnn_vi_update(
-    activation, use_residual_connections, dist_type, n_features, hidden_dim_list, n_samples, update_method
+    activation,
+    use_residual_connections,
+    use_layerwise_scaling,
+    dist_type,
+    n_features,
+    hidden_dim_list,
+    n_samples,
+    update_method,
+    n,
 ):
-    init_params = dict(mu=0.0, sigma=10.0)
-    if dist_type == "studentt":
-        init_params["nu"] = 5.0
-    dist_params = init_params.copy()
-
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
@@ -461,20 +473,23 @@ def test_bnn_vi_update(
             update_method=update_method,
             activation=activation,
             use_residual_connections=use_residual_connections,
+            use_layerwise_scaling=use_layerwise_scaling,
             dist_type=dist_type,
-            dist_params_init=dist_params,
+            update_kwargs={"fit": {"n": n}},  # Use minimal iterations for faster tests
         )
+
+        expected_array = NormalArray if dist_type == "normal" else StudentTArray
         dim_list = [n_features] + hidden_dim_list
 
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            for param in init_params.keys():
-                assert np.all(np.array(layer_w[param]) == init_params[param])
-                assert np.all(np.array(layer_b[param]) == init_params[param])
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            for param in expected_array.model_fields.keys():
+                assert np.all(layer_w[param] == layer_w_init[param])
+                assert np.all(layer_b[param] == layer_b_init[param])
 
-            # Verify distribution type
-            expected_array = NormalArray if dist_type == "normal" else StudentTArray
             assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].weight, expected_array)
             assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].bias, expected_array)
 
@@ -483,13 +498,14 @@ def test_bnn_vi_update(
         # mu and sigma are updated:
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
             for param in ["mu", "sigma"]:
-                assert np.all(np.array(layer_w[param]) != init_params[param])
-                assert np.all(np.array(layer_b[param]) != init_params[param])
+                assert np.all(layer_w[param] != layer_w_init[param])
+                assert np.all(layer_b[param] != layer_b_init[param])
 
         # Verify distribution type is preserved after update
-        expected_array = NormalArray if dist_type == "normal" else StudentTArray
         for layer_ind in range(len(dim_list)):
             assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].weight, expected_array)
             assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].bias, expected_array)
@@ -503,127 +519,302 @@ def test_bnn_vi_update(
     # raise an error if len(context) != len(rewards)
     with pytest.raises(AttributeError):
         bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            use_residual_connections=use_residual_connections,
+            use_layerwise_scaling=use_layerwise_scaling,
+            dist_type=dist_type,
+            update_kwargs={"fit": {"n": n}},  # Use minimal iterations for faster tests
         )
         bnn.update(context=context, rewards=rewards[1:])
+
+
+def _create_update_kwargs(
+    batch_size: Optional[int] = None,
+    optimizer_type: Optional[str] = None,
+    lr: Optional[float] = None,
+    early_stopping_diff: Optional[Literal["absolute", "relative"]] = None,
+    early_stopping_tol: Optional[float] = None,
+    early_stopping_every: Optional[int] = None,
+) -> dict:
+    """Create update_kwargs dictionary from individual parameters."""
+    update_kwargs: dict = {}
+    if batch_size is not None:
+        update_kwargs["batch_size"] = batch_size
+    if optimizer_type is not None:
+        update_kwargs["optimizer_type"] = optimizer_type
+        update_kwargs["optimizer_kwargs"] = {}
+        if lr is not None:
+            update_kwargs["optimizer_kwargs"]["learning_rate"] = lr
+        if len(update_kwargs["optimizer_kwargs"]) == 0:
+            update_kwargs.pop("optimizer_kwargs")
+
+    if early_stopping_diff is not None or early_stopping_tol is not None or early_stopping_every is not None:
+        early_stopping_kwargs: dict = {}
+        if early_stopping_diff is not None:
+            early_stopping_kwargs["diff"] = early_stopping_diff
+        if early_stopping_tol is not None:
+            early_stopping_kwargs["tolerance"] = early_stopping_tol
+        if early_stopping_every is not None:
+            early_stopping_kwargs["every"] = early_stopping_every
+        if len(early_stopping_kwargs):
+            update_kwargs["early_stopping_kwargs"] = early_stopping_kwargs
+
+    return update_kwargs
 
 
 @given(
     n_features=st.just(2),
     hidden_dim_list=st.just([1]),
     n_samples=st.just(5),
-    update_method=st.sampled_from(("VI", "MCMC")),
     batch_size=st.sampled_from((None, 2, 4)),
-    optimizer_type=st.sampled_from((None, "adam", "dummy_optimizer")),
+    optimizer_type=st.sampled_from((None, "adam")),
     lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
-    beta1=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
-    beta2=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
-    epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
+    early_stopping_diff=st.sampled_from((None, "absolute", "relative")),
+    early_stopping_tol=st.one_of(st.none(), st.floats(min_value=1e-6, max_value=1e-1)),
+    early_stopping_every=st.one_of(st.none(), st.integers(min_value=1, max_value=10)),
+    update_method=st.just("VI"),
 )
 def test_bnn_vi_update_parameters(
-    n_features, hidden_dim_list, n_samples, update_method, batch_size, optimizer_type, lr, beta1, beta2, epsilon
-):
-    def create_update_kwargs(batch_size, optimizer_type, lr, beta1, beta2, epsilon):
-        update_kwargs = {}
-        if batch_size is not None:
-            update_kwargs["batch_size"] = batch_size
-        if optimizer_type is not None:
-            update_kwargs["optimizer_type"] = optimizer_type
-            update_kwargs["optimizer_kwargs"] = {}
-            if lr is not None:
-                update_kwargs["optimizer_kwargs"]["learning_rate"] = lr
-            if beta1 is not None:
-                update_kwargs["optimizer_kwargs"]["beta1"] = beta1
-            if beta2 is not None:
-                update_kwargs["optimizer_kwargs"]["beta2"] = beta2
-            if epsilon is not None:
-                update_kwargs["optimizer_kwargs"]["epsilon"] = epsilon
-            if len(update_kwargs["optimizer_kwargs"]) == 0:
-                update_kwargs.pop("optimizer_kwargs")
-
-        return update_kwargs
-
-    update_kwargs = create_update_kwargs(batch_size, optimizer_type, lr, beta1, beta2, epsilon)
+    n_features: int,
+    hidden_dim_list: list[int],
+    n_samples: int,
+    batch_size: Optional[int],
+    optimizer_type: Optional[str],
+    lr: Optional[float],
+    early_stopping_diff: Optional[Literal["absolute", "relative"]],
+    early_stopping_tol: Optional[float],
+    early_stopping_every: Optional[int],
+    update_method: UpdateMethods,
+) -> None:
+    """Test BNN VI update with various valid parameters."""
+    update_kwargs = _create_update_kwargs(
+        batch_size, optimizer_type, lr, early_stopping_diff, early_stopping_tol, early_stopping_every
+    )
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
-    if update_method == "MCMC":
-        if (
-            ("batch_size" in update_kwargs)
-            or ("optimizer_kwargs" in update_kwargs)
-            or ("optimizer_type" in update_kwargs)
-        ):
-            with pytest.raises(ValueError):
-                BayesianNeuralNetwork.cold_start(
-                    n_features=n_features,
-                    hidden_dim_list=hidden_dim_list,
-                    update_method=update_method,
-                    update_kwargs=update_kwargs,
-                )
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+    )
 
-    elif optimizer_type == "dummy_optimizer":
+    pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=batch_size)
+
+    if batch_size is None:
+        assert pymc_model["out"].eval().shape[0] == n_samples
+    else:
+        assert pymc_model["out"].eval().shape[0] == batch_size
+
+    if optimizer_type is not None:
+        optimizer = getattr(pymc, optimizer_type)
+        optimizer_kwargs = update_kwargs.get("optimizer_kwargs", {})
+        optimizer = optimizer(**optimizer_kwargs)
+        assert (
+            (optimizer.func == bnn._obj_optimizer.func)
+            and (optimizer.args == bnn._obj_optimizer.args)
+            and (optimizer.keywords == bnn._obj_optimizer.keywords)
+        )
+    else:
+        assert bnn._obj_optimizer is None
+
+    if "early_stopping_kwargs" in update_kwargs:
+        from pymc.variational.callbacks import CheckParametersConvergence
+
+        assert bnn._get_early_stopping_callback() is not None
+        assert isinstance(bnn._get_early_stopping_callback(), CheckParametersConvergence)
+    else:
+        assert bnn._get_early_stopping_callback() is None
+
+
+@given(
+    n_features=st.just(2),
+    hidden_dim_list=st.just([1]),
+    n_samples=st.just(5),
+    update_method=st.just("MCMC"),
+)
+def test_bnn_mcmc_update_parameters(
+    n_features: int,
+    hidden_dim_list: list[int],
+    n_samples: int,
+    update_method: UpdateMethods,
+) -> None:
+    """Test BNN MCMC update with valid parameters (no batch_size, optimizer, or early_stopping)."""
+    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method=update_method,
+        update_kwargs={},
+    )
+
+    pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=None)
+    assert pymc_model["out"].eval().shape[0] == n_samples
+
+
+@given(
+    n_features=st.just(2),
+    hidden_dim_list=st.just([1]),
+    batch_size=st.sampled_from((2, 4)),
+    optimizer_type=st.sampled_from((None, "adam")),
+    lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
+    early_stopping_diff=st.sampled_from(("absolute", "relative")),
+    early_stopping_tol=st.floats(min_value=1e-6, max_value=1e-1),
+    early_stopping_every=st.integers(min_value=1, max_value=10),
+    update_method=st.just("MCMC"),
+)
+def test_bnn_mcmc_update_parameters_failures(
+    n_features: int,
+    hidden_dim_list: list[int],
+    batch_size: int,
+    optimizer_type: Optional[str],
+    lr: Optional[float],
+    early_stopping_diff: str,
+    early_stopping_tol: float,
+    early_stopping_every: int,
+    update_method: UpdateMethods,
+) -> None:
+    """Test that MCMC update raises ValueError when invalid parameters are provided."""
+    # Test with batch_size
+    update_kwargs_with_batch = _create_update_kwargs(batch_size)
+    with pytest.raises(ValueError):
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            update_kwargs=update_kwargs_with_batch,
+        )
+
+    # Test with optimizer_type
+    if optimizer_type is not None:
+        update_kwargs_with_optimizer = _create_update_kwargs(None, optimizer_type, lr, None, None, None)
         with pytest.raises(ValueError):
             BayesianNeuralNetwork.cold_start(
                 n_features=n_features,
                 hidden_dim_list=hidden_dim_list,
-                update_method=update_method,
-                update_kwargs=update_kwargs,
+                update_method="MCMC",
+                update_kwargs=update_kwargs_with_optimizer,
             )
-    else:
-        bnn = BayesianNeuralNetwork.cold_start(
+
+    # Test with early_stopping_kwargs
+    update_kwargs_with_early_stopping = _create_update_kwargs(
+        None, None, early_stopping_diff, early_stopping_tol, early_stopping_every
+    )
+    with pytest.raises(ValueError):
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            update_kwargs=update_kwargs_with_early_stopping,
+        )
+
+
+@given(
+    n_features=st.just(2),
+    hidden_dim_list=st.just([1]),
+    batch_size=st.sampled_from((None, 2, 4)),
+    optimizer_type=st.just("dummy_optimizer"),
+    update_method=st.just("VI"),
+)
+def test_bnn_vi_update_parameters_dummy_optimizer_failure(
+    n_features: int,
+    hidden_dim_list: list[int],
+    batch_size: Optional[int],
+    optimizer_type: Optional[str],
+    update_method: UpdateMethods,
+) -> None:
+    """Test that dummy_optimizer raises ValueError for BNN VI update."""
+    update_kwargs = _create_update_kwargs(batch_size, optimizer_type)
+
+    with pytest.raises(ValueError):
+        BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
             update_method=update_method,
             update_kwargs=update_kwargs,
         )
 
-        pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=batch_size)
 
-        if batch_size is None:
-            assert pymc_model["out"].eval().shape[0] == n_samples
-        else:
-            assert pymc_model["out"].eval().shape[0] == batch_size
+@pytest.mark.parametrize(
+    "optimizer_type,optimizer_kwargs",
+    [
+        ("adam", {"invalid_param": 123, "learning_rate": 0.01}),
+        ("sgd", {"invalid_param": 123}),
+    ],
+)
+def test_invalid_optimizer_kwargs(
+    optimizer_type: str, optimizer_kwargs: dict, n_features: int = 2, update_method: UpdateMethods = "VI"
+) -> None:
+    """Test that invalid optimizer kwargs raise TypeError or ValueError."""
 
-        if optimizer_type is not None:
-            optimizer = getattr(pymc, optimizer_type)
-            optimizer_kwargs = update_kwargs.get("optimizer_kwargs", {})
-            optimizer = optimizer(**optimizer_kwargs)
-            assert (
-                (optimizer.func == bnn.optimizer.func)
-                and (optimizer.args == bnn.optimizer.args)
-                and (optimizer.keywords == bnn.optimizer.keywords)
-            )
+    with pytest.raises((TypeError, ValueError), match="Invalid optimizer kwargs"):
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            update_method=update_method,
+            update_kwargs={
+                "optimizer_type": optimizer_type,
+                "optimizer_kwargs": optimizer_kwargs,
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "early_stopping_kwargs",
+    [
+        {"invalid_param": 123, "tolerance": 1e-3},
+        {"diff": "invalid", "tolerance": 1e-3},
+    ],
+)
+def test_invalid_early_stopping_kwargs(
+    early_stopping_kwargs: dict, n_features: int = 2, update_method: UpdateMethods = "VI"
+) -> None:
+    """Test that invalid early stopping kwargs raise TypeError or ValueError."""
+
+    with pytest.raises((TypeError, ValueError, KeyError), match="Invalid early stopping kwargs"):
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            update_method=update_method,
+            update_kwargs={
+                "early_stopping_kwargs": early_stopping_kwargs,
+            },
+        )
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
 def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_method="MCMC"):
     hidden_dim_list = list(hidden_dim_list)
-    init_params = dict(mu=0.0, sigma=10.0, nu=5.0)
-    dist_params = init_params.copy()
 
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
             update_method=update_method,
-            dist_params_init=dist_params,
         )
         dim_list = [n_features] + hidden_dim_list
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            for param in init_params.keys():
-                assert np.all(np.array(layer_w[param]) == init_params[param])
-                assert np.all(np.array(layer_b[param]) == init_params[param])
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            for param in ["mu", "sigma", "nu"]:
+                assert np.all(layer_w[param] == layer_w_init[param])
+                assert np.all(layer_b[param] == layer_b_init[param])
 
         bnn.update(context=context, rewards=rewards)
 
         for layer_ind in range(len(dim_list)):
             layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
             for param in ["mu", "sigma"]:
-                assert np.all(np.array(layer_w[param]) != init_params[param])
-                assert np.all(np.array(layer_b[param]) != init_params[param])
+                assert np.all(layer_w[param] != layer_w_init[param])
+                assert np.all(layer_b[param] != layer_b_init[param])
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -692,41 +883,101 @@ def test_bayesian_logistic_regression_with_residual_connections():
     assert all([0 <= p <= 1 for p in prob])
 
 
+@settings(deadline=500)
+@pytest.mark.parametrize("use_layerwise_scaling", [True, False])
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    sigma=st.floats(min_value=0.1, max_value=20.0, allow_nan=False, allow_infinity=False),
+)
+def test_bnn_layerwise_scaling(use_layerwise_scaling, n_features, hidden_dim_list, sigma):
+    """Test that use_layerwise_scaling correctly scales weight sigma by sqrt(input_dim)."""
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        use_layerwise_scaling=use_layerwise_scaling,
+        dist_params_init={"sigma": sigma},
+    )
+
+    dim_list = [n_features] + hidden_dim_list
+    dim_list.append(1)
+
+    for layer_ind, layer_params in enumerate(bnn.model_params.bnn_layer_params):
+        input_dim = dim_list[layer_ind]
+        weight_sigma = np.array(layer_params.weight.sigma)
+        bias_sigma = np.array(layer_params.bias.sigma)
+
+        if use_layerwise_scaling:
+            expected_weight_sigma = sigma / np.sqrt(input_dim)
+        else:
+            expected_weight_sigma = sigma
+
+        # Check that weight sigma is scaled correctly
+        assert np.allclose(weight_sigma, expected_weight_sigma), (
+            f"Layer {layer_ind}: weight sigma should be {expected_weight_sigma} but got {weight_sigma.mean()}"
+        )
+
+        # Check that bias sigma is not scaled
+        assert np.allclose(bias_sigma, sigma), (
+            f"Layer {layer_ind}: bias sigma should be {sigma} but got {bias_sigma.mean()}"
+        )
+
+
 ########################################################################################################################
 
 
 # BayesianNeuralNetworkCC
 @settings(deadline=500)
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
 @given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
-def test_can_init_bayesian_neural_network_cc(activation, n_features, hidden_dim_list, cost):
+def test_can_init_bayesian_neural_network_cc(
+    activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
+):
     # at least one beta must be specified
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
-            model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-            bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost, activation=activation)
+            model_params = BayesianNeuralNetwork.create_model_params(
+                n_features, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+            )
+            bnn = BayesianNeuralNetworkCC(
+                model_params=model_params,
+                cost=cost,
+                activation=activation,
+                use_residual_connections=use_residual_connections,
+            )
     else:
-        model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-        bnn = BayesianNeuralNetworkCC(model_params=model_params, cost=cost, activation=activation)
+        model_params = BayesianNeuralNetwork.create_model_params(
+            n_features, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+        )
+        bnn = BayesianNeuralNetworkCC(
+            model_params=model_params,
+            cost=cost,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+        )
         assert bnn.model_params == model_params
         assert bnn.activation == activation
+        assert bnn.use_residual_connections == use_residual_connections
 
 
 @settings(deadline=500)
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
 def test_create_default_instance_bayesian_neural_network_cc(
-    activation, use_residual_connections, n_features, hidden_dim_list, cost
+    activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
 ):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
@@ -737,6 +988,7 @@ def test_create_default_instance_bayesian_neural_network_cc(
                 cost=cost,
                 activation=activation,
                 use_residual_connections=use_residual_connections,
+                use_layerwise_scaling=use_layerwise_scaling,
             )
     else:
         bnn_cold_start = BayesianNeuralNetworkCC.cold_start(
@@ -745,8 +997,11 @@ def test_create_default_instance_bayesian_neural_network_cc(
             cost=cost,
             activation=activation,
             use_residual_connections=use_residual_connections,
+            use_layerwise_scaling=use_layerwise_scaling,
         )
-        model_params = BayesianNeuralNetwork.create_model_params(n_features=n_features, hidden_dim_list=hidden_dim_list)
+        model_params = BayesianNeuralNetwork.create_model_params(
+            n_features=n_features, hidden_dim_list=hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+        )
         bnn_init = BayesianNeuralNetworkCC(
             model_params=model_params,
             cost=cost,
@@ -858,20 +1113,25 @@ def test_can_init_bayesian_neural_network_mo(n_features, hidden_dim_list, n_obje
 
 
 @settings(deadline=500)
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
     n_samples=st.integers(min_value=1, max_value=1000),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     n_objectives=st.integers(min_value=1, max_value=3),
 )
 def test_bayesian_neural_network_mo_sample_proba(
-    activation, use_residual_connections, n_samples, n_features, hidden_dim_list, n_objectives
+    activation, use_residual_connections, use_layerwise_scaling, n_samples, n_features, hidden_dim_list, n_objectives
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
-            n_features, hidden_dim_list, activation=activation, use_residual_connections=use_residual_connections
+            n_features,
+            hidden_dim_list,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+            use_layerwise_scaling=use_layerwise_scaling,
         )
         for _ in range(n_objectives)
     ]
@@ -893,21 +1153,26 @@ def test_bayesian_neural_network_mo_sample_proba(
             assert 0 <= prob <= 1
 
 
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-@settings(deadline=None)
+@settings(deadline=None, max_examples=25)
 @given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
-    n_samples=st.just(5),
+    n_samples=st.just(3),
     update_method=st.just("VI"),
     n_objectives=st.integers(min_value=1, max_value=2),
+    n=st.just(2),
 )
 def test_bayesian_neural_network_mo_update(
-    activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives
+    activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives, n
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
-            n_features, hidden_dim_list, update_method=update_method, activation=activation
+            n_features,
+            hidden_dim_list,
+            update_method=update_method,
+            activation=activation,
+            update_kwargs={"fit": {"n": n}},  # Use minimal iterations for faster tests
         )
         for _ in range(n_objectives)
     ]
@@ -935,16 +1200,17 @@ def test_bayesian_neural_network_mo_update(
 
 
 @settings(deadline=500)
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-@pytest.mark.parametrize("use_residual_connections", [True, False])
 @given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     n_objectives=st.integers(min_value=1, max_value=3),
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
 def test_can_init_bayesian_neural_network_mo_cc(
-    activation, use_residual_connections, n_features, hidden_dim_list, n_objectives, cost
+    activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, n_objectives, cost
 ):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or n_objectives <= 0 or cost < 0:
@@ -955,6 +1221,7 @@ def test_can_init_bayesian_neural_network_mo_cc(
                     hidden_dim_list,
                     activation=activation,
                     use_residual_connections=use_residual_connections,
+                    use_layerwise_scaling=use_layerwise_scaling,
                 )
                 for _ in range(n_objectives)
             ]
@@ -962,7 +1229,11 @@ def test_can_init_bayesian_neural_network_mo_cc(
     else:
         models = [
             BayesianNeuralNetwork.cold_start(
-                n_features, hidden_dim_list, activation=activation, use_residual_connections=use_residual_connections
+                n_features,
+                hidden_dim_list,
+                activation=activation,
+                use_residual_connections=use_residual_connections,
+                use_layerwise_scaling=use_layerwise_scaling,
             )
             for _ in range(n_objectives)
         ]

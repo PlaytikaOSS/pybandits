@@ -1,5 +1,7 @@
 """Tests for pybandits.utils module."""
 
+import importlib
+import sys
 from abc import ABC, abstractmethod
 from types import ModuleType
 from unittest.mock import MagicMock, patch
@@ -7,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from bokeh.models import Div, InlineStyleSheet, TabPanel, Tabs
 
+import pybandits
 from pybandits.utils import (
     classproperty,
     extract_argument_names_from_function,
@@ -192,6 +195,21 @@ class TestInJupyterNotebook:
 
         result = in_jupyter_notebook()
         assert result is False
+
+    def test_in_jupyter_notebook_false_import_error(self) -> None:
+        """Test that function returns False when IPython import fails at module level."""
+        # The import error is handled at module import time in utils.py
+        # When IPython import fails, _IPYTHON_AVAILABLE is set to False
+        # and get_ipython is set to None
+        with patch.dict(sys.modules, {"IPython": None}):
+            # 2. Force a reload of the utils module so the try/except runs again
+            importlib.reload(pybandits.utils)
+
+            # Verify that the module has the flag (it's set during import)
+            assert hasattr(pybandits.utils, "_IPYTHON_AVAILABLE")
+            assert pybandits.utils._IPYTHON_AVAILABLE is False
+            result = in_jupyter_notebook()
+            assert result is False
 
 
 class TestVisualizeViaBokeh:

@@ -19,12 +19,16 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import importlib
 import random
+import sys
 from tempfile import TemporaryDirectory
 from typing import List, Optional, Union, get_args, get_type_hints
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pydantic
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -38,6 +42,12 @@ from pybandits import offline_policy_estimator
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
+from pybandits.pydantic_version_compatibility import (
+    PYDANTIC_VERSION_1,
+    PYDANTIC_VERSION_2,
+    ValidationError,
+    pydantic_version,
+)
 from pybandits.smab import (
     SmabBernoulli,
     SmabBernoulliCC,
@@ -349,3 +359,130 @@ def test_running_configuration(
         execution_func(mab=mab, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir)
     if visualize:
         close("all")  # close all figures to avoid memory leak
+
+
+@pytest.mark.usefixtures("logged_data")
+@settings(deadline=None)
+@given(
+    split_prop=st.just(0.5),
+    n_trials=st.just(2),
+    propensity_score_model_type=st.sampled_from(
+        get_args(get_type_hints(OfflinePolicyEvaluator)["propensity_score_model_type"])
+    ),
+    expected_reward_model_type=st.sampled_from(
+        get_args(get_type_hints(OfflinePolicyEvaluator)["expected_reward_model_type"])
+    ),
+    importance_weights_model_type=st.sampled_from(
+        get_args(get_type_hints(OfflinePolicyEvaluator)["importance_weights_model_type"])
+    ),
+    batch_feature=st.just("batch"),
+    action_feature=st.just("action_id"),
+    reward_feature=st.sampled_from(["reward_0", ["reward_0", "reward_1"]]),
+    context=st.booleans(),
+    group_feature=st.sampled_from(["group", None]),
+    cost_feature=st.sampled_from(["cost", None]),
+    propensity_score_feature=st.just("propensity_score"),
+    ope_estimators=st.just(None),
+)
+def test_initialization_when_xgboost_not_available(
+    logged_data: pd.DataFrame,
+    split_prop: float,
+    n_trials: PositiveInt,
+    propensity_score_model_type: str,
+    expected_reward_model_type: str,
+    importance_weights_model_type: str,
+    batch_feature: str,
+    action_feature: str,
+    reward_feature: Union[str, List[str]],
+    context: bool,
+    group_feature: Optional[str],
+    cost_feature: Optional[str],
+    propensity_score_feature: Optional[str],
+    ope_estimators: Optional[List[BaseOfflinePolicyEstimator]],
+    monkeymodule,
+) -> None:
+    """Test that other model types still work when XGBoost is not available."""
+    with patch.dict(sys.modules, {"xgboost": None}):
+        if pydantic_version == PYDANTIC_VERSION_1:
+            pydantic.class_validators._FUNCS.clear()
+            importlib.reload(pybandits.offline_policy_evaluator)
+        elif pydantic_version == PYDANTIC_VERSION_2:
+            importlib.reload(pybandits.offline_policy_evaluator)
+        else:
+            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+        assert pybandits.offline_policy_evaluator._XGBOOST_AVAILABLE is False
+        assert pybandits.offline_policy_evaluator.XGBClassifier is None
+        OfflinePolicyEvaluator = importlib.import_module("pybandits.offline_policy_evaluator").OfflinePolicyEvaluator
+
+        scaler = random.choice([None, MinMaxScaler()])
+        shuffle = generate_random_bool()
+        verbose = generate_random_bool()
+        fast_fit = generate_random_bool()
+
+        true_reward_feature = (
+            f"true_{reward_feature}" if isinstance(reward_feature, str) else [f"true_{r}" for r in reward_feature]
+        )
+        if context:
+            contextual_features = [col for col in logged_data.columns if col.startswith("context")]
+            monkeymodule.setattr(
+                pybandits.model,
+                "fit",
+                lambda *args, **kwargs: FakeApproximation(n_features=len(contextual_features)),
+            )
+            monkeymodule.setattr(
+                pybandits.model,
+                "sample",
+                FakeApproximation(n_features=len(contextual_features)).sample,
+            )
+        else:
+            contextual_features = None
+
+        if "xgb" in (propensity_score_model_type, expected_reward_model_type, importance_weights_model_type):
+            # When XGBoost is not available, using "xgb" should fail at runtime
+            with pytest.raises(ValidationError):
+                OfflinePolicyEvaluator(
+                    logged_data=logged_data,
+                    split_prop=split_prop,
+                    propensity_score_model_type=propensity_score_model_type,
+                    expected_reward_model_type=expected_reward_model_type,
+                    importance_weights_model_type=importance_weights_model_type,
+                    n_trials=n_trials,
+                    fast_fit=fast_fit,
+                    scaler=scaler,
+                    ope_estimators=ope_estimators,
+                    verbose=verbose,
+                    shuffle=shuffle,
+                    batch_feature=batch_feature,
+                    action_feature=action_feature,
+                    reward_feature=reward_feature,
+                    contextual_features=[col for col in logged_data.columns if col.startswith("context")]
+                    if context
+                    else None,
+                    group_feature=group_feature,
+                    cost_feature=cost_feature,
+                    propensity_score_feature=propensity_score_feature,
+                )
+        else:
+            evaluator = OfflinePolicyEvaluator(
+                logged_data=logged_data,
+                split_prop=split_prop,
+                propensity_score_model_type=propensity_score_model_type,
+                expected_reward_model_type=expected_reward_model_type,
+                importance_weights_model_type=importance_weights_model_type,
+                n_trials=n_trials,
+                fast_fit=fast_fit,
+                scaler=scaler,
+                ope_estimators=ope_estimators,
+                verbose=verbose,
+                shuffle=shuffle,
+                batch_feature=batch_feature,
+                action_feature=action_feature,
+                reward_feature=reward_feature,
+                true_reward_feature=true_reward_feature,
+                contextual_features=contextual_features,
+                group_feature=group_feature,
+                cost_feature=cost_feature,
+                propensity_score_feature=propensity_score_feature,
+            )
+            assert evaluator is not None
