@@ -1,11 +1,12 @@
 [tool.poetry]
 name = "pybandits"
-version = "4.1.0"
+version = "4.1.1"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
     "Shahar Bar <shaharbar1@gmail.com>",
     "Jerome Carayol <jeromec@playtika.com>",
+    "Anastasiia Kabeshova <anastasiia.kabeshova@gmail.com>",
     "Stefano Piazza <stefanop@playtika.com>",
     "Ron Shiff <ron.shiff1@gmail.com>",
     "Raphael Steinmann <raphaels@playtika.com>",
@@ -43,7 +44,8 @@ pymc = [
 scikit-learn = "^1.1"
 optuna = "^3.6"
 bokeh = "^3.1"
-
+xgboost = {version = "^2", optional=true}
+ipython = {version = "^8", optional=true}
 
 [tool.poetry.group.dev.dependencies]
 hypothesis = "^6.68.2"
@@ -63,6 +65,11 @@ sphinx_rtd_theme = "^2.0"
 nbsphinx = "^0.9"
 myst-parser = "^3.0"
 pandoc = "^2.4"
+
+
+[tool.poetry.extras]
+ope = ["xgboost"]
+jupyter = ["ipython"]
 
 
 [build-system]

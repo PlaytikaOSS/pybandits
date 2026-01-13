@@ -179,6 +179,20 @@ class TestInJupyterNotebook:
         result = in_jupyter_notebook()
         assert result is False
 
+    @patch("pybandits.utils._IPYTHON_AVAILABLE", False)
+    def test_in_jupyter_notebook_false_ipython_not_available(self) -> None:
+        """Test that function returns False when IPython is not installed."""
+        result = in_jupyter_notebook()
+        assert result is False
+
+    @patch("pybandits.utils.get_ipython")
+    def test_in_jupyter_notebook_false_get_ipython_returns_none(self, mock_get_ipython: MagicMock) -> None:
+        """Test that function returns False when get_ipython returns None."""
+        mock_get_ipython.return_value = None
+
+        result = in_jupyter_notebook()
+        assert result is False
+
 
 class TestVisualizeViaBokeh:
     """Test cases for visualize_via_bokeh."""
