@@ -31,9 +31,10 @@ from numpy import sqrt
 from numpy.typing import ArrayLike
 from pymc import Bernoulli, Data, Deterministic, Minibatch, fit, math, sample
 from pymc import Model as PymcModel
+from pymc import Normal as PymcNormal
 from pymc import StudentT as PymcStudentT
 from scipy.special import erf
-from scipy.stats import t
+from scipy.stats import norm, t
 from typing_extensions import Self
 
 from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
@@ -278,51 +279,122 @@ class BetaMOCC(BaseBetaMO, ModelCC):
     """
 
 
-class StudentTArray(PyBanditsBaseModel):
+class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     """
-    A class representing an array of Student's t-distributions with parameters `mu`, `sigma`, and `nu`.
-    A specific element (e.g, a single parameter of a layer) distribution is defined by the the corresponding elements in the lists.
-    The mean values are represented by `mu`, the scale (standard deviation) values by `sigma`, and the degrees of freedom by `nu`.
-
+    Abstract base class for location-scale distribution arrays used in Bayesian Neural Networks.
 
     Parameters
     ----------
     mu : Union[List[float], List[List[float]]]
-        The mean values of the Student's t-distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
+        The mean values of the distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
     sigma : Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
-        The scale (standard deviation) values of the Student's t-distributions. Must be non-negative.
-        Can be a 1D or 2D list.
-    nu : Union[List[PositiveFloat], List[List[PositiveFloat]]]
-        The degrees of freedom of the Student's t-distributions. Must be positive.
+        The scale (standard deviation) values of the distributions. Must be non-negative.
         Can be a 1D or 2D list.
     """
 
     mu: Union[List[float], List[List[float]]]
     sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
-    nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
     _mu_array: np.ndarray = PrivateAttr()
     _sigma_array: np.ndarray = PrivateAttr()
-    _nu_array: np.ndarray = PrivateAttr()
     _params: Dict[str, np.ndarray] = PrivateAttr()
+    _pymc_class: ClassVar[type]
 
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, StudentTArray):
-            return False
-        return (
-            np.all(self._mu_array == other._mu_array)
-            and np.all(self._sigma_array == other._sigma_array)
-            and np.all(self._nu_array == other._nu_array)
-        )
+    def to_pymc_distribution(
+        self, name: str, shape: Tuple[PositiveInt, ...], initval: Literal["prior"] = "prior"
+    ) -> Union[PymcStudentT, PymcNormal]:
+        """
+        Create a PyMC distribution from this prior distribution array.
+
+        Parameters
+        ----------
+        name : str
+            Name for the PyMC random variable.
+        shape : Tuple[PositiveInt, ...]
+            Shape of the distribution array.
+        initval : Literal["prior"], optional
+            Initialization value strategy, by default "prior".
+
+        Returns
+        -------
+        Union[PymcStudentT, PymcNormal]
+            A PyMC distribution instance.
+        """
+        if self._pymc_class is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} must define _pymc_class ClassVar to specify the PyMC distribution class."
+            )
+        return self._pymc_class(name=name, shape=shape, **self.params, initval=initval)
+
+    def with_dist_parameters(self, **kwargs) -> "BaseLocationScaleArray":
+        """
+        Create a new instance with updated distribution parameters.
+
+        Parameters
+        ----------
+        **kwargs
+            Parameters to update (e.g., `mu`, `sigma`, `nu` for StudentTArray).
+            If empty, returns self unchanged.
+
+        Returns
+        -------
+        BaseLocationScaleArray
+            A new instance with the updated parameters.
+        """
+        if not kwargs:
+            return self
+
+        # Convert to dict, update with new parameters, and validate to create new instance
+        updated_dict = self._apply_version_adjusted_method("model_dump", "dict")
+        updated_dict.update(kwargs)
+        if pydantic_version == PYDANTIC_VERSION_1:
+            return self.__class__(**updated_dict)
+        elif pydantic_version == PYDANTIC_VERSION_2:
+            return self.__class__.model_validate(updated_dict)
+        else:
+            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+
+    @abstractmethod
+    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
+        """
+        Sample random variates from this distribution.
+
+        Parameters
+        ----------
+        size : Tuple[int, ...]
+            Shape of the output array.
+
+        Returns
+        -------
+        np.ndarray
+            Array of sampled values.
+        """
+        pass
 
     @staticmethod
-    def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> bool:
+    def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> np.ndarray:
+        """
+        Convert a list or list of lists to a numpy array.
+
+        Parameters
+        ----------
+        input_list : Union[List[float], List[List[float]]]
+            Input list to convert.
+
+        Returns
+        -------
+        np.ndarray
+            Converted numpy array.
+
+        Raises
+        ------
+        ValueError
+            If the input list is not a valid 1D or 2D list.
+        """
         if len(input_list) == 0:
             is_valid_input = False
-
         elif not isinstance(input_list[0], list):
             is_valid_input = True
-
         else:
             first_length = len(input_list[0])
             is_valid_input = all(
@@ -337,27 +409,172 @@ class StudentTArray(PyBanditsBaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_input_shapes(cls, values):
-        mu_input = values.get("mu")
-        sigma_input = values.get("sigma")
-        nu_input = values.get("nu")
+        """
+        Validate that all array-like parameters have the same shape.
 
-        mu_arr = cls.maybe_convert_list_to_array(mu_input)
-        sigma_arr = cls.maybe_convert_list_to_array(sigma_input)
-        nu_arr = cls.maybe_convert_list_to_array(nu_input)
+        Parameters
+        ----------
+        values : dict or BaseLocationScaleArray instance
+            Dictionary of field values or an already-instantiated object.
 
-        if (mu_arr.shape != sigma_arr.shape) or (mu_arr.shape != nu_arr.shape):
-            raise ValueError(
-                f"mu, sigma, and nu must have the same shape, "
-                f"but are {mu_arr.shape}, {sigma_arr.shape}, and {nu_arr.shape}, respectively."
-            )
+        Returns
+        -------
+        dict or BaseLocationScaleArray instance
+            Validated values dictionary or the object itself if already instantiated.
 
-        if any(dim_len == 0 for dim_len in mu_arr.shape):
-            raise ValueError("mu, sigma, and nu must have at least one element in every dimension.")
+        Raises
+        ------
+        ValueError
+            If array-like parameters have different shapes or empty dimensions.
+        """
+        # If values is already an instance of this class or a subclass, return it as-is
+        if isinstance(values, cls):
+            return values
 
-        for key, value in zip(["mu", "sigma", "nu"], [mu_input, sigma_input, nu_input]):
-            if isinstance(value, np.ndarray):
-                values[key] = value.tolist()
+        # If values is not a dict, it might be another type - return as-is for Pydantic to handle
+        if not isinstance(values, dict):
+            return values
+
+        # Find all array-like values (lists or numpy arrays) that need shape validation
+        array_like_keys = []
+        array_like_values = []
+        arrays = []
+
+        for key, value in values.items():
+            # Skip None values and non-array-like types
+            if value is None:
+                continue
+            if isinstance(value, (list, np.ndarray)):
+                array_like_keys.append(key)
+                array_like_values.append(value)
+                # Convert to array for shape comparison
+                if isinstance(value, list):
+                    arr = cls.maybe_convert_list_to_array(value)
+                else:
+                    arr = value
+                arrays.append(arr)
+
+        # If we have array-like values, validate they all have the same shape
+        if arrays:
+            reference_shape = arrays[0].shape
+
+            # Check all arrays have the same shape
+            for key, arr in zip(array_like_keys, arrays):
+                if arr.shape != reference_shape:
+                    raise ValueError(
+                        f"All array-like parameters must have the same shape, but {key} has shape {arr.shape} "
+                        f"while the reference shape is {reference_shape}."
+                    )
+
+            # Check no empty dimensions
+            if any(dim_len == 0 for dim_len in reference_shape):
+                param_names = ", ".join(array_like_keys)
+                raise ValueError(
+                    f"All array-like parameters ({param_names}) must have at least one element in every dimension."
+                )
+
+            # Convert numpy arrays back to lists for Pydantic
+            for key, value in zip(array_like_keys, array_like_values):
+                if isinstance(value, np.ndarray):
+                    values[key] = value.tolist()
+
         return values
+
+    def model_post_init(self, __context: Any) -> None:
+        """
+        Initialize private numpy array attributes by converting lists to arrays once at initialization.
+
+        Parameters
+        ----------
+        __context : Any
+            Pydantic context (unused).
+        """
+        self._mu_array = np.array(self.mu)
+        self._sigma_array = np.array(self.sigma)
+        self._params = dict(mu=self._mu_array, sigma=self._sigma_array)
+
+    @property
+    def shape(self) -> Tuple[PositiveInt, ...]:
+        """
+        Get the shape of the mu array.
+
+        Returns
+        -------
+        Tuple[PositiveInt, ...]
+            The shape of the mu array.
+        """
+        return self._mu_array.shape
+
+    @property
+    def params(self) -> Dict[str, np.ndarray]:
+        """
+        Get the parameters as a dictionary of numpy arrays.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary containing 'mu' and 'sigma' as numpy arrays.
+        """
+        return self._params
+
+    def __eq__(self, other: Any) -> bool:
+        """
+        Check equality with another distribution array.
+
+        Parameters
+        ----------
+        other : Any
+            Other object to compare with.
+
+        Returns
+        -------
+        bool
+            True if distributions are equal, False otherwise.
+        """
+        if not isinstance(other, BaseLocationScaleArray):
+            return False
+        return (
+            np.all(self._mu_array == other._mu_array)
+            and np.all(self._sigma_array == other._sigma_array)
+            and type(self) is type(other)
+        )
+
+
+class StudentTArray(BaseLocationScaleArray):
+    """
+    A class representing an array of Student's t-distributions with parameters `mu`, `sigma`, and `nu`.
+    A specific element (e.g, a single parameter of a layer) distribution is defined by the the corresponding elements in the lists.
+    The mean values are represented by `mu`, the scale (standard deviation) values by `sigma`, and the degrees of freedom by `nu`.
+
+    Parameters
+    ----------
+    mu : Union[List[float], List[List[float]]]
+        The mean values of the Student's t-distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
+    sigma : Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
+        The scale (standard deviation) values of the Student's t-distributions. Must be non-negative.
+        Can be a 1D or 2D list.
+    nu : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+        The degrees of freedom of the Student's t-distributions. Must be positive.
+        Can be a 1D or 2D list.
+    """
+
+    nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
+
+    _nu_array: np.ndarray = PrivateAttr()
+    _pymc_class: ClassVar[type] = PymcStudentT
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_input_shapes(cls, values):
+        # The parent class method is now generic and handles all array-like parameters
+        # including mu, sigma, and nu, so we can just call it directly
+        return super().validate_input_shapes(values)
+
+    def __eq__(self, other: Any) -> bool:
+        """Check equality including nu parameter."""
+        if not isinstance(other, StudentTArray):
+            return False
+        return super().__eq__(other) and np.all(self._nu_array == other._nu_array)
 
     @classmethod
     def cold_start(
@@ -387,10 +604,9 @@ class StudentTArray(PyBanditsBaseModel):
         __context : Any
             Pydantic context (unused).
         """
-        self._mu_array = np.array(self.mu)
-        self._sigma_array = np.array(self.sigma)
+        super().model_post_init(__context)
         self._nu_array = np.array(self.nu)
-        self._params = dict(mu=self._mu_array, sigma=self._sigma_array, nu=self._nu_array)
+        self._params["nu"] = self._nu_array
 
     @property
     def shape(self) -> Tuple[PositiveInt, ...]:
@@ -404,17 +620,112 @@ class StudentTArray(PyBanditsBaseModel):
         """
         return self._mu_array.shape
 
-    @property
-    def params(self) -> Dict[str, np.ndarray]:
+    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
         """
-        Get the parameters as a dictionary of numpy arrays.
+        Sample random variates from this Student-t distribution.
+
+        Parameters
+        ----------
+        size : Tuple[int, ...]
+            Shape of the output array.
 
         Returns
         -------
-        Dict[str, np.ndarray]
-            Dictionary containing 'mu', 'sigma', and 'nu' as numpy arrays.
+        np.ndarray
+            Array of sampled values.
         """
-        return self._params
+        return t.rvs(
+            self._nu_array,
+            loc=self._mu_array,
+            scale=self._sigma_array,
+            size=size,
+        )
+
+
+class NormalArray(BaseLocationScaleArray):
+    """
+    A class representing an array of Normal distributions with parameters `mu` and `sigma`.
+    A specific element (e.g, a single parameter of a layer) distribution is defined by the corresponding elements in the lists.
+    The mean values are represented by `mu` and the standard deviation values by `sigma`.
+
+    Normal distributions are simpler and faster than Student-t distributions, but less robust to outliers.
+    They provide standard L2-like regularization.
+
+    Parameters
+    ----------
+    mu : Union[List[float], List[List[float]]]
+        The mean values of the Normal distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
+    sigma : Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
+        The standard deviation values of the Normal distributions. Must be non-negative.
+        Can be a 1D or 2D list.
+
+    Examples
+    --------
+    >>> # Create NormalArray with default parameters
+    >>> normal = NormalArray.cold_start(shape=(10, 5), mu=0.0, sigma=1.0)
+    >>> # Use in BNN
+    >>> bnn = BayesianNeuralNetwork.cold_start(
+    ...     n_features=10,
+    ...     dist_type="normal",
+    ...     dist_params_init={"mu": 0, "sigma": 1}
+    ... )
+    """
+
+    _pymc_class: ClassVar[type] = PymcNormal
+
+    @classmethod
+    def cold_start(
+        cls,
+        shape: Union[PositiveInt, Tuple[PositiveInt, ...]],
+        mu: float = 0.0,
+        sigma: NonNegativeFloat = 10.0,
+    ) -> "NormalArray":
+        """
+        Create a NormalArray with the specified parameters.
+
+        Parameters
+        ----------
+        shape : Union[PositiveInt, Tuple[PositiveInt, ...]]
+            Shape of the array.
+        mu : float, optional
+            Mean value, by default 0.0.
+        sigma : NonNegativeFloat, optional
+            Standard deviation value, by default 10.0.
+
+        Returns
+        -------
+        NormalArray
+            A NormalArray instance with the specified parameters.
+        """
+        if isinstance(shape, int):
+            shape = (shape,)
+
+        if any(dim_len == 0 for dim_len in shape):
+            raise ValueError("shape of mu and sigma must have at least one element in every dimension.")
+
+        mu = np.full(shape, mu)
+        sigma = np.full(shape, sigma)
+        return cls(mu=mu, sigma=sigma)
+
+    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
+        """
+        Sample random variates from this Normal distribution.
+
+        Parameters
+        ----------
+        size : Tuple[int, ...]
+            Shape of the output array.
+
+        Returns
+        -------
+        np.ndarray
+            Array of sampled values.
+        """
+        return norm.rvs(
+            loc=self._mu_array,
+            scale=self._sigma_array,
+            size=size,
+        )
 
 
 class BnnLayerParams(PyBanditsBaseModel):
@@ -423,14 +734,14 @@ class BnnLayerParams(PyBanditsBaseModel):
 
     Parameters
     ----------
-    weight : StudentTArray
-        The weight parameter of the BNN layer, represented as a StudentTArray.
-    bias : StudentTArray
-        The bias parameter of the BNN layer, represented as a StudentTArray.
+    weight : Union[NormalArray, StudentTArray]
+        The weight parameter of the BNN layer, represented as either a NormalArray or StudentTArray.
+    bias : Union[StudentTArray, NormalArray]
+        The bias parameter of the BNN layer, represented as either a StudentTArray or NormalArray.
     """
 
-    weight: StudentTArray
-    bias: StudentTArray
+    weight: Union[NormalArray, StudentTArray]
+    bias: Union[StudentTArray, NormalArray]
 
 
 class BnnParams(PyBanditsBaseModel):
@@ -486,6 +797,23 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Whether to use residual connections in the network. Residual connections are only added when
         the layer output dimension is greater than or equal to the input dimension (default is False).
 
+    Examples
+    --------
+    >>> # Create BNN with Student-t priors (default)
+    >>> bnn = BayesianNeuralNetwork.cold_start(
+    ...     n_features=2,
+    ...     hidden_dim_list=[16, 16],
+    ...     dist_type="studentt",
+    ...     dist_params_init={"mu": 0, "sigma": 1, "nu": 5}
+    ... )
+    >>> # Create BNN with Normal priors
+    >>> bnn = BayesianNeuralNetwork.cold_start(
+    ...     n_features=2,
+    ...     hidden_dim_list=[16, 16],
+    ...     dist_type="normal",
+    ...     dist_params_init={"mu": 0, "sigma": 1}
+    ... )
+
     Notes
     -----
     - The model uses the specified activation function for hidden layers and sigmoid activation for the output layer.
@@ -502,6 +830,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
     _vi_update_params: ClassVar[list] = ["optimizer_type", "optimizer_kwargs", "batch_size"]
+    _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _supported_optimizers: ClassVar[list] = [
         "sgd",
         "momentum",
@@ -653,7 +982,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
     @classmethod
     def create_model_params(
-        cls, n_features: PositiveInt, hidden_dim_list: List[PositiveInt], **dist_params_init
+        cls,
+        n_features: PositiveInt,
+        hidden_dim_list: List[PositiveInt],
+        dist_class: type[BaseLocationScaleArray] = StudentTArray,
+        **dist_params_init,
     ) -> BnnParams:
         """
         Creates model parameters for a Bayesian neural network (BNN) model according to dist_params_init
@@ -668,6 +1001,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         hidden_dim_list : List[PositiveInt]
             A list of integers specifying the number of hidden units in each hidden layer.
             If None, no hidden layers are added.
+        dist_class : type[BaseLocationScaleArray], optional
+            The distribution class to use (StudentTArray or NormalArray), by default StudentTArray.
         **dist_params_init : dict, optional
             Additional parameters for initializing the distribution of weights and biases.
         Returns
@@ -687,8 +1022,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         for layer_ind in range(len(_dim_list) - 1):
             input_dim = _dim_list[layer_ind]
             output_dim = _dim_list[layer_ind + 1]
-            w_param = StudentTArray.cold_start(shape=(input_dim, output_dim), **dist_params_init)
-            b_param = StudentTArray.cold_start(shape=output_dim, **dist_params_init)
+            w_param = dist_class.cold_start(shape=(input_dim, output_dim), **dist_params_init)
+            b_param = dist_class.cold_start(shape=output_dim, **dist_params_init)
             layer_params_init.append(BnnLayerParams(weight=w_param, bias=b_param))
 
         return BnnParams(bnn_layer_params=layer_params_init)
@@ -764,7 +1099,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Notes
         -----
         The model structure follows these steps:
-        1. For each layer, create weight and bias variables from StudentT distributions.
+        1. For each layer, create weight and bias variables from prior distributions.
         2. Apply linear transformations and activations through the layers.
         3. Apply sigmoid activation at the output
         4. Use Bernoulli likelihood for binary classification
@@ -788,12 +1123,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 output_dim = w_shape[1]
 
                 # For training, use shared weights and biases
-                w = PymcStudentT(
-                    name=weight_layer_params_name, shape=w_shape, **layer_params.weight.params, initval="prior"
+                # Use polymorphism to create the appropriate PyMC distribution
+                w = layer_params.weight.to_pymc_distribution(
+                    name=weight_layer_params_name, shape=w_shape, initval="prior"
                 )
-                b = PymcStudentT(
-                    name=bias_layer_params_name, shape=b_shape, **layer_params.bias.params, initval="prior"
-                )
+                b = layer_params.bias.to_pymc_distribution(name=bias_layer_params_name, shape=b_shape, initval="prior")
 
                 linear_transform = math.dot(next_layer_input, w) + b
 
@@ -841,26 +1175,17 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         _context = np.atleast_2d(context)
         n_samples = len(_context)
-        # Sample from StudentT distributions for each layer
+        # Sample from distributions for each layer
         next_layer_input = _context
 
         for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-            # Sample weights and biases from StudentT distributions
-            w_params = layer_params.weight.params
-            b_params = layer_params.bias.params
+            # Sample weights and biases from distributions using polymorphism
             input_dim = layer_params.weight.shape[0]
             output_dim = layer_params.weight.shape[1]
 
-            # Sample weights and biases using scipy.stats
-            w = t.rvs(
-                w_params["nu"],
-                loc=w_params["mu"],
-                scale=w_params["sigma"],
-                size=(n_samples, len(w_params["nu"]), len(w_params["nu"][0])),
-            )
-            b = t.rvs(
-                b_params["nu"], loc=b_params["mu"], scale=b_params["sigma"], size=(n_samples, len(b_params["nu"]))
-            )
+            # Sample weights and biases using the distribution's sample_rvs method
+            w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim))
+            b = layer_params.bias.sample_rvs(size=(n_samples, output_dim))
 
             # Linear transformation
             linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
@@ -887,6 +1212,44 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return list(zip(prob, weighted_sum))
 
+    def _create_updated_layer_params(
+        self,
+        w_mu: np.ndarray,
+        w_sigma: np.ndarray,
+        b_mu: np.ndarray,
+        b_sigma: np.ndarray,
+        original_weight: BaseLocationScaleArray,
+        original_bias: BaseLocationScaleArray,
+    ) -> BnnLayerParams:
+        """
+        Create updated layer parameters with new mu and sigma values, preserving distribution type.
+
+        Parameters
+        ----------
+        w_mu : np.ndarray
+            Updated weight mean values.
+        w_sigma : np.ndarray
+            Updated weight standard deviation values.
+        b_mu : np.ndarray
+            Updated bias mean values.
+        b_sigma : np.ndarray
+            Updated bias standard deviation values.
+        original_weight : BaseLocationScaleArray
+            Original weight distribution to preserve type and nu (if StudentTArray).
+        original_bias : BaseLocationScaleArray
+            Original bias distribution to preserve type and nu (if StudentTArray).
+
+        Returns
+        -------
+        BnnLayerParams
+            New layer parameters with updated values.
+        """
+
+        updated_weight = original_weight.with_dist_parameters(mu=w_mu.tolist(), sigma=w_sigma.tolist())
+        updated_bias = original_bias.with_dist_parameters(mu=b_mu.tolist(), sigma=b_sigma.tolist())
+
+        return BnnLayerParams(weight=updated_weight, bias=updated_bias)
+
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
         """
@@ -912,9 +1275,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _context = np.atleast_2d(context)
         _model = self.create_update_model(x=_context, y=rewards, batch_size=batch_size)
         with _model:
-            # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
-                # variational inference
                 update_kwargs = self.update_kwargs.copy()
 
                 if self.optimizer is not None:
@@ -929,6 +1290,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     param: (approx_mean_eval[slice_], approx_std_eval[slice_])
                     for (param, (_, slice_, _, _)) in approx.ordering.items()
                 }
+                updated_layer_params_list = []
                 for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                     weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
                     w_shape = layer_params.weight.shape
@@ -937,37 +1299,36 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     w_sigma = approx_posterior_mapping[weight_layer_params_name][1].reshape(w_shape)
                     b_mu = approx_posterior_mapping[bias_layer_params_name][0].reshape(b_shape)
                     b_sigma = approx_posterior_mapping[bias_layer_params_name][1].reshape(b_shape)
-                    layer_params.weight = StudentTArray(
-                        mu=w_mu, sigma=w_sigma, nu=self.model_params.bnn_layer_params[layer_ind].weight.nu
+
+                    updated_layer_params = self._create_updated_layer_params(
+                        w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
                     )
-                    layer_params.bias = StudentTArray(
-                        mu=b_mu, sigma=b_sigma, nu=self.model_params.bnn_layer_params[layer_ind].bias.nu
-                    )
-                    self.model_params.bnn_layer_params[layer_ind] = layer_params
+                    updated_layer_params_list.append(updated_layer_params)
+
             elif self.update_method == "MCMC":
-                # MCMC
                 trace = sample(**self.update_kwargs["trace"])
 
+                updated_layer_params_list = []
                 for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                     weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
 
-                    w_mu = np.mean(trace[weight_layer_params_name], axis=0)
-                    w_sigma = np.std(trace[weight_layer_params_name], axis=0)
-                    layer_params.weight = StudentTArray(
-                        mu=w_mu.tolist(),
-                        sigma=w_sigma.tolist(),
-                        nu=self.model_params.bnn_layer_params[layer_ind].weight.nu,
-                    )
+                    w_values = trace[weight_layer_params_name]
+                    b_values = trace[bias_layer_params_name]
 
-                    b_mu = np.mean(trace[bias_layer_params_name], axis=0)
-                    b_sigma = np.std(trace[bias_layer_params_name], axis=0)
-                    layer_params.bias = StudentTArray(
-                        mu=b_mu.tolist(),
-                        sigma=b_sigma.tolist(),
-                        nu=self.model_params.bnn_layer_params[layer_ind].bias.nu,
+                    w_mu = np.mean(w_values, axis=0)
+                    w_sigma = np.std(w_values, axis=0)
+                    b_mu = np.mean(b_values, axis=0)
+                    b_sigma = np.std(b_values, axis=0)
+
+                    updated_layer_params = self._create_updated_layer_params(
+                        w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
                     )
+                    updated_layer_params_list.append(updated_layer_params)
+
             else:
                 raise ValueError("Invalid update method.")
+
+            self.model_params.bnn_layer_params = updated_layer_params_list
 
     @classmethod
     def cold_start(
@@ -976,6 +1337,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         hidden_dim_list: Optional[List[PositiveInt]] = None,
         update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
+        dist_type: Literal["normal", "studentt"] = "studentt",
         dist_params_init: Optional[Dict[str, float]] = None,
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
@@ -994,8 +1356,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Method to update the network, either "MCMC" or "VI". Default is "MCMC".
         update_kwargs : Optional[dict], optional
             Additional keyword arguments for the update method. Default is None.
+        dist_type : Literal["normal", "studentt"]
+            Type of distribution to use for priors. Default is "studentt".
         dist_params_init : Optional[Dict[str, float]], optional
             Initial distribution parameters for the network weights and biases. Default is None.
+            For Student-t distributions: requires "mu", "sigma", and "nu" parameters.
+            For Normal distributions: requires "mu" and "sigma" parameters (no "nu" needed).
         activation : str
             The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
         use_residual_connections : bool
@@ -1009,11 +1375,19 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             An instance of the Bayesian Neural Network initialized with the specified parameters.
         """
 
-        if dist_params_init is None:
-            dist_params_init = {}
+        dist_params_init = (dist_params_init or {}).copy()
+
+        # Get distribution class from mapping
+        if dist_type not in cls._distribution_mapping:
+            raise ValueError(
+                f"Invalid dist_type: {dist_type}. Must be one of {list(cls._distribution_mapping.keys())}. "
+                f"Example: dist_type='normal', dist_params_init={{'mu': 0, 'sigma': 1}}"
+            )
+
+        dist_class = cls._distribution_mapping[dist_type]
 
         model_params = cls.create_model_params(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, **dist_params_init
+            n_features=n_features, hidden_dim_list=hidden_dim_list, dist_class=dist_class, **dist_params_init
         )
         return cls(
             model_params=model_params,
@@ -1106,7 +1480,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         hidden_dim_list: Optional[List[PositiveInt]] = None,
         update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
-        dist_params_init: Optional[Dict[str, float]] = None,
+        dist_type: Literal["normal", "studentt"] = "studentt",
+        dist_params: Optional[Dict[str, float]] = None,
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         **kwargs,
@@ -1126,7 +1501,9 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Method to update the networks.
         update_kwargs : Optional[dict], optional
             Additional keyword arguments for the update method.
-        dist_params_init : Optional[Dict[str, float]], optional
+        dist_type : Literal["normal", "studentt"]
+            Type of distribution to use for priors. Default is "studentt".
+        dist_params : Optional[Dict[str, float]], optional
             Initial distribution parameters for the network weights and biases.
         activation : str
             The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
@@ -1147,7 +1524,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 hidden_dim_list=hidden_dim_list,
                 update_method=update_method,
                 update_kwargs=update_kwargs,
-                dist_params_init=dist_params_init,
+                dist_type=dist_type,
+                dist_params_init=dist_params,
                 activation=activation,
                 use_residual_connections=use_residual_connections,
             )

@@ -999,15 +999,23 @@ def test_cmab_from_old_state(CmabClass, old_state):
     expected_actions = {k: {**v, **old_state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
     for action_id, expected_action in expected_actions.items():
         actual_action = cmab.actions[action_id]
-        assert expected_action["alpha"]["mu"] == actual_action.model_params.bnn_layer_params[0].bias.mu[0]
-        assert expected_action["alpha"]["sigma"] == actual_action.model_params.bnn_layer_params[0].bias.sigma[0]
-        assert expected_action["alpha"]["nu"] == actual_action.model_params.bnn_layer_params[0].bias.nu[0]
+        bias_dist = actual_action.model_params.bnn_layer_params[0].bias
+        weight_dist = actual_action.model_params.bnn_layer_params[0].weight
+
+        # Old state format always uses StudentTArray (from update_old_state)
+        # Check that the loaded model has StudentTArray
+        assert isinstance(bias_dist, StudentTArray), f"Expected StudentTArray for bias, got {type(bias_dist)}"
+        assert isinstance(weight_dist, StudentTArray), f"Expected StudentTArray for weight, got {type(weight_dist)}"
+
+        assert expected_action["alpha"]["mu"] == bias_dist.mu[0]
+        assert expected_action["alpha"]["sigma"] == bias_dist.sigma[0]
+        assert expected_action["alpha"]["nu"] == bias_dist.nu[0]
 
         assert len(expected_action["betas"]) == actual_action.input_dim
         for i, beta in enumerate(expected_action["betas"]):
-            assert beta["mu"] == actual_action.model_params.bnn_layer_params[0].weight.mu[i][0]
-            assert beta["sigma"] == actual_action.model_params.bnn_layer_params[0].weight.sigma[i][0]
-            assert beta["nu"] == actual_action.model_params.bnn_layer_params[0].weight.nu[i][0]
+            assert beta["mu"] == weight_dist.mu[i][0]
+            assert beta["sigma"] == weight_dist.sigma[i][0]
+            assert beta["nu"] == weight_dist.nu[i][0]
 
     # check that an error was raised when loading a state with a version >= 3.0.0
     with pytest.raises(ValueError):
