@@ -99,7 +99,7 @@
 <p>For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on PyMC.</p>
 <img alt="title" src="../_images/cmab.png" />
 <p>The following notebook contains an example of usage of the class Cmab, which implements the algorithm above.</p>
-<div class="nbinput nblast docutils container">
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -109,6 +109,18 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/__init__.py:39: FutureWarning:
+ArviZ is undergoing a major refactor to improve flexibility and extensibility while maintaining a user-friendly interface.
+Some upcoming changes may be backward incompatible.
+For details and migration guidance, visit: https://python.arviz.org/en/latest/user_guide/migration_guide.html
+  warn(
+</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -137,16 +149,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.92343235  0.35661465 -0.18008392  0.34443061  0.79093926]
- [-0.42404845  0.85085075 -0.22554505 -0.16457671  0.33330482]
- [-0.64608761  0.69286033 -0.76695263  0.22356424 -0.12135038]
- [ 0.04888475  0.47335018  0.54006012 -0.18655522 -0.29430489]
- [-0.82248766  0.44133994 -0.82543983  0.39356062  0.13320122]
- [-0.61071364 -0.26338425 -0.98968375  0.08072992 -0.05056516]
- [ 0.40399728 -0.2697209  -0.32641886  0.17469794 -0.51999721]
- [-0.17710077  0.99270467  0.4460936   0.94035184  0.81143271]
- [-0.54405535 -0.34252314 -0.82559123 -0.5629081   0.11507816]
- [-0.21725081 -0.44006386 -0.1892763   0.93451973  0.225331  ]]
+[[ 0.64437861 -0.62348703 -0.04123638 -0.03637872  0.9927251 ]
+ [ 0.24474943 -0.51070879  0.98429166 -0.56514291 -0.14006298]
+ [-0.2133921   0.11991799  0.51511665 -0.81465689 -0.23574104]
+ [-0.09099382 -0.95144272 -0.75021782  0.21758309  0.18975486]
+ [ 0.65208043  0.76152656  0.06923062  0.16088639 -0.68454121]
+ [ 0.52959121  0.1005556   0.69140609  0.91496378  0.08910197]
+ [ 0.24089576 -0.00393574 -0.91410497 -0.37922814 -0.27149415]
+ [ 0.87870276 -0.60766078  0.35293572 -0.52789213 -0.69020885]
+ [ 0.16310457 -0.59904515 -0.61849702 -0.18081805  0.8173712 ]
+ [ 0.26060751  0.97448829 -0.18766028  0.44790734  0.40698921]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -199,7 +211,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -218,7 +230,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 0, 0, 0, 0, 1, 0, 1, 1, 0]
+Simulated rewards: [1, 0, 0, 0, 0, 0, 0, 1, 0, 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -236,8 +248,6 @@ Simulated rewards: [1, 0, 0, 0, 0, 1, 0, 1, 1, 0]
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
-  warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
@@ -259,15 +269,6 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
-  warnings.warn(
-</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">

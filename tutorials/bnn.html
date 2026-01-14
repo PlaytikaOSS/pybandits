@@ -195,7 +195,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fd36237b5e0&gt;
+&lt;matplotlib.legend.Legend at 0x7f284459ebf0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -234,8 +234,6 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
-  warnings.warn(
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
 Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
@@ -295,7 +293,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fd35eb4d660&gt;
+&lt;matplotlib.legend.Legend at 0x7f28409cd180&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -325,8 +323,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.54
-AUC: 0.4605488713372531
+Accuracy: 0.256
+AUC: 0.22240896358543416
 </pre></div></div>
 </div>
 <p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
@@ -445,8 +443,6 @@ AUC: 0.4605488713372531
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
-  warnings.warn(
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
 </pre></div></div>
@@ -514,8 +510,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.936
-AUC: 0.9884810714686234
+Accuracy: 0.954
+AUC: 0.9901720688275311
 </pre></div></div>
 </div>
 <p>Plotting the ELBO convergence</p>
@@ -644,17 +640,6 @@ AUC: 0.9884810714686234
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pymc/model/core.py:1238: UserWarning: total_size not provided for observed variable `out` that uses pm.Minibatch
-  warnings.warn(
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:256:
 UserWarning: install "ipywidgets" for Jupyter support
@@ -673,8 +658,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 
-BNN with Normal Priors - Accuracy: 0.894, AUC: 0.968
-BNN with Student-t Priors - Accuracy: 0.936, AUC: 0.988
+BNN with Normal Priors - Accuracy: 0.938, AUC: 0.980
+BNN with Student-t Priors - Accuracy: 0.954, AUC: 0.990
 </pre></div></div>
 </div>
 </section>
