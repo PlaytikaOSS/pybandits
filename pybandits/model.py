@@ -495,6 +495,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _default_variational_inference_fit_kwargs: ClassVar[dict] = dict(method="advi")
 
     _approx_history: np.ndarray = PrivateAttr(None)
+    _sampled_weights: Optional[List[Tuple[np.ndarray, np.ndarray]]] = PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -793,6 +794,114 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 prob = self._stable_sigmoid(weighted_sum)
 
         return list(zip(prob, weighted_sum))
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def _sample_weights(self, n_samples: int) -> None:
+        """
+        Sample weights and biases from StudentT distributions for each layer and store them.
+
+        Parameters
+        ----------
+        n_samples : int
+            The number of samples to draw for each weight/bias.
+
+        Notes
+        -----
+        The sampled weights are stored in the private member `_sampled_weights` as a list of tuples,
+        where each tuple contains (weights, biases) for a layer.
+        """
+        sampled_weights = []
+        for layer_params in self.model_params.bnn_layer_params:
+            w_params = layer_params.weight.params
+            b_params = layer_params.bias.params
+            input_dim = layer_params.weight.shape[0]
+            output_dim = layer_params.weight.shape[1]
+
+            # Sample weights and biases using scipy.stats
+            w = t.rvs(
+                w_params["nu"],
+                loc=w_params["mu"],
+                scale=w_params["sigma"],
+                size=(n_samples, input_dim, output_dim),
+            )
+            b = t.rvs(
+                b_params["nu"], loc=b_params["mu"], scale=b_params["sigma"], size=(n_samples, output_dim)
+            )
+            sampled_weights.append((w, b))
+
+        self._sampled_weights = sampled_weights
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def _forward_pass(self, context: np.ndarray) -> List[ProbabilityWeight]:
+        """
+        Perform forward pass using the stored sampled weights.
+
+        Parameters
+        ----------
+        context : np.ndarray
+            The context matrix for which the probabilities are to be computed.
+
+        Returns
+        -------
+        List[ProbabilityWeight]
+            Each element is a tuple containing the probability of a positive reward and
+            the corresponding weighted sum between contextual feature quantities and sampled coefficients.
+
+        Raises
+        ------
+        ValueError
+            If `_sample_weights` has not been called before this method.
+        """
+        if self._sampled_weights is None:
+            raise ValueError("Weights have not been sampled. Call `_sample_weights` first.")
+
+        _context = np.atleast_2d(context)
+        next_layer_input = _context
+
+        for layer_ind, (w, b) in enumerate(self._sampled_weights):
+            # Linear transformation
+            linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
+
+            # Apply activation function (tanh for hidden layers, sigmoid for output)
+            if layer_ind < len(self._sampled_weights) - 1:
+                next_layer_input = np.tanh(linear_transform)
+            else:
+                # Output layer - apply sigmoid
+                weighted_sum = linear_transform.squeeze(-1)
+                prob = self._stable_sigmoid(weighted_sum)
+
+        return list(zip(prob, weighted_sum))
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def sample_proba_new(self, context: np.ndarray) -> List[ProbabilityWeight]:
+        """
+        Samples probabilities and weighted sums from the prior predictive distribution.
+
+        This is a refactored version of `sample_proba` that separates weight sampling
+        from the forward pass computation.
+
+        Parameters
+        ----------
+        context : ArrayLike
+            The context matrix for which the probabilities are to be sampled.
+
+        Returns
+        -------
+        List[ProbabilityWeight]
+            Each element is a tuple containing the probability of a positive reward and
+            the corresponding weighted sum between contextual feature quantities and sampled coefficients.
+        """
+        # check input args
+        self.check_context_matrix(context=context)
+
+        _context = np.atleast_2d(context)
+        n_samples = len(_context)
+
+        # Step 1: Sample weights and store them
+        self._sample_weights(n_samples)
+
+        # Step 2: Use sampled weights to compute forward pass
+        return self._forward_pass(_context)
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
