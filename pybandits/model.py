@@ -495,7 +495,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _default_variational_inference_fit_kwargs: ClassVar[dict] = dict(method="advi")
 
     _approx_history: np.ndarray = PrivateAttr(None)
-    _sampled_weights: Optional[List[Tuple[np.ndarray, np.ndarray]]] = PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -796,19 +795,22 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return list(zip(prob, weighted_sum))
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _sample_weights(self, n_samples: int) -> None:
+    def _sample_weights(self, n_samples: int) -> List[List[Tuple[np.ndarray, np.ndarray]]]:
         """
-        Sample weights and biases from StudentT distributions for each layer and store them.
+        Sample weights and biases from StudentT distributions for each sample and each layer.
 
         Parameters
         ----------
         n_samples : int
-            The number of samples to draw for each weight/bias.
+            The number of samples (users) to draw weights for.
 
-        Notes
-        -----
-        The sampled weights are stored in the private member `_sampled_weights` as a list of tuples,
-        where each tuple contains (weights, biases) for a layer.
+        Returns
+        -------
+        List[List[Tuple[np.ndarray, np.ndarray]]]
+            A list of length n_samples, where each element is a list of tuples (one per layer).
+            Each tuple contains (weights, biases) for that layer and that sample.
+            - weights shape: (input_dim, output_dim)
+            - biases shape: (output_dim,)
         """
         sampled_weights = []
         for layer_params in self.model_params.bnn_layer_params:
@@ -829,10 +831,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             )
             sampled_weights.append((w, b))
 
-        self._sampled_weights = sampled_weights
+        return sampled_weights
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _forward_pass(self, context: np.ndarray) -> List[ProbabilityWeight]:
+    def _forward_pass(self, sampled_weights: List[Tuple[np.ndarray, np.ndarray]], context: np.ndarray) -> List[ProbabilityWeight]:
         """
         Perform forward pass using the stored sampled weights.
 
@@ -852,18 +854,18 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ValueError
             If `_sample_weights` has not been called before this method.
         """
-        if self._sampled_weights is None:
+        if sampled_weights is None:
             raise ValueError("Weights have not been sampled. Call `_sample_weights` first.")
 
         _context = np.atleast_2d(context)
         next_layer_input = _context
 
-        for layer_ind, (w, b) in enumerate(self._sampled_weights):
+        for layer_ind, (w, b) in enumerate(sampled_weights):
             # Linear transformation
             linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
 
             # Apply activation function (tanh for hidden layers, sigmoid for output)
-            if layer_ind < len(self._sampled_weights) - 1:
+            if layer_ind < len(sampled_weights) - 1:
                 next_layer_input = np.tanh(linear_transform)
             else:
                 # Output layer - apply sigmoid
@@ -897,11 +899,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _context = np.atleast_2d(context)
         n_samples = len(_context)
 
-        # Step 1: Sample weights and store them
-        self._sample_weights(n_samples)
+        # Step 1: Sample weights (different weights for each sample)
+        sampled_weights = self._sample_weights(n_samples)
 
         # Step 2: Use sampled weights to compute forward pass
-        return self._forward_pass(_context)
+        return self._forward_pass(sampled_weights=sampled_weights, context=_context)
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(self, context: np.ndarray, rewards: List[BinaryReward]):

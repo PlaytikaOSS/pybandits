@@ -26,7 +26,7 @@ import json
 from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import product
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, get_args
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -1148,7 +1148,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
     Parameters
     ----------
-    n_quantities: PositiveInt
+    dimension: PositiveInt
         Number of quantity dimensions (input features for the BNN).
     n_features: int
         Number of context dimensions (input features for the BNN).
@@ -1157,21 +1157,20 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     """
 
     bnn: BayesianNeuralNetwork
-    n_quantities: PositiveInt
     n_features: int
 
     def model_post_init(self, __context: Any) -> None:
         """Validate BNN input dimension matches quantity dimension after initialization."""
-        if self.bnn.input_dim != (self.n_quantities + self.n_features):
+        if self.bnn.input_dim != (self.dimension + self.n_features):
             raise ValueError(
-                f"BNN input dimension ({self.bnn.input_dim}) must match quantity dimension ({self.n_quantities + self.n_features})."
+                f"BNN input dimension ({self.bnn.input_dim}) must match quantity dimension ({self.dimension + self.n_features})."
             )
 
     @classmethod
     @validate_call
     def cold_start(
         cls,
-        n_quantities: PositiveInt = 1,
+        dimension: PositiveInt = 1,
         n_features: int = 1,
         hidden_dim_list: Optional[List[PositiveInt]] = None,
         update_method: str = "VI",
@@ -1184,7 +1183,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         Parameters
         ----------
-        n_quantities : PositiveInt
+        dimension : PositiveInt
             Number of quantity dimensions (input features for the BNN).
         n_features : int
             Number of context dimensions (input features for the BNN).
@@ -1201,7 +1200,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             dist_params_init = {}
 
         bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_quantities + n_features,
+            n_features=dimension + n_features,
             hidden_dim_list=hidden_dim_list,
             update_method=update_method,
             update_kwargs=update_kwargs,
@@ -1209,12 +1208,25 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         )
 
         return cls(
-            n_quantities=n_quantities,
+            dimension=dimension,
             n_features=n_features,
             bnn=bnn,
         )
 
-    def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbability]:
+    @property
+    def input_dim(self) -> PositiveInt:
+        """
+        Returns the expected input dimension of the model.
+
+        Returns
+        -------
+        PositiveInt
+            The number of input features expected by the model, derived from
+            the input dimension of the BNN.
+        """
+        return self.bnn.input_dim
+
+    def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbabilityWeight]:
         """
         Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
 
@@ -1233,19 +1245,19 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         n_samples = len(context)
         _context = np.atleast_2d(context)
 
-        self.bnn._sample_weights(n_samples)
+        sampled_weights = self.bnn._sample_weights(n_samples)
+        n_outputs = len(get_args(QuantitativeProbabilityWeight))
 
         result = []
         for sample_idx in range(n_samples):
 
-            def create_probability_function(sample_idx: int) -> QuantitativeProbability:
-                def probability_function(quantity: Union[float, np.ndarray]) -> Probability:
+            def create_probability_or_weight_function(sample_idx: NonNegativeInt, output_index: NonNegativeInt) -> Union[QuantitativeProbability, QuantitativeWeight]:
+                def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
                     bnn_input = self._prepare_network_input(quantity, _context[sample_idx])
-                    return self.bnn._forward_pass(bnn_input)
-                return probability_function
+                    return self.bnn._forward_pass(sampled_weights=[sampled_weights[sample_idx]], context=bnn_input)[output_index]
+                return probability_or_weight_function
 
-            result.append(create_probability_function(sample_idx))
-
+            result.append(tuple(create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
         return result
     
     @staticmethod

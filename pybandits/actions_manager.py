@@ -72,6 +72,7 @@ from pybandits.quantitative_model import (
     QuantitativeModel,
     SmabZoomingModel,
     SmabZoomingModelCC,
+    BaseQuantitativeBayesianNeuralNetwork,
 )
 from pybandits.utils import classproperty, extract_argument_names_from_function
 
@@ -923,7 +924,7 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
 
 
 CmabModelType = TypeVar(
-    "CmabModelType", bound=Union[BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BaseCmabZoomingModel]
+    "CmabModelType", bound=Union[BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BaseCmabZoomingModel, BaseQuantitativeBayesianNeuralNetwork]
 )
 
 
@@ -951,6 +952,8 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
             return model.models[0]
         elif isinstance(model, BaseCmabZoomingModel):
             return list(model.sub_actions.values())[0]
+        elif isinstance(model, BaseQuantitativeBayesianNeuralNetwork):
+            return model.bnn
         else:
             return model
 
@@ -1100,7 +1103,7 @@ SmabActionsManagerCC = SmabActionsManager[Union[BetaCC, SmabZoomingModelCC]]
 SmabActionsManagerMO = SmabActionsManager[BetaMO]
 SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
-CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]]
+CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel, BaseQuantitativeBayesianNeuralNetwork]]
 CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, CmabZoomingModelCC]]
 CmabActionsManagerMO = CmabActionsManager[BayesianNeuralNetworkMO]
 CmabActionsManagerMOCC = CmabActionsManager[BayesianNeuralNetworkMOCC]
