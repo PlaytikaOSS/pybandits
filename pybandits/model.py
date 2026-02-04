@@ -42,6 +42,7 @@ from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_2,
     Field,
     NonNegativeFloat,
+    NonNegativeInt,
     PositiveFloat,
     PositiveInt,
     PrivateAttr,
@@ -834,14 +835,27 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return sampled_weights
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _forward_pass(self, sampled_weights: List[Tuple[np.ndarray, np.ndarray]], context: np.ndarray) -> List[ProbabilityWeight]:
+    def _forward_pass(
+        self,
+        sampled_weights: List[Tuple[np.ndarray, np.ndarray]],
+        context: np.ndarray,
+        sample_index: Optional[NonNegativeInt] = None,
+    ) -> List[ProbabilityWeight]:
         """
         Perform forward pass using the stored sampled weights.
 
         Parameters
         ----------
+        sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
+            A list of tuples (one per layer), where each tuple contains (weights, biases).
+            - weights shape: (n_samples, input_dim, output_dim)
+            - biases shape: (n_samples, output_dim)
         context : np.ndarray
             The context matrix for which the probabilities are to be computed.
+        sample_index : Optional[int], optional
+            If provided, use only the weights at this specific index from the sampled weights.
+            When specified, the same weights will be applied to all context rows.
+            If None (default), use all sampled weights (one per context row).
 
         Returns
         -------
@@ -854,14 +868,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ValueError
             If `_sample_weights` has not been called before this method.
         """
-        if sampled_weights is None:
-            raise ValueError("Weights have not been sampled. Call `_sample_weights` first.")
+
 
         _context = np.atleast_2d(context)
         next_layer_input = _context
 
         for layer_ind, (w, b) in enumerate(sampled_weights):
             # Linear transformation
+            if sample_index is not None:
+                w = w[sample_index:sample_index+1]
+                b = b[sample_index:sample_index+1]
             linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
 
             # Apply activation function (tanh for hidden layers, sigmoid for output)

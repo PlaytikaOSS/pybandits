@@ -1254,7 +1254,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             def create_probability_or_weight_function(sample_idx: NonNegativeInt, output_index: NonNegativeInt) -> Union[QuantitativeProbability, QuantitativeWeight]:
                 def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
                     bnn_input = self._prepare_network_input(quantity, _context[sample_idx])
-                    return self.bnn._forward_pass(sampled_weights=sampled_weights, context=bnn_input)[sample_idx][output_index]
+                    return self.bnn._forward_pass(sampled_weights=sampled_weights, context=bnn_input, sample_index=sample_idx)[0][output_index]
                 return probability_or_weight_function
 
             result.append(tuple(create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
