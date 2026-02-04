@@ -644,7 +644,9 @@ class Simulator(PyBanditsBaseModel, ABC):
                 group_name = (group_name,)
             elif len(groupby_cols) == 0:
                 group_name = tuple()
-            overall_actions_rate = selected_actions_rate.loc[group_name + ("total",)].to_frame("total").reset_index()
+            overall_actions_rate = (
+                selected_actions_rate.loc[group_name + ("total",), :].squeeze().to_frame("total").reset_index()
+            )
             overall_actions_rate = overall_actions_rate[overall_actions_rate["action"].isin(action_ids)]
 
             # rate vs step line plot
@@ -667,7 +669,7 @@ class Simulator(PyBanditsBaseModel, ABC):
                 title="Overall selected actions rate",
                 x_axis_label="Action",
                 y_axis_label="Rate [%]",
-                x_range=overall_actions_rate["action"],
+                x_range=overall_actions_rate["action"].tolist(),
             )
             fig_overall.vbar(x="action", top="total", width=0.9, source=ColumnDataSource(overall_actions_rate))
             fig_overall.xgrid.grid_line_color = None

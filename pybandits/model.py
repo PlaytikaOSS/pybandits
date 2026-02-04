@@ -301,9 +301,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     _params: Dict[str, np.ndarray] = PrivateAttr()
     _pymc_class: ClassVar[type]
 
-    def to_pymc_distribution(
-        self, name: str, shape: Tuple[PositiveInt, ...], initval: Literal["prior"] = "prior"
-    ) -> Union[PymcStudentT, PymcNormal]:
+    def to_pymc_distribution(self, name: str, shape: Tuple[PositiveInt, ...]) -> Union[PymcStudentT, PymcNormal]:
         """
         Create a PyMC distribution from this prior distribution array.
 
@@ -313,8 +311,6 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             Name for the PyMC random variable.
         shape : Tuple[PositiveInt, ...]
             Shape of the distribution array.
-        initval : Literal["prior"], optional
-            Initialization value strategy, by default "prior".
 
         Returns
         -------
@@ -325,7 +321,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             raise NotImplementedError(
                 f"{self.__class__.__name__} must define _pymc_class ClassVar to specify the PyMC distribution class."
             )
-        return self._pymc_class(name=name, shape=shape, **self.params, initval=initval)
+        return self._pymc_class(name=name, shape=shape, **self.params)
 
     def with_dist_parameters(self, **kwargs) -> "BaseLocationScaleArray":
         """
@@ -863,7 +859,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
     update_kwargs : Optional[dict], optional
         A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
-        For VI, it contains both 'trace' and 'fit' settings.
+        For VI, it contains 'fit' settings and additional parameters like 'epochs', 'optimizer_type',
+        'optimizer_kwargs', 'batch_size', and 'early_stopping_kwargs'. The 'epochs' parameter specifies
+        the number of iterations for VI (maps to 'n' in PyMC's fit function).
     activation : str, optional
         The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
     use_residual_connections : bool, optional
@@ -905,7 +903,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _prob_var_name: ClassVar[str] = "prob"
     _weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
-    _vi_update_params: ClassVar[list] = ["optimizer_type", "optimizer_kwargs", "batch_size", "early_stopping_kwargs"]
+    _vi_update_params: ClassVar[list] = [
+        "optimizer_type",
+        "optimizer_kwargs",
+        "batch_size",
+        "early_stopping_kwargs",
+        "epochs",
+    ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _supported_optimizers: ClassVar[list] = [
         "sgd",
@@ -1108,6 +1112,15 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             self.update_kwargs = dict()
 
         if self.update_method == "VI":
+            # Validate that epochs and n are mutually exclusive
+            has_epochs = "epochs" in self.update_kwargs
+            has_n = "n" in self.update_kwargs.get("fit", {})
+            if has_epochs and has_n:
+                raise ValueError(
+                    "Cannot specify both 'epochs' and 'n' in update_kwargs. "
+                    "Use 'epochs' for epoch-based training or 'fit': {'n': ...} for iteration-based training."
+                )
+
             self.update_kwargs["fit"] = {
                 **self._default_variational_inference_fit_kwargs,
                 **self.update_kwargs.get("fit", {}),
@@ -1192,10 +1205,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
                 # For training, use shared weights and biases
                 # Use polymorphism to create the appropriate PyMC distribution
-                w = layer_params.weight.to_pymc_distribution(
-                    name=weight_layer_params_name, shape=w_shape, initval="prior"
-                )
-                b = layer_params.bias.to_pymc_distribution(name=bias_layer_params_name, shape=b_shape, initval="prior")
+                w = layer_params.weight.to_pymc_distribution(name=weight_layer_params_name, shape=w_shape)
+                b = layer_params.bias.to_pymc_distribution(name=bias_layer_params_name, shape=b_shape)
 
                 linear_transform = math.dot(next_layer_input, w) + b
 
@@ -1346,7 +1357,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # update traces object by sampling from posterior distribution
             if self.update_method == "VI":
                 # variational inference
-                approx = fit(**self._update_kwargs["fit"])
+                fit_kwargs = self._update_kwargs["fit"].copy()
+                # Handle epochs parameter - convert to 'n' based on effective batch size
+                if "epochs" in self._update_kwargs:
+                    num_samples = _context.shape[0]
+                    effective_batch_size = batch_size if batch_size is not None else num_samples
+                    fit_kwargs["n"] = int(self._update_kwargs["epochs"] * num_samples / effective_batch_size)
+
+                approx = fit(**fit_kwargs)
 
                 self._approx_history = approx.hist
                 approx_mean_eval = approx.mean.eval()

@@ -1207,7 +1207,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 title=f"Policy value estimates for {group_name} objective",
                 x_axis_label="Estimator",
                 y_axis_label="Estimated policy value (\u00b1 CI)",
-                x_range=source.data["estimator"],
+                x_range=source.data["estimator"].tolist(),
                 tools=tools,
                 tooltips=tooltips,
             )
