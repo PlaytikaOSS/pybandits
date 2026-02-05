@@ -37,6 +37,7 @@ from pybandits.model import Beta
 from pybandits.pydantic_version_compatibility import NonNegativeFloat
 from pybandits.quantitative_model import (
     CmabZoomingModel,
+    QuantitativeBayesianNeuralNetwork,
     Segment,
     SmabZoomingModel,
     SmabZoomingModelCC,
@@ -306,17 +307,24 @@ def test_sample_proba_returns_valid_probabilities_smab(
             assert 0 <= prob <= 1
 
 
-# Test CmabZoomingModel initialization with valid parameters
-@given(dimension=st.integers(min_value=1, max_value=3), n_max_segments=st.just(None))
-def test_initializes_cmab_zooming_model_correctly(dimension, n_max_segments):
-    model = CmabZoomingModel.cold_start(
-        dimension=dimension, n_max_segments=n_max_segments, base_model_cold_start_kwargs={"n_features": 1}
-    )
-    expected_segments = CmabZoomingModel._n_initial_segments**dimension
-    assert len(model.segmented_actions) == expected_segments
+# Test CmabZoomingModel and QuantitativeBayesianNeuralNetwork initialization with valid parameters
+@pytest.mark.parametrize("model_class", [CmabZoomingModel, QuantitativeBayesianNeuralNetwork])
+@given(dimension=st.integers(min_value=1, max_value=3), n_max_segments=st.just(None), n_features=st.integers(min_value=1, max_value=2))
+def test_initializes_cmab_quantitative_model_correctly(model_class, dimension, n_max_segments, n_features):
+    if model_class == CmabZoomingModel:
+        model = model_class.cold_start(
+            dimension=dimension, n_max_segments=n_max_segments, base_model_cold_start_kwargs={"n_features": n_features}
+        )
+        expected_segments = CmabZoomingModel._n_initial_segments**dimension
+        assert len(model.segmented_actions) == expected_segments
+    else:
+        model = model_class.cold_start(dimension=dimension, n_features=n_features)
+        assert model.dimension == dimension
+        assert model.bnn.input_dim == dimension + n_features
 
 
-# Test CmabZoomingModel update with valid rewards, quantities, and context
+# Test CmabZoomingModel and QuantitativeBayesianNeuralNetwork update with valid rewards, quantities, and context
+@pytest.mark.parametrize("model_class", [CmabZoomingModel, QuantitativeBayesianNeuralNetwork])
 @given(
     rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=5, max_size=5),
     quantities=st.lists(st.floats(min_value=0, max_value=1), min_size=5, max_size=5),
@@ -324,32 +332,49 @@ def test_initializes_cmab_zooming_model_correctly(dimension, n_max_segments):
     dimension=st.just(1),
     n_features=st.just(1),
 )
-def test_updates_cmab_zooming_model_correctly(rewards, quantities, context, dimension, n_features, monkeymodule):
-    model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
-    initial_segments = deepcopy(model.segmented_actions)
+def test_updates_cmab_quantitative_model_correctly(model_class, rewards, quantities, context, dimension, n_features, monkeymodule):
+    if model_class == CmabZoomingModel:
+        model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
+        initial_segments = deepcopy(model.segmented_actions)
+        n_model_features = n_features
+    elif model_class == QuantitativeBayesianNeuralNetwork:
+        model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+        init_params = deepcopy(model.bnn.model_params)
+        n_model_features = n_features + dimension
+
     monkeymodule.setattr(
         pybandits.model,
         "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+        lambda *args, **kwargs: FakeApproximation(n_features=n_model_features),
     )
     monkeymodule.setattr(
         pybandits.model,
         "sample",
-        FakeApproximation(n_features=n_features).sample,
+        FakeApproximation(n_features=n_model_features).sample,
     )
+
     model.update(quantities=quantities, rewards=rewards, context=context)
-    assert model.segmented_actions != initial_segments
+    if model_class == CmabZoomingModel:
+        assert model.segmented_actions != initial_segments
+    elif model_class == QuantitativeBayesianNeuralNetwork:
+        assert model.bnn.model_params.bnn_layer_params != init_params.bnn_layer_params
 
-
-# Test CmabZoomingModel sample_proba returns valid probability functions
+# Test CmabZoomingModel and QuantitativeBayesianNeuralNetwork sample_proba returns valid probability functions
+@pytest.mark.parametrize("model_class", [CmabZoomingModel, QuantitativeBayesianNeuralNetwork])
 @given(
     context=arrays(np.float64, shape=(5, 1), elements=st.floats(min_value=0, max_value=1)),
     dimension=st.just(1),
     n_features=st.just(1),
     location=st.floats(min_value=0, max_value=1),
 )
-def test_sample_proba_returns_valid_probabilities_cmab(context, dimension, n_features, location):
-    model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
+def test_sample_proba_returns_valid_probabilities_cmab(model_class, context, dimension, n_features, location):
+    if model_class == CmabZoomingModel:
+        model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
+    elif model_class == QuantitativeBayesianNeuralNetwork:
+        model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+    else:
+        raise ValueError(f"Invalid model class: {model_class}")
+
     prob_functions = model.sample_proba(context=context)
     assert len(prob_functions) == len(context)
 

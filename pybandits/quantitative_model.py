@@ -1150,14 +1150,14 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     ----------
     dimension: PositiveInt
         Number of quantity dimensions (input features for the BNN).
-    n_features: int
+    n_features: NonNegativeInt
         Number of context dimensions (input features for the BNN).
     bnn: BayesianNeuralNetwork
         The underlying Bayesian Neural Network model.
     """
 
     bnn: BayesianNeuralNetwork
-    n_features: int
+    n_features: NonNegativeInt
 
     def model_post_init(self, __context: Any) -> None:
         """Validate BNN input dimension matches quantity dimension after initialization."""
@@ -1171,7 +1171,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     def cold_start(
         cls,
         dimension: PositiveInt = 1,
-        n_features: int = 1,
+        n_features: NonNegativeInt = 1,
         hidden_dim_list: Optional[List[PositiveInt]] = None,
         update_method: str = "VI",
         update_kwargs: Optional[dict] = None,
@@ -1185,7 +1185,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         ----------
         dimension : PositiveInt
             Number of quantity dimensions (input features for the BNN).
-        n_features : int
+        n_features : NonNegativeInt
             Number of context dimensions (input features for the BNN).
         hidden_dim_list : Optional[List[PositiveInt]]
             List of hidden layer dimensions for the BNN. None means no hidden layers.
