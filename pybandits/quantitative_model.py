@@ -26,7 +26,7 @@ import json
 from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import product
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, get_args
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, get_args, get_type_hints
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -1227,6 +1227,30 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         """
         return self.bnn.input_dim
 
+    def _to_quantitative_probabilities(self, context: np.ndarray, sampled_weights: List[List[Tuple[np.ndarray, np.ndarray]]]) -> List[QuantitativeProbabilityWeight]:
+        """
+        Convert the sampled weights to quantitative probabilities and weights.
+
+        Parameters
+        ----------
+        sampled_weights : List[List[Tuple[np.ndarray, np.ndarray]]]
+            The sampled weights.
+        context : np.ndarray
+            The context at which to evaluate the probability.
+        """
+        n_samples = len(context)
+        n_outputs = len(get_args(get_args(get_type_hints(self._to_quantitative_probabilities)["return"])[0]))
+
+        result = []
+        for sample_idx in range(n_samples):
+            def create_probability_or_weight_function(sample_idx: NonNegativeInt, output_index: NonNegativeInt) -> Union[QuantitativeProbability, QuantitativeWeight]:
+                def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
+                    bnn_input = self._prepare_network_input(quantity, context[sample_idx])
+                    return self.bnn._forward_pass(sampled_weights=sampled_weights, context=bnn_input, sample_index=sample_idx)[0][output_index]
+                return probability_or_weight_function
+            result.append(tuple[QuantitativeProbability | QuantitativeWeight, ...](create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
+        return result
+
     def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbabilityWeight]:
         """
         Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
@@ -1247,18 +1271,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         _context = np.atleast_2d(context)
 
         sampled_weights = self.bnn._sample_weights(n_samples)
-        n_outputs = len(get_args(QuantitativeProbabilityWeight))
 
-        result = []
-        for sample_idx in range(n_samples):
-
-            def create_probability_or_weight_function(sample_idx: NonNegativeInt, output_index: NonNegativeInt) -> Union[QuantitativeProbability, QuantitativeWeight]:
-                def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
-                    bnn_input = self._prepare_network_input(quantity, _context[sample_idx])
-                    return self.bnn._forward_pass(sampled_weights=sampled_weights, context=bnn_input, sample_index=sample_idx)[0][output_index]
-                return probability_or_weight_function
-
-            result.append(tuple(create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
+        result = self._to_quantitative_probabilities(context=_context, sampled_weights=sampled_weights)
         return result
     
     @staticmethod
