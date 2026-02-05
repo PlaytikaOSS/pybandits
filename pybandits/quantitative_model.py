@@ -1205,6 +1205,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             update_method=update_method,
             update_kwargs=update_kwargs,
             dist_params_init=dist_params_init,
+            **kwargs,
         )
 
         return cls(
@@ -1278,7 +1279,13 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         np.ndarray
             The input for the network, concatenated quantity and context.
         """
-        _quantity = np.atleast_2d(quantity)
+        if isinstance(quantity[0], np.ndarray):
+            if quantity.ndim != 1:
+                raise TypeError("Quantity must be a 1D array")
+        elif not isinstance(quantity[0], float):
+            raise TypeError("Quantity must have a float dtype")
+       
+        _quantity = np.atleast_2d(quantity).reshape(len(quantity), -1)
         _context = np.atleast_2d(context)
         return np.concatenate([_quantity, _context], axis=1)
 
