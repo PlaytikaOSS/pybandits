@@ -1251,6 +1251,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             result.append(tuple[QuantitativeProbability | QuantitativeWeight, ...](create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
         return result
 
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbabilityWeight]:
         """
         Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
