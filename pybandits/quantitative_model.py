@@ -1245,7 +1245,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         for sample_idx in range(n_samples):
             def create_probability_or_weight_function(sample_idx: NonNegativeInt, output_index: NonNegativeInt) -> Union[QuantitativeProbability, QuantitativeWeight]:
                 def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
-                    bnn_input = self._prepare_network_input(quantity, context[sample_idx])
+                    bnn_input = self._prepare_network_input([quantity], context[sample_idx])
                     return self.bnn._forward_pass(sampled_weights=sampled_weights, context=bnn_input, sample_index=sample_idx)[0][output_index]
                 return probability_or_weight_function
             result.append(tuple[QuantitativeProbability | QuantitativeWeight, ...](create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
@@ -1295,13 +1295,13 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             The input for the network, concatenated quantity and context.
         """
         if isinstance(quantity[0], np.ndarray):
-            if quantity.ndim != 1:
+            if quantity[0].ndim != 1:
                 raise TypeError("Quantity must be a 1D array")
         elif not isinstance(quantity[0], float):
-            raise TypeError("Quantity must have a float dtype")
+            raise TypeError("Quantity must have a 1D array or a float dtype")
        
-        _quantity = np.atleast_2d(quantity).reshape(len(quantity), -1)
         _context = np.atleast_2d(context)
+        _quantity = np.atleast_2d(quantity).reshape( _context.shape[0], -1)
         return np.concatenate([_quantity, _context], axis=1)
 
     def _quantitative_update(

@@ -388,6 +388,50 @@ def test_sample_proba_returns_valid_probabilities_cmab(model_class, context, dim
 ########################################################################################################################
 
 
+# Tests for _to_quantitative_probabilities determinism
+@st.composite
+def test_quantity_strategy(draw):
+    array_length = draw(st.integers(min_value=1, max_value=5))
+    temp_list = [
+        draw(arrays(dtype=np.float64, shape=array_length, elements=st.floats(min_value=0, max_value=1)))
+        for _ in range(5)
+    ]
+    temp_list = [arr[0] if len(arr) == 1 else arr for arr in temp_list]
+    return temp_list
+
+
+@given(
+    n_calls=st.just(10),
+    test_quantity=test_quantity_strategy(),
+    context=arrays(dtype=np.float64, shape=(5, 2), elements=st.floats(min_value=0, max_value=1)),
+)
+def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, test_quantity, context):
+    """Test that QuantitativeBayesianNeuralNetwork._to_quantitative_probabilities returns consistent results when called repeatedly."""
+    if isinstance(test_quantity[0], float):
+        dimension = 1
+    else:
+        dimension = len(test_quantity[0])
+    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=2)
+    n_samples = len(context)
+    sampled_weights = model.bnn._sample_weights(n_samples)
+    # Create context and sample probability functions
+    prob_functions = model._to_quantitative_probabilities(context=context, sampled_weights=sampled_weights)
+    
+    # Call each probability/weight function multiple times with the same quantity
+    for prob_weight_funcs in prob_functions:
+        for sample_idx in range(n_samples):
+            # Get first results for both probability and weight
+            first_results = tuple(func(test_quantity[sample_idx]) for func in prob_weight_funcs)
+            for _ in range(n_calls - 1):
+                subsequent_results = tuple(func(test_quantity[sample_idx]) for func in prob_weight_funcs)
+                assert first_results == subsequent_results, (
+                    f"Inconsistent results: first={first_results}, subsequent={subsequent_results}"
+                )
+
+
+########################################################################################################################
+
+
 # QuantitativeModelCC tests via SmabZoomingModelCC
 
 
