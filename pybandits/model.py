@@ -827,9 +827,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 scale=w_params["sigma"],
                 size=(n_samples, input_dim, output_dim),
             )
-            b = t.rvs(
-                b_params["nu"], loc=b_params["mu"], scale=b_params["sigma"], size=(n_samples, output_dim)
-            )
+            b = t.rvs(b_params["nu"], loc=b_params["mu"], scale=b_params["sigma"], size=(n_samples, output_dim))
             sampled_weights.append((w, b))
 
         return sampled_weights
@@ -869,15 +867,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             If `_sample_weights` has not been called before this method.
         """
 
-
         _context = np.atleast_2d(context)
         next_layer_input = _context
 
         for layer_ind, (w, b) in enumerate(sampled_weights):
             # Linear transformation
             if sample_index is not None:
-                w = w[sample_index:sample_index+1]
-                b = b[sample_index:sample_index+1]
+                w = w[sample_index : sample_index + 1]
+                b = b[sample_index : sample_index + 1]
             linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
 
             # Apply activation function (tanh for hidden layers, sigmoid for output)

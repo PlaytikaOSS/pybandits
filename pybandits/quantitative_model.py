@@ -1227,7 +1227,9 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         """
         return self.bnn.input_dim
 
-    def _to_quantitative_probabilities(self, context: np.ndarray, sampled_weights: List[List[Tuple[np.ndarray, np.ndarray]]]) -> List[QuantitativeProbabilityWeight]:
+    def _to_quantitative_probabilities(
+        self, context: np.ndarray, sampled_weights: List[List[Tuple[np.ndarray, np.ndarray]]]
+    ) -> List[QuantitativeProbabilityWeight]:
         """
         Convert the sampled weights to quantitative probabilities and weights.
 
@@ -1243,12 +1245,23 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         result = []
         for sample_idx in range(n_samples):
-            def create_probability_or_weight_function(sample_idx: NonNegativeInt, output_index: NonNegativeInt) -> Union[QuantitativeProbability, QuantitativeWeight]:
+
+            def create_probability_or_weight_function(
+                sample_idx: NonNegativeInt, output_index: NonNegativeInt
+            ) -> Union[QuantitativeProbability, QuantitativeWeight]:
                 def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
                     bnn_input = self._prepare_network_input([quantity], context[sample_idx])
-                    return self.bnn._forward_pass(sampled_weights=sampled_weights, context=bnn_input, sample_index=sample_idx)[0][output_index]
+                    return self.bnn._forward_pass(
+                        sampled_weights=sampled_weights, context=bnn_input, sample_index=sample_idx
+                    )[0][output_index]
+
                 return probability_or_weight_function
-            result.append(tuple[QuantitativeProbability | QuantitativeWeight, ...](create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)))
+
+            result.append(
+                tuple[QuantitativeProbability | QuantitativeWeight, ...](
+                    create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)
+                )
+            )
         return result
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -1265,7 +1278,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         -------
         List[QuantitativeProbability]
             A list of callable functions, each taking a quantity (Union[float, np.ndarray])
-    
+
         """
 
         n_samples = len(context)
@@ -1275,7 +1288,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         result = self._to_quantitative_probabilities(context=_context, sampled_weights=sampled_weights)
         return result
-    
+
     @staticmethod
     def _prepare_network_input(quantity: List[Union[float, np.ndarray]], context: ArrayLike) -> np.ndarray:
         """
@@ -1299,9 +1312,9 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
                 raise TypeError("Quantity must be a 1D array")
         elif not isinstance(quantity[0], float):
             raise TypeError("Quantity must have a 1D array or a float dtype")
-       
+
         _context = np.atleast_2d(context)
-        _quantity = np.atleast_2d(quantity).reshape( _context.shape[0], -1)
+        _quantity = np.atleast_2d(quantity).reshape(_context.shape[0], -1)
         return np.concatenate([_quantity, _context], axis=1)
 
     def _quantitative_update(

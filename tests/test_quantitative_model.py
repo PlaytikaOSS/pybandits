@@ -309,7 +309,11 @@ def test_sample_proba_returns_valid_probabilities_smab(
 
 # Test CmabZoomingModel and QuantitativeBayesianNeuralNetwork initialization with valid parameters
 @pytest.mark.parametrize("model_class", [CmabZoomingModel, QuantitativeBayesianNeuralNetwork])
-@given(dimension=st.integers(min_value=1, max_value=3), n_max_segments=st.just(None), n_features=st.integers(min_value=1, max_value=2))
+@given(
+    dimension=st.integers(min_value=1, max_value=3),
+    n_max_segments=st.just(None),
+    n_features=st.integers(min_value=1, max_value=2),
+)
 def test_initializes_cmab_quantitative_model_correctly(model_class, dimension, n_max_segments, n_features):
     if model_class == CmabZoomingModel:
         model = model_class.cold_start(
@@ -332,9 +336,13 @@ def test_initializes_cmab_quantitative_model_correctly(model_class, dimension, n
     dimension=st.just(1),
     n_features=st.just(1),
 )
-def test_updates_cmab_quantitative_model_correctly(model_class, rewards, quantities, context, dimension, n_features, monkeymodule):
+def test_updates_cmab_quantitative_model_correctly(
+    model_class, rewards, quantities, context, dimension, n_features, monkeymodule
+):
     if model_class == CmabZoomingModel:
-        model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
+        model = CmabZoomingModel.cold_start(
+            dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features}
+        )
         initial_segments = deepcopy(model.segmented_actions)
         n_model_features = n_features
     elif model_class == QuantitativeBayesianNeuralNetwork:
@@ -359,6 +367,7 @@ def test_updates_cmab_quantitative_model_correctly(model_class, rewards, quantit
     elif model_class == QuantitativeBayesianNeuralNetwork:
         assert model.bnn.model_params.bnn_layer_params != init_params.bnn_layer_params
 
+
 # Test CmabZoomingModel and QuantitativeBayesianNeuralNetwork sample_proba returns valid probability functions
 @pytest.mark.parametrize("model_class", [CmabZoomingModel, QuantitativeBayesianNeuralNetwork])
 @given(
@@ -369,7 +378,9 @@ def test_updates_cmab_quantitative_model_correctly(model_class, rewards, quantit
 )
 def test_sample_proba_returns_valid_probabilities_cmab(model_class, context, dimension, n_features, location):
     if model_class == CmabZoomingModel:
-        model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
+        model = CmabZoomingModel.cold_start(
+            dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features}
+        )
     elif model_class == QuantitativeBayesianNeuralNetwork:
         model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
     else:
@@ -416,7 +427,7 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, tes
     sampled_weights = model.bnn._sample_weights(n_samples)
     # Create context and sample probability functions
     prob_functions = model._to_quantitative_probabilities(context=context, sampled_weights=sampled_weights)
-    
+
     # Call each probability/weight function multiple times with the same quantity
     for prob_weight_funcs in prob_functions:
         for sample_idx in range(n_samples):
