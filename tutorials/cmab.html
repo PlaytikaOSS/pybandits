@@ -99,7 +99,7 @@
 <p>For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on PyMC.</p>
 <img alt="title" src="../_images/cmab.png" />
 <p>The following notebook contains an example of usage of the class Cmab, which implements the algorithm above.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -109,18 +109,6 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/arviz/__init__.py:39: FutureWarning:
-ArviZ is undergoing a major refactor to improve flexibility and extensibility while maintaining a user-friendly interface.
-Some upcoming changes may be backward incompatible.
-For details and migration guidance, visit: https://python.arviz.org/en/latest/user_guide/migration_guide.html
-  warn(
-</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -149,16 +137,16 @@ For details and migration guidance, visit: https://python.arviz.org/en/latest/us
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.64437861 -0.62348703 -0.04123638 -0.03637872  0.9927251 ]
- [ 0.24474943 -0.51070879  0.98429166 -0.56514291 -0.14006298]
- [-0.2133921   0.11991799  0.51511665 -0.81465689 -0.23574104]
- [-0.09099382 -0.95144272 -0.75021782  0.21758309  0.18975486]
- [ 0.65208043  0.76152656  0.06923062  0.16088639 -0.68454121]
- [ 0.52959121  0.1005556   0.69140609  0.91496378  0.08910197]
- [ 0.24089576 -0.00393574 -0.91410497 -0.37922814 -0.27149415]
- [ 0.87870276 -0.60766078  0.35293572 -0.52789213 -0.69020885]
- [ 0.16310457 -0.59904515 -0.61849702 -0.18081805  0.8173712 ]
- [ 0.26060751  0.97448829 -0.18766028  0.44790734  0.40698921]]
+[[-0.84390858 -0.81867385 -0.89384985 -0.30453309 -0.83744838]
+ [-0.31877859  0.62433533 -0.36399425 -0.18028072  0.6459194 ]
+ [-0.64365463 -0.03763188  0.84439473  0.456446    0.29869809]
+ [ 0.3714295   0.62871749 -0.15078769  0.97840923  0.42351437]
+ [-0.90583986 -0.73096918 -0.00479635 -0.40561829  0.0835172 ]
+ [ 0.51096921  0.21771517  0.32388433 -0.49883608 -0.31075991]
+ [-0.40135564 -0.39968873 -0.28292744  0.65940446  0.15288541]
+ [ 0.16991397 -0.84636256 -0.37578185  0.7911561  -0.73638996]
+ [ 0.88816605 -0.74687032 -0.59008954  0.6122652  -0.22468607]
+ [ 0.75830159  0.53891028  0.36861588 -0.643111   -0.41143949]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -211,7 +199,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -230,7 +218,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 0, 0, 0, 0, 0, 0, 1, 0, 1]
+Simulated rewards: [1, 1, 0, 1, 1, 1, 0, 0, 0, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -259,7 +247,7 @@ For more options and details see https://pytensor.readthedocs.io/en/latest/troub
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:256:
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
 UserWarning: install "ipywidgets" for Jupyter support
   warnings.warn('install "ipywidgets" for Jupyter support')
 </pre></div>
@@ -274,7 +262,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:256:
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
 UserWarning: install "ipywidgets" for Jupyter support
   warnings.warn('install "ipywidgets" for Jupyter support')
 </pre></div>
