@@ -284,7 +284,7 @@ def test_location_scale_array_to_pymc_distribution(array_class, expected_pymc_cl
         a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
 
     with pymc.Model():
-        pymc_dist = a.to_pymc_distribution(name="test", shape=shape, initval="prior")
+        pymc_dist = a.to_pymc_distribution(name="test", shape=shape)
         assert pymc_dist.owner is not None
         assert isinstance(pymc_dist.owner.op, expected_pymc_class)
 
@@ -453,7 +453,7 @@ def test_bnn_sample_proba(
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(3),
     update_method=st.just("VI"),
-    n=st.just(2),
+    epochs=st.just(1),
 )
 def test_bnn_vi_update(
     activation,
@@ -464,7 +464,7 @@ def test_bnn_vi_update(
     hidden_dim_list,
     n_samples,
     update_method,
-    n,
+    epochs,
 ):
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
@@ -475,7 +475,7 @@ def test_bnn_vi_update(
             use_residual_connections=use_residual_connections,
             use_layerwise_scaling=use_layerwise_scaling,
             dist_type=dist_type,
-            update_kwargs={"fit": {"n": n}},  # Use minimal iterations for faster tests
+            update_kwargs={"epochs": epochs},  # Use minimal iterations for faster tests
         )
 
         expected_array = NormalArray if dist_type == "normal" else StudentTArray
@@ -525,7 +525,7 @@ def test_bnn_vi_update(
             use_residual_connections=use_residual_connections,
             use_layerwise_scaling=use_layerwise_scaling,
             dist_type=dist_type,
-            update_kwargs={"fit": {"n": n}},  # Use minimal iterations for faster tests
+            update_kwargs={"epochs": epochs},  # Use minimal iterations for faster tests
         )
         bnn.update(context=context, rewards=rewards[1:])
 
@@ -782,6 +782,22 @@ def test_invalid_early_stopping_kwargs(
             update_kwargs={
                 "early_stopping_kwargs": early_stopping_kwargs,
             },
+        )
+
+
+@given(
+    n_features=st.just(2),
+    update_method=st.just("VI"),
+    epochs=st.integers(min_value=1, max_value=100),
+    n=st.integers(min_value=1, max_value=100),
+)
+def test_epochs_and_n_mutually_exclusive(n_features: int, update_method: UpdateMethods, epochs: int, n: int) -> None:
+    """Test that specifying both 'epochs' and 'n' raises ValueError."""
+    with pytest.raises(ValueError, match="Cannot specify both 'epochs' and 'n'"):
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            update_method=update_method,
+            update_kwargs={"epochs": epochs, "fit": {"n": n}},
         )
 
 
@@ -1161,10 +1177,10 @@ def test_bayesian_neural_network_mo_sample_proba(
     n_samples=st.just(3),
     update_method=st.just("VI"),
     n_objectives=st.integers(min_value=1, max_value=2),
-    n=st.just(2),
+    epochs=st.just(1),
 )
 def test_bayesian_neural_network_mo_update(
-    activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives, n
+    activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives, epochs
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
@@ -1172,7 +1188,7 @@ def test_bayesian_neural_network_mo_update(
             hidden_dim_list,
             update_method=update_method,
             activation=activation,
-            update_kwargs={"fit": {"n": n}},  # Use minimal iterations for faster tests
+            update_kwargs={"epochs": epochs},  # Use minimal iterations for faster tests
         )
         for _ in range(n_objectives)
     ]
