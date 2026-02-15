@@ -63,6 +63,7 @@ class QuantitativeModel(BaseModelSO, ABC):
     """
 
     dimension: PositiveInt
+    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("dimension",)
 
     @abstractmethod
     def sample_proba(self, **kwargs) -> List[QuantitativeProbability]:
@@ -396,6 +397,7 @@ class ZoomingModel(QuantitativeModel, ABC):
     sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Model]]
     _base_model: Model = PrivateAttr()
     _n_initial_segments: ClassVar = 4
+    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("sub_actions",)
 
     if pydantic_version == PYDANTIC_VERSION_1:
 
@@ -919,6 +921,11 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
         if "n_features" not in value:
             raise KeyError("n_features must be in base_model_cold_start_kwargs.")
         return value
+
+    @property
+    def input_dim(self) -> int:
+        """Returns the input feature dimension (number of context features)."""
+        return self.base_model_cold_start_kwargs["n_features"]
 
     def _init_base_model(self):
         """

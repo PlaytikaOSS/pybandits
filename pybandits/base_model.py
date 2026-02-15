@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC, abstractmethod
-from typing import Callable, List, Union
+from typing import Callable, ClassVar, List, Tuple, Union
 
 import numpy as np
 
@@ -105,6 +105,34 @@ class BaseModelSO(BaseModel, ABC):
 
     n_successes: PositiveInt = 1
     n_failures: PositiveInt = 1
+
+    # --- Transfer learning keys (own contributions for this class) ---
+    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("n_successes", "n_failures")
+    _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
+    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ()
+
+    # --- Transfer learning keys (accumulated up the MRO, used by transfer.py) ---
+    # For BaseModelSO itself these equal the own contributions above.
+    # For subclasses they are auto-computed by __init_subclass__.
+    transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("n_successes", "n_failures")
+    """Accumulated learned-state keys from all classes in the MRO.  Used by transfer.py to decide which keys to copy from source to target."""
+    transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
+    """Accumulated extendable keys from all classes in the MRO.  Changes to these emit warnings (but not errors) during transfer."""
+    transfer_structural_keys: ClassVar[Tuple[str, ...]] = ()
+    """Accumulated structural keys from all classes in the MRO.  Mismatches in these raise ValueError during transfer."""
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        for pub, priv in (
+            ("transfer_learned_keys", "_transfer_learned_keys"),
+            ("transfer_extendable_keys", "_transfer_extendable_keys"),
+            ("transfer_structural_keys", "_transfer_structural_keys"),
+        ):
+            accumulated: Tuple[str, ...] = ()
+            for base in reversed(cls.__mro__):
+                if priv in base.__dict__:
+                    accumulated += base.__dict__[priv]
+            setattr(cls, pub, accumulated)
 
     @abstractmethod
     def sample_proba(
