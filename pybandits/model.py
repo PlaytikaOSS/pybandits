@@ -901,7 +901,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
     _logit_var_name: ClassVar[str] = "logit"
     _prob_var_name: ClassVar[str] = "prob"
-    _weight_var_name: ClassVar[str] = "weight"
+    weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
     _vi_update_params: ClassVar[list] = [
         "optimizer_type",
@@ -962,6 +962,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     class Config:
         arbitrary_types_allowed = True
 
+    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("model_params",)
+    _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ("update_method",)
+    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("activation", "use_residual_connections")
+
     @field_validator("activation")
     @classmethod
     def validate_activation(cls, v):
@@ -1010,7 +1014,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
-        weight_layer_params_name = f"{cls._weight_var_name}_{layer_ind}"
+        weight_layer_params_name = f"{cls.weight_var_name}_{layer_ind}"
         bias_layer_params_name = f"{cls._bias_var_name}_{layer_ind}"
         return weight_layer_params_name, bias_layer_params_name
 
@@ -1558,6 +1562,19 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         for model in self.models[1:]:
             if model.input_dim != n_features:
                 raise ValueError(f"All models must have the same number of features: {model.input_dim} != {n_features}")
+
+    @property
+    def input_dim(self) -> PositiveInt:
+        """
+        Returns the expected input dimension of the model.
+
+        Returns
+        -------
+        PositiveInt
+            The number of input features expected by the model, derived from
+            the shape of the weight matrix in the first layer's parameters of the first objective model.
+        """
+        return self.models[0].input_dim
 
     @classmethod
     def cold_start(

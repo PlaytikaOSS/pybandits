@@ -76,6 +76,11 @@ class BaseCmabBernoulli(BaseMab, ABC):
     actions_manager: CmabActionsManager[CmabModelType]
     _predict_with_proba: bool
 
+    @property
+    def input_dim(self) -> int:
+        """Returns the input feature dimension (number of context features)."""
+        return next(iter(self.actions.values())).input_dim
+
     @staticmethod
     def _extract_element_from_probability_weight(
         index: int, prob_weight: Union[ProbabilityWeight, MOProbabilityWeight]
