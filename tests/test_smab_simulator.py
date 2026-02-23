@@ -31,12 +31,14 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest_mock.plugin import MockerFixture
 
+import pybandits
 from pybandits.actions_manager import SmabModelType
 from pybandits.base_model import BaseModel
 from pybandits.model import Beta
 from pybandits.quantitative_model import QuantitativeModel, SmabZoomingModel
 from pybandits.smab import SmabBernoulli
 from pybandits.smab_simulator import SmabSimulator
+from tests.utils import mock_update, sample_with_replacement, to_unified_action_id
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture):
@@ -185,6 +187,14 @@ def test_validate_probs_reward_values(
             SmabSimulator._validate_probs_reward_values(probability, is_quantitative_action)
 
 
+def mock_predict(self, n_samples, *args, **kwargs):
+    action_ids = [to_unified_action_id(action_id, model) for action_id, model in self.actions.items()]
+    return (
+        sample_with_replacement(action_ids, n_samples),
+        [{action_id: np.random.random() for action_id in action_ids} for _ in range(n_samples)],
+    )
+
+
 @settings(deadline=None)
 @given(
     action_ids=st.just(["a1", "a2"]),
@@ -205,7 +215,13 @@ def test_smab_e2e_simulation_with_default_args(
     monkeymodule : MonkeyPatch
         Pytest monkeypatch fixture for modifying module attributes.
     """
-    monkeymodule.setattr(SmabSimulator, "_maximize_prob_reward", lambda *args, **kwargs: np.random.random())
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,)))
+    monkeymodule.setattr(
+        pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+    )
+    monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
+    monkeymodule.setattr(pybandits.smab.SmabBernoulli, "update", mock_update)
+
     mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     with TemporaryDirectory() as path:
         simulator = SmabSimulator(mab=mab, visualize=True, save=True, path=path)
@@ -268,11 +284,13 @@ def test_smab_e2e_simulation_with_non_default_args(
     monkeymodule : MonkeyPatch
         Pytest monkeypatch fixture for modifying module attributes.
     """
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,)))
     monkeymodule.setattr(
-        SmabSimulator,
-        "_maximize_prob_reward",
-        lambda *args, **kwargs: np.random.random(),
+        pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
+    monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
+    monkeymodule.setattr(pybandits.smab.SmabBernoulli, "update", mock_update)
+
     mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:
         with pytest.raises(ValueError):

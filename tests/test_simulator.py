@@ -24,10 +24,9 @@ from random import choice
 from typing import Dict, List, Tuple
 
 import numpy as np
-import optuna
 import pandas as pd
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
@@ -72,96 +71,6 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
     check_value_error(probs_reward)
     probs_reward = {"a1": [0.5], "a2": [0.5], "a3": [0.5]}
     check_value_error(probs_reward)
-
-
-# Test _maximize_prob_reward
-
-
-# Returns maximum probability value from optimization study
-def test_returns_maximum_probability(mocker):
-    mock_study = mocker.Mock()
-    mock_study.best_value = 0.8
-    mocker.patch("optuna.create_study", return_value=mock_study)
-
-    def prob_func(x):
-        return 0.8
-
-    result = Simulator._maximize_prob_reward(prob_func, 1)
-
-    assert result == 0.8
-
-
-# Correctly samples points from [0,1] range
-@given(st.integers(min_value=1, max_value=2))
-@settings(deadline=None, max_examples=10)
-def test_samples_points_in_valid_range(dimension):
-    def prob_func(x):
-        assert all(0 <= xi <= 1 for xi in x)
-        return 0.5
-
-    Simulator._maximize_prob_reward(prob_func, dimension)
-
-
-def test_maximization_result(atol=1e-2):
-    maximum = Simulator._maximize_prob_reward(lambda x: 1 - x**2, 1)
-    assert np.isclose(maximum, 1.0, atol=atol)
-    maximum = Simulator._maximize_prob_reward(lambda x: x**2, 1)
-    assert np.isclose(maximum, 1.0, atol=atol)
-
-
-# Uses TPE sampler with multivariate optimization
-def test_uses_tpe_sampler_config(mocker):
-    sampler_spy = mocker.spy(optuna.samplers, "TPESampler")
-
-    def prob_func(x):
-        return 0.5
-
-    Simulator._maximize_prob_reward(prob_func, 1)
-
-    assert sampler_spy.call_args.kwargs["multivariate"]
-    assert sampler_spy.call_args.kwargs["group"]
-
-
-# Function is decorated with lru_cache
-def test_lru_cache_memoization():
-    def prob_func(x):
-        return 0.5
-
-    result1 = Simulator._maximize_prob_reward(prob_func, 1)
-    result2 = Simulator._maximize_prob_reward(prob_func, 1)
-
-    assert result1 == result2
-    assert hasattr(Simulator._maximize_prob_reward, "cache_info")
-
-
-# Probability reward function raises exceptions
-def test_probability_function_exceptions():
-    def failing_prob_func(x):
-        raise RuntimeError("Function failed")
-
-    with pytest.raises(RuntimeError):
-        Simulator._maximize_prob_reward(failing_prob_func, 1)
-
-
-# Input dimension is large
-def test_large_input_dimension(dimension=30):
-    def prob_func(x):
-        return 0.5
-
-    Simulator._maximize_prob_reward(prob_func, dimension)
-
-
-# Optimization fails to converge
-def test_optimization_convergence_failure(mocker):
-    mock_study = mocker.Mock()
-    mock_study.best_value = None
-    mocker.patch("optuna.create_study", return_value=mock_study)
-
-    def prob_func(x):
-        return 0.5
-
-    with pytest.raises(ValueError):
-        Simulator._maximize_prob_reward(prob_func, 1)
 
 
 # Test _generate_prob_reward

@@ -23,7 +23,7 @@
 import functools
 import json
 from copy import deepcopy
-from typing import List, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pytest
@@ -32,7 +32,7 @@ from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
 import pybandits
-from pybandits.base import BinaryReward
+from pybandits.base import BinaryReward, QuantitativeProbability, UnifiedProbability
 from pybandits.model import Beta
 from pybandits.pydantic_version_compatibility import NonNegativeFloat
 from pybandits.quantitative_model import (
@@ -91,11 +91,19 @@ def test_add_nonadjacent_segments():
 
 
 class DummyZoomingModel(ZoomingModel):
+    cost: Optional[Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]] = None
+
     def _init_base_model(self):
         self._base_model = Beta()
 
     def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward], **kwargs):
         pass
+
+    def _to_quantitative_probabilities(
+        self, segment_probabilities: Dict[Segment, List[UnifiedProbability]]
+    ) -> List[QuantitativeProbability]:
+        max_samples = max(len(probas) for probas in segment_probabilities.values())
+        return [lambda x: np.random.uniform(0, 1) for _ in range(max_samples)]
 
 
 # Model initialization with valid parameters creates correct number of segments
@@ -144,14 +152,19 @@ def test_similar_segments_merge():
     assert len(model.sub_actions) == 4
 
 
-# Sample_proba returns valid probability for each segment
-def test_sample_proba_returns_valid_probabilities(n_samples=100):
+# Sample_proba returns valid probability functions
+def test_sample_proba_returns_valid_probabilities(n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))):
     model = DummyZoomingModel.cold_start(dimension=1)
-    probs = model.sample_proba(n_samples=n_samples)
-    assert all(len(prob) == len(model.sub_actions) for prob in probs)
-    assert len(probs) == n_samples
-    assert all(0 <= prob[1] <= 1 for sample in probs for prob in sample)
-    assert all(0 <= v <= 1 for sample in probs for prob in sample for v in prob[0])
+    prob_functions = model.sample_proba(n_samples=n_samples)
+    assert len(prob_functions) == n_samples
+
+    # Test that each function is callable and returns valid probabilities
+
+    for prob_func in prob_functions:
+        assert callable(prob_func)
+        for location in test_locations:
+            prob = prob_func(location)
+            assert 0 <= prob <= 1
 
 
 # Update with empty rewards/quantities list
@@ -277,14 +290,20 @@ def test_updates_smab_zooming_model_correctly(rewards, quantities, dimension):
     assert model.segmented_actions != initial_segments
 
 
-# Test SmabZoomingModel sample_proba returns valid probabilities
-def test_sample_proba_returns_valid_probabilities_smab(dimension=1, n_samples=100):
+# Test SmabZoomingModel sample_proba returns valid probability functions
+def test_sample_proba_returns_valid_probabilities_smab(
+    dimension=1, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))
+):
     model = SmabZoomingModel.cold_start(dimension=dimension)
-    probas = model.sample_proba(n_samples=n_samples)
-    for proba in probas:
-        for (q,), p in proba:
-            assert 0 <= q <= 1
-            assert 0 <= p <= 1
+    prob_functions = model.sample_proba(n_samples=n_samples)
+    assert len(prob_functions) == n_samples
+
+    # Test that each function is callable and returns valid probabilities
+    for prob_func in prob_functions:
+        assert callable(prob_func)
+        for location in test_locations:
+            prob = prob_func(location)
+            assert 0 <= prob <= 1
 
 
 # Test CmabZoomingModel initialization with valid parameters
@@ -322,19 +341,23 @@ def test_updates_cmab_zooming_model_correctly(rewards, quantities, context, dime
     assert model.segmented_actions != initial_segments
 
 
-# Test CmabZoomingModel sample_proba returns valid probabilities
+# Test CmabZoomingModel sample_proba returns valid probability functions
 @given(
     context=arrays(np.float64, shape=(5, 1), elements=st.floats(min_value=0, max_value=1)),
     dimension=st.just(1),
     n_features=st.just(1),
+    location=st.floats(min_value=0, max_value=1),
 )
-def test_sample_proba_returns_valid_probabilities_cmab(context, dimension, n_features):
+def test_sample_proba_returns_valid_probabilities_cmab(context, dimension, n_features, location):
     model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
-    probas = model.sample_proba(context=context)
-    for proba in probas:
-        for (q,), (p, _) in proba:
-            assert 0 <= q <= 1
-            assert 0 <= p <= 1
+    prob_functions = model.sample_proba(context=context)
+    assert len(prob_functions) == len(context)
+
+    # Test that each function is callable and returns valid probabilities
+    for prob_weight_func in prob_functions:
+        assert all(callable(func) for func in prob_weight_func)
+        prob, weight = (func(np.atleast_1d(location)) for func in prob_weight_func)
+        assert 0 <= prob <= 1
 
 
 ########################################################################################################################
