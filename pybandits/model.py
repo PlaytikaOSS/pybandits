@@ -767,7 +767,7 @@ class NormalArray(BaseLocationScaleArray):
         Parameters
         ----------
         _shape : Tuple[PositiveInt, ...]
-            Shape of the distribution array.
+            Shape of the distribution array. Unused for the Normal distribution.
 
         Returns
         -------
