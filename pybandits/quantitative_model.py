@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import ast
 import functools
 import inspect
 import json
@@ -183,7 +184,7 @@ class QuantitativeModelCC(BaseModelCC, ABC):
             globals()[func_name].__source__ = code.strip()  # Register the function in the global scope
         else:
             func_name = code.strip()
-        return eval(func_name)
+        return globals()[func_name]
 
     @staticmethod
     def serialize_cost(cost_value) -> str:
@@ -205,7 +206,7 @@ class QuantitativeModelCC(BaseModelCC, ABC):
                 func_str = ",".join(inner_func_split[:-2]).strip()
                 func = cls._deserialize_function(func_str)
                 args_str = ")".join(",".join(inner_func_split[-2:]).split(")")[:-1]).strip()
-                args_parts = eval(args_str) if args_str else ((), {})
+                args_parts = ast.literal_eval(args_str) if args_str else ((), {})
                 return functools.partial(func, *args_parts[0], **args_parts[1])
             else:
                 return cls._deserialize_function(value)
@@ -448,7 +449,7 @@ class ZoomingModel(QuantitativeModel, ABC):
 
     @staticmethod
     def _deserialize_sub_action_key(key: str) -> Tuple[Tuple[Float01, Float01], ...]:
-        key = eval(key)
+        key = ast.literal_eval(key)
         if isinstance(key, tuple):
             if not isinstance(key[0], tuple):  # case of dimension = 1
                 key = (key,)
