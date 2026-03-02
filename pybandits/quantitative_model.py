@@ -24,7 +24,7 @@ import functools
 import inspect
 import json
 from abc import ABC, abstractmethod
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import product
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
@@ -908,9 +908,11 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
         rewards : List[BinaryReward]
             Rewards for update.
         """
-        rewards = np.array(rewards)
-        for segment in set(segments):
-            rewards_of_segment = [r for r, s in zip(rewards, segments) if s == segment]
+        rewards_by_segment = defaultdict(list)
+        for segment, reward in zip(segments, rewards):
+            rewards_by_segment[segment].append(reward)
+
+        for segment, rewards_of_segment in rewards_by_segment.items():
             self.sub_actions[segment.intervals].update(rewards=rewards_of_segment)
 
 
@@ -1089,11 +1091,14 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
             Context for update.
         """
         context = np.array(context)
-        for segment in set(segments):
-            rewards_of_segment = [r for r, s in zip(rewards, segments) if s == segment]
-            context_of_segment = context[[s == segment for s in segments]]
-            if rewards_of_segment:
-                self.sub_actions[segment.intervals].update(rewards=rewards_of_segment, context=context_of_segment)
+        indices_by_segment = defaultdict(list)
+        for i, segment in enumerate(segments):
+            indices_by_segment[segment].append(i)
+
+        for segment, indices in indices_by_segment.items():
+            rewards_of_segment = [rewards[i] for i in indices]
+            context_of_segment = context[indices]
+            self.sub_actions[segment.intervals].update(rewards=rewards_of_segment, context=context_of_segment)
 
 
 class CmabZoomingModel(BaseCmabZoomingModel):
