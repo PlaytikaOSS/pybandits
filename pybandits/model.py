@@ -757,7 +757,7 @@ class NormalArray(BaseLocationScaleArray):
     _pymc_class: ClassVar[type] = PymcNormal
 
     @classmethod
-    def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
+    def _get_distribution_specific_params(cls, _shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
         """
         Get distribution-specific parameters for Normal distribution.
 
@@ -766,7 +766,7 @@ class NormalArray(BaseLocationScaleArray):
 
         Parameters
         ----------
-        shape : Tuple[PositiveInt, ...]
+        _shape : Tuple[PositiveInt, ...]
             Shape of the distribution array.
 
         Returns
