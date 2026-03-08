@@ -193,13 +193,23 @@ def test_check_inputs_action_not_integer(n_samples: int = 5):
     arrays(dtype=float, shape=(10, 2), elements=st.floats(0.01, 1)),
     arrays(dtype=float, shape=(10, 2), elements=st.floats(0, 1)),
     arrays(dtype=float, shape=(10,), elements=st.floats(0.01, 1)),
+    st.just(2),
 )
 def test_default_estimators(
-    action, reward, propensity_score, estimated_policy, expected_reward, expected_importance_weight
+    action,
+    reward,
+    propensity_score,
+    estimated_policy,
+    expected_reward,
+    expected_importance_weight,
+    n_bootstrap_samples,
 ):
     """Test default estimators with configurable inputs."""
     if np.unique(action).size > 1:
-        estimators = [class_() for class_ in get_non_abstract_classes(offline_policy_estimator)]
+        estimators = [
+            class_(n_bootstrap_samples=n_bootstrap_samples)
+            for class_ in get_non_abstract_classes(offline_policy_estimator)
+        ]
         for estimator in estimators:
             estimator.estimate_policy_value_with_confidence_interval(
                 action=action,

@@ -40,7 +40,7 @@ import pybandits
 from pybandits import offline_policy_estimator
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
-from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator
+from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator, _FunctionEstimator
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
@@ -92,6 +92,7 @@ def logged_data(n_samples=10, n_actions=2, n_batches=3, n_rewards=2, n_groups=2,
 def test_empty_logged_data(
     split_prop=0.5,
     n_trials=10,
+    ope_estimators=None,
     verbose=False,
     batch_feature="batch",
     action_feature="action_id",
@@ -100,27 +101,27 @@ def test_empty_logged_data(
     expected_reward_model_type="logreg",
     importance_weights_model_type="logreg",
 ):
+    evaluator = OfflinePolicyEvaluator(
+        split_prop=split_prop,
+        propensity_score_model_type=propensity_score_model_type,
+        expected_reward_model_type=expected_reward_model_type,
+        importance_weights_model_type=importance_weights_model_type,
+        n_trials=n_trials,
+        ope_estimators=ope_estimators,
+        batch_feature=batch_feature,
+        action_feature=action_feature,
+        reward_feature=reward_feature,
+        verbose=verbose,
+    )
     with pytest.raises(AttributeError):
-        OfflinePolicyEvaluator(
-            logged_data=pd.DataFrame(),
-            split_prop=split_prop,
-            propensity_score_model_type=propensity_score_model_type,
-            expected_reward_model_type=expected_reward_model_type,
-            importance_weights_model_type=importance_weights_model_type,
-            n_trials=n_trials,
-            ope_metrics=None,
-            batch_feature=batch_feature,
-            action_feature=action_feature,
-            reward_feature=reward_feature,
-            verbose=verbose,
-        )
+        evaluator._validate_logged_data(pd.DataFrame())
 
 
 @pytest.mark.usefixtures("logged_data")
 @given(
     split_prop=st.sampled_from([0.0, 1.0]),
     n_trials=st.just(10),
-    ope_metrics=st.just(None),
+    ope_estimators=st.just(None),
     verbose=st.just(False),
     batch_feature=st.just("batch"),
     action_feature=st.just("action_id"),
@@ -134,7 +135,7 @@ def test_initialization_extreme_split_prop(
     logged_data: MockerFixture,
     split_prop: float,
     n_trials: PositiveInt,
-    ope_metrics: Optional[List[BaseOfflinePolicyEstimator]],
+    ope_estimators: Optional[List[BaseOfflinePolicyEstimator]],
     verbose: bool,
     batch_feature: str,
     action_feature: str,
@@ -145,13 +146,12 @@ def test_initialization_extreme_split_prop(
 ):
     with pytest.raises(ValueError):
         OfflinePolicyEvaluator(
-            logged_data=logged_data,
             split_prop=split_prop,
             propensity_score_model_type=propensity_score_model_type,
             expected_reward_model_type=expected_reward_model_type,
             importance_weights_model_type=importance_weights_model_type,
             n_trials=n_trials,
-            ope_metrics=ope_metrics,
+            ope_estimators=ope_estimators,
             batch_feature=batch_feature,
             action_feature=action_feature,
             reward_feature=reward_feature,
@@ -165,7 +165,7 @@ def test_initialization_mismatches(
     logged_data: MockerFixture,
     split_prop=0.5,
     n_trials=10,
-    ope_metrics=None,
+    ope_estimators=None,
     verbose=False,
     batch_feature="batch",
     action_feature="action_id",
@@ -177,13 +177,12 @@ def test_initialization_mismatches(
     # more true_reward_features than rewards
     with pytest.raises(ValueError):
         OfflinePolicyEvaluator(
-            logged_data=logged_data,
             split_prop=split_prop,
             propensity_score_model_type=propensity_score_model_type,
             expected_reward_model_type=expected_reward_model_type,
             importance_weights_model_type=importance_weights_model_type,
             n_trials=n_trials,
-            ope_metrics=ope_metrics,
+            ope_estimators=ope_estimators,
             batch_feature=batch_feature,
             action_feature=action_feature,
             reward_feature=reward_feature,
@@ -193,34 +192,32 @@ def test_initialization_mismatches(
     # missing propensity_score_feature
     with pytest.raises(ValueError):
         OfflinePolicyEvaluator(
-            logged_data=logged_data,
             split_prop=split_prop,
             propensity_score_model_type="propensity_score",
             expected_reward_model_type=expected_reward_model_type,
             importance_weights_model_type=importance_weights_model_type,
             n_trials=n_trials,
-            ope_metrics=ope_metrics,
+            ope_estimators=ope_estimators,
             batch_feature=batch_feature,
             action_feature=action_feature,
             reward_feature=reward_feature,
-            visualize=False,
         )
     # missing context
+    evaluator_with_bad_context = OfflinePolicyEvaluator(
+        split_prop=split_prop,
+        propensity_score_model_type=propensity_score_model_type,
+        expected_reward_model_type=expected_reward_model_type,
+        importance_weights_model_type=importance_weights_model_type,
+        n_trials=n_trials,
+        ope_estimators=ope_estimators,
+        batch_feature=batch_feature,
+        action_feature=action_feature,
+        reward_feature=reward_feature,
+        verbose=False,
+        contextual_features=["non_existent"],
+    )
     with pytest.raises(AttributeError):
-        OfflinePolicyEvaluator(
-            logged_data=logged_data,
-            split_prop=split_prop,
-            propensity_score_model_type=propensity_score_model_type,
-            expected_reward_model_type=expected_reward_model_type,
-            importance_weights_model_type=importance_weights_model_type,
-            n_trials=n_trials,
-            ope_metrics=ope_metrics,
-            batch_feature=batch_feature,
-            action_feature=action_feature,
-            reward_feature=reward_feature,
-            verbose=False,
-            contextual_features=["non_existent"],
-        )
+        evaluator_with_bad_context._validate_logged_data(logged_data)
 
 
 def generate_random_bool() -> bool:
@@ -328,7 +325,6 @@ def test_running_configuration(
             else:
                 mab = SmabBernoulli.cold_start(action_ids=set(unique_actions))
     evaluator = OfflinePolicyEvaluator(
-        logged_data=logged_data,
         split_prop=split_prop,
         n_trials=n_trials,
         fast_fit=fast_fit,
@@ -350,7 +346,9 @@ def test_running_configuration(
     )
     execution_func = evaluator.update_and_evaluate if update else evaluator.evaluate
     with TemporaryDirectory() as tmp_dir:
-        execution_func(mab=mab, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir)
+        execution_func(
+            mab=mab, logged_data=logged_data, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir
+        )
 
 
 @pytest.mark.usefixtures("logged_data")
@@ -429,7 +427,6 @@ def test_initialization_when_xgboost_not_available(
             # When XGBoost is not available, using "xgb" should fail at runtime
             with pytest.raises(ValidationError):
                 OfflinePolicyEvaluator(
-                    logged_data=logged_data,
                     split_prop=split_prop,
                     propensity_score_model_type=propensity_score_model_type,
                     expected_reward_model_type=expected_reward_model_type,
@@ -452,7 +449,6 @@ def test_initialization_when_xgboost_not_available(
                 )
         else:
             evaluator = OfflinePolicyEvaluator(
-                logged_data=logged_data,
                 split_prop=split_prop,
                 propensity_score_model_type=propensity_score_model_type,
                 expected_reward_model_type=expected_reward_model_type,
@@ -473,3 +469,9 @@ def test_initialization_when_xgboost_not_available(
                 propensity_score_feature=propensity_score_feature,
             )
             assert evaluator is not None
+
+
+def test_safe_cv_raises_on_single_sample_class(labels=np.array([0, 0, 0, 0, 1])) -> None:
+    """Test that _safe_cv raises ValueError when a class has fewer than 2 samples."""
+    with pytest.raises(ValueError, match="insufficient for cross-validation"):
+        _FunctionEstimator._safe_cv(labels)

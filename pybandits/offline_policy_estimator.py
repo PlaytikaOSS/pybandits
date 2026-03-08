@@ -55,11 +55,18 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     alpha: Float01 = 0.05
     n_bootstrap_samples: int = 10000
     random_state: Optional[int] = None
+    bootstrap_batch_size: Optional[PositiveInt] = 1
     name: ClassVar
 
     @classmethod
@@ -147,6 +154,7 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
             statistic=np.mean,
             confidence_level=1 - self.alpha,
             n_resamples=self.n_bootstrap_samples,
+            batch=self.bootstrap_batch_size,
             random_state=self.random_state,
         )
         low, high = bootstrap_result.confidence_interval
@@ -184,7 +192,12 @@ class ReplayMethod(BaseOfflinePolicyEstimator):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "rep"
@@ -210,10 +223,11 @@ class ReplayMethod(BaseOfflinePolicyEstimator):
             Estimated sample rewards.
         """
         n_samples = action.shape[0]
-        matched_evaluation_policy = estimated_policy[np.arange(n_samples), action]
-        matched_action = matched_evaluation_policy == 1
+        policy_action_prob = estimated_policy[np.arange(n_samples), action]
         sample_reward = (
-            reward * matched_action / matched_action.mean() if matched_action.any() else np.zeros_like(matched_action)
+            reward * policy_action_prob / policy_action_prob.mean()
+            if policy_action_prob.any()
+            else np.zeros_like(reward)
         )
         return sample_reward
 
@@ -235,6 +249,12 @@ class GeneralizedInverseProbabilityWeighting(BaseOfflinePolicyEstimator, ABC):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     @abstractmethod
@@ -287,6 +307,12 @@ class InverseProbabilityWeighting(GeneralizedInverseProbabilityWeighting):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "ipw"
@@ -373,6 +399,12 @@ class SelfNormalizedInverseProbabilityWeighting(InverseProbabilityWeighting):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "snips"
@@ -444,6 +476,12 @@ class DirectMethod(BaseOfflinePolicyEstimator):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "dm"
@@ -501,6 +539,12 @@ class GeneralizedDoublyRobust(BaseOfflinePolicyEstimator, ABC):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     _alternative_method_cls: Type[InverseProbabilityWeighting]
@@ -564,25 +608,31 @@ class GeneralizedDoublyRobust(BaseOfflinePolicyEstimator, ABC):
 
 class DoublyRobust(GeneralizedDoublyRobust):
     """
-     Doubly Robust (DR) estimator.
+    Doubly Robust (DR) estimator.
 
-     References
-     ----------
-     Doubly Robust Policy Evaluation and Optimization (Dudík, Erhan, Langford, and Li, 2014)
-     https://arxiv.org/pdf/1503.02834
+    References
+    ----------
+    Doubly Robust Policy Evaluation and Optimization (Dudík, Erhan, Langford, and Li, 2014)
+    https://arxiv.org/pdf/1503.02834
 
     More Robust Doubly Robust Off-policy Evaluation (Farajtabar, Chow, and Ghavamzadeh, 2018)
     https://arxiv.org/pdf/1802.03493
 
 
-     Parameters
-     ----------
-     alpha : Float01, default=0.05
-         Significance level for confidence interval estimation.
-     n_bootstrap_samples : int, default=10000
-         Number of bootstrap samples for confidence interval estimation.
-     random_state : int, default=None
-         Random seed for bootstrap sampling.
+    Parameters
+    ----------
+    alpha : Float01, default=0.05
+        Significance level for confidence interval estimation.
+    n_bootstrap_samples : int, default=10000
+        Number of bootstrap samples for confidence interval estimation.
+    random_state : int, default=None
+        Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "dr"
@@ -608,6 +658,12 @@ class SelfNormalizedDoublyRobust(GeneralizedDoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "sndr"
@@ -635,6 +691,12 @@ class SwitchDoublyRobust(DoublyRobust):
         Random seed for bootstrap sampling.
     switch_threshold : float, default=inf
         Threshold for the importance weight to switch between the DR and IPS estimators.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "switch-dr"
@@ -664,6 +726,12 @@ class DoublyRobustWithOptimisticShrinkage(DoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     shrinkage_factor : float, default=0.0
         Shrinkage factor for the importance weights.
         If set to 0 or infinity, the estimator is equivalent to the native DM or DR estimators, respectively.
@@ -699,6 +767,12 @@ class DoublyRobustWithPessimisticShrinkage(DoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     shrinkage_factor : float, default=0.0
         Shrinkage factor for the importance weights.
     """
@@ -728,6 +802,12 @@ class SubGaussianInverseProbabilityWeighting(InverseProbabilityWeighting):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, defaults to None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     shrinkage_factor : Float01, defaults to 0.0
         Shrinkage factor for the importance weights.
 
@@ -757,6 +837,12 @@ class SubGaussianDoublyRobust(GeneralizedDoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, defaults to None
         Random seed for bootstrap sampling.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "sg-dr"
@@ -772,7 +858,6 @@ class BalancedInverseProbabilityWeighting(GeneralizedInverseProbabilityWeighting
     Balanced Off-Policy Evaluation in General Action Spaces (Sondhi, Arbour, and Dimmery, 2020)
     https://arxiv.org/pdf/1906.03694
 
-
     Parameters
     ----------
     alpha : Float01, defaults to 0.05
@@ -781,10 +866,12 @@ class BalancedInverseProbabilityWeighting(GeneralizedInverseProbabilityWeighting
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, defaults to None
         Random seed for bootstrap sampling.
-
-    ----------
-    Arjun Sondhi, David Arbour, and Drew Dimmery
-    "Balanced Off-Policy Evaluation in General Action Spaces.", 2020.
+    bootstrap_batch_size : Optional[int], default=1
+        Number of resamples to process per batch in the bootstrap call.
+        Memory usage is O(bootstrap_batch_size * n_samples). When None,
+        all resamples are processed in a single batch which can cause OOM
+        kills for large datasets. Set to a smaller value (e.g. 1) to
+        reduce peak memory usage at the cost of slightly more overhead.
     """
 
     name = "b-ipw"
