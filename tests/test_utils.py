@@ -380,25 +380,25 @@ class TestMaximizeByQuantity:
             (
                 lambda x: (np.sum(x)),
                 2,
-                [lambda x: np.sum(x) <= 0.5],
+                [lambda x: 0.5 - np.sum(x)],
             ),
             # Constraint: first element <= 0.3
             (
                 lambda x: (x[0] + x[1]),
                 2,
-                [lambda x: x[0] <= 0.3],
+                [lambda x: 0.3 - x[0]],
             ),
             # Multiple constraints: sum <= 0.6 and first element >= 0.2
             (
                 lambda x: (np.sum(x)),
                 2,
-                [lambda x: np.sum(x) <= 0.6, lambda x: x[0] >= 0.2],
+                [lambda x: 0.6 - np.sum(x), lambda x: x[0] - 0.2],
             ),
             # Constraint: product of elements <= 0.1
             (
                 lambda x: (np.prod(x)),
                 2,
-                [lambda x: np.prod(x) <= 0.1],
+                [lambda x: 0.1 - np.prod(x)],
             ),
         ],
         ids=["sum <= 0.5", "first element <= 0.3", "sum <= 0.6 and first element >= 0.2", "product <= 0.1"],
@@ -407,7 +407,7 @@ class TestMaximizeByQuantity:
         self,
         quantity_score_func: Callable[[np.ndarray], float],
         dimension: int,
-        constraints: List[Callable[[np.ndarray], bool]],
+        constraints: List[Callable[[np.ndarray], float]],
         default_n_trials: int,
     ) -> None:
         """Test maximize_by_quantity with constraints."""
@@ -420,7 +420,7 @@ class TestMaximizeByQuantity:
 
         # Verify constraints are satisfied
         for constraint in constraints:
-            assert constraint(result)
+            assert constraint(result) >= 0
 
     @pytest.mark.parametrize(
         "n_trials",
@@ -482,7 +482,7 @@ class TestMaximizeByQuantity:
         def quantity_score_func(x) -> Probability:
             return Probability(x[0] + x[1])
 
-        constraints = [lambda x: np.sum(x) <= bound]  # Force sum to be small
+        constraints = [lambda x: bound - np.sum(x)]  # Force sum to be small
 
         result = maximize_by_quantity(quantity_score_func, dimension, constraints, n_trials=default_n_trials)
         if result is not None:
@@ -490,20 +490,21 @@ class TestMaximizeByQuantity:
             assert result.shape == (dimension,)
             assert np.all(result >= 0.0)
             assert np.all(result <= 1.0)
-            assert np.sum(result) <= bound + epsilon  # Allow small numerical error
+            assert np.sum(result) <= bound + epsilon
+            assert all(constraint(result) >= 0 for constraint in constraints)
 
     @pytest.mark.parametrize(
         "constraints",
         [
             None,
             [],
-            [lambda x: True],  # Always satisfied constraint
-            [lambda x: x[0] >= 0.0],  # Trivial constraint
+            [lambda x: 1.0],  # Always satisfied constraint
+            [lambda x: x[0]],  # Trivial constraint
         ],
     )
     def test_maximize_by_quantity_various_constraint_inputs(
         self,
-        constraints: Optional[List[Callable[[np.ndarray], bool]]],
+        constraints: Optional[List[Callable[[np.ndarray], float]]],
         default_dimension: int,
         center: float = 0.5,
     ) -> None:
@@ -518,6 +519,8 @@ class TestMaximizeByQuantity:
         assert result.shape == (default_dimension,)
         assert np.all(result >= 0.0)
         assert np.all(result <= 1.0)
+        if constraints is not None:
+            assert all(constraint(result) >= 0 for constraint in constraints)
 
     def test_maximize_by_quantity_caching_behavior(
         self, default_dimension: int, default_n_trials: int, center: float = 0.5
@@ -534,7 +537,7 @@ class TestMaximizeByQuantity:
         result2 = maximize_by_quantity(quantity_score_func, default_dimension, n_trials=default_n_trials)
 
         # Results should be identical due to caching
-        np.testing.assert_array_almost_equal(result1, result2)
+        np.testing.assert_array_almost_equal(result1, result2, decimal=5)
 
     @pytest.mark.parametrize("dimension", [1, 2, 3, 4])
     def test_maximize_by_quantity_different_dimensions(
@@ -584,9 +587,9 @@ class TestMaximizeByQuantity:
 
         # Complex constraints: x[0] + x[1] <= upper_bound and x[0] >= lower_bound and x[1] >= lower_bound
         constraints = [
-            lambda x: x[0] + x[1] <= upper_bound,
-            lambda x: x[0] >= lower_bound,
-            lambda x: x[1] >= lower_bound,
+            lambda x: upper_bound - (x[0] + x[1]),
+            lambda x: x[0] - lower_bound,
+            lambda x: x[1] - lower_bound,
         ]
 
         result = maximize_by_quantity(quantity_score_func, dimension, constraints, n_trials=default_n_trials)

@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -58,8 +58,30 @@ DEFAULT_EXPLOIT_P = 0.5
 DEFAULT_SUBSIDY_FACTOR = 0.5
 
 
+class DummyQuantitativeModelCC(QuantitativeModel):
+    cost: Optional[Callable[[np.ndarray], float]] = None
+    models: Optional[List[BaseModel]] = None
+
+    def reset(self) -> None:
+        pass
+
+    def sample_proba(self, **kwargs) -> None:
+        pass
+
+    def update(self, **kwargs) -> None:
+        pass
+
+    def _quantitative_update(self, **kwargs) -> None:
+        pass
+
+    def _reset(self) -> None:
+        pass
+
+
 def create_mock_quantitative_model(
-    dimension: int = DEFAULT_DIMENSION, cost_value: float = DEFAULT_COST
+    dimension: int = DEFAULT_DIMENSION,
+    cost_value: float = DEFAULT_COST,
+    mocked_model_type: Literal["MagicMock", "DummyQuantitativeModelCC"] = "MagicMock",
 ) -> QuantitativeModel:
     """Create a mock quantitative model for testing.
 
@@ -75,8 +97,14 @@ def create_mock_quantitative_model(
     QuantitativeModel
         Mock quantitative model.
     """
-    model = MagicMock(spec=QuantitativeModel)
-    model.dimension = dimension
+    if mocked_model_type == "MagicMock":
+        model = MagicMock(spec=QuantitativeModel)
+        model.dimension = dimension
+
+    elif mocked_model_type == "DummyQuantitativeModelCC":
+        model = DummyQuantitativeModelCC(dimension=dimension)
+    else:
+        raise ValueError(f"Invalid model type: {mocked_model_type}")
     model.cost = MagicMock(return_value=cost_value)
     return model
 
@@ -824,6 +852,44 @@ def test_cost_control_logic(subsidy_factor: float, expected_action: str):
 
     c = CostControlBandit(subsidy_factor=subsidy_factor)
     assert c.select_action(p=p, actions=actions) == expected_action
+
+
+@pytest.mark.parametrize(
+    "subsidy_factor,expected_action",
+    [
+        (1.0, "a4"),  # Min cost action with highest prob among same cost
+        (0.0, "a2"),  # Highest probability action
+        (0.5, "a5"),  # Cheapest feasible action
+    ],
+)
+def test_cost_control_logic_callable_cost_and_proba(
+    subsidy_factor: float, expected_action: Tuple[str, Tuple[float, ...]]
+):
+    """Test CostControlBandit select_action when cost and proba are callables.
+
+    Same selection logic as test_cost_control_logic but with quantitative actions:
+    p maps to callable proba (probability given quantity vector) and actions use
+    quantitative models with callable cost (cost given quantity vector).
+    """
+    actions_cost = {"a1": 10, "a2": 30, "a3": 20, "a4": 10, "a5": 20}
+    p = {
+        "a1": lambda x: 0.1,
+        "a2": lambda x: 0.8,
+        "a3": lambda x: 0.6,
+        "a4": lambda x: 0.2,
+        "a5": lambda x: 0.65,
+    }
+    actions = {
+        action_id: create_mock_quantitative_model(
+            dimension=2, cost_value=cost, mocked_model_type="DummyQuantitativeModelCC"
+        )
+        for action_id, cost in actions_cost.items()
+    }
+
+    c = CostControlBandit(subsidy_factor=subsidy_factor)
+    result = c.select_action(p=p, actions=actions)
+    assert result[0] == expected_action
+    assert all(0 <= quantity <= 1 for quantity in result[1])
 
 
 @given(

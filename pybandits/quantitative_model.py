@@ -26,7 +26,7 @@ import json
 from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import product
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, get_args, get_type_hints
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -49,6 +49,7 @@ from pybandits.model import BayesianNeuralNetwork, Beta, Model
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
     PYDANTIC_VERSION_2,
+    Field,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveInt,
@@ -76,23 +77,22 @@ class QuantitativeModel(BaseModelSO, ABC):
     _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("dimension",)
 
     @abstractmethod
-    def sample_proba(self, **kwargs) -> List[QuantitativeProbability]:
+    def sample_proba(self, **kwargs) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
         """
         Sample the model.
 
         Returns
         -------
-        List[QuantitativeProbability]
-            A list of callable functions, each taking a location (Tuple[Float01, ...])
-            and returning the probability at that location.
-            List length is equal to the number of samples.
+        Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]
+            A list of callables: either probability functions (quantity -> Probability)
+            or (probability, weight) tuples. List length is equal to the number of samples.
         """
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(
         self,
         quantities: Optional[List[Union[float, List[float]]]],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[BinaryReward]],
         **kwargs,
     ):
         """
@@ -102,18 +102,18 @@ class QuantitativeModel(BaseModelSO, ABC):
         ----------
         quantities : Optional[List[Union[float, List[float], None]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[BinaryReward]]
             The reward for each sample.
         """
 
         if quantities:
-            self._quantitative_update(quantities, rewards, **kwargs)
+            self._quantitative_update(quantities=quantities, rewards=rewards, **kwargs)
 
     @abstractmethod
     def _quantitative_update(
         self,
         quantities: List[Union[float, List[float], None]],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[BinaryReward]],
         **kwargs,
     ):
         """
@@ -123,7 +123,7 @@ class QuantitativeModel(BaseModelSO, ABC):
         ----------
         quantities : Optional[List[Union[float, List[float], None]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[BinaryReward]]
             The reward for each sample.
         """
 
@@ -882,7 +882,7 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
     def _quantitative_update(
         self,
         quantities: List[Union[float, List[float], None]],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[BinaryReward]],
     ):
         """
         Update the model parameters.
@@ -891,7 +891,7 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
         ----------
         quantities : Optional[List[Union[float, List[float], None]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[BinaryReward]]
             The reward for each sample.
         """
         super()._quantitative_update(quantities, rewards)
@@ -1147,4 +1147,278 @@ class CmabZoomingModelCC(BaseCmabZoomingModel, QuantitativeModelCC):
         Keyword arguments for the base model cold start.
     cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
         Cost associated to the Beta distribution.
+    """
+
+
+class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
+    """
+    A Bayesian Neural Network based QuantitativeModel.
+
+    This class implements a quantitative model using a Bayesian Neural Network
+    where quantities are used as input features to predict reward probabilities.
+    The BNN learns the relationship between quantities and rewards.
+
+    Parameters
+    ----------
+    dimension: PositiveInt
+        Number of quantity dimensions (input features for the BNN).
+    bnn: BayesianNeuralNetwork
+        The underlying Bayesian Neural Network model.
+    """
+
+    bnn: BayesianNeuralNetwork
+
+    @classmethod
+    @validate_call
+    def cold_start(
+        cls,
+        dimension: PositiveInt = 1,
+        n_features: NonNegativeInt = 1,
+        base_model_cold_start_kwargs: Optional[Dict[str, Any]] = Field(default_factory=dict),
+        **kwargs,
+    ) -> Self:
+        """
+        Create a cold start QuantitativeBayesianNeuralNetwork model.
+
+        Parameters
+        ----------
+        dimension : PositiveInt
+            Dimension of the quantity (action) space. Default is 1.
+        n_features : NonNegativeInt
+            Number of context dimensions (input features in addition to the quantity). Default is 1.
+        base_model_cold_start_kwargs : Optional[Dict[str, Any]], optional
+            Keyword arguments passed to BayesianNeuralNetwork.cold_start. May include e.g.
+            hidden_dim_list, update_method, update_kwargs, dist_type, dist_params_init,
+            activation, use_residual_connections, use_layerwise_scaling. Default is None.
+        **kwargs
+            Additional keyword arguments for the QuantitativeBayesianNeuralNetwork constructor.
+
+        Returns
+        -------
+        Self
+            A cold start QuantitativeBayesianNeuralNetwork model.
+        """
+
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=dimension + n_features,
+            **base_model_cold_start_kwargs,
+        )
+
+        return cls(
+            dimension=dimension,
+            bnn=bnn,
+            **kwargs,
+        )
+
+    @property
+    def input_dim(self) -> PositiveInt:
+        """
+        Returns the expected context dimension of the model.
+
+        Returns
+        -------
+        PositiveInt
+            The number of input features expected by the model.
+        """
+        return self.bnn.input_dim - self.dimension
+
+    def _to_quantitative_probabilities(
+        self, context: np.ndarray, sampled_weights: List[List[Tuple[np.ndarray, np.ndarray]]]
+    ) -> List[QuantitativeProbabilityWeight]:
+        """
+        Convert the sampled weights to quantitative probabilities and weights.
+
+        Parameters
+        ----------
+        sampled_weights : List[List[Tuple[np.ndarray, np.ndarray]]]
+            The sampled weights.
+        context : np.ndarray
+            The context at which to evaluate the probability.
+        """
+        n_samples = len(context)
+        n_outputs = len(get_args(get_args(get_type_hints(self._to_quantitative_probabilities)["return"])[0]))
+
+        result = []
+        for sample_idx in range(n_samples):
+            sampled_weights_idx = self.bnn._extract_weights(sampled_weights, sample_idx)
+
+            def create_probability_or_weight_function(
+                sample_idx: NonNegativeInt, output_index: NonNegativeInt
+            ) -> Union[QuantitativeProbability, QuantitativeWeight]:
+                def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
+                    bnn_input = self._prepare_network_input([quantity], context[sample_idx])
+                    return self.bnn.forward_pass(sampled_weights=sampled_weights_idx, context=bnn_input)[0][
+                        output_index
+                    ]
+
+                return probability_or_weight_function
+
+            result.append(
+                tuple(
+                    create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)
+                )
+            )
+        return result
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbabilityWeight]:
+        """
+        Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
+
+        Parameters
+        ----------
+        context : np.ndarray
+            The context at which to evaluate the probability.
+
+        Returns
+        -------
+        List[QuantitativeProbabilityWeight]
+            A list of (probability, weight) callables per sample, each taking a quantity (Union[float, np.ndarray]).
+        """
+
+        _context = np.atleast_2d(context)
+        n_samples = _context.shape[0]
+
+        sampled_weights = self.bnn.sample_weights(n_samples)
+
+        result = self._to_quantitative_probabilities(context=_context, sampled_weights=sampled_weights)
+        return result
+
+    @staticmethod
+    def _prepare_network_input(
+        quantity: List[Union[float, np.ndarray, List[float], Tuple[float, ...]]], context: ArrayLike
+    ) -> np.ndarray:
+        """
+        Prepare the input for the network, concatenating quantity and context. Quantity can be a float, a 1D array, or a tuple of floats.
+
+        Parameters
+        ----------
+        quantity : List[Union[float, np.ndarray, List[float], Tuple[float, ...]]]
+            The quantity value(s) associated with each observation.
+            Each element can be a float (for 1D quantities) or a list (for multi-dimensional).
+        context : ArrayLike
+            The context value(s) associated with each observation.
+
+        Returns
+        -------
+        np.ndarray
+            The input for the network, concatenated quantity and context.
+        """
+        q0 = quantity[0]
+        if isinstance(q0, np.ndarray):
+            if q0.ndim != 1:
+                raise TypeError("Quantity must be a 1D array-like value.")
+        elif isinstance(q0, (list, tuple)):
+            if np.asarray(q0).ndim != 1:
+                raise TypeError("Quantity must be a 1D array-like value.")
+        elif not isinstance(q0, (float, int, np.floating, np.integer)):
+            raise TypeError("Quantity must be numeric or a 1D array-like value.")
+
+        _context = np.atleast_2d(context)
+        _quantity = np.atleast_2d(quantity).reshape(_context.shape[0], -1)
+        return np.concatenate([_quantity, _context], axis=1)
+
+    def _quantitative_update(
+        self,
+        quantities: List[Union[float, List[float], None]],
+        rewards: Union[List[BinaryReward]],
+        context: np.ndarray,
+    ):
+        """
+        Update the BNN model parameters with new quantities and rewards.
+
+        Parameters
+        ----------
+        quantities : List[Union[float, List[float], None]]
+            The quantity values associated with each observation (None entries are skipped).
+        rewards : Union[List[BinaryReward]]
+            The binary reward for each observation.
+        context : np.ndarray
+            The context at which to evaluate the probability.
+        """
+
+        _context = np.atleast_2d(context)
+        if context.shape[0] != len(quantities):
+            raise AttributeError("Context and quantities must have the same number of samples.")
+
+        bnn_input = self._prepare_network_input(list(quantities), context)
+        self.bnn.update(context=bnn_input, rewards=rewards)
+
+    def _reset(self):
+        """Reset the model to its initial state."""
+        self.bnn._reset()
+
+
+class QuantitativeBayesianNeuralNetwork(BaseQuantitativeBayesianNeuralNetwork):
+    """
+    A Bayesian Neural Network based QuantitativeModel.
+
+    This class implements a quantitative model using a Bayesian Neural Network
+    where quantities are used as input features to predict reward probabilities.
+    The BNN learns the relationship between quantities and rewards.
+
+    Parameters
+    ----------
+    dimension : PositiveInt
+        Number of quantity dimensions (input features for the BNN).
+    bnn : BayesianNeuralNetwork
+        The underlying Bayesian Neural Network model.
+    hidden_dim_list : Optional[List[PositiveInt]]
+        List of hidden layer dimensions for the BNN. None means no hidden layers.
+    update_method : str
+        The method used for posterior inference, either "MCMC" or "VI".
+    update_kwargs : Optional[dict]
+        Additional keyword arguments for the update method.
+
+    Examples
+    --------
+    >>> # Create a cold start model with 2 quantity dimensions
+    >>> model = QuantitativeBayesianNeuralNetwork.cold_start(
+    ...     dimension=2,
+    ...     hidden_dim_list=[8, 4],
+    ...     update_method="VI"
+    ... )
+    >>> # Sample probability functions (context required for BNN)
+    >>> context = np.zeros((3, 1))  # (n_samples, n_features)
+    >>> prob_funcs = model.sample_proba(context=context)
+    >>> # Evaluate probability at a specific quantity
+    >>> prob, weight = prob_funcs[0]
+    >>> prob_at_q = prob(np.array([0.3, 0.7]))
+    >>> # Update with observations
+    >>> quantities = [[0.2, 0.8], [0.5, 0.5], [0.9, 0.1]]
+    >>> rewards = [1, 0, 1]
+    >>> model._quantitative_update(quantities, rewards, context=context)
+    """
+
+
+class QuantitativeBayesianNeuralNetworkCC(BaseQuantitativeBayesianNeuralNetwork, QuantitativeModelCC):
+    """
+    A Bayesian Neural Network based QuantitativeModel with cost control.
+
+    This class extends QuantitativeBayesianNeuralNetwork with cost control functionality,
+    allowing the model to incorporate cost considerations when making decisions.
+
+    Parameters
+    ----------
+    dimension : PositiveInt
+        Number of quantity dimensions (input features for the BNN).
+    bnn : BayesianNeuralNetwork
+        The underlying Bayesian Neural Network model.
+    hidden_dim_list : Optional[List[PositiveInt]]
+        List of hidden layer dimensions for the BNN. None means no hidden layers.
+    update_method : str
+        The method used for posterior inference, either "MCMC" or "VI".
+    update_kwargs : Optional[dict]
+        Additional keyword arguments for the update method.
+    cost : Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+        Cost function that takes a quantity value and returns the associated cost.
+
+    Examples
+    --------
+    >>> # Create a cold start model with cost control
+    >>> model = QuantitativeBayesianNeuralNetworkCC.cold_start(
+    ...     dimension=1,
+    ...     hidden_dim_list=[4],
+    ...     cost=lambda x: x * 0.1  # Linear cost function
+    ... )
     """

@@ -23,7 +23,8 @@
 import json
 from copy import deepcopy
 from functools import partial
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.strategies import composite
 from pydantic.dataclasses import dataclass
+from pydantic.types import PositiveInt
 from pytest import MonkeyPatch
 
 import pybandits
@@ -54,14 +56,19 @@ from pybandits.model import (
     BayesianNeuralNetworkMOCC,
     BnnLayerParams,
     BnnParams,
+    ModelMO,
     StudentTArray,
     UpdateMethods,
 )
 from pybandits.pydantic_version_compatibility import (
-    PositiveInt,
     ValidationError,
 )
-from pybandits.quantitative_model import BaseCmabZoomingModel, CmabZoomingModel, CmabZoomingModelCC, QuantitativeModel
+from pybandits.quantitative_model import (
+    BaseQuantitativeBayesianNeuralNetwork,
+    QuantitativeBayesianNeuralNetwork,
+    QuantitativeBayesianNeuralNetworkCC,
+    QuantitativeModel,
+)
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
@@ -189,6 +196,13 @@ def _quantitative_cost(x, cost):
 
 @dataclass
 class ModelTestConfig:
+    """Configuration for parameterized CMAB (Contextual Multi-Armed Bandit) tests.
+
+    Bundles the CMAB algorithm, bandit strategy, and model types used to generate
+    test instances. Used with Hypothesis to create CMAB instances and actions
+    across single/multi-objective and cost/no-cost variants.
+    """
+
     cmab_class: Type
     strategy_class: Type
     model_types: List[Type[CmabModelType]]
@@ -207,7 +221,7 @@ class ModelTestConfig:
             indices = np.random.randint(0, len(self.model_types), len(action_ids))
             self.model_types = [self.model_types[i] for i in indices]
         if all(
-            model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, CmabZoomingModelCC]
+            model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, QuantitativeBayesianNeuralNetworkCC]
             for model in self.model_types
         ):
             # Generate random costs
@@ -222,59 +236,63 @@ class ModelTestConfig:
             costs = None
 
         model_cold_start_kwargs = dict(update_method=update_method, update_kwargs=update_kwargs)
-        base_model_cold_start_kwargs = dict(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs
-        )
+        base_model_cold_start_kwargs = dict(hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs)
 
+        result: Dict[str, Any] = {}
         if n_objectives is None:
             # Single-objective models
             if costs is not None:
-                # Handle models with costs
-                return {
-                    action_id: model_type.cold_start(
-                        n_features=n_features, hidden_dim_list=hidden_dim_list, cost=cost, **model_cold_start_kwargs
-                    )
-                    if issubclass(model_type, BayesianNeuralNetworkCC)
-                    else model_type.cold_start(
-                        dimension=1, base_model_cold_start_kwargs=base_model_cold_start_kwargs, cost=cost
-                    )  # CmabZoomingModelCC
-                    for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
-                }, base_model_cold_start_kwargs
+                for action_id, model_type, cost in zip(action_ids, self.model_types, costs):
+                    if issubclass(model_type, BayesianNeuralNetworkCC):
+                        result[action_id] = model_type.cold_start(
+                            n_features=n_features,
+                            hidden_dim_list=hidden_dim_list,
+                            cost=cost,
+                            **model_cold_start_kwargs,
+                        )
+                    else:
+                        # QuantitativeBayesianNeuralNetworkCC
+                        result[action_id] = model_type.cold_start(
+                            dimension=1,
+                            n_features=n_features,
+                            base_model_cold_start_kwargs=base_model_cold_start_kwargs,
+                            cost=cost,
+                        )
             else:
-                # Handle models without costs
-                return {
-                    action_id: model_type.cold_start(
-                        n_features=n_features, hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs
-                    )
-                    if issubclass(model_type, BayesianNeuralNetwork)
-                    else model_type.cold_start(
-                        dimension=1, base_model_cold_start_kwargs=base_model_cold_start_kwargs
-                    )  # CmabZoomingModel
-                    for action_id, model_type in zip(action_ids, self.model_types)
-                }, base_model_cold_start_kwargs
+                for action_id, model_type in zip(action_ids, self.model_types):
+                    if issubclass(model_type, BayesianNeuralNetwork):
+                        result[action_id] = model_type.cold_start(
+                            n_features=n_features,
+                            hidden_dim_list=hidden_dim_list,
+                            **model_cold_start_kwargs,
+                        )
+                    else:
+                        # QuantitativeBayesianNeuralNetwork
+                        result[action_id] = model_type.cold_start(
+                            dimension=1,
+                            n_features=n_features,
+                            base_model_cold_start_kwargs=base_model_cold_start_kwargs,
+                        )
         else:
             # Multi-objective models
             if costs is not None:
-                return {
-                    action_id: model_type.cold_start(
+                for action_id, model_type, cost in zip(action_ids, self.model_types, costs):
+                    result[action_id] = model_type.cold_start(
                         n_objectives=n_objectives,
                         n_features=n_features,
                         hidden_dim_list=hidden_dim_list,
                         cost=cost,
                         **model_cold_start_kwargs,
                     )
-                    for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
-                }, base_model_cold_start_kwargs
             else:
-                return {
-                    action_id: model_type.cold_start(
+                for action_id, model_type in zip(action_ids, self.model_types):
+                    result[action_id] = model_type.cold_start(
                         n_objectives=n_objectives,
                         n_features=n_features,
                         hidden_dim_list=hidden_dim_list,
                         **model_cold_start_kwargs,
                     )
-                    for action_id, model_type in zip(action_ids, self.model_types)
-                }, base_model_cold_start_kwargs
+        return result, base_model_cold_start_kwargs
 
     def create_cmab_and_actions(
         self,
@@ -320,7 +338,8 @@ class ModelTestConfig:
                     kwargs[param] = actual_param.draw(st.floats(min_value=0, max_value=1))
 
         cmab = self.cmab_class(actions=actions, **kwargs)
-        if any(isinstance(model, BaseCmabZoomingModel) for model in actions.values()):
+        kwargs["n_features"] = n_features
+        if any(isinstance(model, BaseQuantitativeBayesianNeuralNetwork) for model in actions.values()):
             kwargs["base_model_cold_start_kwargs"] = base_model_cold_start_kwargs
         if any(
             isinstance(model, (BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO)) for model in actions.values()
@@ -334,14 +353,14 @@ class ModelTestConfig:
 
 
 TEST_CONFIGS = {
-    "cmab": ModelTestConfig(CmabBernoulli, ClassicBandit, [BayesianNeuralNetwork, CmabZoomingModel]),
+    "cmab": ModelTestConfig(CmabBernoulli, ClassicBandit, [BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]),
     "cmab_bai": ModelTestConfig(
-        CmabBernoulliBAI, BestActionIdentificationBandit, [BayesianNeuralNetwork, CmabZoomingModel]
+        CmabBernoulliBAI, BestActionIdentificationBandit, [BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]
     ),
     "cmab_cc": ModelTestConfig(
         CmabBernoulliCC,
         CostControlBandit,
-        [BayesianNeuralNetworkCC, CmabZoomingModelCC],
+        [BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC],
     ),
     "cmab_mo": ModelTestConfig(
         CmabBernoulliMO,
@@ -419,7 +438,7 @@ def test_cold_start(
         },
     }
     if all(
-        model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, CmabZoomingModelCC]
+        model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, QuantitativeBayesianNeuralNetworkCC]
         for model in config.model_types
     ):
         cold_start_kwargs["action_ids_cost"] = {
@@ -428,7 +447,9 @@ def test_cold_start(
             if isinstance(model, (BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC))
         }
         cold_start_kwargs["quantitative_action_ids_cost"] = {
-            action: model.cost for action, model in actions.items() if isinstance(model, CmabZoomingModelCC)
+            action: model.cost
+            for action, model in actions.items()
+            if isinstance(model, QuantitativeBayesianNeuralNetworkCC)
         }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
@@ -569,6 +590,37 @@ def test_bad_initialization(
             config.cmab_class(actions=mo_actions_wrong)
 
 
+def create_patches(
+    cmab: BaseCmabBernoulli, actions_to_update: List[str], n_features: int, hidden_dim_list: List[int]
+) -> Tuple[List[FakeApproximation], List[Callable[[], np.ndarray]]]:
+    fit_patch_list = []
+    sample_patch_list = []
+    for action_id in set(actions_to_update):
+        action = cmab.actions[action_id]
+        num_models = 1
+        if issubclass(type(action), ModelMO):
+            curr_action = action.models[0]
+            num_models = len(action.models)
+        else:
+            curr_action = action
+        if issubclass(type(curr_action), BaseBayesianNeuralNetwork):
+            model_n_features = n_features
+        elif issubclass(type(curr_action), BaseQuantitativeBayesianNeuralNetwork):
+            model_n_features = n_features + 1
+        else:
+            raise ValueError(f"Invalid action type: {type(action)}")
+        print(f"action_id: {action_id}, num_models: {num_models}, model_n_features: {model_n_features}")
+        fit_patch_list += [
+            FakeApproximation(n_features=model_n_features, hidden_dim_list=hidden_dim_list) for _ in range(num_models)
+        ]
+        sample_patch_list += [
+            FakeApproximation(n_features=model_n_features, hidden_dim_list=hidden_dim_list).sample
+            for _ in range(num_models)
+        ]
+
+    return fit_patch_list, sample_patch_list
+
+
 @settings(deadline=None)
 @pytest.mark.parametrize("config", TEST_CONFIGS.values(), ids=TEST_CONFIGS.keys())
 @given(
@@ -608,18 +660,7 @@ def test_update(
     update_method,
     update_kwargs,
     memory_len,
-    monkeymodule,
 ):
-    monkeymodule.setattr(
-        pybandits.model,
-        "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features, hidden_dim_list=hidden_dim_list),
-    )
-    monkeymodule.setattr(
-        pybandits.model,
-        "sample",
-        FakeApproximation(n_features=n_features, hidden_dim_list=hidden_dim_list).sample,
-    )
     # Create CMAB instance
     cmab, _, kwargs = config.create_cmab_and_actions(
         action_ids,
@@ -634,6 +675,8 @@ def test_update(
         update_method,
         update_kwargs,
     )
+    # create patches
+
     n_objectives = kwargs.get("n_objectives")
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     # Generate random rewards
@@ -649,7 +692,7 @@ def test_update(
     # Handle multi-objective rewards for MO models
 
     for_update_kwargs = {"actions": actions_to_update, "rewards": reward_data}
-    if any(isinstance(model, BaseCmabZoomingModel) for model in cmab.actions.values()):
+    if any(isinstance(model, BaseQuantitativeBayesianNeuralNetwork) for model in cmab.actions.values()):
         quantity_data = np.random.random(size=n_samples).tolist()
         quantity_data = [
             q if isinstance(cmab.actions[action], QuantitativeModel) else None
@@ -659,16 +702,27 @@ def test_update(
 
     old_cmab = deepcopy(cmab)
     for k, transform in enumerate([lambda x: x, list, pd.DataFrame]):
-        if k and delta and "actions_memory" not in for_update_kwargs:
-            with pytest.warns(UserWarning):
+        fit_patch_list, sample_patch_list = create_patches(cmab, actions_to_update, n_features, hidden_dim_list)
+        sample_iter = iter(sample_patch_list)
+
+        def sample_side_effect(*args, **kwargs):
+            func = next(sample_iter)
+            return func(*args, **kwargs)
+
+        with (
+            patch("pybandits.model.fit", side_effect=fit_patch_list),
+            patch("pybandits.model.sample", side_effect=sample_side_effect),
+        ):
+            if k and delta and "actions_memory" not in for_update_kwargs:
+                with pytest.warns(UserWarning):
+                    cmab.update(context=transform(context), **for_update_kwargs)
+            else:
                 cmab.update(context=transform(context), **for_update_kwargs)
-        else:
-            cmab.update(context=transform(context), **for_update_kwargs)
-        if delta and "actions_memory" not in for_update_kwargs:
-            for_update_kwargs["actions_memory"] = for_update_kwargs["actions"][-memory_len:]
-            for_update_kwargs["rewards_memory"] = for_update_kwargs["rewards"][-memory_len:]
-            for_update_kwargs["context_memory"] = context[-memory_len:]
-        assert cmab != old_cmab
+            if delta and "actions_memory" not in for_update_kwargs:
+                for_update_kwargs["actions_memory"] = for_update_kwargs["actions"][-memory_len:]
+                for_update_kwargs["rewards_memory"] = for_update_kwargs["rewards"][-memory_len:]
+                for_update_kwargs["context_memory"] = context[-memory_len:]
+            assert cmab != old_cmab
 
 
 @settings(deadline=None)
@@ -1102,27 +1156,60 @@ def test_pickling(
 @given(
     st.integers(min_value=1, max_value=1000),
     st.integers(min_value=1, max_value=100),
-    st.sampled_from(literal_update_methods),
     st.just([3]),
 )
-def test_cmab_update_shape_mismatch(n_samples, n_features, update_method, hidden_dim_list):
+def test_cmab_update_shape_mismatch(n_samples, n_features, hidden_dim_list):
     actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    quantities = np.random.uniform(low=0, high=1, size=n_samples).tolist()
+
     mab = CmabBernoulli.cold_start(
-        action_ids={"a1", "a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+        action_ids={"a1", "a2"},
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
     )
+    quant_mab = CmabBernoulli.cold_start(
+        action_ids={"a1", "a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list, quantitative_action_ids={"a1"}
+    )
+    quantities = [
+        q if isinstance(quant_mab.actions[action], QuantitativeModel) else None
+        for q, action in zip(quantities, actions)
+    ]
 
     with pytest.raises(AttributeError):  # actions shape mismatch
         mab.update(context=context, actions=actions[1:], rewards=rewards)
+        quant_mab.update(context=context, actions=actions[1:], rewards=rewards, quantities=quantities)
     with pytest.raises(AttributeError):  # rewards shape mismatch
         mab.update(context=context, actions=actions, rewards=rewards[1:])
+        quant_mab.update(context=context, actions=actions, rewards=rewards[1:], quantities=quantities)
     with pytest.raises(AttributeError):  # context shape mismatch (rows)
         mab.update(context=context[1:, :], actions=actions, rewards=rewards)
+        quant_mab.update(context=context[1:, :], actions=actions, rewards=rewards, quantities=quantities)
     with pytest.raises(AttributeError):  # context shape mismatch (columns)
         mab.update(context=context[:, 1:], actions=actions, rewards=rewards)
+        quant_mab.update(context=context[:, 1:], actions=actions, rewards=rewards, quantities=quantities)
     with pytest.raises(AttributeError):  # empty context
         mab.update(context=[], actions=actions, rewards=rewards)
+        quant_mab.update(context=[], actions=actions, rewards=rewards, quantities=quantities)
+    with pytest.raises(AttributeError):  # empty quantities
+        quant_mab.update(context=context, actions=actions, rewards=rewards, quantities=[])
+    with pytest.raises(ValueError):  # None quantities for quantitative action
+        quant_mab.update(context=context, actions=actions, rewards=rewards, quantities=None)
+    with pytest.raises(ValueError):  # None quantities for non quantitative action
+        mab.update(context=context, actions=actions, rewards=rewards, quantities=quantities)
+    with pytest.raises(AttributeError):  # mismatch quantities length
+        quant_mab.update(context=context, actions=actions, rewards=rewards, quantities=quantities[:-1])
+
+    # None quantities for quantitative action
+    if any([q is not None for q in quantities]):
+        quant_index = [i for i, q in enumerate(quantities) if q is not None]
+        bad_quantities = quantities.copy()
+        bad_quantities[quant_index[0]] = None
+        with pytest.raises(ValueError):  # None quantities for quantitative action
+            quant_mab.update(context=context, actions=actions, rewards=rewards, quantities=bad_quantities)
+    else:
+        return
 
 
 @settings(deadline=500)

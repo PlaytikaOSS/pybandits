@@ -35,7 +35,7 @@ import pybandits
 from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
 from pybandits.model import BayesianLogisticRegression
-from pybandits.quantitative_model import CmabZoomingModel
+from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork
 from tests.utils import mock_update, sample_with_replacement, to_unified_action_id
 
 
@@ -198,7 +198,9 @@ def test_cmab_simulator_with_explicit_probs_reward(
         st.sampled_from(
             [
                 BayesianLogisticRegression.cold_start(n_features=2, update_method="VI"),
-                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 2, "update_method": "VI"}),
+                QuantitativeBayesianNeuralNetwork.cold_start(
+                    n_features=2, base_model_cold_start_kwargs={"update_method": "VI"}
+                ),
             ]
         ),
         min_size=2,
@@ -254,7 +256,9 @@ def mock_predict(self, context, *args, **kwargs):
         st.sampled_from(
             [
                 BayesianLogisticRegression.cold_start(n_features=2, update_method="VI"),
-                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 2, "update_method": "VI"}),
+                QuantitativeBayesianNeuralNetwork.cold_start(
+                    n_features=2, base_model_cold_start_kwargs={"update_method": "VI"}
+                ),
             ]
         ),
         min_size=2,
@@ -304,7 +308,9 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
         st.sampled_from(
             [
                 BayesianLogisticRegression.cold_start(n_features=3, update_method="VI"),
-                CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": 3, "update_method": "VI"}),
+                QuantitativeBayesianNeuralNetwork.cold_start(
+                    n_features=3, base_model_cold_start_kwargs={"update_method": "VI"}
+                ),
             ]
         ),
         min_size=2,

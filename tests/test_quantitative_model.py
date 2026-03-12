@@ -36,7 +36,7 @@ from pybandits.base import BinaryReward, QuantitativeProbability, UnifiedProbabi
 from pybandits.model import Beta
 from pybandits.pydantic_version_compatibility import NonNegativeFloat
 from pybandits.quantitative_model import (
-    CmabZoomingModel,
+    QuantitativeBayesianNeuralNetwork,
     Segment,
     SmabZoomingModel,
     SmabZoomingModelCC,
@@ -280,12 +280,12 @@ def test_initializes_smab_zooming_model_correctly(dimension, n_max_segments):
 # Test SmabZoomingModel update with valid rewards and quantities
 @given(
     rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=1, max_size=5),
-    quantities=st.lists(st.floats(min_value=0, max_value=1), min_size=1, max_size=5),
     dimension=st.just(1),
 )
-def test_updates_smab_zooming_model_correctly(rewards, quantities, dimension):
+def test_updates_smab_zooming_model_correctly(rewards, dimension):
     model = SmabZoomingModel.cold_start(dimension=dimension)
     initial_segments = deepcopy(model.segmented_actions)
+    quantities = np.random.uniform(0, 1, size=len(rewards)).tolist()
     model.update(quantities=quantities, rewards=rewards)
     assert model.segmented_actions != initial_segments
 
@@ -306,58 +306,139 @@ def test_sample_proba_returns_valid_probabilities_smab(
             assert 0 <= prob <= 1
 
 
-# Test CmabZoomingModel initialization with valid parameters
-@given(dimension=st.integers(min_value=1, max_value=3), n_max_segments=st.just(None))
-def test_initializes_cmab_zooming_model_correctly(dimension, n_max_segments):
-    model = CmabZoomingModel.cold_start(
-        dimension=dimension, n_max_segments=n_max_segments, base_model_cold_start_kwargs={"n_features": 1}
-    )
-    expected_segments = CmabZoomingModel._n_initial_segments**dimension
-    assert len(model.segmented_actions) == expected_segments
-
-
-# Test CmabZoomingModel update with valid rewards, quantities, and context
+# Test  QuantitativeBayesianNeuralNetwork initialization with valid parameters
 @given(
-    rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=5, max_size=5),
-    quantities=st.lists(st.floats(min_value=0, max_value=1), min_size=5, max_size=5),
-    context=arrays(np.float64, shape=(5, 1), elements=st.floats(min_value=0, max_value=1)),
-    dimension=st.just(1),
-    n_features=st.just(1),
+    dimension=st.integers(min_value=1, max_value=3),
+    n_features=st.integers(min_value=1, max_value=2),
 )
-def test_updates_cmab_zooming_model_correctly(rewards, quantities, context, dimension, n_features, monkeymodule):
-    model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
-    initial_segments = deepcopy(model.segmented_actions)
+def test_initializes_cmab_quantitative_model_correctly(dimension, n_features):
+    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+    assert model.dimension == dimension
+    assert model.bnn.input_dim == dimension + n_features
+
+
+# Test QuantitativeBayesianNeuralNetwork update with valid rewards, quantities, and context
+@st.composite
+def dimension_and_quantities(draw):
+    dimension = draw(st.integers(min_value=1, max_value=3))
+
+    flat = st.lists(
+        st.floats(min_value=0, max_value=1),
+        min_size=5,
+        max_size=5,
+    )
+
+    nested = st.lists(
+        st.lists(
+            st.floats(min_value=0, max_value=1),
+            min_size=dimension,
+            max_size=dimension,
+        ),
+        min_size=4,
+        max_size=5,
+    )
+    if dimension == 1:
+        quantities = draw(st.one_of(flat, nested))
+    else:
+        quantities = draw(nested)
+
+    return dimension, quantities
+
+
+@given(
+    rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=4, max_size=5),
+    context=arrays(np.float64, shape=(5, 1), elements=st.floats(min_value=0, max_value=1)),
+    n_features=st.just(1),
+    dimension_and_quantities=dimension_and_quantities(),
+)
+def test_updates_cmab_quantitative_model_correctly(
+    rewards, context, n_features, dimension_and_quantities, monkeymodule
+):
+    dimension, quantities = dimension_and_quantities
+    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+    init_params = deepcopy(model.bnn.model_params)
+    n_model_features = n_features + dimension
+
     monkeymodule.setattr(
         pybandits.model,
         "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
+        lambda *args, **kwargs: FakeApproximation(n_features=n_model_features),
     )
     monkeymodule.setattr(
         pybandits.model,
         "sample",
-        FakeApproximation(n_features=n_features).sample,
+        FakeApproximation(n_features=n_model_features).sample,
     )
+    if (len(context) != len(quantities)) or (len(context) != len(rewards)):
+        with pytest.raises(AttributeError):
+            model.update(quantities=quantities, rewards=rewards, context=context)
+        return
     model.update(quantities=quantities, rewards=rewards, context=context)
-    assert model.segmented_actions != initial_segments
+    assert model.bnn.model_params.bnn_layer_params != init_params.bnn_layer_params
 
 
-# Test CmabZoomingModel sample_proba returns valid probability functions
+# Test QuantitativeBayesianNeuralNetwork sample_proba returns valid probability functions
 @given(
-    context=arrays(np.float64, shape=(5, 1), elements=st.floats(min_value=0, max_value=1)),
     dimension=st.just(1),
     n_features=st.just(1),
-    location=st.floats(min_value=0, max_value=1),
+    quantity=st.floats(min_value=0, max_value=1),
 )
-def test_sample_proba_returns_valid_probabilities_cmab(context, dimension, n_features, location):
-    model = CmabZoomingModel.cold_start(dimension=dimension, base_model_cold_start_kwargs={"n_features": n_features})
+def test_sample_proba_returns_valid_probabilities_cmab(dimension, n_features, quantity):
+    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+
+    context = np.random.uniform(low=0, high=1, size=(5, 1))
     prob_functions = model.sample_proba(context=context)
     assert len(prob_functions) == len(context)
 
     # Test that each function is callable and returns valid probabilities
     for prob_weight_func in prob_functions:
         assert all(callable(func) for func in prob_weight_func)
-        prob, weight = (func(np.atleast_1d(location)) for func in prob_weight_func)
+        prob, weight = (func(np.atleast_1d(quantity)) for func in prob_weight_func)
         assert 0 <= prob <= 1
+
+
+########################################################################################################################
+
+
+# Tests for _to_quantitative_probabilities determinism
+@st.composite
+def quantity_strategy(draw):
+    array_length = draw(st.integers(min_value=1, max_value=5))
+    temp_list = [
+        draw(arrays(dtype=np.float64, shape=array_length, elements=st.floats(min_value=0, max_value=1)))
+        for _ in range(5)
+    ]
+    temp_list = [arr[0] if len(arr) == 1 else arr for arr in temp_list]
+    return temp_list
+
+
+@given(
+    n_calls=st.just(10),
+    test_quantity=quantity_strategy(),
+    context=arrays(dtype=np.float64, shape=(5, 2), elements=st.floats(min_value=0, max_value=1)),
+)
+def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, test_quantity, context):
+    """Test that QuantitativeBayesianNeuralNetwork._to_quantitative_probabilities returns consistent results when called repeatedly."""
+    if isinstance(test_quantity[0], float):
+        dimension = 1
+    else:
+        dimension = len(test_quantity[0])
+    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=2)
+    n_samples = len(context)
+    sampled_weights = model.bnn.sample_weights(n_samples)
+    # Create context and sample probability functions
+    prob_functions = model._to_quantitative_probabilities(context=context, sampled_weights=sampled_weights)
+
+    # Call each probability/weight function multiple times with the same quantity
+    for prob_weight_funcs in prob_functions:
+        for sample_idx in range(n_samples):
+            # Get first results for both probability and weight
+            first_results = tuple(func(test_quantity[sample_idx]) for func in prob_weight_funcs)
+            for _ in range(n_calls - 1):
+                subsequent_results = tuple(func(test_quantity[sample_idx]) for func in prob_weight_funcs)
+                assert first_results == subsequent_results, (
+                    f"Inconsistent results: first={first_results}, subsequent={subsequent_results}"
+                )
 
 
 ########################################################################################################################
