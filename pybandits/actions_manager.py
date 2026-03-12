@@ -65,10 +65,10 @@ from pybandits.pydantic_version_compatibility import (
     validate_call,
 )
 from pybandits.quantitative_model import (
-    BaseCmabZoomingModel,
+    BaseQuantitativeBayesianNeuralNetwork,
     BaseSmabZoomingModel,
-    CmabZoomingModel,
-    CmabZoomingModelCC,
+    QuantitativeBayesianNeuralNetwork,
+    QuantitativeBayesianNeuralNetworkCC,
     QuantitativeModel,
     SmabZoomingModel,
     SmabZoomingModelCC,
@@ -789,7 +789,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             else:
                 action_model_cold_start = action_model_class
                 action_model_attributes = extract_argument_names_from_function(action_model_cold_start)
-            general_kwargs = {k: kwargs.pop(k) for k in action_model_attributes if k in kwargs.keys()}
+            general_kwargs = {k: kwargs[k] for k in action_model_attributes if k in kwargs.keys()}
 
             if issubclass(action_model_class, (Model, ModelMO)):
                 model_cold_start = action_model_cold_start
@@ -799,6 +799,10 @@ class ActionsManager(PyBanditsBaseModel, ABC):
                 quantitative_action_general_kwargs = general_kwargs
             else:
                 raise TypeError(f"Unsupported action model class: {action_model_class}")
+
+        used_kwargs = (action_general_kwargs or {}) | (quantitative_action_general_kwargs or {})
+        for k in used_kwargs.keys():
+            kwargs.pop(k)
 
         return (
             model_cold_start,
@@ -923,7 +927,12 @@ class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
 
 
 CmabModelType = TypeVar(
-    "CmabModelType", bound=Union[BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BaseCmabZoomingModel]
+    "CmabModelType",
+    bound=Union[
+        BaseBayesianNeuralNetwork,
+        BaseBayesianNeuralNetworkMO,
+        BaseQuantitativeBayesianNeuralNetwork,
+    ],
 )
 
 
@@ -949,10 +958,22 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
         """
         if isinstance(model, BaseBayesianNeuralNetworkMO):
             return model.models[0]
-        elif isinstance(model, BaseCmabZoomingModel):
-            return list(model.sub_actions.values())[0]
+        elif isinstance(model, BaseQuantitativeBayesianNeuralNetwork):
+            return model.bnn
         else:
             return model
+
+    @staticmethod
+    def _get_expected_context_size(model: CmabModelType):
+        """
+        Utility function to get the expected context size for the model.
+        """
+        if isinstance(model, BaseBayesianNeuralNetworkMO):
+            return model.models[0].input_dim
+        elif isinstance(model, (BaseBayesianNeuralNetwork, BaseQuantitativeBayesianNeuralNetwork)):
+            return model.input_dim
+        else:
+            raise TypeError(f"Unsupported model type: {type(model)}")
 
     @field_validator("actions", mode="after")
     @classmethod
@@ -962,7 +983,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
         test_first_action = cls._maybe_crawl_model(first_action)
         for action in action_models[1:]:
             test_action = cls._maybe_crawl_model(action)
-            if not test_first_action.input_dim == test_action.input_dim:
+            if not cls._get_expected_context_size(first_action) == cls._get_expected_context_size(action):
                 raise AttributeError("All actions should have the same input size.")
             if not test_first_action.update_method == test_action.update_method:
                 raise AttributeError("All actions should have the same update method.")
@@ -1100,7 +1121,7 @@ SmabActionsManagerCC = SmabActionsManager[Union[BetaCC, SmabZoomingModelCC]]
 SmabActionsManagerMO = SmabActionsManager[BetaMO]
 SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
-CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]]
-CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, CmabZoomingModelCC]]
+CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]]
+CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC]]
 CmabActionsManagerMO = CmabActionsManager[BayesianNeuralNetworkMO]
 CmabActionsManagerMOCC = CmabActionsManager[BayesianNeuralNetworkMOCC]

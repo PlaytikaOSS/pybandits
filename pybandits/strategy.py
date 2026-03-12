@@ -163,6 +163,8 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
                     refined_p[(action, tuple(quantity))] = proba_value
             elif self._verify_action(proba, **prerequisites):  # Standard action
                 refined_p[action] = proba
+        if not refined_p:
+            raise ValueError("No actions met the criteria for selection. Please check the constraints and the actions.")
         return refined_p
 
     @abstractmethod
@@ -389,7 +391,8 @@ class ClassicBandit(SingleObjectiveStrategy):
         """
         try:
             return maximize_by_quantity(score_func, model.dimension, constraint_list)
-        except OptimizationFailedError:
+        except OptimizationFailedError as e:
+            logger.warning(f"Optimization failed: {e}")
             return None
 
     def _select_from_refined_actions(
@@ -757,7 +760,7 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
         """
 
         def cost_control_constraint(x: np.ndarray) -> bool:
-            return score_func(x) >= best_value * (1 - self.subsidy_factor)
+            return score_func(x) - best_value * (1 - self.subsidy_factor)
 
         if constraint_list is not None:
             constraint_list.append(cost_control_constraint)

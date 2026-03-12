@@ -40,7 +40,7 @@ from pybandits.pydantic_version_compatibility import (
     ValidationError,
     pydantic_version,
 )
-from pybandits.quantitative_model import CmabZoomingModel, SmabZoomingModel
+from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, SmabZoomingModel
 from tests.utils import FakeApproximation
 
 REFERENCE_DELTA = 0.0001
@@ -188,23 +188,23 @@ def test_smab_mixed_action_types_error():
 def test_cmab_mixed_action_types_error(n_features=1):
     blr_model = BayesianNeuralNetwork.cold_start(n_features=n_features)
     blr_model2 = BayesianNeuralNetwork.cold_start(n_features=n_features + 1)
-    zoom_model = CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": n_features})
-    zoom_model2 = CmabZoomingModel.cold_start(base_model_cold_start_kwargs={"n_features": n_features + 1})
+    quant_model = QuantitativeBayesianNeuralNetwork.cold_start(n_features=n_features)
+    quant_model2 = QuantitativeBayesianNeuralNetwork.cold_start(n_features=n_features + 1)
 
     actions = {"a1": blr_model, "a2": blr_model2}
     with pytest.raises(AttributeError):
         CmabActionsManager[BayesianNeuralNetwork](actions=actions)
 
-    actions = {"a1": zoom_model, "a2": zoom_model2}
+    actions = {"a1": quant_model, "a2": quant_model2}
     with pytest.raises(AttributeError):
-        CmabActionsManager[CmabZoomingModel](actions=actions)
+        CmabActionsManager[QuantitativeBayesianNeuralNetwork](actions=actions)
 
-    actions = {"a1": blr_model, "a2": zoom_model2}
+    actions = {"a1": blr_model, "a2": quant_model2}
     with pytest.raises(AttributeError):
-        CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]](actions=actions)
+        CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
 
-    actions = {"a1": blr_model, "a2": zoom_model}
-    CmabActionsManager[Union[BayesianNeuralNetwork, CmabZoomingModel]](actions=actions)
+    actions = {"a1": blr_model, "a2": quant_model}
+    CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
 
 
 @given(

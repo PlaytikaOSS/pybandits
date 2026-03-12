@@ -38,7 +38,6 @@ except ImportError:
     get_ipython = None  # type: ignore
 
 
-from loguru import logger
 from scipy.optimize import NonlinearConstraint, differential_evolution
 
 from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
@@ -181,7 +180,7 @@ _DE_PARAMS = {
 def maximize_by_quantity(
     quantity_score_func: Callable[[np.ndarray], float],
     dimension: PositiveInt,
-    constraint: Optional[List[Callable[[np.ndarray], bool]]] = None,
+    constraint: Optional[List[Callable[[np.ndarray], float]]] = None,
     n_trials: PositiveInt = 10000,
     maxiter_factor: PositiveInt = 10,
 ) -> np.ndarray:
@@ -194,8 +193,8 @@ def maximize_by_quantity(
         The quantity score function.
     dimension : PositiveInt
         The quantity vector dimension.
-    constraint : Optional[List[Callable[[np.ndarray], bool]]]
-        The constraint functions.
+    constraint : Optional[List[Callable[[np.ndarray], float]]]
+        The constraint functions. final constraint is inf >= constraint(x) >= 0
     n_trials : PositiveInt, defaults to 10000
         The number of optimization trials.
     maxiter_factor : PositiveInt, defaults to 10
@@ -218,12 +217,7 @@ def maximize_by_quantity(
     if constraint is not None:
         constraints = []
         for constraint_func in constraint:
-
-            def scipy_constraint_func(x, func=constraint_func):
-                # Return positive if constraint satisfied, negative if violated
-                return 1.0 if func(x) else -1.0
-
-            constraints.append(NonlinearConstraint(scipy_constraint_func, 0, np.inf))
+            constraints.append(NonlinearConstraint(constraint_func, 0, np.inf))
     else:
         constraints = None
 
@@ -244,5 +238,4 @@ def maximize_by_quantity(
     if result.success:
         return result.x
     else:
-        logger.warning(result.message)
         raise OptimizationFailedError(result.message)

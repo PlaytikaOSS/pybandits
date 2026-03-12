@@ -67,7 +67,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
     Parameters
     ----------
-    actions : Dict[ActionId, Union[BaseBayesianLogisticRegression, BaseCmabZoomingModel]]
+    actions : Dict[ActionId, Union[BaseBayesianLogisticRegression, BaseQuantitativeBayesianNeuralNetwork]]
         The list of possible actions, and their associated Model.
     strategy : Strategy
         The strategy used to select actions.

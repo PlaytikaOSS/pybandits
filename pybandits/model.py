@@ -45,6 +45,7 @@ from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_2,
     Field,
     NonNegativeFloat,
+    NonNegativeInt,
     PositiveFloat,
     PositiveInt,
     PrivateAttr,
@@ -1238,31 +1239,24 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return _model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray) -> List[ProbabilityWeight]:
+    def sample_weights(self, n_samples: PositiveInt) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
-        Samples probabilities and weighted sums from the prior predictive distribution.
+        Sample weights and biases for each sample and each layer.
 
         Parameters
         ----------
-        context : ArrayLike
-            The context matrix for which the probabilities are to be sampled.
+        n_samples : PositiveInt
+            The number of samples (users) to draw weights for. Must be positive.
+
         Returns
         -------
-        List[ProbabilityWeight]
-            Each element is a tuple containing the probability of a positive reward and
-            the corresponding weighted sum between contextual feature quantities and sampled coefficients.
+        List[Tuple[np.ndarray, np.ndarray]]
+            A list of length num_layers, where each element is (weights, biases) for that layer.
+            - weights shape: (n_samples, input_dim, output_dim)
+            - biases shape: (n_samples, output_dim)
         """
-
-        # check input args
-        self.check_context_matrix(context=context)
-
-        _context = np.atleast_2d(context)
-        n_samples = len(_context)
-        # Sample from distributions for each layer
-        next_layer_input = _context
-
-        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-            # Sample weights and biases from distributions using polymorphism
+        sampled_weights = []
+        for layer_params in self.model_params.bnn_layer_params:
             input_dim = layer_params.weight.shape[0]
             output_dim = layer_params.weight.shape[1]
 
@@ -1270,30 +1264,121 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim))
             b = layer_params.bias.sample_rvs(size=(n_samples, output_dim))
 
-            # Linear transformation
+            sampled_weights.append((w, b))
+
+        return sampled_weights
+
+    def _extract_weights(
+        self, sampled_weights: List[Tuple[np.ndarray, np.ndarray]], sample_idx: NonNegativeInt
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Extract the weights and biases for a specific sample from the sampled weights.
+
+        Parameters
+        ----------
+        sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
+            List of (weights, biases) per layer from _sample_weights.
+            Each weights has shape (n_samples, input_dim, output_dim), biases (n_samples, output_dim).
+        sample_idx : NonNegativeInt
+            The index of the sample to extract the weights and biases for.
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            The weights and biases for the specific sample.
+            Each weights has shape (1, input_dim, output_dim), biases (1, output_dim).
+        """
+        sampled_weights_idx = [
+            (w[sample_idx : sample_idx + 1], b[sample_idx : sample_idx + 1]) for w, b in sampled_weights
+        ]
+        return sampled_weights_idx
+
+    def forward_pass(
+        self,
+        sampled_weights: List[Tuple[np.ndarray, np.ndarray]],
+        context: np.ndarray,
+    ) -> List[ProbabilityWeight]:
+        """
+        Apply the neural network forward pass using pre-sampled weights and biases.
+
+        Parameters
+        ----------
+        sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
+            List of (weights, biases) per layer from _sample_weights.
+            Each weights has shape (n_samples, input_dim, output_dim), biases (n_samples, output_dim).
+        context : np.ndarray
+            Context matrix, shape (n_samples, context_dim).
+
+        Returns
+        -------
+        List[ProbabilityWeight]
+            Each element is (probability, weighted_sum) per sample.
+        """
+        next_layer_input = context
+        n_layers = len(self.model_params.bnn_layer_params)
+
+        for layer_ind, (w, b) in enumerate(sampled_weights):
+            layer_params = self.model_params.bnn_layer_params[layer_ind]
+            input_dim = layer_params.weight.shape[0]
+            output_dim = layer_params.weight.shape[1]
+
+            # Linear transformation: same as sample_proba
             linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
 
-            # Apply activation function for hidden layers, sigmoid for output
-            if layer_ind < len(self.model_params.bnn_layer_params) - 1:
+            # Apply activation function for hidden layers
+            if layer_ind < n_layers - 1:
+                # Apply activation function
                 activated_output = self._numpy_activation_fn(linear_transform)
-
                 # Add residual connection if enabled and dimensions allow
                 if self.use_residual_connections and output_dim >= input_dim:
                     if output_dim == input_dim:
                         next_layer_input = activated_output + next_layer_input
                     else:
                         residual_padded = np.pad(
-                            next_layer_input, ((0, 0), (0, output_dim - input_dim)), mode="constant", constant_values=0
+                            next_layer_input,
+                            ((0, 0), (0, output_dim - input_dim)),
+                            mode="constant",
+                            constant_values=0,
                         )
                         next_layer_input = activated_output + residual_padded
                 else:
                     next_layer_input = activated_output
             else:
-                # Output layer - apply sigmoid
                 weighted_sum = linear_transform.squeeze(-1)
                 prob = _numpy_sigmoid(weighted_sum)
 
         return list(zip(prob, weighted_sum))
+
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def sample_proba(self, context: np.ndarray) -> List[ProbabilityWeight]:
+        """
+        Samples probabilities and weighted sums from the prior predictive distribution.
+
+        This is a refactored version of `sample_proba` that separates weight sampling
+        from the forward pass computation.
+
+        Parameters
+        ----------
+        context : ArrayLike
+            The context matrix for which the probabilities are to be sampled.
+
+        Returns
+        -------
+        List[ProbabilityWeight]
+            Each element is a tuple containing the probability of a positive reward and
+            the corresponding weighted sum between contextual feature quantities and sampled coefficients.
+        """
+        # check input args
+        self.check_context_matrix(context=context)
+
+        _context = np.atleast_2d(context)
+        n_samples = len(_context)
+
+        # Step 1: Sample weights (different weights for each sample)
+        sampled_weights = self.sample_weights(n_samples)
+
+        # Step 2: Use sampled weights to compute forward pass
+        return self.forward_pass(sampled_weights=sampled_weights, context=_context)
 
     def _create_updated_layer_params(
         self,
