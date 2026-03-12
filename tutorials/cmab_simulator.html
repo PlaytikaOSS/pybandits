@@ -56,7 +56,6 @@
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab.html">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
-<li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
@@ -97,7 +96,7 @@
   <section id="cMAB-Simulation">
 <h1>cMAB Simulation<a class="headerlink" href="#cMAB-Simulation" title="Link to this heading"></a></h1>
 <p>This notebook shows a simulation framework for the contextual multi-armed bandit (cMAB). It allows to study the behaviour of the bandit algoritm, to evaluate results and to run experiments on simulated data under different context, reward and action settings.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -108,15 +107,6 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-  from .autonotebook import tqdm as notebook_tqdm
-</pre></div></div>
 </div>
 <p>First we need to define the simulation parameters. The parameters are split into two parts. The general parameters contain:</p>
 <ul class="simple">
@@ -259,15 +249,15 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:336: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:335: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
   self._results = pd.concat((self._results, batch_results), ignore_index=True)
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
 This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
@@ -326,73 +316,13 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 </pre></div></div>
 </div>
@@ -446,73 +376,13 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 </pre></div></div>
 </div>
@@ -566,73 +436,13 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 </pre></div></div>
 </div>
@@ -686,73 +496,13 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
-  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 </pre></div></div>
 </div>
@@ -806,13 +556,253 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: overflow encountered in exp
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-/home/runner/work/pybandits/pybandits/pybandits/simulator.py:230: RuntimeWarning: invalid value encountered in scalar divide
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: overflow encountered in exp
+  return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
+/home/runner/work/pybandits/pybandits/pybandits/simulator.py:229: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 </pre></div></div>
 </div>
@@ -866,11 +856,11 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2026-02-23 09:26:41.829 | INFO     | pybandits.simulator:_print_results:587 - Simulation results (first 10 observations):
+2026-03-12 21:17:50.399 | INFO     | pybandits.simulator:_print_results:541 - Simulation results (first 10 observations):
 
-2026-02-23 09:26:41.851 | INFO     | pybandits.simulator:_print_results:588 - Count of actions selected by the bandit:
+2026-03-12 21:17:50.420 | INFO     | pybandits.simulator:_print_results:542 - Count of actions selected by the bandit:
 
-2026-02-23 09:26:41.854 | INFO     | pybandits.simulator:_print_results:589 - Observed proportion of positive rewards for each action:
+2026-03-12 21:17:50.422 | INFO     | pybandits.simulator:_print_results:543 - Observed proportion of positive rewards for each action:
 
 </pre></div></div>
 </div>
@@ -929,342 +919,342 @@ UserWarning: install "ipywidgets" for Jupyter support
     <tr>
       <th>0</th>
       <th>0.0</th>
-      <td>8</td>
-      <td>8</td>
-      <td>14</td>
-      <td>8</td>
-      <td>8</td>
-      <td>14</td>
+      <td>17</td>
+      <td>10</td>
+      <td>10</td>
+      <td>17</td>
+      <td>10</td>
+      <td>10</td>
     </tr>
     <tr>
       <th>1</th>
       <th>0.0</th>
-      <td>12</td>
-      <td>9</td>
-      <td>12</td>
-      <td>12</td>
-      <td>9</td>
-      <td>12</td>
+      <td>8</td>
+      <td>17</td>
+      <td>11</td>
+      <td>8</td>
+      <td>17</td>
+      <td>11</td>
     </tr>
     <tr>
       <th>2</th>
       <th>0.0</th>
-      <td>15</td>
-      <td>14</td>
+      <td>7</td>
+      <td>12</td>
       <td>8</td>
-      <td>15</td>
-      <td>14</td>
+      <td>7</td>
+      <td>12</td>
       <td>8</td>
     </tr>
     <tr>
       <th>0</th>
       <th>1.0</th>
-      <td>16</td>
-      <td>13</td>
-      <td>15</td>
-      <td>24</td>
-      <td>21</td>
+      <td>14</td>
+      <td>12</td>
+      <td>19</td>
+      <td>31</td>
+      <td>22</td>
       <td>29</td>
     </tr>
     <tr>
       <th>1</th>
       <th>1.0</th>
+      <td>12</td>
+      <td>8</td>
       <td>9</td>
-      <td>9</td>
-      <td>13</td>
-      <td>21</td>
-      <td>18</td>
+      <td>20</td>
       <td>25</td>
+      <td>20</td>
     </tr>
     <tr>
       <th>2</th>
       <th>1.0</th>
-      <td>8</td>
       <td>6</td>
+      <td>9</td>
       <td>11</td>
-      <td>23</td>
-      <td>20</td>
+      <td>13</td>
+      <td>21</td>
       <td>19</td>
     </tr>
     <tr>
       <th>0</th>
       <th>2.0</th>
       <td>11</td>
-      <td>13</td>
-      <td>9</td>
-      <td>35</td>
-      <td>34</td>
-      <td>38</td>
+      <td>17</td>
+      <td>7</td>
+      <td>42</td>
+      <td>39</td>
+      <td>36</td>
     </tr>
     <tr>
       <th>1</th>
       <th>2.0</th>
-      <td>5</td>
+      <td>8</td>
       <td>11</td>
-      <td>13</td>
-      <td>26</td>
-      <td>29</td>
-      <td>38</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>2.0</th>
-      <td>9</td>
-      <td>16</td>
-      <td>13</td>
-      <td>32</td>
+      <td>12</td>
+      <td>28</td>
       <td>36</td>
       <td>32</td>
     </tr>
     <tr>
-      <th>0</th>
-      <th>3.0</th>
-      <td>13</td>
+      <th>2</th>
+      <th>2.0</th>
       <td>8</td>
-      <td>14</td>
-      <td>48</td>
-      <td>42</td>
-      <td>52</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>3.0</th>
       <td>12</td>
+      <td>14</td>
+      <td>21</td>
+      <td>33</td>
+      <td>33</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>3.0</th>
       <td>10</td>
+      <td>9</td>
+      <td>16</td>
+      <td>52</td>
+      <td>48</td>
+      <td>52</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>3.0</th>
+      <td>7</td>
       <td>8</td>
-      <td>38</td>
-      <td>39</td>
-      <td>46</td>
+      <td>11</td>
+      <td>35</td>
+      <td>44</td>
+      <td>43</td>
     </tr>
     <tr>
       <th>2</th>
       <th>3.0</th>
-      <td>10</td>
-      <td>17</td>
-      <td>8</td>
-      <td>42</td>
-      <td>53</td>
-      <td>40</td>
+      <td>9</td>
+      <td>15</td>
+      <td>15</td>
+      <td>30</td>
+      <td>48</td>
+      <td>48</td>
     </tr>
     <tr>
       <th>0</th>
       <th>4.0</th>
-      <td>13</td>
-      <td>11</td>
-      <td>10</td>
-      <td>61</td>
-      <td>53</td>
-      <td>62</td>
+      <td>5</td>
+      <td>9</td>
+      <td>14</td>
+      <td>57</td>
+      <td>57</td>
+      <td>66</td>
     </tr>
     <tr>
       <th>1</th>
       <th>4.0</th>
-      <td>6</td>
-      <td>13</td>
-      <td>15</td>
-      <td>44</td>
-      <td>52</td>
+      <td>8</td>
+      <td>17</td>
+      <td>17</td>
+      <td>43</td>
       <td>61</td>
+      <td>60</td>
     </tr>
     <tr>
       <th>2</th>
       <th>4.0</th>
-      <td>11</td>
       <td>8</td>
       <td>13</td>
-      <td>53</td>
+      <td>9</td>
+      <td>38</td>
       <td>61</td>
-      <td>53</td>
+      <td>57</td>
     </tr>
     <tr>
       <th>0</th>
       <th>5.0</th>
+      <td>6</td>
       <td>10</td>
       <td>11</td>
-      <td>7</td>
-      <td>71</td>
-      <td>64</td>
-      <td>69</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>5.0</th>
-      <td>11</td>
-      <td>13</td>
-      <td>16</td>
-      <td>55</td>
-      <td>65</td>
+      <td>63</td>
+      <td>67</td>
       <td>77</td>
     </tr>
     <tr>
+      <th>1</th>
+      <th>5.0</th>
+      <td>14</td>
+      <td>12</td>
+      <td>13</td>
+      <td>57</td>
+      <td>73</td>
+      <td>73</td>
+    </tr>
+    <tr>
       <th>2</th>
       <th>5.0</th>
+      <td>13</td>
       <td>11</td>
-      <td>12</td>
-      <td>9</td>
-      <td>64</td>
-      <td>73</td>
-      <td>62</td>
+      <td>10</td>
+      <td>51</td>
+      <td>72</td>
+      <td>67</td>
     </tr>
     <tr>
       <th>0</th>
       <th>6.0</th>
-      <td>17</td>
-      <td>6</td>
       <td>10</td>
-      <td>88</td>
-      <td>70</td>
-      <td>79</td>
+      <td>8</td>
+      <td>12</td>
+      <td>73</td>
+      <td>75</td>
+      <td>89</td>
     </tr>
     <tr>
       <th>1</th>
       <th>6.0</th>
-      <td>9</td>
-      <td>17</td>
       <td>11</td>
-      <td>64</td>
+      <td>13</td>
+      <td>9</td>
+      <td>68</td>
+      <td>86</td>
       <td>82</td>
-      <td>88</td>
     </tr>
     <tr>
       <th>2</th>
       <th>6.0</th>
-      <td>10</td>
-      <td>9</td>
-      <td>11</td>
-      <td>74</td>
-      <td>82</td>
-      <td>73</td>
+      <td>8</td>
+      <td>12</td>
+      <td>17</td>
+      <td>59</td>
+      <td>84</td>
+      <td>84</td>
     </tr>
     <tr>
       <th>0</th>
       <th>7.0</th>
-      <td>14</td>
-      <td>13</td>
-      <td>15</td>
-      <td>102</td>
-      <td>83</td>
+      <td>4</td>
+      <td>11</td>
+      <td>11</td>
+      <td>77</td>
+      <td>86</td>
+      <td>100</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>7.0</th>
+      <td>8</td>
+      <td>12</td>
+      <td>12</td>
+      <td>76</td>
+      <td>98</td>
       <td>94</td>
     </tr>
     <tr>
-      <th>1</th>
-      <th>7.0</th>
-      <td>10</td>
-      <td>8</td>
-      <td>11</td>
-      <td>74</td>
-      <td>90</td>
-      <td>99</td>
-    </tr>
-    <tr>
       <th>2</th>
       <th>7.0</th>
-      <td>12</td>
-      <td>8</td>
-      <td>9</td>
-      <td>86</td>
-      <td>90</td>
-      <td>82</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>8.0</th>
-      <td>11</td>
-      <td>6</td>
-      <td>4</td>
-      <td>113</td>
-      <td>89</td>
-      <td>98</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>8.0</th>
-      <td>10</td>
-      <td>10</td>
-      <td>15</td>
-      <td>84</td>
+      <td>13</td>
+      <td>13</td>
+      <td>16</td>
+      <td>72</td>
+      <td>97</td>
       <td>100</td>
-      <td>114</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>8.0</th>
+      <td>8</td>
+      <td>10</td>
+      <td>23</td>
+      <td>85</td>
+      <td>96</td>
+      <td>123</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>8.0</th>
+      <td>9</td>
+      <td>7</td>
+      <td>11</td>
+      <td>85</td>
+      <td>105</td>
+      <td>105</td>
     </tr>
     <tr>
       <th>2</th>
       <th>8.0</th>
-      <td>17</td>
+      <td>6</td>
+      <td>13</td>
+      <td>13</td>
+      <td>78</td>
+      <td>110</td>
+      <td>113</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>9.0</th>
+      <td>8</td>
+      <td>9</td>
       <td>12</td>
-      <td>15</td>
-      <td>103</td>
-      <td>102</td>
-      <td>97</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>9.0</th>
-      <td>15</td>
-      <td>8</td>
-      <td>10</td>
-      <td>128</td>
-      <td>97</td>
-      <td>108</td>
+      <td>93</td>
+      <td>105</td>
+      <td>135</td>
     </tr>
     <tr>
       <th>1</th>
       <th>9.0</th>
-      <td>9</td>
-      <td>9</td>
-      <td>15</td>
+      <td>8</td>
+      <td>16</td>
+      <td>14</td>
       <td>93</td>
-      <td>109</td>
-      <td>129</td>
+      <td>121</td>
+      <td>119</td>
     </tr>
     <tr>
       <th>2</th>
       <th>9.0</th>
-      <td>17</td>
-      <td>8</td>
-      <td>9</td>
-      <td>120</td>
-      <td>110</td>
-      <td>106</td>
+      <td>6</td>
+      <td>13</td>
+      <td>14</td>
+      <td>84</td>
+      <td>123</td>
+      <td>127</td>
     </tr>
     <tr>
       <th>0</th>
       <th>total</th>
-      <td>128</td>
-      <td>97</td>
-      <td>108</td>
-      <td>128</td>
-      <td>97</td>
-      <td>108</td>
+      <td>93</td>
+      <td>105</td>
+      <td>135</td>
+      <td>93</td>
+      <td>105</td>
+      <td>135</td>
     </tr>
     <tr>
       <th>1</th>
       <th>total</th>
       <td>93</td>
-      <td>109</td>
-      <td>129</td>
+      <td>121</td>
+      <td>119</td>
       <td>93</td>
-      <td>109</td>
-      <td>129</td>
+      <td>121</td>
+      <td>119</td>
     </tr>
     <tr>
       <th>2</th>
       <th>total</th>
-      <td>120</td>
-      <td>110</td>
-      <td>106</td>
-      <td>120</td>
-      <td>110</td>
-      <td>106</td>
+      <td>84</td>
+      <td>123</td>
+      <td>127</td>
+      <td>84</td>
+      <td>123</td>
+      <td>127</td>
     </tr>
     <tr>
       <th>total</th>
       <th>total</th>
-      <td>341</td>
-      <td>316</td>
-      <td>343</td>
-      <td>341</td>
-      <td>316</td>
-      <td>343</td>
+      <td>270</td>
+      <td>349</td>
+      <td>381</td>
+      <td>270</td>
+      <td>349</td>
+      <td>381</td>
     </tr>
   </tbody>
 </table>
@@ -1314,41 +1304,41 @@ UserWarning: install "ipywidgets" for Jupyter support
     <tr>
       <th rowspan="3" valign="top">a1</th>
       <th>0</th>
-      <td>0.640625</td>
+      <td>0.268817</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.731183</td>
+      <td>0.956989</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.658333</td>
+      <td>0.130952</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a2</th>
       <th>0</th>
-      <td>0.752577</td>
+      <td>0.561905</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.458716</td>
+      <td>0.619835</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.345455</td>
+      <td>0.674797</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a3</th>
       <th>0</th>
-      <td>0.518519</td>
+      <td>0.844444</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.751938</td>
+      <td>0.605042</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.490566</td>
+      <td>0.677165</td>
     </tr>
   </tbody>
 </table>

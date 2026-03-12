@@ -90,6 +90,7 @@
  | <a href="#I"><strong>I</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
+ | <a href="#O"><strong>O</strong></a>
  | <a href="#P"><strong>P</strong></a>
  | <a href="#Q"><strong>Q</strong></a>
  | <a href="#R"><strong>R</strong></a>
@@ -194,9 +195,13 @@
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator">BaseOfflinePolicyEstimator (class in pybandits.offline_policy_estimator)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork">BaseQuantitativeBayesianNeuralNetwork (class in pybandits.quantitative_model)</a>
+</li>
       <li><a href="fullapi.html#pybandits.smab.BaseSmabBernoulli">BaseSmabBernoulli (class in pybandits.smab)</a>
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.BaseSmabZoomingModel">BaseSmabZoomingModel (class in pybandits.quantitative_model)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.strategy.BaseStrategy">BaseStrategy (class in pybandits.strategy)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.batch_size">batch_size (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
@@ -225,6 +230,8 @@
       <li><a href="fullapi.html#pybandits.model.BetaMOCC">BetaMOCC (class in pybandits.model)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BnnLayerParams.bias">bias (pybandits.model.BnnLayerParams attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.bnn">bnn (pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BnnParams.bnn_layer_params">bnn_layer_params (pybandits.model.BnnParams attribute)</a>
 </li>
@@ -283,11 +290,11 @@
 </li>
         <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.cold_start">(pybandits.model.BaseLocationScaleArray class method)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.cold_start">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork class method)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.cold_start">(pybandits.quantitative_model.ZoomingModel class method)</a>
 </li>
       </ul></li>
-      <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.compare_best_actions">compare_best_actions() (pybandits.strategy.BestActionIdentificationBandit method)</a>
-</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.comparison_threshold">comparison_threshold (pybandits.quantitative_model.ZoomingModel attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">context (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">[1]</a>
@@ -381,6 +388,10 @@
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.file_prefix">file_prefix (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
   </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.forward_pass">forward_pass() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
+  </ul></td>
 </tr></table>
 
 <h2 id="G">G</h2>
@@ -390,12 +401,18 @@
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting">GeneralizedInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.get_layer_params_name">get_layer_params_name() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveStrategy.get_pareto_front">get_pareto_front() (pybandits.strategy.MultiObjectiveStrategy class method)</a>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.strategy.ClassicBandit.get_prerequisites">get_prerequisites() (pybandits.strategy.ClassicBandit method)</a>
+
+      <ul>
+        <li><a href="fullapi.html#pybandits.strategy.CostControlBandit.get_prerequisites">(pybandits.strategy.CostControlBandit method)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.strategy.SingleObjectiveStrategy.get_prerequisites">(pybandits.strategy.SingleObjectiveStrategy method)</a>
+</li>
+      </ul></li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">group (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">[1]</a>
 </li>
   </ul></td>
@@ -412,6 +429,8 @@
         <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetworkMO.input_dim">(pybandits.model.BaseBayesianNeuralNetworkMO property)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseCmabZoomingModel.input_dim">(pybandits.quantitative_model.BaseCmabZoomingModel property)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.input_dim">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork property)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -547,11 +566,17 @@
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseCmabZoomingModel.model_config">(pybandits.quantitative_model.BaseCmabZoomingModel attribute)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.model_config">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseSmabZoomingModel.model_config">(pybandits.quantitative_model.BaseSmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModel.model_config">(pybandits.quantitative_model.CmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModelCC.model_config">(pybandits.quantitative_model.CmabZoomingModelCC attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork.model_config">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC.model_config">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel.model_config">(pybandits.quantitative_model.QuantitativeModel attribute)</a>
 </li>
@@ -579,6 +604,8 @@
 </li>
         <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.model_config">(pybandits.smab_simulator.SmabSimulator attribute)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.strategy.BaseStrategy.model_config">(pybandits.strategy.BaseStrategy attribute)</a>
+</li>
         <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.model_config">(pybandits.strategy.BestActionIdentificationBandit attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.strategy.ClassicBandit.model_config">(pybandits.strategy.ClassicBandit attribute)</a>
@@ -593,7 +620,7 @@
 </li>
         <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveStrategy.model_config">(pybandits.strategy.MultiObjectiveStrategy attribute)</a>
 </li>
-        <li><a href="fullapi.html#pybandits.strategy.Strategy.model_config">(pybandits.strategy.Strategy attribute)</a>
+        <li><a href="fullapi.html#pybandits.strategy.SingleObjectiveStrategy.model_config">(pybandits.strategy.SingleObjectiveStrategy attribute)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -664,6 +691,12 @@
         <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.model_post_init">(pybandits.quantitative_model.ZoomingModel method)</a>
 </li>
         <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.model_post_init">(pybandits.smab_simulator.SmabSimulator method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveBandit.model_post_init">(pybandits.strategy.MultiObjectiveBandit method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveCostControlBandit.model_post_init">(pybandits.strategy.MultiObjectiveCostControlBandit method)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveStrategy.model_post_init">(pybandits.strategy.MultiObjectiveStrategy method)</a>
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.model.ModelCC">ModelCC (class in pybandits.model)</a>
@@ -755,14 +788,26 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.NormalArray">NormalArray (class in pybandits.model)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.normalize_exploit_p">normalize_exploit_p() (pybandits.strategy.BestActionIdentificationBandit class method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.strategy.CostControlStrategy.normalize_subsidy_factor">normalize_subsidy_factor() (pybandits.strategy.CostControlStrategy class method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.StudentTArray.nu">nu (pybandits.model.StudentTArray attribute)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.numerize_exploit_p">numerize_exploit_p() (pybandits.strategy.BestActionIdentificationBandit class method)</a>
+  </ul></td>
+</tr></table>
+
+<h2 id="O">O</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveBandit.objective_selector_class">objective_selector_class (pybandits.strategy.MultiObjectiveBandit attribute)</a>
+
+      <ul>
+        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveCostControlBandit.objective_selector_class">(pybandits.strategy.MultiObjectiveCostControlBandit attribute)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.Strategy.numerize_field">numerize_field() (pybandits.strategy.Strategy class method)</a>
+        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveStrategy.objective_selector_class">(pybandits.strategy.MultiObjectiveStrategy attribute)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.CostControlBandit.numerize_subsidy_factor">numerize_subsidy_factor() (pybandits.strategy.CostControlBandit class method)</a>
-</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -856,10 +901,14 @@
 <h2 id="Q">Q</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel">QuantitativeModel (class in pybandits.quantitative_model)</a>
+      <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork">QuantitativeBayesianNeuralNetwork (class in pybandits.quantitative_model)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC">QuantitativeBayesianNeuralNetworkCC (class in pybandits.quantitative_model)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel">QuantitativeModel (class in pybandits.quantitative_model)</a>
+</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModelCC">QuantitativeModelCC (class in pybandits.quantitative_model)</a>
 </li>
   </ul></td>
@@ -876,6 +925,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.strategy.SingleObjectiveStrategy.refine_p">refine_p() (pybandits.strategy.SingleObjectiveStrategy method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.smab_simulator.SmabSimulator.replace_null_and_validate_probs_reward">replace_null_and_validate_probs_reward() (pybandits.smab_simulator.SmabSimulator class method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes">replace_nulls_and_validate_sizes_and_dtypes() (pybandits.cmab_simulator.CmabSimulator class method)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.replace_nulls_and_validate_sizes_and_dtypes">[1]</a>
@@ -895,6 +946,8 @@
 </li>
         <li><a href="fullapi.html#pybandits.model.Model.sample_proba">(pybandits.model.Model method)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.sample_proba">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork method)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel.sample_proba">(pybandits.quantitative_model.QuantitativeModel method)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.sample_proba">(pybandits.quantitative_model.ZoomingModel method)</a>
@@ -908,6 +961,8 @@
         <li><a href="fullapi.html#pybandits.model.StudentTArray.sample_rvs">(pybandits.model.StudentTArray method)</a>
 </li>
       </ul></li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.sample_weights">sample_weights() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.save">save (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.Segment">Segment (class in pybandits.quantitative_model)</a>
@@ -918,18 +973,12 @@
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.segmented_actions">segmented_actions (pybandits.quantitative_model.ZoomingModel property)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.select_action">select_action() (pybandits.strategy.BestActionIdentificationBandit method)</a>
+      <li><a href="fullapi.html#pybandits.strategy.BaseStrategy.select_action">select_action() (pybandits.strategy.BaseStrategy method)</a>
 
       <ul>
-        <li><a href="fullapi.html#pybandits.strategy.ClassicBandit.select_action">(pybandits.strategy.ClassicBandit method)</a>
+        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveStrategy.select_action">(pybandits.strategy.MultiObjectiveStrategy method)</a>
 </li>
-        <li><a href="fullapi.html#pybandits.strategy.CostControlBandit.select_action">(pybandits.strategy.CostControlBandit method)</a>
-</li>
-        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveBandit.select_action">(pybandits.strategy.MultiObjectiveBandit method)</a>
-</li>
-        <li><a href="fullapi.html#pybandits.strategy.MultiObjectiveCostControlBandit.select_action">(pybandits.strategy.MultiObjectiveCostControlBandit method)</a>
-</li>
-        <li><a href="fullapi.html#pybandits.strategy.Strategy.select_action">(pybandits.strategy.Strategy method)</a>
+        <li><a href="fullapi.html#pybandits.strategy.SingleObjectiveStrategy.select_action">(pybandits.strategy.SingleObjectiveStrategy method)</a>
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.SelfNormalizedDoublyRobust">SelfNormalizedDoublyRobust (class in pybandits.offline_policy_estimator)</a>
@@ -955,6 +1004,8 @@
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.sigma">sigma (pybandits.model.BaseLocationScaleArray attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.strategy.SingleObjectiveStrategy">SingleObjectiveStrategy (class in pybandits.strategy)</a>
 </li>
       <li><a href="fullapi.html#id26">SmabActionsManager (class in pybandits.actions_manager)</a>, <a href="fullapi.html#id31">[1]</a>, <a href="fullapi.html#id38">[2]</a>, <a href="fullapi.html#id45">[3]</a>, <a href="fullapi.html#pybandits.actions_manager.SmabActionsManager">[4]</a>
 </li>
@@ -987,8 +1038,6 @@
       <li><a href="fullapi.html#pybandits.quantitative_model.Segment.split">split() (pybandits.quantitative_model.Segment method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBeta.std">std (pybandits.model.BaseBeta property)</a>
-</li>
-      <li><a href="fullapi.html#pybandits.strategy.Strategy">Strategy (class in pybandits.strategy)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab.BaseCmabBernoulliMO.strategy">strategy (pybandits.cmab.BaseCmabBernoulliMO attribute)</a>
 
@@ -1028,7 +1077,7 @@
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.SubGaussianInverseProbabilityWeighting">SubGaussianInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.CostControlBandit.subsidy_factor">subsidy_factor (pybandits.strategy.CostControlBandit attribute)</a>
+      <li><a href="fullapi.html#pybandits.strategy.CostControlStrategy.subsidy_factor">subsidy_factor (pybandits.strategy.CostControlStrategy attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.SwitchDoublyRobust.switch_threshold">switch_threshold (pybandits.offline_policy_estimator.SwitchDoublyRobust attribute)</a>
 </li>
@@ -1063,11 +1112,17 @@
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseCmabZoomingModel.transfer_extendable_keys">(pybandits.quantitative_model.BaseCmabZoomingModel attribute)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.transfer_extendable_keys">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseSmabZoomingModel.transfer_extendable_keys">(pybandits.quantitative_model.BaseSmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModel.transfer_extendable_keys">(pybandits.quantitative_model.CmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModelCC.transfer_extendable_keys">(pybandits.quantitative_model.CmabZoomingModelCC attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork.transfer_extendable_keys">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC.transfer_extendable_keys">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel.transfer_extendable_keys">(pybandits.quantitative_model.QuantitativeModel attribute)</a>
 </li>
@@ -1099,11 +1154,17 @@
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseCmabZoomingModel.transfer_learned_keys">(pybandits.quantitative_model.BaseCmabZoomingModel attribute)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.transfer_learned_keys">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseSmabZoomingModel.transfer_learned_keys">(pybandits.quantitative_model.BaseSmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModel.transfer_learned_keys">(pybandits.quantitative_model.CmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModelCC.transfer_learned_keys">(pybandits.quantitative_model.CmabZoomingModelCC attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork.transfer_learned_keys">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC.transfer_learned_keys">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel.transfer_learned_keys">(pybandits.quantitative_model.QuantitativeModel attribute)</a>
 </li>
@@ -1137,11 +1198,17 @@
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseCmabZoomingModel.transfer_structural_keys">(pybandits.quantitative_model.BaseCmabZoomingModel attribute)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.transfer_structural_keys">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseSmabZoomingModel.transfer_structural_keys">(pybandits.quantitative_model.BaseSmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModel.transfer_structural_keys">(pybandits.quantitative_model.CmabZoomingModel attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModelCC.transfer_structural_keys">(pybandits.quantitative_model.CmabZoomingModelCC attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork.transfer_structural_keys">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetwork attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC.transfer_structural_keys">(pybandits.quantitative_model.QuantitativeBayesianNeuralNetworkCC attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModel.transfer_structural_keys">(pybandits.quantitative_model.QuantitativeModel attribute)</a>
 </li>
@@ -1198,10 +1265,10 @@
       </ul></li>
       <li><a href="fullapi.html#pybandits.model.BnnParams.validate_inputs">validate_inputs() (pybandits.model.BnnParams class method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BayesianLogisticRegression.validate_model_params">validate_model_params() (pybandits.model.BayesianLogisticRegression class method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.quantitative_model.BaseCmabZoomingModel.validate_n_features">validate_n_features() (pybandits.quantitative_model.BaseCmabZoomingModel class method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.validate_probs_reward_columns">validate_probs_reward_columns() (pybandits.cmab_simulator.CmabSimulator class method)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.validate_probs_reward_columns">[1]</a>
@@ -1211,6 +1278,8 @@
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.verbose">verbose (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.strategy.SingleObjectiveStrategy.verify_and_select_from_quantitative_action">verify_and_select_from_quantitative_action() (pybandits.strategy.SingleObjectiveStrategy method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.visualize">visualize (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
@@ -1230,7 +1299,7 @@
 </li>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.with_exploit_p">with_exploit_p() (pybandits.strategy.BestActionIdentificationBandit method)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.strategy.CostControlBandit.with_subsidy_factor">with_subsidy_factor() (pybandits.strategy.CostControlBandit method)</a>
+      <li><a href="fullapi.html#pybandits.strategy.CostControlStrategy.with_subsidy_factor">with_subsidy_factor() (pybandits.strategy.CostControlStrategy method)</a>
 </li>
   </ul></td>
 </tr></table>

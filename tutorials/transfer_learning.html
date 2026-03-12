@@ -214,8 +214,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Training complete.
-  action_A: n_successes=68, n_failures=35
-  action_B: n_successes=33, n_failures=68
+  action_A: n_successes=75, n_failures=26
+  action_B: n_successes=33, n_failures=70
 </pre></div></div>
 </div>
 </section>
@@ -271,10 +271,10 @@ Training complete.
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2026-02-23 09:35:19.637 | INFO     | pybandits.transfer:edit_model_on_the_fly:611 - Template has more features (4) than current (3). Expanding current MAB to match template&#39;s dimension.
-2026-02-23 09:35:19.638 | INFO     | pybandits.transfer:_expand_with_template_weights:443 - Expanding current CMAB from 3 to 4 features using template&#39;s weights for 1 new feature(s)
-2026-02-23 09:35:19.640 | INFO     | pybandits.transfer:_merge_mabs:365 - Merged CmabBernoulli: used mab2 as template with 3 action(s), transferred learned state from mab1 for 2 overlapping action(s).
-2026-02-23 09:35:19.643 | INFO     | pybandits.transfer:edit_model_on_the_fly:623 - Updated MAB using new_mab as template. Final MAB has 3 action(s) with new_mab&#39;s configuration and current_mab&#39;s learned state for overlapping actions.
+2026-03-12 21:19:42.412 | INFO     | pybandits.transfer:edit_model_on_the_fly:611 - Template has more features (4) than current (3). Expanding current MAB to match template&#39;s dimension.
+2026-03-12 21:19:42.412 | INFO     | pybandits.transfer:_expand_with_template_weights:443 - Expanding current CMAB from 3 to 4 features using template&#39;s weights for 1 new feature(s)
+2026-03-12 21:19:42.415 | INFO     | pybandits.transfer:_merge_mabs:365 - Merged CmabBernoulli: used mab2 as template with 3 action(s), transferred learned state from mab1 for 2 overlapping action(s).
+2026-03-12 21:19:42.417 | INFO     | pybandits.transfer:edit_model_on_the_fly:623 - Updated MAB using new_mab as template. Final MAB has 3 action(s) with new_mab&#39;s configuration and current_mab&#39;s learned state for overlapping actions.
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -286,8 +286,8 @@ Actions : [&#39;action_A&#39;, &#39;action_B&#39;, &#39;action_C&#39;]
 Features: 4
 
 Learned state preserved for existing actions:
-  action_A: n_successes=68, n_failures=35  ✓
-  action_B: n_successes=33, n_failures=68  ✓
+  action_A: n_successes=75, n_failures=26  ✓
+  action_B: n_successes=33, n_failures=70  ✓
 
 New action starts cold:
   action_C: n_successes=1, n_failures=1
@@ -369,9 +369,9 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Continued training complete.
-  action_A: n_successes=105, n_failures=54
-  action_B: n_successes=44, n_failures=109
-  action_C: n_successes=46, n_failures=48
+  action_A: n_successes=120, n_failures=44
+  action_B: n_successes=46, n_failures=113
+  action_C: n_successes=34, n_failures=49
 </pre></div></div>
 </div>
 </section>

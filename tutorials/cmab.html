@@ -56,7 +56,6 @@
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
-<li class="toctree-l2"><a class="reference internal" href="cmab_zooming.html">Contextual Multi-Armed Bandit with Zooming Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
@@ -137,26 +136,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-6.27729994e-02  3.64241569e-02  8.07490987e-01 -4.69264936e-01
-   4.40862013e-01]
- [ 5.22715536e-01 -1.01686473e-01  1.58127367e-01 -4.48403154e-01
-   3.32056267e-01]
- [-2.37493482e-01  5.31812669e-01  9.21579411e-01 -3.74646767e-04
-   2.99091133e-01]
- [-8.59296990e-01 -3.35181661e-02 -1.25170200e-02  8.33872560e-01
-   4.96203274e-01]
- [ 8.46801110e-01 -1.60253205e-01 -8.76845482e-01 -1.24047908e-01
-   4.95856839e-01]
- [ 3.12709496e-01 -5.83789543e-01 -1.15841358e-01 -7.30177852e-01
-  -1.17754922e-01]
- [-1.53730939e-01  6.63229007e-01  7.00016201e-01  1.80066455e-01
-  -7.58149537e-01]
- [ 1.89990895e-01  9.54926377e-01 -5.98092073e-01  9.89581378e-01
-  -8.99822348e-01]
- [ 9.43759372e-01 -5.06548261e-01  1.11480662e-01 -9.36462854e-01
-  -4.79464061e-01]
- [ 7.14464058e-01 -7.31254754e-01 -6.29802029e-01  1.83901148e-02
-  -9.81210640e-01]]
+[[-0.19779204 -0.93101324  0.45727082  0.92967457 -0.10185364]
+ [ 0.5509732  -0.12813621  0.8162718   0.16369048 -0.02088909]
+ [-0.34150319  0.24853485  0.15850829 -0.54643275  0.70379566]
+ [ 0.29934948 -0.24201504  0.90288096 -0.66823605 -0.6839547 ]
+ [-0.27762567  0.06721845 -0.61183917  0.83065688 -0.02876694]
+ [-0.40164382  0.85230035 -0.56783185 -0.27932299  0.420121  ]
+ [ 0.3904745   0.68782499  0.09058264 -0.82833864  0.18240702]
+ [-0.737524   -0.88630904  0.42081849 -0.30104342 -0.40307026]
+ [-0.66889994  0.26780017 -0.95508955  0.9822201   0.61566077]
+ [ 0.70461956 -0.89150137 -0.77773512 -0.23853232 -0.8411295 ]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -209,7 +198,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -228,7 +217,7 @@ Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 1, 0, 0, 1, 0, 1, 0, 1, 0]
+Simulated rewards: [1, 1, 1, 0, 1, 1, 1, 1, 0, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
