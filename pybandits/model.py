@@ -38,7 +38,6 @@ from numpy import sqrt
 from numpyro.distributions import Bernoulli as NumpyroBernoulli
 from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
-from numpyro.handlers import scale as numpyro_scale
 from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
 from numpyro.infer.initialization import init_to_median
@@ -1083,7 +1082,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _logit_var_name: ClassVar[str] = "logit"
     _prob_var_name: ClassVar[str] = "prob"
     weight_var_name: ClassVar[str] = "weight"
-    _bias_var_name: ClassVar[str] = "bias"
+    bias_var_name: ClassVar[str] = "bias"
     _embedding_var_name: ClassVar[str] = "embedding"
     _vi_update_params: ClassVar[list] = [
         "num_steps",
@@ -1239,7 +1238,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
         weight_layer_params_name = f"{cls.weight_var_name}_{layer_ind}"
-        bias_layer_params_name = f"{cls._bias_var_name}_{layer_ind}"
+        bias_layer_params_name = f"{cls.bias_var_name}_{layer_ind}"
         return weight_layer_params_name, bias_layer_params_name
 
     @classmethod
@@ -1361,6 +1360,19 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             from the post-embedding dimension (``feature_config.total_output_dim``).
         """
         return self.feature_config.n_features
+
+    @property
+    def hidden_dim_list(self) -> List[int]:
+        """
+        Returns the hidden layer dimensions of the model.
+
+        Returns
+        -------
+        List[int]
+            Output dimension of each layer except the final output layer.
+            Empty list when no hidden layers are present.
+        """
+        return [layer.weight.shape[1] for layer in self.model_params.bnn_layer_params[:-1]]
 
     def _arrange_update_kwargs(self):
         if self.update_kwargs is None:
@@ -1872,18 +1884,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             if not epoch_steps_list:
                 epoch_steps_list = [1]
 
-        # Scale the ELBO by 1/N so the loss is a per-sample average.
-        # This decouples learning rate tuning from dataset size: gradients
-        # have consistent magnitude regardless of N, and the KL prior term
-        # isn't dwarfed by the likelihood when N is large.
-        _scaled_model = numpyro_scale(_model, scale=1.0 / n_samples)
-
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
-        guide = method_config["guide"](_scaled_model, init_loc_fn=init_to_median)
+        guide = method_config["guide"](_model, init_loc_fn=init_to_median)
         loss = method_config["loss"]()
-        svi = SVI(_scaled_model, guide, self._obj_optimizer, loss=loss)
+        svi = SVI(_model, guide, self._obj_optimizer, loss=loss)
 
         # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
         # A Python for-loop leaks host-side dispatch/compilation metadata on
@@ -2304,6 +2310,19 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             the shape of the weight matrix in the first layer's parameters of the first objective model.
         """
         return self.models[0].input_dim
+
+    @property
+    def hidden_dim_list(self) -> List[int]:
+        """
+        Returns the hidden layer dimensions of the model.
+
+        Returns
+        -------
+        List[int]
+            The output dimension of each layer except the last, derived from
+            the shape of the weight matrices in the layer parameters.
+        """
+        return self.models[0].hidden_dim_list
 
     @classmethod
     def cold_start(

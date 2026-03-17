@@ -28,7 +28,7 @@ automatically handling input dimension changes for contextual MABs.
 """
 
 import json
-from typing import Any, Dict, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from loguru import logger
 
@@ -381,41 +381,139 @@ def _merge_mabs(
     return _reconstruct_mab(type(mab2), merged_state)
 
 
-def _append_template_bnn_features(
+def _sync_and_expand_dist_params(
+    current_params: Dict[str, Any],
+    template_params: Dict[str, Any],
+) -> None:
+    """Synchronize distribution parameter fields and expand dimensions in-place.
+
+    Handles dist_type changes (e.g., StudentT↔Normal) by aligning fields to the template,
+    then expands any dimension differences (new input features or hidden units).
+
+    Parameters
+    ----------
+    current_params : Dict[str, Any]
+        Distribution parameters dict (weight or bias) to modify in-place.
+    template_params : Dict[str, Any]
+        Template distribution parameters providing target fields and expansion values.
+    """
+    # Align fields to template dist_type: drop extra fields, add missing ones
+    for field_name in list(current_params):
+        if field_name not in template_params:
+            del current_params[field_name]
+    for field_name in template_params:
+        if field_name not in current_params:
+            current_params[field_name] = template_params[field_name]
+
+    # Expand dimensions for shared fields
+    for field_name in current_params:
+        current_val = current_params[field_name]
+        template_val = template_params[field_name]
+        if not isinstance(current_val, list) or not current_val:
+            continue
+
+        if isinstance(current_val[0], list):
+            # 2D weight matrix: input_dim × output_dim
+            current_in = len(current_val)
+            current_out = len(current_val[0])
+            new_in = len(template_val)
+            new_out = len(template_val[0]) if template_val else current_out
+            if new_in > current_in or new_out > current_out:
+                result = []
+                for row_idx in range(new_in):
+                    if row_idx < current_in:
+                        # Existing input: keep current weights, append new output cols from template
+                        result.append(current_val[row_idx] + template_val[row_idx][current_out:])
+                    else:
+                        # New input feature: use template weights for all output units
+                        result.append(template_val[row_idx])
+                current_params[field_name] = result
+        else:
+            # 1D bias vector: output_dim
+            current_out = len(current_val)
+            new_out = len(template_val)
+            if new_out > current_out:
+                current_params[field_name] = current_val + template_val[current_out:]
+
+
+def _expand_bnn_weights(
     current_model_params: Dict[str, Any],
     template_model_params: Dict[str, Any],
-    current_dim: int,
 ) -> None:
-    """Append template's new feature weights to current model parameters (in-place).
+    """Expand BNN model parameters in-place to match template dimensions.
+
+    For each layer, the existing (top-left) block of weights is preserved and template
+    values are used for new connections. This supports simultaneous expansion of both
+    input features and hidden layer dimensions in a single pass:
+
+    - Weight matrix (2D: input_dim × output_dim):
+        * Top-left block [0:current_in, 0:current_out]: keep current learned values
+        * Top-right block [0:current_in, current_out:new_out]: new hidden units — from template
+        * Bottom block [current_in:new_in, :]: new input features — from template
+    - Bias vector (1D: output_dim):
+        * [0:current_out]: keep current learned values
+        * [current_out:new_out]: new hidden units — from template
 
     Parameters
     ----------
     current_model_params : Dict[str, Any]
         Model parameters dict to expand (modified in-place).
     template_model_params : Dict[str, Any]
-        Template model parameters with additional features.
-    current_dim : int
-        Current input dimension (number of features in current model).
+        Template model parameters providing initial values for new connections.
     """
-    # For both learned and init params
     for params_key in ["bnn_layer_params", "bnn_layer_params_init"]:
         if params_key not in current_model_params or params_key not in template_model_params:
             continue
 
-        current_layer = current_model_params[params_key][0]
-        template_layer = template_model_params[params_key][0]
+        for current_layer, template_layer in zip(current_model_params[params_key], template_model_params[params_key]):
+            # Expand weight distribution parameters (2D: input_dim × output_dim)
+            current_w = current_layer[BaseBayesianNeuralNetwork.weight_var_name]
+            template_w = template_layer[BaseBayesianNeuralNetwork.weight_var_name]
+            _sync_and_expand_dist_params(current_w, template_w)
 
-        # Expand weight distribution parameters
-        current_weight = current_layer[BaseBayesianNeuralNetwork.weight_var_name]
-        template_weight = template_layer[BaseBayesianNeuralNetwork.weight_var_name]
+            # Expand bias distribution parameters (1D: output_dim)
+            current_b = current_layer[BaseBayesianNeuralNetwork.bias_var_name]
+            template_b = template_layer[BaseBayesianNeuralNetwork.bias_var_name]
+            _sync_and_expand_dist_params(current_b, template_b)
 
-        for field_name in current_weight:
-            if isinstance(current_weight[field_name], list) and current_weight[field_name]:
-                if isinstance(current_weight[field_name][0], list):
-                    # This is 2D array (input_dim, output_dim)
-                    # Append the new rows from template (from current_dim onward)
-                    new_rows = template_weight[field_name][current_dim:]
-                    current_weight[field_name].extend(new_rows)
+
+def _validate_hidden_dims(
+    src_dims: List[int],
+    tgt_dims: List[int],
+    action_id: str,
+    obj_idx: Optional[int] = None,
+) -> None:
+    """Validate that hidden layer dimensions are compatible for expansion.
+
+    Parameters
+    ----------
+    src_dims : List[int]
+        Source hidden layer dimensions.
+    tgt_dims : List[int]
+        Target hidden layer dimensions.
+    action_id : str
+        Action ID for error messages.
+    obj_idx : Optional[int]
+        Objective index for MO models, or None for SO models.
+
+    Raises
+    ------
+    ValueError
+        If the number of hidden layers differs, or if any hidden layer dimension is reduced.
+    """
+    prefix = f" (objective {obj_idx})" if obj_idx is not None else ""
+    if len(src_dims) != len(tgt_dims):
+        raise ValueError(
+            f"Cannot change the number of hidden layers for action '{action_id}'{prefix}: "
+            f"{len(src_dims)} -> {len(tgt_dims)}. "
+            "Add or remove hidden layers by creating a new MAB from scratch."
+        )
+    for layer_idx, (src_dim, tgt_dim) in enumerate(zip(src_dims, tgt_dims)):
+        if tgt_dim < src_dim:
+            raise ValueError(
+                f"Cannot reduce hidden layer {layer_idx} for action '{action_id}'{prefix}: "
+                f"{src_dim} -> {tgt_dim}. Cannot reduce hidden dimensions."
+            )
 
 
 def _expand_with_template_weights(
@@ -434,16 +532,34 @@ def _expand_with_template_weights(
     Returns
     -------
     expanded_cmab : BaseCmabBernoulli
-        Expanded CMAB with current's existing feature weights and template's new feature weights.
+        Expanded CMAB where existing feature weights and hidden units are preserved from current,
+        and new feature/hidden-unit connections are initialized from template.
     """
     current_dim = current_cmab.input_dim
     template_dim = template_cmab.input_dim
     n_new_features = template_dim - current_dim
 
-    logger.info(
-        f"Expanding current CMAB from {current_dim} to {template_dim} features "
-        f"using template's weights for {n_new_features} new feature(s)"
-    )
+    if n_new_features > 0:
+        logger.info(
+            f"Expanding current CMAB from {current_dim} to {template_dim} features "
+            f"using template's weights for {n_new_features} new feature(s)"
+        )
+
+    # Validate hidden layer architecture changes for overlapping actions
+    for action_id in set(current_cmab.actions.keys()) & set(template_cmab.actions.keys()):
+        src_model = current_cmab.actions[action_id]
+        tgt_model = template_cmab.actions[action_id]
+        if isinstance(src_model, BaseModelMO):
+            if len(src_model.models) != len(tgt_model.models):
+                raise ValueError(
+                    f"Cannot expand action '{action_id}': number of objectives mismatch "
+                    f"(current: {len(src_model.models)}, template: {len(tgt_model.models)})."
+                )
+            for obj_idx, (src_obj, tgt_obj) in enumerate(zip(src_model.models, tgt_model.models)):
+                if isinstance(src_obj, BaseBayesianNeuralNetwork):
+                    _validate_hidden_dims(src_obj.hidden_dim_list, tgt_obj.hidden_dim_list, action_id, obj_idx)
+        elif isinstance(src_model, BaseBayesianNeuralNetwork):
+            _validate_hidden_dims(src_model.hidden_dim_list, tgt_model.hidden_dim_list, action_id)
 
     # Get state dicts
     current_state = _get_state_dict(current_cmab)
@@ -463,17 +579,15 @@ def _expand_with_template_weights(
             for model_idx in range(len(current_action["models"])):
                 if model_idx >= len(template_action["models"]):
                     continue
-                _append_template_bnn_features(
+                _expand_bnn_weights(
                     current_action["models"][model_idx]["model_params"],
                     template_action["models"][model_idx]["model_params"],
-                    current_dim,
                 )
         elif isinstance(action_model, BaseBayesianNeuralNetwork):
             # Single-objective BNN
-            _append_template_bnn_features(
+            _expand_bnn_weights(
                 current_action["model_params"],
                 template_action["model_params"],
-                current_dim,
             )
         else:
             raise TypeError(
@@ -519,9 +633,12 @@ def edit_model_on_the_fly(
     For Beta models (simple Bernoulli), no structural validation is needed as they only
     store n_successes and n_failures counts.
 
-    For CMABs with different input dimensions:
-    - If template has MORE features: automatically expands current MAB using template's weights for new features
-    - If template has FEWER features: raises ValueError (cannot reduce dimensions)
+    For CMABs, architecture changes are handled in a single pass:
+    - More input features, same hidden dims: expands first-layer input rows from template
+    - Same input features, larger hidden dims: expands all layers' output columns from template
+    - Both more features and larger hidden dims: expands rows and columns simultaneously
+    - Fewer input features: raises ValueError (cannot reduce dimensions)
+    - Smaller hidden dims: raises ValueError (cannot reduce hidden dimensions)
 
     The resulting MAB will have:
     - Actions: All actions from new_mab
@@ -593,29 +710,24 @@ def edit_model_on_the_fly(
     """
     _validate_mab_compatibility(current_mab, new_mab)
 
-    # Check if we're dealing with CMABs and handle input dimension mismatches
+    # For CMABs, expand current to match template's architecture (input dim and/or hidden dims).
+    # _expand_with_template_weights is a no-op when dimensions already match.
     if isinstance(current_mab, BaseCmabBernoulli) and isinstance(new_mab, BaseCmabBernoulli):
-        # Get input dimensions via the property on BaseCmabBernoulli
-        try:
-            current_dim = current_mab.input_dim
-            new_dim = new_mab.input_dim
+        overlapping_actions = set(current_mab.actions.keys()) & set(new_mab.actions.keys())
+        if overlapping_actions:
+            try:
+                current_dim = current_mab.input_dim
+                new_dim = new_mab.input_dim
 
-            if current_dim != new_dim:
                 if new_dim < current_dim:
                     raise ValueError(
                         f"Template MAB has fewer features ({new_dim}) than current MAB ({current_dim}). "
                         "Cannot reduce feature dimensions. Template must have same or more features."
                     )
-                else:
-                    # new_dim > current_dim: expand current_mab to match template's dimension
-                    logger.info(
-                        f"Template has more features ({new_dim}) than current ({current_dim}). "
-                        f"Expanding current MAB to match template's dimension."
-                    )
-                    current_mab = _expand_with_template_weights(current_mab, new_mab)
-        except (StopIteration, AttributeError):
-            # No actions or not a CMAB with input_dim, proceed normally
-            pass
+                current_mab = _expand_with_template_weights(current_mab, new_mab)
+            except (StopIteration, AttributeError):
+                # No actions or not a CMAB with input_dim, proceed normally
+                pass
 
     # Merge using new_mab as template with learned state transfer from current_mab
     merged_mab = _merge_mabs(current_mab, new_mab)
