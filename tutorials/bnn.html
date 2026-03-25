@@ -261,7 +261,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BLR — Accuracy: 0.876, AUC: 0.949
+BLR — Accuracy: 0.872, AUC: 0.957
 </pre></div></div>
 </div>
 <p>Because BLR is linear it struggles with the non-linear moon boundary.</p>
@@ -283,7 +283,7 @@ BLR — Accuracy: 0.876, AUC: 0.949
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f623db59ff0&gt;
+&lt;matplotlib.legend.Legend at 0x7f1a0ce63580&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -444,8 +444,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN — Accuracy: 0.880, AUC: 0.951
-BLR — Accuracy: 0.876, AUC: 0.949
+BNN — Accuracy: 0.888, AUC: 0.959
+BLR — Accuracy: 0.872, AUC: 0.957
 </pre></div></div>
 </div>
 <p>The BNN produces a much better separation than the linear BLR.</p>
@@ -467,7 +467,7 @@ BLR — Accuracy: 0.876, AUC: 0.949
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f623c3f8820&gt;
+&lt;matplotlib.legend.Legend at 0x7f1a0cf2d5d0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -617,8 +617,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN Student-T — Accuracy: 0.880, AUC: 0.951
-BNN Normal    — Accuracy: 0.876, AUC: 0.960
+BNN Student-T — Accuracy: 0.888, AUC: 0.959
+BNN Normal    — Accuracy: 0.886, AUC: 0.965
 </pre></div></div>
 </div>
 <section id="FeaturesConfig:-Categorical-Embeddings">
@@ -675,16 +675,16 @@ BNN Normal    — Accuracy: 0.876, AUC: 0.960
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 First 5 training samples (x1, x2, region_index):
-[[ 0.03375413 -1.10027911  1.        ]
- [-0.66175552  0.2961951   0.        ]
- [-0.65505977 -0.16985879  0.        ]
- [-0.08125112  0.8861023   1.        ]
- [ 0.44753632  0.64118226  1.        ]]
+[[ 1.75429824 -0.22355374  2.        ]
+ [-0.57704209  0.0617576   0.        ]
+ [-0.21218932 -1.17699753  1.        ]
+ [ 0.69946409 -0.44510619  2.        ]
+ [ 0.184303   -1.25910131  1.        ]]
 
 Region distribution:
-  left: 148
-  center: 193
-  right: 159
+  left: 159
+  center: 177
+  right: 164
 </pre></div></div>
 </div>
 </section>
@@ -789,7 +789,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN with embeddings — Accuracy: 0.884, AUC: 0.952
+BNN with embeddings — Accuracy: 0.878, AUC: 0.956
 </pre></div></div>
 </div>
 </section>
@@ -857,14 +857,14 @@ BNN with embeddings — Accuracy: 0.884, AUC: 0.952
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Learned embedding means (mu) for each &#39;region&#39; category:
-  left    : [-0.033]
-  center  : [-0.027]
-  right   : [-0.048]
+  left    : [0.1]
+  center  : [-0.041]
+  right   : [-0.073]
 
 Learned embedding std-devs (sigma) for each &#39;region&#39; category:
-  left    : [0.503]
-  center  : [0.397]
-  right   : [0.452]
+  left    : [0.603]
+  center  : [0.37]
+  right   : [0.498]
 </pre></div></div>
 </div>
 </section>
