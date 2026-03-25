@@ -89,15 +89,18 @@ def test_update_with_missing_memory_delta_set(action_list):
         manager.update(actions=action_list, rewards=[1] * len(action_list), actions_memory=None, rewards_memory=None)
 
 
+_UPDATE_RESERVED_PARAMS = {"actions", "rewards", "self", "quantities", "context"}
+
+
 @given(
     data_len=st.integers(min_value=1, max_value=200),
     regular_kwargs=st.dictionaries(
-        st.text().filter(lambda x: not x.endswith("_memory") and x not in ["actions", "rewards", "self"]),
+        st.text().filter(lambda x: not x.endswith("_memory") and x not in _UPDATE_RESERVED_PARAMS),
         st.integers(),
         min_size=1,
     ),
     memory_kwargs=st.dictionaries(
-        st.text().filter(lambda x: x not in ["actions", "rewards", "self"]).map(lambda x: x + "_memory"),
+        st.text().filter(lambda x: x not in _UPDATE_RESERVED_PARAMS).map(lambda x: x + "_memory"),
         st.integers(),
         min_size=1,
     ),

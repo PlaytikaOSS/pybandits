@@ -45,9 +45,12 @@ from pybandits.base import (
 )
 from pybandits.mab import BaseMab
 from pybandits.model import (
+    BaseBayesianNeuralNetwork,
     BaseBayesianNeuralNetworkMO,
+    BaseLocationScaleArray,
     BnnLayerParams,
     BnnParams,
+    FeaturesConfig,
     StudentTArray,
 )
 from pybandits.pydantic_version_compatibility import validate_call
@@ -260,11 +263,26 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
                 model_params = BnnParams(
                     bnn_layer_params=[layer_params], bnn_layer_params_init=[layer_params_init]
-                )._apply_version_adjusted_method("model_dump", "dict")
+                ).apply_version_adjusted_method("model_dump", "dict")
                 action_state["model_params"] = model_params
+
+                feature_config = FeaturesConfig(
+                    n_features=len(mu_list), categorical_features_configs=[]
+                ).apply_version_adjusted_method("model_dump", "dict")
+                action_state["feature_config"] = feature_config
 
                 action_state.pop("alpha")
                 action_state.pop("betas")
+
+            # 3.0 <= version < 5.0: model_params present but feature_config absent (numerical-only).
+            elif "model_params" in action_state and "feature_config" not in action_state:
+                layer_params = action_state["model_params"]["bnn_layer_params"]
+                first_param = next(iter(BaseLocationScaleArray.param_map))
+                n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name][first_param])
+                feature_config = FeaturesConfig(
+                    n_features=n_features, categorical_features_configs=[]
+                ).apply_version_adjusted_method("model_dump", "dict")
+                action_state["feature_config"] = feature_config
 
         return state
 

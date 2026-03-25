@@ -316,6 +316,14 @@ def test_initializes_cmab_quantitative_model_correctly(dimension, n_features):
     assert model.dimension == dimension
     assert model.bnn.input_dim == dimension + n_features
 
+    # Also verify that categorical feature_config is accepted
+    categorical_features = {0: 3}
+    model_emb = QuantitativeBayesianNeuralNetwork.cold_start(
+        dimension=dimension, categorical_features=categorical_features
+    )
+    assert model_emb.dimension == dimension
+    assert model_emb.bnn.feature_config.has_categorical
+
 
 # Test QuantitativeBayesianNeuralNetwork update with valid rewards, quantities, and context
 @st.composite
@@ -378,15 +386,24 @@ def test_updates_cmab_quantitative_model_correctly(
 
 
 # Test QuantitativeBayesianNeuralNetwork sample_proba returns valid probability functions
+@pytest.mark.parametrize("use_embedding,categorical_features", [(False, None), (True, {0: 3})])
 @given(
     dimension=st.just(1),
     n_features=st.just(1),
     quantity=st.floats(min_value=0, max_value=1),
 )
-def test_sample_proba_returns_valid_probabilities_cmab(dimension, n_features, quantity):
-    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+def test_sample_proba_returns_valid_probabilities_cmab(
+    dimension, n_features, quantity, use_embedding, categorical_features
+):
+    if use_embedding:
+        model = QuantitativeBayesianNeuralNetwork.cold_start(
+            dimension=dimension, categorical_features=categorical_features
+        )
+        context = np.array([[0], [1], [2], [0], [1]], dtype=np.float64)
+    else:
+        model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
+        context = np.random.uniform(low=0, high=1, size=(5, 1))
 
-    context = np.random.uniform(low=0, high=1, size=(5, 1))
     prob_functions = model.sample_proba(context=context)
     assert len(prob_functions) == len(context)
 
@@ -441,6 +458,48 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, tes
                 )
 
 
+@pytest.mark.parametrize("dimension,categorical_features", [(1, {0: 3}), (2, {0: 3})])
+@given(
+    n_calls=st.just(10),
+    tier_indices=arrays(dtype=np.int64, shape=(5, 1), elements=st.integers(min_value=0, max_value=2)),
+    test_quantities=arrays(dtype=np.float64, shape=(5,), elements=st.floats(min_value=0, max_value=1)),
+)
+def test_quantitative_bnn_to_quantitative_probabilities_consistency_with_categorical(
+    dimension, categorical_features, n_calls, tier_indices, test_quantities
+):
+    """Pre-sampled embeddings make repeated closure calls deterministic for QBNN with categorical features.
+
+    Without the fix (embeddings re-sampled inside forward_pass), calling the same closure with
+    the same quantity would yield a different result on each call.  This test verifies the fix
+    by asserting exact equality across ``n_calls`` evaluations of each closure.
+    """
+    model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, categorical_features=categorical_features)
+    context = tier_indices.astype(np.float64)
+    n_samples = len(context)
+
+    # Replicate exactly what sample_proba does: sample weights and pre-sample embeddings once.
+    sampled_weights = model.bnn.sample_weights(n_samples)
+    dummy_full = np.column_stack([np.zeros((n_samples, dimension)), context])
+    sampled_embeddings = model.bnn.sample_embeddings(dummy_full)
+
+    prob_functions = model._to_quantitative_probabilities(
+        context=context,
+        sampled_weights=sampled_weights,
+        sampled_embeddings=sampled_embeddings,
+    )
+
+    for prob_weight_funcs in prob_functions:
+        for sample_idx in range(n_samples):
+            # Build a quantity vector of the right dimension from a single hypothesis float.
+            q = np.full(dimension, test_quantities[sample_idx])
+            first_results = tuple(func(q) for func in prob_weight_funcs)
+            for _ in range(n_calls - 1):
+                subsequent_results = tuple(func(q) for func in prob_weight_funcs)
+                assert first_results == subsequent_results, (
+                    f"Inconsistent results: first={first_results}, subsequent={subsequent_results}"
+                )
+
+
 ########################################################################################################################
 
 
@@ -471,7 +530,7 @@ def test_cost_serialization_deserialization(cost_function):
 
     # Create model with the test callable as cost
     model = SmabZoomingModelCC.cold_start(cost=cost_function)
-    serialized = model._apply_version_adjusted_method("model_dump_json", "json")
+    serialized = model.apply_version_adjusted_method("model_dump_json", "json")
     serialized_dict = json.loads(serialized)
 
     assert "cost" in serialized_dict
@@ -481,5 +540,5 @@ def test_cost_serialization_deserialization(cost_function):
     # Check callable was properly restored
     assert callable(deserialized_model.cost)
 
-    reserialized = deserialized_model._apply_version_adjusted_method("model_dump_json", "json")
+    reserialized = deserialized_model.apply_version_adjusted_method("model_dump_json", "json")
     assert reserialized == serialized
