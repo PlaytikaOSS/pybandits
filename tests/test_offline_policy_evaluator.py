@@ -32,7 +32,6 @@ import pydantic
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from matplotlib.pyplot import close
 from pydantic import PositiveInt
 from pytest_mock import MockerFixture
 from sklearn.preprocessing import MinMaxScaler
@@ -55,7 +54,7 @@ from pybandits.smab import (
     SmabBernoulliMOCC,
 )
 from pybandits.utils import get_non_abstract_classes
-from tests.utils import FakeApproximation
+from tests.utils import mock_update
 
 
 @pytest.fixture(scope="module")
@@ -285,14 +284,9 @@ def test_running_configuration(
     if context:
         contextual_features = [col for col in logged_data.columns if col.startswith("context")]
         monkeymodule.setattr(
-            pybandits.model,
-            "fit",
-            lambda *args, **kwargs: FakeApproximation(n_features=len(contextual_features)),
-        )
-        monkeymodule.setattr(
-            pybandits.model,
-            "sample",
-            FakeApproximation(n_features=len(contextual_features)).sample,
+            pybandits.model.BaseBayesianNeuralNetwork,
+            "_update",
+            mock_update,
         )
 
     else:
@@ -357,8 +351,6 @@ def test_running_configuration(
     execution_func = evaluator.update_and_evaluate if update else evaluator.evaluate
     with TemporaryDirectory() as tmp_dir:
         execution_func(mab=mab, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir)
-    if visualize:
-        close("all")  # close all figures to avoid memory leak
 
 
 @pytest.mark.usefixtures("logged_data")
@@ -426,14 +418,9 @@ def test_initialization_when_xgboost_not_available(
         if context:
             contextual_features = [col for col in logged_data.columns if col.startswith("context")]
             monkeymodule.setattr(
-                pybandits.model,
-                "fit",
-                lambda *args, **kwargs: FakeApproximation(n_features=len(contextual_features)),
-            )
-            monkeymodule.setattr(
-                pybandits.model,
-                "sample",
-                FakeApproximation(n_features=len(contextual_features)).sample,
+                pybandits.model.BaseBayesianNeuralNetwork,
+                "_update",
+                mock_update,
             )
         else:
             contextual_features = None

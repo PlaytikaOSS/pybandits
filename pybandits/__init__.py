@@ -25,9 +25,9 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-# Intercept pymc logger with loguru with specific level
-pymc_handler = InterceptHandler(level="WARNING")
-logging.getLogger("pymc").handlers = [pymc_handler]
+# Intercept numpyro logger with loguru with specific level
+numpyro_handler = InterceptHandler(level="WARNING")
+logging.getLogger("numpyro").handlers = [numpyro_handler]
 
-# Configure default loguru logger (this won't affect pymc's intercepted logs)
+# Configure default loguru logger (this won't affect numpyro's intercepted logs)
 logger.configure(handlers=[{"sink": sys.stderr}])

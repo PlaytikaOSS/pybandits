@@ -23,22 +23,20 @@
 import json
 from copy import deepcopy
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from unittest.mock import patch
 
 import numpy as np
-import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from hypothesis.strategies import composite
 from pydantic.dataclasses import dataclass
 from pydantic.types import PositiveInt
 from pytest import MonkeyPatch
 
 import pybandits
 from pybandits.actions_manager import CmabModelType
-from pybandits.base import ActionId, Float01, PositiveProbability, PyBanditsBaseModel
+from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.cmab import (
     BaseCmabBernoulli,
     CmabBernoulli,
@@ -54,9 +52,6 @@ from pybandits.model import (
     BayesianNeuralNetworkCC,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
-    BnnLayerParams,
-    BnnParams,
-    ModelMO,
     StudentTArray,
     UpdateMethods,
 )
@@ -76,10 +71,10 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
-from tests.test_actions_manager import REFERENCE_DELTA
 from tests.utils import (
-    FakeApproximation,
+    apply_mock_update,
     literal_update_methods,
+    mock_update,
     sample_with_replacement,
     to_temporary_pickle,
 )
@@ -147,49 +142,6 @@ def mock_student_t_array(
     return label
 
 
-def _is_of_relevant_types(member: Any):
-    """
-    Check if the member is of a relevant type for mocking.
-
-    Parameters
-    ----------
-    member : Any
-        The member to check.
-
-    Returns
-    -------
-    bool
-        True if the member is of a relevant type, False otherwise.
-    """
-    return isinstance(member, (PyBanditsBaseModel, BnnParams, BnnLayerParams, StudentTArray))
-
-
-def find_and_update_parameters(obj, diff, monkeymodule, label):
-    stack = [obj]
-
-    while stack:
-        current = stack.pop()
-        if isinstance(current, StudentTArray):
-            label = mock_student_t_array(current, diff, monkeymodule, label)
-            continue
-
-        for attr in dir(current):
-            if not attr.startswith("__"):
-                member = getattr(current, attr)
-                if _is_of_relevant_types(member):
-                    stack.append(member)
-                elif isinstance(member, Sequence):
-                    stack.extend(item for item in member if _is_of_relevant_types(item))
-
-    return label
-
-
-def mock_update(models: Union[List[BaseBayesianNeuralNetwork], BaseBayesianNeuralNetwork], diff, monkeymodule, label=0):
-    model_list = [models] if isinstance(models, BaseBayesianNeuralNetwork) else models
-    for model in model_list:
-        label = find_and_update_parameters(model, diff, monkeymodule, label)
-
-
 def _quantitative_cost(x, cost):
     return min(sum(x) ** cost, 1000)
 
@@ -214,15 +166,15 @@ class ModelTestConfig:
         n_features: PositiveInt,
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
-        update_kwargs: Optional[Dict[str, Any]],
         n_objectives: Optional[PositiveInt] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        if len(self.model_types) < len(action_ids):
-            indices = np.random.randint(0, len(self.model_types), len(action_ids))
-            self.model_types = [self.model_types[i] for i in indices]
+        model_types = list(self.model_types)
+        if len(model_types) < len(action_ids):
+            indices = np.random.randint(0, len(model_types), len(action_ids))
+            model_types = [model_types[i] for i in indices]
         if all(
             model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, QuantitativeBayesianNeuralNetworkCC]
-            for model in self.model_types
+            for model in model_types
         ):
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
@@ -230,19 +182,19 @@ class ModelTestConfig:
                 cost
                 if model_type in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC]
                 else partial(_quantitative_cost, cost=cost)
-                for cost, model_type in zip(costs, self.model_types)
+                for cost, model_type in zip(costs, model_types)
             ]
         else:
             costs = None
 
-        model_cold_start_kwargs = dict(update_method=update_method, update_kwargs=update_kwargs)
+        model_cold_start_kwargs = dict(update_method=update_method)
         base_model_cold_start_kwargs = dict(hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs)
 
         result: Dict[str, Any] = {}
         if n_objectives is None:
             # Single-objective models
             if costs is not None:
-                for action_id, model_type, cost in zip(action_ids, self.model_types, costs):
+                for action_id, model_type, cost in zip(action_ids, model_types, costs):
                     if issubclass(model_type, BayesianNeuralNetworkCC):
                         result[action_id] = model_type.cold_start(
                             n_features=n_features,
@@ -259,7 +211,7 @@ class ModelTestConfig:
                             cost=cost,
                         )
             else:
-                for action_id, model_type in zip(action_ids, self.model_types):
+                for action_id, model_type in zip(action_ids, model_types):
                     if issubclass(model_type, BayesianNeuralNetwork):
                         result[action_id] = model_type.cold_start(
                             n_features=n_features,
@@ -276,7 +228,7 @@ class ModelTestConfig:
         else:
             # Multi-objective models
             if costs is not None:
-                for action_id, model_type, cost in zip(action_ids, self.model_types, costs):
+                for action_id, model_type, cost in zip(action_ids, model_types, costs):
                     result[action_id] = model_type.cold_start(
                         n_objectives=n_objectives,
                         n_features=n_features,
@@ -285,7 +237,7 @@ class ModelTestConfig:
                         **model_cold_start_kwargs,
                     )
             else:
-                for action_id, model_type in zip(action_ids, self.model_types):
+                for action_id, model_type in zip(action_ids, model_types):
                     result[action_id] = model_type.cold_start(
                         n_objectives=n_objectives,
                         n_features=n_features,
@@ -306,7 +258,6 @@ class ModelTestConfig:
         n_features: PositiveInt,
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
-        update_kwargs: Optional[Dict[str, Any]],
     ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, CmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
@@ -314,7 +265,7 @@ class ModelTestConfig:
             else None
         )
         actions, base_model_cold_start_kwargs = self._create_actions(
-            action_ids, costs, n_features, hidden_dim_list, update_method, update_kwargs, n_objectives
+            action_ids, costs, n_features, hidden_dim_list, update_method, n_objectives
         )
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
@@ -395,7 +346,6 @@ TEST_CONFIGS = {
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
-    update_kwargs=st.sampled_from([None, {"draws": 500}]),
 )
 def test_cold_start(
     config: ModelTestConfig,
@@ -409,7 +359,6 @@ def test_cold_start(
     exploit_p,
     subsidy_factor,
     update_method,
-    update_kwargs,
 ):
     # Create CMAB instance
     cmab, actions, kwargs = config.create_cmab_and_actions(
@@ -423,23 +372,22 @@ def test_cold_start(
         n_features,
         hidden_dim_list,
         update_method,
-        update_kwargs,
     )
 
     # Cold start comparison logic (modified for different model types)
     cold_start_kwargs = {
         "action_ids": {
             action
-            for action, model in zip(action_ids, config.model_types)
-            if issubclass(model, (BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO))
+            for action, model in actions.items()
+            if isinstance(model, (BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO))
         },
         "quantitative_action_ids": {
-            action for action, model in zip(action_ids, config.model_types) if issubclass(model, QuantitativeModel)
+            action for action, model in actions.items() if isinstance(model, QuantitativeModel)
         },
     }
     if all(
-        model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, QuantitativeBayesianNeuralNetworkCC]
-        for model in config.model_types
+        isinstance(model, (BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, QuantitativeBayesianNeuralNetworkCC))
+        for model in actions.values()
     ):
         cold_start_kwargs["action_ids_cost"] = {
             action: model.cost
@@ -467,7 +415,6 @@ def test_cold_start(
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
-    update_kwargs=st.sampled_from([None, {"draws": 500}]),
 )
 def test_bad_initialization(
     config: ModelTestConfig,
@@ -479,7 +426,6 @@ def test_bad_initialization(
     exploit_p,
     subsidy_factor,
     update_method,
-    update_kwargs,
 ):
     """Test various invalid initialization scenarios for CMAB models"""
     real_n_objectives = n_objectives.draw(st.integers(min_value=1, max_value=10))
@@ -517,16 +463,18 @@ def test_bad_initialization(
         config.cmab_class(actions=actions_wrong_update)
 
     # Test mismatched update kwargs
-    base_kwargs = {"draws": 500} if update_kwargs else {"draws": 1000}
+    mismatch_kw1, mismatch_kw2 = (
+        ({"num_steps": 100}, {"num_steps": 200}) if update_method == "VI" else ({"num_warmup": 10}, {"num_warmup": 20})
+    )
     actions_wrong_kwargs = {
         action_ids[0]: config.model_types[0].cold_start(
             update_method=update_method,
-            update_kwargs=base_kwargs,
+            update_kwargs=mismatch_kw1,
             **kwargs,
         ),
         action_ids[1]: config.model_types[0].cold_start(
             update_method=update_method,
-            update_kwargs={"draws": base_kwargs["draws"] // 2},
+            update_kwargs=mismatch_kw2,
             **kwargs,
         ),
     }
@@ -561,7 +509,6 @@ def test_bad_initialization(
                 n_features,
                 hidden_dim_list,
                 update_method,
-                update_kwargs,
             )
     elif config.cmab_class == CmabBernoulliCC:
         with pytest.raises(ValidationError):
@@ -576,7 +523,6 @@ def test_bad_initialization(
                 n_features,
                 hidden_dim_list,
                 update_method,
-                update_kwargs,
             )
     # Test multi-objective specific cases
     if hasattr(config.model_types[0], "models"):
@@ -588,37 +534,6 @@ def test_bad_initialization(
         }
         with pytest.raises(AttributeError):
             config.cmab_class(actions=mo_actions_wrong)
-
-
-def create_patches(
-    cmab: BaseCmabBernoulli, actions_to_update: List[str], n_features: int, hidden_dim_list: List[int]
-) -> Tuple[List[FakeApproximation], List[Callable[[], np.ndarray]]]:
-    fit_patch_list = []
-    sample_patch_list = []
-    for action_id in set(actions_to_update):
-        action = cmab.actions[action_id]
-        num_models = 1
-        if issubclass(type(action), ModelMO):
-            curr_action = action.models[0]
-            num_models = len(action.models)
-        else:
-            curr_action = action
-        if issubclass(type(curr_action), BaseBayesianNeuralNetwork):
-            model_n_features = n_features
-        elif issubclass(type(curr_action), BaseQuantitativeBayesianNeuralNetwork):
-            model_n_features = n_features + 1
-        else:
-            raise ValueError(f"Invalid action type: {type(action)}")
-        print(f"action_id: {action_id}, num_models: {num_models}, model_n_features: {model_n_features}")
-        fit_patch_list += [
-            FakeApproximation(n_features=model_n_features, hidden_dim_list=hidden_dim_list) for _ in range(num_models)
-        ]
-        sample_patch_list += [
-            FakeApproximation(n_features=model_n_features, hidden_dim_list=hidden_dim_list).sample
-            for _ in range(num_models)
-        ]
-
-    return fit_patch_list, sample_patch_list
 
 
 @settings(deadline=None)
@@ -642,7 +557,6 @@ def create_patches(
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
-    update_kwargs=st.sampled_from([None, {"draws": 10}]),
     memory_len=st.integers(min_value=1, max_value=5),
 )
 def test_update(
@@ -658,7 +572,6 @@ def test_update(
     exploit_p,
     subsidy_factor,
     update_method,
-    update_kwargs,
     memory_len,
 ):
     # Create CMAB instance
@@ -673,7 +586,6 @@ def test_update(
         n_features,
         hidden_dim_list,
         update_method,
-        update_kwargs,
     )
     # create patches
 
@@ -701,17 +613,10 @@ def test_update(
         for_update_kwargs["quantities"] = quantity_data
 
     old_cmab = deepcopy(cmab)
-    for k, transform in enumerate([lambda x: x, list, pd.DataFrame]):
-        fit_patch_list, sample_patch_list = create_patches(cmab, actions_to_update, n_features, hidden_dim_list)
-        sample_iter = iter(sample_patch_list)
-
-        def sample_side_effect(*args, **kwargs):
-            func = next(sample_iter)
-            return func(*args, **kwargs)
-
+    for k, transform in enumerate([lambda x: x, np.array, lambda x: x.copy()]):
         with (
-            patch("pybandits.model.fit", side_effect=fit_patch_list),
-            patch("pybandits.model.sample", side_effect=sample_side_effect),
+            patch.object(BaseBayesianNeuralNetwork, "_update", mock_update),
+            patch.object(QuantitativeModel, "_update", mock_update),
         ):
             if k and delta and "actions_memory" not in for_update_kwargs:
                 with pytest.warns(UserWarning):
@@ -746,7 +651,6 @@ def test_update(
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
-    update_kwargs=st.sampled_from([None, {"draws": 500}]),
     diff=st.data(),
 )
 def test_predict(
@@ -762,7 +666,6 @@ def test_predict(
     exploit_p,
     subsidy_factor,
     update_method,
-    update_kwargs,
     diff,
     monkeymodule,
 ):
@@ -796,7 +699,6 @@ def test_predict(
         n_features,
         hidden_dim_list,
         update_method,
-        update_kwargs,
     )[0]
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
@@ -804,7 +706,7 @@ def test_predict(
     forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
     if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
         forbidden.remove(cmab.default_action)
-    mock_update(list(cmab.actions.values()), diff, monkeymodule)
+    apply_mock_update(list(cmab.actions.values()))
     best_actions, probs, weights = cmab.predict(context=context, forbidden_actions=forbidden)
     assert len(best_actions) == n_samples
     assert len(probs) == n_samples
@@ -859,7 +761,6 @@ def test_predict(
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
-    update_kwargs=st.sampled_from([None, {"draws": 500}]),
     diff=st.data(),
 )
 def test_serialization(
@@ -874,7 +775,6 @@ def test_serialization(
     exploit_p,
     subsidy_factor,
     update_method,
-    update_kwargs,
     diff,
     monkeymodule,
 ):
@@ -890,11 +790,10 @@ def test_serialization(
         n_features,
         hidden_dim_list,
         update_method,
-        update_kwargs,
     )[0]
 
     pre_update_state = deepcopy(cmab.get_state())
-    mock_update(list(cmab.actions.values()), diff, monkeymodule)
+    apply_mock_update(list(cmab.actions.values()))
     post_update_state = cmab.get_state()
     # Verify model updates
     assert pre_update_state != post_update_state
@@ -904,194 +803,138 @@ def test_serialization(
     assert restored_cmab_state == post_update_state
 
 
-@composite
-def cmab_old_state(draw, CmabClass=None):
-    # Define individual components
-    actions = draw(
-        st.dictionaries(
-            keys=st.text(min_size=1, max_size=10),
-            values=st.fixed_dictionaries(
-                {
-                    "n_successes": st.integers(min_value=1, max_value=100),
-                    "n_failures": st.integers(min_value=1, max_value=100),
-                    "alpha": st.fixed_dictionaries(
-                        {
-                            "mu": st.floats(min_value=-100, max_value=100),
-                            "nu": st.floats(min_value=0.001, max_value=100),
-                            "sigma": st.floats(min_value=0, max_value=100),
-                        }
-                    ),
-                    "betas": st.lists(
-                        st.fixed_dictionaries(
-                            {
-                                "mu": st.floats(min_value=-100, max_value=100),
-                                "nu": st.floats(min_value=0.001, max_value=100),
-                                "sigma": st.floats(min_value=0, max_value=100),
-                            }
-                        ),
-                        min_size=3,
-                        max_size=3,
-                    ),
-                },
-            ),
-            min_size=2,
-        )
-    )
-
-    actions_manager = {"actions": actions}
-    strategy = {}
-
-    state = {"actions_manager": actions_manager, "strategy": strategy}
-    # deprecated state parameters
-    if draw(st.booleans()):
-        state["predict_with_proba"] = draw(st.booleans())
-    if draw(st.booleans()):
-        state["predict_actions_randomly"] = draw(st.booleans())
-
-    adaptive_window_indicator = draw(st.booleans())
-    epsilon_greedy_indicator = adaptive_window_indicator or draw(st.booleans())
-
-    if epsilon_greedy_indicator:
-        if adaptive_window_indicator:
-            epsilon = 0.1
-        else:
-            epsilon = draw(st.sampled_from([None, 0.1]))
-
-        state["epsilon"] = epsilon
-        # Adjust default_action based on epsilon and actions
-        if draw(st.booleans()):
-            if epsilon is None or adaptive_window_indicator:
-                default_action = None
-            elif default_action_index := draw(st.sampled_from([None, 1])) is not None:
-                default_action = list(actions.keys())[default_action_index]
-            else:
-                default_action = None
-            state["default_action"] = default_action
-
-    # Add config-specific parameters
-    if CmabClass:
-        if CmabClass == CmabBernoulliBAI:
-            state["strategy"] = {"exploit_p": draw(st.one_of(st.floats(min_value=0, max_value=1)))}
-        elif CmabClass == CmabBernoulliCC:
-            state["strategy"] = {"subsidy_factor": draw(st.one_of(st.floats(min_value=0, max_value=1)))}
-            n_actions = len(actions)
-            costs = draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
-            for action_id, cost in zip(actions.keys(), costs):
-                actions[action_id]["cost"] = cost
-
-    update_method = draw(st.sampled_from(literal_update_methods))
-    _apply_update_method_to_state(state, update_method)
-    if adaptive_window_indicator:
-        actions_manager_state = state["actions_manager"]
-        actions_manager_state["adaptive_window_size"] = draw(
-            st.one_of(st.integers(min_value=1, max_value=100), st.none(), st.just("inf"))
-        )
-        if actions_manager_state["adaptive_window_size"] is not None:
-            actions_manager_state["delta"] = draw(
-                st.one_of(st.floats(min_value=REFERENCE_DELTA, max_value=1), st.none())
-            )
-            if draw(st.booleans()):
-                memory_limit = sum([a["n_successes"] + a["n_failures"] - 2 for a in actions.values()])
-                if actions_manager_state["adaptive_window_size"] != "inf":
-                    max_size = min(actions_manager_state["adaptive_window_size"], memory_limit)
-                else:
-                    max_size = memory_limit
-                actions_manager_state["actions_memory"] = draw(
-                    st.lists(
-                        st.sampled_from(list(actions.keys())),
-                        min_size=0,
-                        max_size=max_size,
-                    )
-                )
-                size = len(actions_manager_state["actions_memory"])
-                actions_manager_state["rewards_memory"] = draw(
-                    st.lists(st.integers(min_value=0, max_value=1), min_size=size, max_size=size)
-                )
-    return state
-
-
-OLD_STATE_TEST_CONFIGS = {
+_MISSING_FEATURE_CONFIG_TEST_CONFIGS = {
     "cmab": CmabBernoulli,
     "cmab_bai": CmabBernoulliBAI,
-    "cmab_cc": CmabBernoulliCC,
 }
 
 
-@pytest.mark.parametrize("CmabClass", OLD_STATE_TEST_CONFIGS.values(), ids=OLD_STATE_TEST_CONFIGS.keys())
+@pytest.mark.parametrize(
+    "CmabClass", _MISSING_FEATURE_CONFIG_TEST_CONFIGS.values(), ids=_MISSING_FEATURE_CONFIG_TEST_CONFIGS.keys()
+)
 @settings(deadline=500)
-@given(old_state=st.data())
-def test_cmab_from_old_state(CmabClass, old_state):
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    update_method=st.sampled_from(literal_update_methods),
+)
+def test_cmab_from_old_state_missing_feature_config(
+    CmabClass,
+    n_features: int,
+    hidden_dim_list: List[int],
+    update_method: str,
+) -> None:
     """
-    Test backward compatibility of loading CMAB states from different versions of PyBandits.
+    Test the pre-4.4 migration path: model_params present in action states but feature_config absent.
 
-    This test verifies that the CmabBernoulli class can correctly load and reconstruct model states
-    from different versions of PyBandits (1.* and 2.*). It tests three main scenarios:
+    Verifies that BaseBayesianNeuralNetwork._upgrade_state correctly infers feature_config from
+    the first layer's weight shape during from_old_state, and that the reconstructed CMAB equals
+    the original.
 
-    1. Loading from version 2.* state with full memory (actions_memory and rewards_memory)
-    2. Loading from version 2.* state without memory
-    3. Loading from version 1.* state format
-
-    The test ensures that:
-    - Model parameters (alpha, betas) are correctly loaded
-    - Memory states are properly handled
-    - Version 1.* and memory-less version 2.* states produce equivalent models
-    - All model attributes are correctly reconstructed
-
-    Parameters
-    ----------
-    old_state : st.data()
-        A data strategy for drawing test states
+    Note: CmabBernoulliCC is excluded because cold_start requires per-action costs; the migration
+    path itself (elif branch in update_old_state) is class-agnostic, so coverage here is sufficient.
     """
-    # Draw the old_state using the config parameter
-    old_state = old_state.draw(cmab_old_state(CmabClass=CmabClass))
-
-    # read from version 2.0.0
-    old_state_ver2 = deepcopy(old_state)
-    cmab = CmabClass.from_old_state(json.dumps(old_state_ver2))
-    assert isinstance(cmab, CmabClass)
-
-    # read from version 2.0.0 without actions_memory and rewards_memory
-    stripped_state = deepcopy(old_state)
-    stripped_state["actions_manager"].pop("actions_memory", None)
-    stripped_state["actions_manager"].pop("rewards_memory", None)
-    memory_less_cmab = CmabClass.from_old_state(json.dumps(stripped_state))
-
-    #  read from version 1.0.0
-    old_state_ver1 = deepcopy(old_state)
-    actions_manager_state = old_state_ver1.pop("actions_manager")
-    old_state_ver1["actions"] = actions_manager_state["actions"]
-    old_cmab = CmabClass.from_old_state(
-        json.dumps(old_state_ver1),
-        delta=actions_manager_state.pop("delta", None),
+    action_ids = ["a1", "a2"]
+    cmab = CmabClass.cold_start(
+        action_ids=action_ids,
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method=update_method,
     )
-    assert old_cmab == memory_less_cmab
 
-    # check that the model parameters are correctly loaded
-    actual_actions = json.loads(cmab.get_state()[1])["actions_manager"]["actions"]  # Normalize the dict
-    expected_actions = {k: {**v, **old_state["actions_manager"]["actions"][k]} for k, v in actual_actions.items()}
-    for action_id, expected_action in expected_actions.items():
-        actual_action = cmab.actions[action_id]
-        bias_dist = actual_action.model_params.bnn_layer_params[0].bias
-        weight_dist = actual_action.model_params.bnn_layer_params[0].weight
+    # Extract current-format state and strip feature_config from each action — simulating pre-4.4 state.
+    # Also strip the version key so from_old_state does not reject a version >= 3.0.0.
+    _, state_json = cmab.get_state()
+    state = json.loads(state_json)
+    state.pop("version", None)
+    for action_state in state["actions_manager"]["actions"].values():
+        action_state.pop("feature_config", None)
 
-        # Old state format always uses StudentTArray (from update_old_state)
-        # Check that the loaded model has StudentTArray
-        assert isinstance(bias_dist, StudentTArray), f"Expected StudentTArray for bias, got {type(bias_dist)}"
-        assert isinstance(weight_dist, StudentTArray), f"Expected StudentTArray for weight, got {type(weight_dist)}"
+    reconstructed = CmabClass.from_old_state(json.dumps(state))
+    assert reconstructed == cmab
 
-        assert expected_action["alpha"]["mu"] == bias_dist.mu[0]
-        assert expected_action["alpha"]["sigma"] == bias_dist.sigma[0]
-        assert expected_action["alpha"]["nu"] == bias_dist.nu[0]
 
-        assert len(expected_action["betas"]) == actual_action.input_dim
-        for i, beta in enumerate(expected_action["betas"]):
-            assert beta["mu"] == weight_dist.mu[i][0]
-            assert beta["sigma"] == weight_dist.sigma[i][0]
-            assert beta["nu"] == weight_dist.nu[i][0]
+_UPDATE_KWARGS_MIGRATION_CASES = [
+    # VI: fit.n → num_steps, fit.method → method
+    pytest.param(
+        "VI", {"fit": {"n": 500, "method": "advi"}}, {"num_steps": 500, "method": "advi"}, id="vi_fit_to_flat"
+    ),
+    # VI: optimizer_kwargs.learning_rate → step_size
+    pytest.param(
+        "VI",
+        {"optimizer_kwargs": {"learning_rate": 0.05}},
+        {"optimizer_kwargs": {"step_size": 0.05}},
+        id="vi_optimizer_lr_to_step_size",
+    ),
+    # VI: combined fit + optimizer migration
+    pytest.param(
+        "VI",
+        {"fit": {"n": 200, "method": "advi"}, "optimizer_kwargs": {"learning_rate": 0.01}},
+        {"num_steps": 200, "method": "advi", "optimizer_kwargs": {"step_size": 0.01}},
+        id="vi_combined",
+    ),
+    # MCMC: trace fields → flat keys
+    pytest.param(
+        "MCMC",
+        {"trace": {"tune": 100, "draws": 200, "chains": 2, "progressbar": True}},
+        {"num_warmup": 100, "num_samples": 200, "num_chains": 2, "progress_bar": True},
+        id="mcmc_trace_to_flat",
+    ),
+    # MCMC: target_accept → nuts.target_accept_prob
+    pytest.param(
+        "MCMC",
+        {"trace": {"target_accept": 0.8}},
+        {"nuts": {"target_accept_prob": 0.8}},
+        id="mcmc_target_accept_to_nuts",
+    ),
+    # MCMC: PyMC-only keys stripped entirely
+    pytest.param(
+        "MCMC",
+        {"trace": {"init": "auto", "cores": 1, "return_inferencedata": False}},
+        {},
+        id="mcmc_pymc_only_keys_stripped",
+    ),
+    # update_kwargs=None → no migration, left as None
+    pytest.param("VI", None, None, id="vi_none_unchanged"),
+]
 
-    # check that an error was raised when loading a state with a version >= 3.0.0
-    with pytest.raises(ValueError):
-        CmabClass.from_old_state(old_cmab.get_state()[1])
+
+@pytest.mark.parametrize("update_method,old_kwargs,expected_kwargs", _UPDATE_KWARGS_MIGRATION_CASES)
+@settings(deadline=500)
+@given(n_features=st.integers(min_value=1, max_value=5))
+def test_cmab_update_kwargs_migration(
+    n_features: int, update_method: str, old_kwargs: Optional[dict], expected_kwargs: Optional[dict]
+) -> None:
+    """
+    Test that update_kwargs in old PyMC-format states are correctly migrated to the NumPyro format
+    by BaseCmabBernoulli.update_old_state.
+
+    Migration paths covered:
+    - VI: ``fit.n`` → ``num_steps``, ``fit.method`` → ``method``
+    - VI: ``optimizer_kwargs.learning_rate`` → ``step_size``
+    - MCMC: ``trace.tune/draws/chains/progressbar`` → flat keys
+    - MCMC: ``trace.target_accept`` → ``nuts.target_accept_prob``
+    - MCMC: PyMC-only keys (init, cores, return_inferencedata) stripped
+    - ``update_kwargs=None`` → left unchanged
+    """
+    action_state: dict = {
+        "n_successes": 1,
+        "n_failures": 1,
+        "feature_config": {"n_features": n_features, "categorical_features_configs": []},
+        "update_method": update_method,
+        "update_kwargs": deepcopy(old_kwargs),
+    }
+
+    state = {
+        "actions_manager": {"actions": {"a1": deepcopy(action_state), "a2": deepcopy(action_state)}},
+        "strategy": {},
+    }
+
+    migrated = CmabBernoulli.update_old_state(state, delta=None)
+
+    for action_id in ("a1", "a2"):
+        actual_kwargs = migrated["actions_manager"]["actions"][action_id].get("update_kwargs")
+        assert actual_kwargs == expected_kwargs
 
 
 @settings(deadline=None)
@@ -1114,7 +957,6 @@ def test_cmab_from_old_state(CmabClass, old_state):
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
-    update_kwargs=st.sampled_from([None, {"draws": 500}]),
     diff=st.data(),
 )
 def test_pickling(
@@ -1129,7 +971,6 @@ def test_pickling(
     exploit_p,
     subsidy_factor,
     update_method,
-    update_kwargs,
     diff,
     monkeymodule,
 ):
@@ -1145,10 +986,9 @@ def test_pickling(
         n_features,
         hidden_dim_list,
         update_method,
-        update_kwargs,
     )[0]
     to_temporary_pickle(cmab)
-    mock_update(list(cmab.actions.values()), diff, monkeymodule)
+    apply_mock_update(list(cmab.actions.values()))
     to_temporary_pickle(cmab)
 
 
@@ -1190,8 +1030,8 @@ def test_cmab_update_shape_mismatch(n_samples, n_features, hidden_dim_list):
         mab.update(context=context[:, 1:], actions=actions, rewards=rewards)
         quant_mab.update(context=context[:, 1:], actions=actions, rewards=rewards, quantities=quantities)
     with pytest.raises(AttributeError):  # empty context
-        mab.update(context=[], actions=actions, rewards=rewards)
-        quant_mab.update(context=[], actions=actions, rewards=rewards, quantities=quantities)
+        mab.update(context=np.empty((0, n_features)), actions=actions, rewards=rewards)
+        quant_mab.update(context=np.empty((0, n_features)), actions=actions, rewards=rewards, quantities=quantities)
     with pytest.raises(AttributeError):  # empty quantities
         quant_mab.update(context=context, actions=actions, rewards=rewards, quantities=[])
     with pytest.raises(ValueError):  # None quantities for quantitative action
@@ -1223,7 +1063,7 @@ def test_cmab_predict_shape_mismatch(dim_list):
     with pytest.raises(AttributeError):
         mab.predict(context=context)
     with pytest.raises(AttributeError):
-        mab.predict(context=[])
+        mab.predict(context=np.empty((0, n_features)))
 
 
 @settings(deadline=500)

@@ -997,10 +997,10 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
         quantities: Optional[List[Union[float, List[float], None]]],
-        context: ArrayLike,
+        context: np.ndarray,
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
-        context_memory: Optional[ArrayLike] = None,
+        context_memory: Optional[np.ndarray] = None,
     ):
         """
         Update the models associated with the given actions using the provided rewards.
@@ -1041,7 +1041,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
     @staticmethod
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _check_context_matrix(context: ArrayLike):
+    def _check_context_matrix(context: np.ndarray):
         """
         Check and cast context matrix.
 
@@ -1058,7 +1058,7 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
         try:
             context = np.asarray(context, dtype=float)
         except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike that can transform to float numpy array: {e}.")
+            raise AttributeError(f"Context must be an eligible to transform to float numpy array: {e}.")
         return context
 
     def _update_actions(

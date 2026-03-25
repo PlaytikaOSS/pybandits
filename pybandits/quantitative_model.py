@@ -1058,7 +1058,7 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
         self,
         quantities: List[Union[float, List[float], None]],
         rewards: List[BinaryReward],
-        context: ArrayLike,
+        context: np.ndarray,
     ):
         """
         Update the model parameters.
@@ -1075,7 +1075,7 @@ class BaseCmabZoomingModel(ZoomingModel, ABC):
         super()._quantitative_update(quantities, rewards, context=context)
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward], context: ArrayLike):
+    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward], context: np.ndarray):
         """
         Update the segments models.
 
@@ -1351,9 +1351,10 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         _quantity = np.atleast_2d(quantity).reshape(_context.shape[0], -1)
         return np.concatenate([_quantity, _context], axis=1)
 
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def _quantitative_update(
         self,
-        quantities: List[Union[float, List[float], None]],
+        quantities: List[Union[float, List[float]]],
         rewards: List[BinaryReward],
         context: np.ndarray,
     ):
@@ -1362,24 +1363,27 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         Parameters
         ----------
-        quantities : List[Union[float, List[float], None]]
+        quantities : List[Union[float, List[float]]]
             The quantity values associated with each observation (None entries are skipped).
         rewards : List[BinaryReward]
             The binary reward for each observation.
         context : np.ndarray
             The context at which to evaluate the probability.
         """
-
+        self._validate_params_lengths(
+            True,
+            quantities=quantities,
+            rewards=rewards,
+            context=context,
+        )
         _context = np.atleast_2d(context)
-        if context.shape[0] != len(quantities):
-            raise AttributeError("Context and quantities must have the same number of samples.")
 
         bnn_input = self._prepare_network_input(list(quantities), context)
         self.bnn.update(context=bnn_input, rewards=rewards)
 
     def _reset(self):
         """Reset the model to its initial state."""
-        self.bnn._reset()
+        self.bnn.reset()
 
 
 class QuantitativeBayesianNeuralNetwork(BaseQuantitativeBayesianNeuralNetwork):

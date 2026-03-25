@@ -42,7 +42,7 @@ from pybandits.quantitative_model import (
     SmabZoomingModelCC,
     ZoomingModel,
 )
-from tests.utils import FakeApproximation
+from tests.utils import mock_update
 
 
 def tuple_of_tuples_strategy(n, m, elements=st.floats(min_value=0, max_value=1)):
@@ -365,17 +365,11 @@ def test_updates_cmab_quantitative_model_correctly(
     dimension, quantities = dimension_and_quantities
     model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
     init_params = deepcopy(model.bnn.model_params)
-    n_model_features = n_features + dimension
 
     monkeymodule.setattr(
-        pybandits.model,
-        "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_model_features),
-    )
-    monkeymodule.setattr(
-        pybandits.model,
-        "sample",
-        FakeApproximation(n_features=n_model_features).sample,
+        pybandits.model.BaseBayesianNeuralNetwork,
+        "_update",
+        mock_update,
     )
     if (len(context) != len(quantities)) or (len(context) != len(rewards)):
         with pytest.raises(AttributeError):

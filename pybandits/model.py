@@ -20,23 +20,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import warnings
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from math import ceil
 from random import betavariate
 from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-import pymc
+import numpyro
+import numpyro.distributions as npdist
+import numpyro.optim as noptim
+from loguru import logger
 from numpy import sqrt
-from numpy.typing import ArrayLike
-from pymc import Bernoulli, Data, Deterministic, Minibatch, fit, math, sample
-from pymc import Model as PymcModel
-from pymc import Normal as PymcNormal
-from pymc import StudentT as PymcStudentT
-from pymc.variational.callbacks import CheckParametersConvergence
+from numpyro.distributions import Bernoulli as NumpyroBernoulli
+from numpyro.distributions import Normal as NumpyroNormal
+from numpyro.distributions import StudentT as NumpyroStudentT
+from numpyro.handlers import scale as numpyro_scale
+from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
+from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
+from numpyro.infer.initialization import init_to_median
 from scipy.special import erf
 from scipy.stats import norm, t
+from tqdm import trange
 from typing_extensions import Self
 
 from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
@@ -58,18 +66,8 @@ from pybandits.pydantic_version_compatibility import (
 )
 
 UpdateMethods = Literal["VI", "MCMC"]
+VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
-
-
-# Module-level activation functions for pickling compatibility
-def _pymc_relu(x):
-    """ReLU activation function for PyMC."""
-    return math.maximum(0, x)
-
-
-def _pymc_gelu(x):
-    """GELU activation function for PyMC."""
-    return 0.5 * x * (1 + math.erf(x / np.sqrt(2.0)))
 
 
 def _numpy_relu(x: np.ndarray) -> np.ndarray:
@@ -301,31 +299,24 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     _mu_array: np.ndarray = PrivateAttr()
     _sigma_array: np.ndarray = PrivateAttr()
     _params: Dict[str, np.ndarray] = PrivateAttr()
-    _pymc_class: ClassVar[type]
     _sampler: ClassVar[Callable]
+    _numpyro_dist_class: ClassVar[type]
     param_map: ClassVar[Dict[str, str]] = {"mu": "loc", "sigma": "scale"}
 
-    def to_pymc_distribution(self, name: str, shape: Tuple[PositiveInt, ...]) -> Union[PymcStudentT, PymcNormal]:
+    def to_numpyro_distribution(self) -> npdist.Distribution:
         """
-        Create a PyMC distribution from this prior distribution array.
+        Create a NumPyro distribution from this prior distribution array.
 
-        Parameters
-        ----------
-        name : str
-            Name for the PyMC random variable.
-        shape : Tuple[PositiveInt, ...]
-            Shape of the distribution array.
+        Maps internal parameter names (mu, sigma, nu) to NumPyro parameter names
+        (loc, scale, df) using the subclass-defined param_map.
 
         Returns
         -------
-        Union[PymcStudentT, PymcNormal]
-            A PyMC distribution instance.
+        npdist.Distribution
+            A NumPyro distribution instance.
         """
-        if self._pymc_class is None:
-            raise NotImplementedError(
-                f"{self.__class__.__name__} must define _pymc_class ClassVar to specify the PyMC distribution class."
-            )
-        return self._pymc_class(name=name, shape=shape, **self.params)
+        numpyro_params = {self.param_map[k]: jnp.array(v) for k, v in self.params.items()}
+        return self._numpyro_dist_class(**numpyro_params)
 
     def with_dist_parameters(self, **kwargs) -> "BaseLocationScaleArray":
         """
@@ -670,8 +661,8 @@ class StudentTArray(BaseLocationScaleArray):
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
     _nu_array: np.ndarray = PrivateAttr()
-    _pymc_class: ClassVar[type] = PymcStudentT
     _sampler: ClassVar[Callable] = t.rvs
+    _numpyro_dist_class: ClassVar[type] = NumpyroStudentT
     param_map: ClassVar[Dict[str, str]] = {**BaseLocationScaleArray.param_map, "nu": "df"}
 
     @model_validator(mode="before")
@@ -763,8 +754,8 @@ class NormalArray(BaseLocationScaleArray):
     ... )
     """
 
-    _pymc_class: ClassVar[type] = PymcNormal
     _sampler: ClassVar[Callable] = norm.rvs
+    _numpyro_dist_class: ClassVar[type] = NumpyroNormal
 
     @classmethod
     def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
@@ -982,11 +973,58 @@ class BnnParams(PyBanditsBaseModel):
         return values
 
 
+class EarlyStopping(PyBanditsBaseModel):
+    """Early stopping monitor for SVI training.
+
+    Monitors loss convergence and signals when training should stop.
+    Stops after ``patience`` consecutive epochs where the loss change is below ``tolerance``.
+
+    Parameters
+    ----------
+    patience : PositiveInt
+        Number of consecutive non-improving epochs required before stopping.
+    tolerance : PositiveFloat
+        Threshold for convergence.
+    diff_type : Literal["relative", "absolute"]
+        Type of difference to check: "relative" or "absolute".
+    """
+
+    _epsilon: ClassVar[PositiveFloat] = 1e-10
+
+    patience: PositiveInt = 10
+    tolerance: PositiveFloat = 1e-4
+    diff_type: Literal["relative", "absolute"] = "relative"
+    _previous_loss: Optional[float] = PrivateAttr(default=None)
+    _no_improvement_count: int = PrivateAttr(default=0)
+
+    def reset(self) -> None:
+        """Reset early stopping state for a new training run."""
+        self._previous_loss = None
+        self._no_improvement_count = 0
+
+    def should_stop(self, loss: float) -> bool:
+        """Check if training should stop based on loss convergence."""
+        if self._previous_loss is not None:
+            if self.diff_type == "relative":
+                change = abs((loss - self._previous_loss) / (abs(self._previous_loss) + self._epsilon))
+            elif self.diff_type == "absolute":
+                change = abs(loss - self._previous_loss)
+            else:
+                raise ValueError(f"Unknown diff {self.diff_type}")
+
+            if change < self.tolerance:
+                self._no_improvement_count += 1
+            else:
+                self._no_improvement_count = 0
+        self._previous_loss = loss
+        return self._no_improvement_count >= self.patience
+
+
 class BaseBayesianNeuralNetwork(Model, ABC):
     """Bayesian Neural Network model for binary classification.
 
     This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
-    using PyMC for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
+    using NumPyro for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
     and Variational Inference (VI) methods for posterior inference.
 
     References
@@ -1004,7 +1042,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
         For VI, it contains 'fit' settings and additional parameters like 'epochs', 'optimizer_type',
         'optimizer_kwargs', 'batch_size', and 'early_stopping_kwargs'. The 'epochs' parameter specifies
-        the number of iterations for VI (maps to 'n' in PyMC's fit function).
+        the number of iterations for VI (maps to 'step_size' in numpyro's API).
     activation : str, optional
         The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
     use_residual_connections : bool, optional
@@ -1048,6 +1086,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _bias_var_name: ClassVar[str] = "bias"
     _embedding_var_name: ClassVar[str] = "embedding"
     _vi_update_params: ClassVar[list] = [
+        "num_steps",
+        "method",
         "optimizer_type",
         "optimizer_kwargs",
         "batch_size",
@@ -1056,21 +1096,18 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
-    _supported_optimizers: ClassVar[list] = [
-        "sgd",
-        "momentum",
-        "nesterov_momentum",
-        "adagrad",
-        "rmsprop",
-        "adadelta",
-        "adam",
-        "adamax",
-    ]
-    _pymc_activations: ClassVar[dict] = {
-        "tanh": math.tanh,
-        "relu": _pymc_relu,
-        "sigmoid": math.sigmoid,
-        "gelu": _pymc_gelu,
+    _supported_optimizers: ClassVar[dict] = {
+        "sgd": noptim.SGD,
+        "momentum": noptim.Momentum,
+        "adagrad": noptim.Adagrad,
+        "adam": noptim.Adam,
+        "clipped_adam": noptim.ClippedAdam,
+    }
+    _jax_activations: ClassVar[dict] = {
+        "tanh": jax.nn.tanh,
+        "relu": jax.nn.relu,
+        "sigmoid": jax.nn.sigmoid,
+        "gelu": lambda x: jax.nn.gelu(x, approximate=False),
     }
     _numpy_activations: ClassVar[dict] = {
         "tanh": np.tanh,
@@ -1084,25 +1121,37 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
+    random_seed: Optional[int] = None
 
-    _default_mcmc_trace_kwargs: ClassVar[dict] = dict(
-        tune=500,
-        draws=1000,
-        chains=2,
-        init="adapt_diag",
-        cores=1,
-        target_accept=0.95,
-        progressbar=False,
-        return_inferencedata=False,
+    _rng_key: Any = PrivateAttr(default=None)
+
+    _default_vi_kwargs: ClassVar[dict] = dict(
+        num_steps=1000,
+        method="advi",
+        optimizer_type="sgd",
+        optimizer_kwargs={"step_size": 0.01},
+        batch_size=None,
+        early_stopping_kwargs=None,
     )
 
-    _default_variational_inference_fit_kwargs: ClassVar[dict] = dict(method="advi")
+    _default_mcmc_kwargs: ClassVar[dict] = dict(
+        num_warmup=500,
+        num_samples=1000,
+        num_chains=2,
+        progress_bar=False,
+        nuts=dict(target_accept_prob=0.95),
+    )
+
+    _vi_method_config: ClassVar[dict] = {
+        "advi": {"guide": AutoNormal, "loss": TraceMeanField_ELBO},
+        "fullrank_advi": {"guide": AutoMultivariateNormal, "loss": Trace_ELBO},
+    }
 
     _approx_history: np.ndarray = PrivateAttr(None)
     _numpy_activation_fn: Callable = PrivateAttr(None)
-    _pymc_activation_fn: Callable = PrivateAttr(None)
-    _obj_optimizer: Optional[Callable] = PrivateAttr(None)
-    _early_stopping_callback: Optional[CheckParametersConvergence] = PrivateAttr(None)
+    _jax_activation_fn: Callable = PrivateAttr(None)
+    _obj_optimizer: Optional[Any] = PrivateAttr(None)
+    _early_stopping_callback: Optional[EarlyStopping] = PrivateAttr(None)
     _update_kwargs: Dict[str, Any] = PrivateAttr(default_factory=dict)
 
     class Config:
@@ -1115,15 +1164,15 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @field_validator("activation")
     @classmethod
     def validate_activation(cls, v):
-        if v not in cls._pymc_activations.keys():
+        if v not in cls._jax_activations.keys():
             raise ValueError(
-                f"Invalid activation function: {v}. Supported activations are: {list(cls._pymc_activations.keys())}"
+                f"Invalid activation function: {v}. Supported activations are: {list(cls._jax_activations.keys())}"
             )
         return v
 
     @classmethod
     def get_embedding_var_name(cls, feat_index: int) -> str:
-        """Return the PyMC variable name for a categorical embedding matrix."""
+        """Return the NumPyro variable name for a categorical embedding matrix."""
         return f"{cls._embedding_var_name}_{feat_index}"
 
     @property
@@ -1163,38 +1212,29 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return numerical_arr, cat_indices_dict
 
-    def _get_obj_optimizer(self) -> Optional[Callable]:
-        if self.update_kwargs is None:
-            return None
-        optimizer_type = self.update_kwargs.get("optimizer_type", None)
-        if optimizer_type is not None:
-            if optimizer_type not in self._supported_optimizers:
-                raise ValueError(
-                    f"Invalid optimizer type: {optimizer_type}. Supported optimizers are: {self._supported_optimizers}"
-                )
-            optimizer = getattr(pymc, optimizer_type)
-            optimizer_kwargs = self.update_kwargs.get("optimizer_kwargs", {})
-            try:
-                _optimizer = optimizer(**optimizer_kwargs)
-            except (TypeError, ValueError, KeyError) as e:
-                raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}")
-        else:
-            _optimizer = None
+    def _get_obj_optimizer(self) -> Any:
+        """Build the optimizer from update_kwargs. Always returns an optimizer (uses default if not specified)."""
+        optimizer_type = self.update_kwargs["optimizer_type"]
+        if optimizer_type not in self._supported_optimizers:
+            raise ValueError(
+                f"Invalid optimizer type: {optimizer_type}. "
+                f"Supported optimizers are: {list(self._supported_optimizers.keys())}"
+            )
+        cls_ = self._supported_optimizers[optimizer_type]
+        optimizer_kwargs = self.update_kwargs.get("optimizer_kwargs", {})
+        try:
+            return cls_(**optimizer_kwargs)
+        except (TypeError, ValueError, KeyError) as e:
+            raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}")
 
-        return _optimizer
-
-    def _get_early_stopping_callback(self) -> Optional[CheckParametersConvergence]:
-        if self.update_kwargs is None:
-            return None
+    def _get_early_stopping_callback(self) -> Optional[EarlyStopping]:
         early_stopping_kwargs = self.update_kwargs.get("early_stopping_kwargs", None)
         if early_stopping_kwargs is not None:
             try:
-                early_stopping_callback = CheckParametersConvergence(**early_stopping_kwargs)
-            except (TypeError, ValueError, KeyError) as e:
-                raise e.__class__(f"Invalid early stopping kwargs: {early_stopping_kwargs}.\n{e}")
-        else:
-            early_stopping_callback = None
-        return early_stopping_callback
+                return EarlyStopping(**early_stopping_kwargs)
+            except Exception as e:
+                raise ValueError(f"Invalid early stopping kwargs: {early_stopping_kwargs}.\n{e}")
+        return None
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
@@ -1327,19 +1367,23 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             self.update_kwargs = dict()
 
         if self.update_method == "VI":
-            # Validate that epochs and n are mutually exclusive
-            has_epochs = "epochs" in self.update_kwargs
-            has_n = "n" in self.update_kwargs.get("fit", {})
-            if has_epochs and has_n:
-                raise ValueError(
-                    "Cannot specify both 'epochs' and 'n' in update_kwargs. "
-                    "Use 'epochs' for epoch-based training or 'fit': {'n': ...} for iteration-based training."
+            # Warn if both epochs and num_steps are given — epochs takes precedence
+            if "epochs" in self.update_kwargs and "num_steps" in self.update_kwargs:
+                warnings.warn(
+                    "Both 'epochs' and 'num_steps' specified in update_kwargs. "
+                    "'epochs' takes precedence and 'num_steps' will be ignored.",
+                    UserWarning,
+                    stacklevel=2,
                 )
 
-            self.update_kwargs["fit"] = {
-                **self._default_variational_inference_fit_kwargs,
-                **self.update_kwargs.get("fit", {}),
-            }
+            self.update_kwargs = {**self._default_vi_kwargs, **self.update_kwargs}
+
+            # Validate VI method
+            vi_method = self.update_kwargs.get("method")
+            if vi_method not in self._vi_method_config:
+                raise ValueError(
+                    f"Invalid VI method: {vi_method}. Supported methods are: {list(self._vi_method_config.keys())}"
+                )
 
         elif self.update_method == "MCMC":
             for param in self._vi_update_params:
@@ -1348,192 +1392,156 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                         f"Invalid update MCMC parameter: {param}. {self._vi_update_params} are VI parameters."
                     )
 
-            self.update_kwargs["trace"] = {**self._default_mcmc_trace_kwargs, **self.update_kwargs.get("trace", {})}
+            self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
         else:
             raise ValueError("Invalid update method.")
+
+    def _init_private_attrs(self) -> None:
+        """Initialize private attributes that are derived from public fields.
+
+        These attributes (activation functions, optimizer, etc.) are excluded from pickling
+        and reconstructed on deserialization.
+        """
+        self._numpy_activation_fn = self._numpy_activations[self.activation]
+        self._jax_activation_fn = self._jax_activations[self.activation]
+        self._rng_key = jax.random.PRNGKey(
+            self.random_seed if self.random_seed else int(np.random.randint(0, np.iinfo(np.int32).max))
+        )
+        if self.update_method == "VI":
+            self._obj_optimizer = self._get_obj_optimizer()
+            self._early_stopping_callback = self._get_early_stopping_callback()
 
     def model_post_init(self, __context: Any) -> None:
         """
         Initialize activation function PrivateAttr based on the activation setting.
         """
-        # Initialize activation functions (always set to ensure they're available after model_copy)
-        self._numpy_activation_fn = self._numpy_activations[self.activation]
-        self._pymc_activation_fn = self._pymc_activations[self.activation]
         self._arrange_update_kwargs()
-        self._obj_optimizer = self._get_obj_optimizer()
-        self._early_stopping_callback = self._get_early_stopping_callback()
+        self._init_private_attrs()
         self._update_kwargs = deepcopy(self.update_kwargs)
-        if self._obj_optimizer is not None:
-            self._update_kwargs["fit"]["obj_optimizer"] = self._obj_optimizer
-        if self._early_stopping_callback is not None:
-            self._update_kwargs["fit"]["callbacks"] = [self._early_stopping_callback]
 
-    def _apply_bnn_layers(self, network_input: Any) -> Any:
+    def __eq__(self, other: Any) -> bool:
+        """Compare equality based on model fields only, excluding non-serializable private attributes."""
+        if not isinstance(other, BaseBayesianNeuralNetwork):
+            return False
+        if type(self) is not type(other):
+            return False
+        return self.apply_version_adjusted_method("model_dump", "dict") == other.apply_version_adjusted_method(
+            "model_dump", "dict"
+        )
+
+    def __getstate__(self) -> dict:
+        """Exclude unpicklable private attributes (JAX functions, optimizer objects)."""
+        state = self.__dict__.copy()
+        # Remove private attrs that hold unpicklable JAX/numpyro objects
+        for key in ("_numpy_activation_fn", "_jax_activation_fn", "_obj_optimizer", "_early_stopping_callback"):
+            state.pop(key, None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore state and reconstruct derived private attributes."""
+        self.__dict__.update(state)
+        self._init_private_attrs()
+
+    def create_update_model(self, batch_size: Optional[PositiveInt] = None) -> Callable:
         """
-        Apply the BNN layer graph to the input.
+        Create a NumPyro model function for Bayesian Neural Network.
 
-        Returns the final logit (output layer pre-activation).
-        """
-        next_layer_input = network_input
-        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-            w_shape = layer_params.weight.shape
-            b_shape = layer_params.bias.shape
-            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
-            input_dim = w_shape[0]
-            output_dim = w_shape[1]
+        This method builds a NumPyro model function with the network architecture specified in model_params.
+        Data is passed as arguments to the returned model function. Minibatching is handled via numpyro.plate
+        with subsample_size.
 
-            w = layer_params.weight.to_pymc_distribution(name=weight_layer_params_name, shape=w_shape)
-            b = layer_params.bias.to_pymc_distribution(name=bias_layer_params_name, shape=b_shape)
-
-            linear_transform = math.dot(next_layer_input, w) + b
-
-            if layer_ind < len(self.model_params.bnn_layer_params) - 1:
-                activated_output = self._pymc_activation_fn(linear_transform)
-                if self.use_residual_connections and output_dim >= input_dim:
-                    if output_dim == input_dim:
-                        next_layer_input = activated_output + next_layer_input
-                    else:
-                        residual_padded = math.concatenate(
-                            [next_layer_input, math.zeros((next_layer_input.shape[0], output_dim - input_dim))],
-                            axis=1,
-                        )
-                        next_layer_input = activated_output + residual_padded
-                else:
-                    next_layer_input = activated_output
-
-        return linear_transform
-
-    def _make_embedding_matrix_inputs(self, configs: List[CategoricalFeatureConfig], cat_index_tensors: List) -> List:
-        """
-        Build PyMC embedding variables and return their indexed outputs.
-
-        For each categorical feature ``i``, creates a PyMC random variable for the
-        ``(cardinality, embedding_dim)`` embedding matrix and indexes it with the
-        corresponding integer-index tensor, yielding a ``(n_rows, embedding_dim)`` output.
-
-        Parameters
-        ----------
-        configs : List[CategoricalFeatureConfig]
-            Categorical feature specs (one per embedding).
-        cat_index_tensors : list of PyMC-compatible tensors
-            One integer-index tensor per categorical feature, in the same order as ``configs``.
-            May be plain ``Data`` nodes or ``Minibatch`` slices.
-
-        Returns
-        -------
-        list of PyMC tensors
-            One ``(n_rows, embedding_dim)`` tensor per categorical feature.
-        """
-        parts = []
-        for i, _ in enumerate(configs):
-            emb_dist = self.model_params.embedding_params.embeddings[i]
-            emb_matrix = emb_dist.to_pymc_distribution(name=self.get_embedding_var_name(i), shape=emb_dist.shape)
-            parts.append(emb_matrix[cat_index_tensors[i]])
-        return parts
-
-    def _prepare_bnn_input_output(
-        self,
-        numerical_arr: np.ndarray,
-        cat_indices_dict: Dict[int, np.ndarray],
-        y: np.ndarray,
-        configs: List[CategoricalFeatureConfig],
-        batch_size: Optional[PositiveInt] = None,
-    ) -> Tuple[List, Any, Optional[int]]:
-        """
-        Wrap raw arrays as PyMC tensors (``Data`` or ``Minibatch``), build embedding
-        look-ups, and return everything the BNN graph needs.
-
-        Parameters
-        ----------
-        numerical_arr : np.ndarray
-            Numerical feature columns, shape ``(n_samples, n_numerical)``.
-        cat_indices_dict : Dict[int, np.ndarray]
-            Integer-index arrays for each categorical feature.
-        y : np.ndarray
-            Binary target values, shape ``(n_samples,)``.
-        configs : list of CategoricalFeatureConfig
-            Categorical feature specs.
-        batch_size : Optional[PositiveInt]
-            When set, arrays are wrapped in a single co-indexed ``Minibatch``.
-
-        Returns
-        -------
-        input_parts : list of PyMC tensors
-            Numerical and embedded-categorical inputs ready for concatenation.
-        bnn_output : PyMC-compatible tensor
-            Observed binary targets.
-        n_total : Optional[int]
-            Full dataset size (set only when using minibatch; ``None`` otherwise).
-        """
-        if batch_size is not None:
-            n_total = len(y)
-            mb_arrays = [numerical_arr] if numerical_arr.shape[1] > 0 else []
-            mb_arrays += [cat_indices_dict[i] for i in range(len(configs))]
-            mb_arrays.append(y)
-            mb = Minibatch(*mb_arrays, batch_size=batch_size)
-
-            offset = 0
-            input_parts = []
-            if numerical_arr.shape[1] > 0:
-                input_parts.append(mb[offset])
-                offset += 1
-            cat_tensors = [mb[offset + i] for i in range(len(configs))]
-            bnn_output = mb[offset + len(configs)]
-        else:
-            n_total = None
-            bnn_output = Data("bnn_output", y)
-            input_parts = [Data("bnn_numerical_input", numerical_arr)] if numerical_arr.shape[1] > 0 else []
-            cat_tensors = [Data(f"cat_idx_{i}", cat_indices_dict[i]) for i in range(len(configs))]
-
-        input_parts += self._make_embedding_matrix_inputs(configs, cat_tensors)
-        return input_parts, bnn_output, n_total
-
-    def create_update_model(
-        self,
-        x: ArrayLike,
-        y: Union[List[BinaryReward], np.ndarray],
-        batch_size: Optional[PositiveInt] = None,
-    ) -> PymcModel:
-        """
-        Create a PyMC model for Bayesian Neural Network.
-
-        ``x`` must be a numpy array with ``feature_config.n_features`` columns.
         Numerical columns are passed through as-is. Categorical columns (identified by their
-        ``column_index``) are modelled with Bayesian embedding matrices inside the PyMC graph.
+        ``column_index`` in ``feature_config``) are modelled with Bayesian embedding matrices
+        sampled as NumPyro random variables.
 
         Parameters
         ----------
-        x : ArrayLike
-            Input features of shape ``(n_samples, n_features)``.
-        y : Union[List[BinaryReward], np.ndarray]
-            Binary target values of shape ``(n_samples,)``.
         batch_size : Optional[PositiveInt]
-            When set, Minibatch is used for numerical-only models.
-            Minibatch with categorical embedding features is not supported.
+            If provided, use minibatching with this batch size via numpyro.plate.
 
         Returns
         -------
-        PymcModel
-            PyMC model object with the specified neural network architecture.
+        Callable
+            NumPyro model function with the specified neural network architecture
+
+        Notes
+        -----
+        The model structure follows these steps:
+        1. For each layer, create weight and bias variables from prior distributions.
+        2. Sample embedding matrices for categorical features (if any).
+        3. Apply linear transformations and activations through the layers.
+        4. Apply sigmoid activation at the output
+        5. Use Bernoulli likelihood for binary classification
         """
-        y = np.array(y, dtype=np.int32)
-        numerical_arr, cat_indices_dict = self._prepare_context_arrays(x)
-        configs = self.feature_config.categorical_features_configs
 
-        with PymcModel() as _model:
-            input_parts, bnn_output, n_total = self._prepare_bnn_input_output(
-                numerical_arr, cat_indices_dict, y, configs, batch_size
-            )
+        n_layers = len(self.model_params.bnn_layer_params)
+        numerical_indices = self.feature_config.numerical_indices
+        cat_configs = self.feature_config.categorical_features_configs
+        has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
 
-            network_input = input_parts[0] if len(input_parts) == 1 else math.concatenate(input_parts, axis=1)
-            _logit = self._apply_bnn_layers(network_input)
-            logit = Deterministic(self._logit_var_name, _logit.squeeze())
-            bernoulli_kwargs = dict(logit_p=logit, observed=bnn_output)
-            if n_total is not None:
-                bernoulli_kwargs["total_size"] = n_total
-            Bernoulli("out", **bernoulli_kwargs)
+        def model(x: jax.Array, y: jax.Array):
+            N = x.shape[0]
 
-        return _model
+            # Sample all weights (global parameters, outside plate)
+            weights_biases = []
+            for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+                weight_name, bias_name = self.get_layer_params_name(layer_ind)
+                w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
+                b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
+                weights_biases.append((w, b, layer_params.weight.shape))
+
+            # Sample embedding matrices (global parameters, outside plate)
+            embedding_matrices = []
+            if has_embeddings:
+                for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
+                    emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
+                    embedding_matrices.append(emb)
+
+            # Data plate with optional minibatching
+            with numpyro.plate("data", N, subsample_size=batch_size) as idx:
+                x_batch = x[idx] if batch_size is not None else x
+                y_batch = y[idx] if batch_size is not None else y
+
+                # Build network input: numerical features + embedded categoricals
+                if has_embeddings:
+                    input_parts = []
+                    if numerical_indices:
+                        input_parts.append(x_batch[:, numerical_indices])
+                    for i, cfg in enumerate(cat_configs):
+                        cat_idx = x_batch[:, cfg.column_index].astype(jnp.int32)
+                        input_parts.append(embedding_matrices[i][cat_idx])
+                    next_layer_input = jnp.concatenate(input_parts, axis=1) if len(input_parts) > 1 else input_parts[0]
+                else:
+                    next_layer_input = x_batch
+
+                # Forward pass
+                for layer_ind, (w, b, w_shape) in enumerate(weights_biases):
+                    input_dim = w_shape[0]
+                    output_dim = w_shape[1]
+
+                    linear_transform = jnp.dot(next_layer_input, w) + b
+
+                    if layer_ind < n_layers - 1:
+                        activated_output = self._jax_activation_fn(linear_transform)
+
+                        # Add residual connection if enabled and dimensions allow
+                        if self.use_residual_connections and output_dim >= input_dim:
+                            if output_dim == input_dim:
+                                next_layer_input = activated_output + next_layer_input
+                            else:
+                                residual_padded = jnp.concatenate(
+                                    [next_layer_input, jnp.zeros((next_layer_input.shape[0], output_dim - input_dim))],
+                                    axis=1,
+                                )
+                                next_layer_input = activated_output + residual_padded
+                        else:
+                            next_layer_input = activated_output
+
+                # Final output processing
+                logit = numpyro.deterministic(self._logit_var_name, jnp.clip(linear_transform.squeeze(-1), -15, 15))
+                numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
+
+        return model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_weights(self, n_samples: PositiveInt) -> List[Tuple[np.ndarray, np.ndarray]]:
@@ -1782,21 +1790,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return BnnLayerParams(weight=updated_weight, bias=updated_bias)
 
-    def _update_embedding_params_from_mapping(self, mu_sigma_mapping: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> None:
+    def _update_embedding_params_from_vi(self, site_mu: dict, site_sigma: dict) -> None:
         """
-        Update embedding matrices in-place from the VI approximate posterior.
-
-        After variational inference converges, the approximate posterior is available as a flat mapping
-        ``{var_name: (mu_flat, sigma_flat)}``.  For each categorical feature ``i``, this method looks up
-        the corresponding variable (``emb_0``, ``emb_1``, …), reshapes the flat posterior arrays back to
-        ``(cardinality, embedding_dim)``, and replaces the prior distribution parameters with the
-        posterior mean and standard deviation via ``with_dist_parameters``.
+        Update embedding matrices from per-site VI posterior means and stds.
 
         Parameters
         ----------
-        mu_sigma_mapping : Dict[str, Tuple[np.ndarray, np.ndarray]]
-            Mapping from PyMC variable name to a ``(mu_flat, sigma_flat)`` pair of 1-D arrays
-            as returned by the VI approximation posterior.
+        site_mu : dict
+            Per-site mean arrays keyed by variable name.
+        site_sigma : dict
+            Per-site std arrays keyed by variable name.
         """
         if self.model_params.embedding_params is None:
             return
@@ -1804,28 +1807,291 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         for i, orig_emb in enumerate(self.model_params.embedding_params.embeddings):
             emb_var_name = self.get_embedding_var_name(i)
             emb_shape = orig_emb.shape
-            emb_mu = mu_sigma_mapping[emb_var_name][0].reshape(emb_shape)
-            emb_sigma = mu_sigma_mapping[emb_var_name][1].reshape(emb_shape)
+            emb_mu = np.array(site_mu[emb_var_name]).reshape(emb_shape)
+            emb_sigma = np.array(site_sigma[emb_var_name]).reshape(emb_shape)
             updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
         self.model_params.embedding_params.embeddings = updated_embeddings
 
-    def _update_embedding_params_from_trace(self, trace) -> None:
-        """Update embedding matrices from an MCMC trace (mean/std over samples)."""
+    def _update_embedding_params_from_mcmc(self, samples: dict) -> None:
+        """
+        Update embedding matrices from MCMC posterior samples.
+
+        Computes mean and std over the sample axis for each embedding variable.
+
+        Parameters
+        ----------
+        samples : dict
+            Dict mapping variable names to arrays of shape ``(n_samples, ...)``.
+        """
         if self.model_params.embedding_params is None:
             return
         updated_embeddings = []
         for i, orig_emb in enumerate(self.model_params.embedding_params.embeddings):
             emb_var_name = self.get_embedding_var_name(i)
-            emb_values = trace[emb_var_name]
+            emb_values = np.array(samples[emb_var_name])
             emb_mu = np.mean(emb_values, axis=0)
             emb_sigma = np.std(emb_values, axis=0)
             updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
         self.model_params.embedding_params.embeddings = updated_embeddings
 
+    def _run_svi_training_loop(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> tuple:
+        """
+        Set up and run the SVI training loop, returning ``(svi, params)``.
+
+        Parameters
+        ----------
+        x_jnp : jnp.ndarray
+            Context array in JAX format.
+        y_jnp : jnp.ndarray
+            Rewards array in JAX format.
+        n_samples : int
+            Number of data points (used for ELBO scaling and epoch computation).
+
+        Returns
+        -------
+        tuple
+            ``(svi, guide, params)`` where *svi* is the configured :class:`SVI` object,
+            *guide* is the fitted variational guide, and *params* are the final variational parameters.
+        """
+        if self._early_stopping_callback is not None:
+            self._early_stopping_callback.reset()
+        batch_size = self._update_kwargs["batch_size"]
+        _model = self.create_update_model(batch_size=batch_size)
+
+        effective_batch_size = batch_size if batch_size is not None else n_samples
+        steps_per_epoch = max(1, n_samples // effective_batch_size)
+
+        if self._update_kwargs.get("epochs") is not None:
+            epoch_steps_list = [steps_per_epoch] * self._update_kwargs["epochs"]
+        else:
+            num_steps = self._update_kwargs["num_steps"]
+            n_full_epochs, remaining = np.divmod(num_steps, steps_per_epoch)
+            epoch_steps_list = [steps_per_epoch] * n_full_epochs
+            if remaining > 0:
+                epoch_steps_list.append(remaining)
+            if not epoch_steps_list:
+                epoch_steps_list = [1]
+
+        # Scale the ELBO by 1/N so the loss is a per-sample average.
+        # This decouples learning rate tuning from dataset size: gradients
+        # have consistent magnitude regardless of N, and the KL prior term
+        # isn't dwarfed by the likelihood when N is large.
+        _scaled_model = numpyro_scale(_model, scale=1.0 / n_samples)
+
+        # Set up VI method (guide + loss) dynamically
+        vi_method = self._update_kwargs["method"]
+        method_config = self._vi_method_config[vi_method]
+        guide = method_config["guide"](_scaled_model, init_loc_fn=init_to_median)
+        loss = method_config["loss"]()
+        svi = SVI(_scaled_model, guide, self._obj_optimizer, loss=loss)
+
+        # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
+        # A Python for-loop leaks host-side dispatch/compilation metadata on
+        # every call to svi.update(), eventually OOM-ing the LLVM compiler at
+        # a fixed step count regardless of batch size or FP precision.
+        # lax.scan compiles the loop body once and runs it entirely in XLA.
+        self._rng_key, subkey = jax.random.split(self._rng_key)
+        svi_state = svi.init(subkey, x_jnp, y_jnp)
+
+        def _svi_body(state, _):
+            state, loss = svi.update(state, x_jnp, y_jnp)
+            return state, loss
+
+        _run_epoch = jax.jit(
+            lambda state, n: jax.lax.scan(_svi_body, state, None, length=n),
+            static_argnums=(1,),
+        )
+
+        all_losses = []
+        pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
+
+        for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
+            svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
+
+            epoch_np = np.array(epoch_losses)
+            all_losses.append(epoch_np)
+            pbar.update(1)
+            pbar.set_postfix(loss=f"{float(epoch_np[-1]):.4f}")
+
+            if self._early_stopping_callback is not None:
+                if self._early_stopping_callback.should_stop(float(epoch_np[-1])):
+                    logger.info(
+                        f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
+                        f"loss change below {self._early_stopping_callback.tolerance} "
+                        f"({self._early_stopping_callback.diff_type}) for "
+                        f"{self._early_stopping_callback.patience} consecutive epochs. "
+                        f"Last loss: {float(epoch_np[-1]):.6f}."
+                    )
+                    break
+
+        pbar.close()
+        self._approx_history = np.concatenate(all_losses) if all_losses else np.array([])
+        params = svi.get_params(svi_state)
+        return svi, guide, params
+
+    def _extract_advi_params(self, params: dict) -> tuple:
+        """
+        Extract per-site posterior means and stds from AutoNormal (ADVI) guide params.
+
+        Parameters
+        ----------
+        params : dict
+            Raw variational parameters returned by ``svi.get_params()``.
+
+        Returns
+        -------
+        tuple
+            ``(site_mu, site_sigma)`` dicts mapping site name → array.
+        """
+        # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (std)
+        site_mu = {k.removesuffix("_auto_loc"): v for k, v in params.items() if k.endswith("_auto_loc")}
+        site_sigma = {k.removesuffix("_auto_scale"): v for k, v in params.items() if k.endswith("_auto_scale")}
+        return site_mu, site_sigma
+
+    def _extract_fullrank_advi_params(self, guide, params: dict) -> tuple:
+        """
+        Extract per-site posterior means and stds from AutoMultivariateNormal (full-rank ADVI) guide params.
+
+        Parameters
+        ----------
+        guide : numpyro AutoGuide
+            The fitted full-rank ADVI guide.
+        params : dict
+            Raw variational parameters returned by ``svi.get_params()``.
+
+        Returns
+        -------
+        tuple
+            ``(site_mu, site_sigma)`` dicts mapping site name → array.
+        """
+        # AutoMultivariateNormal stores a joint loc vector and scale_tril matrix.
+        # Extract exact marginal means and stds directly (no sampling).
+        scale_tril = params["auto_scale_tril"]
+        marginal_std = jnp.linalg.norm(scale_tril, axis=1)
+        # guide.median() may include deterministic sites (e.g. logit) which are
+        # not in auto_loc/scale_tril. Filter to only sampled BNN sites so the
+        # offset slicing into marginal_std stays in bounds.
+        site_mu_all = guide.median(params)
+        sampled_site_names: set = set()
+        for _layer_ind in range(len(self.model_params.bnn_layer_params)):
+            _w_name, _b_name = self.get_layer_params_name(_layer_ind)
+            sampled_site_names.add(_w_name)
+            sampled_site_names.add(_b_name)
+        if self.model_params.embedding_params is not None:
+            for _i in range(len(self.model_params.embedding_params.embeddings)):
+                sampled_site_names.add(self.get_embedding_var_name(_i))
+        site_mu = {k: v for k, v in site_mu_all.items() if k in sampled_site_names}
+        offset = 0
+        site_sigma = {}
+        for name, val in site_mu.items():
+            n = val.size
+            site_sigma[name] = marginal_std[offset : offset + n].reshape(val.shape)
+            offset += n
+        return site_mu, site_sigma
+
+    def _extract_vi_params(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> List:
+        """
+        Run SVI, extract per-site posteriors, and return updated layer params.
+
+        Parameters
+        ----------
+        x_jnp : jnp.ndarray
+            Context array in JAX format.
+        y_jnp : jnp.ndarray
+            Rewards array in JAX format.
+        n_samples : int
+            Number of data points.
+
+        Returns
+        -------
+        List
+            Updated ``BnnLayerParams`` list (embeddings are updated in-place as a side-effect).
+        """
+        svi, guide, params = self._run_svi_training_loop(x_jnp, y_jnp, n_samples)
+
+        vi_method = self._update_kwargs["method"]
+        if vi_method == "advi":
+            site_mu, site_sigma = self._extract_advi_params(params)
+        elif vi_method == "fullrank_advi":
+            site_mu, site_sigma = self._extract_fullrank_advi_params(guide, params)
+        else:
+            raise ValueError(
+                f"Invalid VI method: {vi_method}. Supported methods are: {list(self._vi_method_config.keys())}"
+            )
+
+        # Update layer params from per-site posterior
+        updated_layer_params_list = []
+        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
+            w_shape = layer_params.weight.shape
+            b_shape = layer_params.bias.shape
+
+            w_mu = np.array(site_mu[weight_layer_params_name]).reshape(w_shape)
+            w_sigma = np.array(site_sigma[weight_layer_params_name]).reshape(w_shape)
+            b_mu = np.array(site_mu[bias_layer_params_name]).reshape(b_shape)
+            b_sigma = np.array(site_sigma[bias_layer_params_name]).reshape(b_shape)
+
+            updated_layer_params = self._create_updated_layer_params(
+                w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
+            )
+            updated_layer_params_list.append(updated_layer_params)
+
+        # Update embedding params
+        self._update_embedding_params_from_vi(site_mu, site_sigma)
+        return updated_layer_params_list
+
+    def _extract_mcmc_params(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray) -> List:
+        """
+        Run MCMC and extract updated layer params and embeddings.
+
+        Parameters
+        ----------
+        x_jnp : jnp.ndarray
+            Context array in JAX format.
+        y_jnp : jnp.ndarray
+            Rewards array in JAX format.
+
+        Returns
+        -------
+        List
+            Updated ``BnnLayerParams`` list (embeddings are updated in-place as a side-effect).
+        """
+        _model = self.create_update_model()
+        nuts_kwargs = self._update_kwargs["nuts"]
+        # All top-level keys except 'nuts' are MCMC kwargs
+        mcmc_kwargs = {k: v for k, v in self._update_kwargs.items() if k != "nuts"}
+
+        kernel = NUTS(_model, **nuts_kwargs)
+        mcmc = MCMC(kernel, **mcmc_kwargs)
+        self._rng_key, subkey = jax.random.split(self._rng_key)
+        mcmc.run(subkey, x_jnp, y_jnp)
+        samples = mcmc.get_samples()
+
+        updated_layer_params_list = []
+        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
+
+            w_values = np.array(samples[weight_layer_params_name])
+            b_values = np.array(samples[bias_layer_params_name])
+
+            w_mu = np.mean(w_values, axis=0)
+            w_sigma = np.std(w_values, axis=0)
+            b_mu = np.mean(b_values, axis=0)
+            b_sigma = np.std(b_values, axis=0)
+
+            updated_layer_params = self._create_updated_layer_params(
+                w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
+            )
+            updated_layer_params_list.append(updated_layer_params)
+
+        self._update_embedding_params_from_mcmc(samples)
+        return updated_layer_params_list
+
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
         """
         Update the model_params with new context and rewards.
+
         Parameters
         ----------
         context : np.ndarray
@@ -1843,72 +2109,21 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if len(context) != len(rewards):
             raise AttributeError("Shape mismatch: context and rewards must have the same length.")
 
-        batch_size = self._update_kwargs.get("batch_size", None)
         _context = np.atleast_2d(context)
-        _model = self.create_update_model(x=_context, y=rewards, batch_size=batch_size)
-        with _model:
-            # update traces object by sampling from posterior distribution
-            if self.update_method == "VI":
-                # variational inference
-                fit_kwargs = self._update_kwargs["fit"].copy()
-                # Handle epochs parameter - convert to 'n' based on effective batch size
-                if "epochs" in self._update_kwargs:
-                    num_samples = len(_context)
-                    effective_batch_size = batch_size if batch_size is not None else num_samples
-                    fit_kwargs["n"] = int(self._update_kwargs["epochs"] * num_samples / effective_batch_size)
+        x_jnp = jnp.array(_context, dtype=jnp.float32)
+        y_jnp = jnp.array(np.array(rewards, dtype=np.int32), dtype=jnp.int32)
+        n_samples = _context.shape[0]
 
-                approx = fit(**fit_kwargs)
+        if self.update_method == "VI":
+            updated_layer_params_list = self._extract_vi_params(x_jnp, y_jnp, n_samples)
 
-                self._approx_history = approx.hist
-                approx_mean_eval = approx.mean.eval()
-                approx_std_eval = approx.std.eval()
-                approx_posterior_mapping = {
-                    param: (approx_mean_eval[slice_], approx_std_eval[slice_])
-                    for (param, (_, slice_, _, _)) in approx.ordering.items()
-                }
-                updated_layer_params_list = []
-                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-                    weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
-                    w_shape = layer_params.weight.shape
-                    b_shape = layer_params.bias.shape
-                    w_mu = approx_posterior_mapping[weight_layer_params_name][0].reshape(w_shape)
-                    w_sigma = approx_posterior_mapping[weight_layer_params_name][1].reshape(w_shape)
-                    b_mu = approx_posterior_mapping[bias_layer_params_name][0].reshape(b_shape)
-                    b_sigma = approx_posterior_mapping[bias_layer_params_name][1].reshape(b_shape)
+        elif self.update_method == "MCMC":
+            updated_layer_params_list = self._extract_mcmc_params(x_jnp, y_jnp)
 
-                    updated_layer_params = self._create_updated_layer_params(
-                        w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
-                    )
-                    updated_layer_params_list.append(updated_layer_params)
+        else:
+            raise ValueError("Invalid update method.")
 
-                self._update_embedding_params_from_mapping(approx_posterior_mapping)
-
-            elif self.update_method == "MCMC":
-                trace = sample(**self.update_kwargs["trace"])
-
-                updated_layer_params_list = []
-                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-                    weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
-
-                    w_values = trace[weight_layer_params_name]
-                    b_values = trace[bias_layer_params_name]
-
-                    w_mu = np.mean(w_values, axis=0)
-                    w_sigma = np.std(w_values, axis=0)
-                    b_mu = np.mean(b_values, axis=0)
-                    b_sigma = np.std(b_values, axis=0)
-
-                    updated_layer_params = self._create_updated_layer_params(
-                        w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
-                    )
-                    updated_layer_params_list.append(updated_layer_params)
-
-                self._update_embedding_params_from_trace(trace)
-
-            else:
-                raise ValueError("Invalid update method.")
-
-            self.model_params.bnn_layer_params = updated_layer_params_list
+        self.model_params.bnn_layer_params = updated_layer_params_list
 
     @classmethod
     def cold_start(
@@ -1923,6 +2138,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
+        random_seed: Optional[int] = None,
         **kwargs,
     ) -> Self:
         """
@@ -1956,6 +2172,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
             to ``ceil(cardinality / _embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
+        random_seed : Optional[int], optional
+            Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
+            and stored on the instance, so the same initial key is reproduced after serialization.
+            Pass an explicit integer for fully reproducible runs.
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
@@ -1997,6 +2217,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             activation=activation,
             use_residual_connections=use_residual_connections,
             feature_config=feature_config,
+            random_seed=random_seed,
             **kwargs,
         )
 
@@ -2007,47 +2228,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.model_params.bnn_layer_params = deepcopy(self.model_params.bnn_layer_params_init)
         if self.model_params.embedding_params is not None:
             self.model_params.embedding_params.embeddings = deepcopy(self.model_params.embedding_params.embeddings_init)
-
-    @classmethod
-    def from_old_state(cls, state: Dict[str, Any]) -> Self:
-        """
-        Construct an instance from a pre-4.4 state dict that may not contain ``feature_config``.
-
-        Use this when deserializing a ``BayesianNeuralNetwork`` that was saved before version 4.4
-        (when ``feature_config`` was introduced).  If ``feature_config`` is absent, an
-        all-numerical ``FeaturesConfig`` is inferred from the first layer's weight shape.
-
-        Parameters
-        ----------
-        state : Dict[str, Any]
-            Raw state dict as returned by ``model_dump()`` / ``dict()`` for a pre-4.4 model.
-
-        Returns
-        -------
-        Self
-            A fully initialised instance of the calling class.
-
-        Examples
-        --------
-        >>> import json
-        >>> raw = json.loads(old_model.get_state())   # pre-4.4 JSON
-        >>> model = BayesianNeuralNetwork.from_old_state(raw)
-        """
-        if "feature_config" not in state:
-            layer_params = state["model_params"]["bnn_layer_params"]
-            if not layer_params:
-                raise ValueError("Cannot infer feature_config: bnn_layer_params is empty.")
-            # weight.mu is List[List[float]]; outer length == input_dim == n_features for numerical-only models
-            n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name]["mu"])
-            fc = FeaturesConfig(n_features=n_features, categorical_features_configs=[])
-            state = {**state, "feature_config": fc.apply_version_adjusted_method("model_dump", "dict")}
-
-        if pydantic_version == PYDANTIC_VERSION_2:
-            return cls.model_validate(state)
-        elif pydantic_version == PYDANTIC_VERSION_1:
-            return cls.parse_obj(state)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
 
 class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):
