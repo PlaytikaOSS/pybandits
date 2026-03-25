@@ -149,7 +149,7 @@ class PyBanditsBaseModel(BaseModel):
                 if (v is None or len(v) != reference) if force_values else (v is not None and len(v) != reference):
                     raise AttributeError(f"Shape mismatch: {k} should have the same length as the other parameters.")
 
-    def _apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
+    def apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
         """
         Apply the method with the given name, adjusting for the pydantic version.
 
@@ -183,7 +183,7 @@ class PyBanditsBaseModel(BaseModel):
         mutated_strategy: PyBanditsBaseModel
             The mutated model.
         """
-        mutated_strategy = self._apply_version_adjusted_method(
+        mutated_strategy = self.apply_version_adjusted_method(
             "model_copy", "copy", update={argument_name: argument_value}
         )
         return mutated_strategy

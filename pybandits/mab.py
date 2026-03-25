@@ -304,7 +304,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The internal state of the model (actions, scores, etc.).
         """
         model_name = self.__class__.__name__
-        state = self._apply_version_adjusted_method("model_dump_json", "json")
+        state = self.apply_version_adjusted_method("model_dump_json", "json")
         return model_name, state
 
     @validate_call

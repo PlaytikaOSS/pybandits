@@ -22,6 +22,7 @@
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from math import ceil
 from random import betavariate
 from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
@@ -301,6 +302,8 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     _sigma_array: np.ndarray = PrivateAttr()
     _params: Dict[str, np.ndarray] = PrivateAttr()
     _pymc_class: ClassVar[type]
+    _sampler: ClassVar[Callable]
+    param_map: ClassVar[Dict[str, str]] = {"mu": "loc", "sigma": "scale"}
 
     def to_pymc_distribution(self, name: str, shape: Tuple[PositiveInt, ...]) -> Union[PymcStudentT, PymcNormal]:
         """
@@ -343,7 +346,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             return self
 
         # Convert to dict, update with new parameters, and validate to create new instance
-        updated_dict = self._apply_version_adjusted_method("model_dump", "dict")
+        updated_dict = self.apply_version_adjusted_method("model_dump", "dict")
         updated_dict.update(kwargs)
         if pydantic_version == PYDANTIC_VERSION_1:
             return self.__class__(**updated_dict)
@@ -352,7 +355,9 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         else:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    @abstractmethod
+    def _to_sampler_kwargs(self, params: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        return {self.param_map[k]: v for k, v in params.items()}
+
     def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
         """
         Sample random variates from this distribution.
@@ -367,7 +372,29 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         np.ndarray
             Array of sampled values.
         """
-        pass
+        return self._sampler(size=size, **self._to_sampler_kwargs(self._params))
+
+    def sample_at_indices(self, indices: Union[List[NonNegativeInt], np.ndarray]) -> np.ndarray:
+        """
+        Sample one row-vector per entry in ``indices`` from a 2-D distribution matrix.
+
+        For each ``i``, draws independently from the distribution at row ``indices[i]``.
+        This is equivalent to ``sample_rvs(size=(len(indices), *row_shape))[np.arange(len(indices)), indices]``
+        but allocates only ``O(len(indices) × ncols)`` memory instead of
+        ``O(len(indices) × nrows × ncols)``.
+
+        Parameters
+        ----------
+        indices : Union[List[NonNegativeInt], np.ndarray] of shape (n,) with dtype int
+            Row indices to sample from.
+
+        Returns
+        -------
+        np.ndarray of shape (n, ncols)
+            Sampled instances.
+        """
+        sliced = {k: v[indices] for k, v in self._params.items()}
+        return self._sampler(**self._to_sampler_kwargs(sliced))
 
     @staticmethod
     def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> np.ndarray:
@@ -644,6 +671,8 @@ class StudentTArray(BaseLocationScaleArray):
 
     _nu_array: np.ndarray = PrivateAttr()
     _pymc_class: ClassVar[type] = PymcStudentT
+    _sampler: ClassVar[Callable] = t.rvs
+    param_map: ClassVar[Dict[str, str]] = {**BaseLocationScaleArray.param_map, "nu": "df"}
 
     @model_validator(mode="before")
     @classmethod
@@ -704,27 +733,6 @@ class StudentTArray(BaseLocationScaleArray):
         """
         return self._mu_array.shape
 
-    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
-        """
-        Sample random variates from this Student-t distribution.
-
-        Parameters
-        ----------
-        size : Tuple[int, ...]
-            Shape of the output array.
-
-        Returns
-        -------
-        np.ndarray
-            Array of sampled values.
-        """
-        return t.rvs(
-            self._nu_array,
-            loc=self._mu_array,
-            scale=self._sigma_array,
-            size=size,
-        )
-
 
 class NormalArray(BaseLocationScaleArray):
     """
@@ -756,6 +764,7 @@ class NormalArray(BaseLocationScaleArray):
     """
 
     _pymc_class: ClassVar[type] = PymcNormal
+    _sampler: ClassVar[Callable] = norm.rvs
 
     @classmethod
     def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
@@ -777,25 +786,149 @@ class NormalArray(BaseLocationScaleArray):
         """
         return {}
 
-    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
+
+class CategoricalFeatureConfig(PyBanditsBaseModel):
+    """
+    Configuration for a single categorical feature with Bayesian embedding.
+
+    The caller is responsible for pre-encoding categorical values as integer indices
+    in the range ``[0, cardinality)``.
+
+    Parameters
+    ----------
+    column_index : NonNegativeInt
+        Column position of this feature in the input numpy array.
+    cardinality : PositiveInt
+        Number of distinct integer category codes. The context array must contain
+        pre-encoded integer indices in the range ``[0, cardinality)``.
+    embedding_dim : PositiveInt
+        Dimensionality of the embedding vector for this feature. Default is 8.
+    """
+
+    column_index: NonNegativeInt
+    cardinality: PositiveInt
+    embedding_dim: PositiveInt
+
+
+class FeaturesConfig(PyBanditsBaseModel):
+    """
+    Specification of the structure of a numpy context array.
+
+    Columns can appear in any order. Categorical features are identified by their
+    explicit ``column_index``; all remaining columns are treated as numerical.
+
+    Parameters
+    ----------
+    n_features : int
+        Total number of columns in the input numpy array. Default 0.
+    categorical_features_configs : List[CategoricalFeatureConfig]
+        List of categorical feature configurations.
+    """
+
+    n_features: NonNegativeInt = 0
+    categorical_features_configs: List[CategoricalFeatureConfig] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_categorical_columns(cls, values):
+        if not isinstance(values, dict):
+            return values
+        cat_configs = values.get("categorical_features_configs", [])
+        n_features = values.get("n_features", 0)
+        col_indices = [cfg["column_index"] if isinstance(cfg, dict) else cfg.column_index for cfg in cat_configs]
+        if len(col_indices) != len(set(col_indices)):
+            raise ValueError("Duplicate column_index values found in categorical_features_configs.")
+        for col_index in col_indices:
+            if col_index >= n_features:
+                raise ValueError(f"column_index {col_index} is out of range for n_features={n_features}.")
+        return values
+
+    @property
+    def numerical_indices(self) -> List[int]:
+        """Sorted list of column positions treated as numerical (not used by any categorical)."""
+        cat_cols = {cfg.column_index for cfg in self.categorical_features_configs}
+        return [i for i in range(self.n_features) if i not in cat_cols]
+
+    @property
+    def n_numerical(self) -> int:
+        """Number of numerical columns (derived: n_features minus categorical count)."""
+        return self.n_features - len(self.categorical_features_configs)
+
+    @property
+    def has_categorical(self) -> bool:
+        """True if at least one categorical feature is configured."""
+        return bool(self.categorical_features_configs)
+
+    @property
+    def total_output_dim(self) -> int:
         """
-        Sample random variates from this Normal distribution.
+        Total dimensionality of the concatenated vector fed into the first BNN layer.
+
+        = n_numerical + sum(cat.embedding_dim)
+        """
+        return self.n_numerical + sum(cfg.embedding_dim for cfg in self.categorical_features_configs)
+
+
+class EmbeddingParams(PyBanditsBaseModel):
+    """
+    Stores Bayesian embedding matrices for all categorical features.
+
+    Each embedding matrix has shape ``(cardinality, embedding_dim)`` and is stored as a
+    ``BaseLocationScaleArray`` (StudentTArray or NormalArray) — the same representation
+    used for layer weights in ``BnnLayerParams``.
+
+    Parameters
+    ----------
+    embeddings : List[Union[StudentTArray, NormalArray]]
+        Ordered list of embedding matrix distributions, matching the order of
+        ``FeaturesConfig.categorical_features_configs``.
+        Shape of each matrix: ``(cardinality, embedding_dim)``.
+    embeddings_init : List[Union[StudentTArray, NormalArray]]
+        Frozen copy of the initial embeddings for resetting. Set automatically.
+    """
+
+    embeddings: List[Union[StudentTArray, NormalArray]]
+    embeddings_init: List[Union[StudentTArray, NormalArray]] = Field(default_factory=list, init=False, frozen=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _set_embeddings_init(cls, values):
+        if isinstance(values, dict):
+            if not values.get("embeddings_init"):
+                values["embeddings_init"] = deepcopy(values.get("embeddings", []))
+        return values
+
+    @classmethod
+    def cold_start(
+        cls,
+        feature_config: "FeaturesConfig",
+        dist_class: type[BaseLocationScaleArray] = StudentTArray,
+        **dist_params_init,
+    ) -> "EmbeddingParams":
+        """
+        Create ``EmbeddingParams`` with prior distributions for all categorical features.
 
         Parameters
         ----------
-        size : Tuple[int, ...]
-            Shape of the output array.
+        feature_config : FeaturesConfig
+            Feature configuration containing categorical feature specs.
+        dist_class : type
+            The distribution class to use for embedding priors, by default ``StudentTArray``.
+        **dist_params_init
+            Distribution parameters passed to ``BaseLocationScaleArray.cold_start``
+            (e.g. ``mu``, ``sigma``, ``nu`` for StudentT; ``mu``, ``sigma`` for Normal).
 
         Returns
         -------
-        np.ndarray
-            Array of sampled values.
+        EmbeddingParams
+            An ``EmbeddingParams`` instance with one embedding matrix per categorical feature,
+            each of shape ``(cardinality, embedding_dim)``, initialised from ``dist_class`` cold-start priors.
         """
-        return norm.rvs(
-            loc=self._mu_array,
-            scale=self._sigma_array,
-            size=size,
-        )
+        embeddings = []
+        for cat_cfg in feature_config.categorical_features_configs:
+            shape = (cat_cfg.cardinality, cat_cfg.embedding_dim)
+            embeddings.append(dist_class.cold_start(shape=shape, **dist_params_init))
+        return cls(embeddings=embeddings)
 
 
 class BnnLayerParams(PyBanditsBaseModel):
@@ -826,16 +959,25 @@ class BnnParams(PyBanditsBaseModel):
         A list of BNN layer parameters representing the current state of the model.
     bnn_layer_params_init : List[BnnLayerParams]
         A list of BNN layer parameters representing the initial state of the model.
+    embedding_params : Optional[EmbeddingParams]
+        Bayesian embedding matrices for categorical features. ``None`` when no
+        categorical features are configured.
+    embedding_params_init : Optional[EmbeddingParams]
+        Frozen copy of the initial embedding parameters for resetting. Set automatically.
     """
 
     bnn_layer_params: Optional[List[BnnLayerParams]]
     bnn_layer_params_init: List[BnnLayerParams] = Field(default_factory=list, init=False, frozen=True)
+    embedding_params: Optional[EmbeddingParams] = None
+    embedding_params_init: Optional[EmbeddingParams] = Field(default=None, init=False, frozen=True)
 
     @model_validator(mode="before")
     @classmethod
     def validate_inputs(cls, values):
         if values.get("bnn_layer_params_init") is None:
             values["bnn_layer_params_init"] = deepcopy(values["bnn_layer_params"])
+        if values.get("embedding_params_init") is None and values.get("embedding_params") is not None:
+            values["embedding_params_init"] = deepcopy(values["embedding_params"])
 
         return values
 
@@ -904,6 +1046,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _prob_var_name: ClassVar[str] = "prob"
     weight_var_name: ClassVar[str] = "weight"
     _bias_var_name: ClassVar[str] = "bias"
+    _embedding_var_name: ClassVar[str] = "embedding"
     _vi_update_params: ClassVar[list] = [
         "optimizer_type",
         "optimizer_kwargs",
@@ -912,6 +1055,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "epochs",
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
+    _embedding_dim_divisor: ClassVar[int] = 4
     _supported_optimizers: ClassVar[list] = [
         "sgd",
         "momentum",
@@ -939,6 +1083,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     update_kwargs: Optional[dict] = None
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
+    feature_config: FeaturesConfig
 
     _default_mcmc_trace_kwargs: ClassVar[dict] = dict(
         tune=500,
@@ -976,9 +1121,47 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             )
         return v
 
+    @classmethod
+    def get_embedding_var_name(cls, feat_index: int) -> str:
+        """Return the PyMC variable name for a categorical embedding matrix."""
+        return f"{cls._embedding_var_name}_{feat_index}"
+
     @property
     def approx_history(self) -> Optional[np.ndarray]:
         return self._approx_history
+
+    def _prepare_context_arrays(self, context: np.ndarray) -> Tuple[np.ndarray, Dict[int, np.ndarray]]:
+        """
+        Split a numpy context array into numerical and categorical index arrays.
+
+        Numerical columns are all columns not assigned to a categorical feature.
+        Categorical columns are extracted by their explicit ``column_index``.
+
+        Parameters
+        ----------
+        context : np.ndarray of shape (n_samples, input_dim)
+            Input array.
+
+        Returns
+        -------
+        numerical_arr : np.ndarray of shape (n_samples, n_numerical)
+            Numerical features, same dtype as input. Empty ``(n_samples, 0)`` if none.
+        cat_indices_dict : Dict[int, np.ndarray]
+            Mapping from feature index (0-based) to int32 array of shape ``(n_samples,)``
+            containing integer category codes.
+        """
+        n_samples = len(context)
+        numeric_indices = self.feature_config.numerical_indices
+
+        if numeric_indices:
+            numerical_arr = context[:, numeric_indices]
+        else:
+            numerical_arr = np.empty((n_samples, 0), dtype=context.dtype)
+
+        configs = self.feature_config.categorical_features_configs
+        cat_indices_dict = {i: context[:, cfg.column_index].astype(np.int32) for i, cfg in enumerate(configs)}
+
+        return numerical_arr, cat_indices_dict
 
     def _get_obj_optimizer(self) -> Optional[Callable]:
         if self.update_kwargs is None:
@@ -1022,29 +1205,29 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @classmethod
     def create_model_params(
         cls,
-        n_features: PositiveInt,
+        feature_config: FeaturesConfig,
         hidden_dim_list: Optional[List[PositiveInt]],
         use_layerwise_scaling: bool = False,
         dist_class: type[BaseLocationScaleArray] = StudentTArray,
         **dist_params_init,
     ) -> BnnParams:
         """
-        Creates model parameters for a Bayesian neural network (BNN) model according to dist_params_init
+        Creates model parameters for a Bayesian neural network (BNN) model according to dist_params_init.
         This method initializes the distribution's parameters for each layer of a BNN
         using the specified number of features, hidden dimensions, and distribution
         initialization parameters.
 
         Parameters
         ----------
-        n_features : PositiveInt
-            The number of input features for the BNN.
+        feature_config : FeaturesConfig
+            Full input layout description. First-layer input dimension is ``feature_config.total_output_dim``.
+            ``EmbeddingParams`` are created when ``feature_config.categorical_features_configs`` is non-empty.
         hidden_dim_list : Optional[List[PositiveInt]]
-            A list of integers specifying the number of hidden units in each hidden layer.
-            If None, no hidden layers are added.
+            Number of hidden units per hidden layer. If None, no hidden layers are added.
         use_layerwise_scaling : bool
             Whether to use layerwise scaling in the network (default is False).
-        dist_class : type[BaseLocationScaleArray], optional
-            The distribution class to use (StudentTArray or NormalArray), by default StudentTArray.
+        dist_class : type
+            The distribution class to use for weights, biases, and embeddings, by default ``StudentTArray``.
         **dist_params_init : dict, optional
             Additional parameters for initializing the distribution of weights and biases.
 
@@ -1053,11 +1236,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         BnnParams
             An instance of BnnParams containing the initialized layer parameters.
         """
+        effective_n_features = feature_config.total_output_dim
 
         if hidden_dim_list is None:
-            _dim_list = [n_features]
+            _dim_list = [effective_n_features]
         else:
-            _dim_list = [n_features] + hidden_dim_list
+            _dim_list = [effective_n_features] + hidden_dim_list
 
         _dim_list.append(1)
 
@@ -1071,46 +1255,72 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             b_param = dist_class.cold_start(shape=output_dim, **dist_params_init)
             layer_params_init.append(BnnLayerParams(weight=w_param, bias=b_param))
 
-        return BnnParams(bnn_layer_params=layer_params_init)
+        if feature_config.categorical_features_configs:
+            embedding_params = EmbeddingParams.cold_start(
+                feature_config=feature_config,
+                dist_class=dist_class,
+                **dist_params_init,
+            )
+        else:
+            embedding_params = None
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
+        return BnnParams(
+            bnn_layer_params=layer_params_init,
+            embedding_params=embedding_params,
+        )
+
     def check_context_matrix(self, context: np.ndarray):
         """
-        Check and cast context matrix.
+        Validate the context input.
+
+        Context must be an array-like with numeric values and the correct number of columns.
+        Categorical columns are validated to contain valid integer indices within their vocab range.
 
         Parameters
         ----------
-        context : np.ndarray of shape (n_samples, n_features)
-            Matrix of contextual features.
-
-        Returns
-        -------
-        context : pandas DataFrame of shape (n_samples, n_features)
-            Matrix of contextual features.
+        context : np.ndarray
+            Matrix of contextual features of shape ``(n_samples, n_cols)``.
         """
+        expected_cols = self.feature_config.n_features
+
         try:
-            n_cols_context = np.array(context).shape[1]
+            n_cols_context = context.shape[1]
         except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {self.input_dim} columns: {e}.")
+            raise AttributeError(f"Context must be an ArrayLike with {expected_cols} columns: {e}.")
 
         if not np.issubdtype(context.dtype, np.number):
             raise ValueError("Context array must contain only numeric values.")
 
-        if n_cols_context != self.input_dim:
-            raise AttributeError(f"Shape mismatch: context must have {self.input_dim} columns.")
+        if n_cols_context != expected_cols:
+            raise AttributeError(f"Shape mismatch: context must have {expected_cols} columns.")
+
+        configs = self.feature_config.categorical_features_configs
+        if configs:
+            col_indices = [c.column_index for c in configs]
+            cardinalities = np.array([c.cardinality for c in configs])
+            cat_cols = context[:, col_indices].astype(int)
+            in_range = (cat_cols >= 0) & (cat_cols < cardinalities[np.newaxis, :])
+            if not np.all(in_range):
+                bad_idx = int(np.argmax(~np.all(in_range, axis=0)))
+                cfg = configs[bad_idx]
+                raise ValueError(
+                    f"Categorical feature at column {cfg.column_index} (index {bad_idx}) has indices out of range "
+                    f"[0, {cfg.cardinality})."
+                )
 
     @property
     def input_dim(self) -> PositiveInt:
         """
-        Returns the expected input dimension of the model.
+        Returns the number of raw context columns expected by the model.
 
         Returns
         -------
         PositiveInt
-            The number of input features expected by the model, derived from
-            the shape of the weight matrix in the first layer's parameters.
+            Equal to ``feature_config.n_features``: the number of columns the
+            context numpy array must have.  For categorical models this differs
+            from the post-embedding dimension (``feature_config.total_output_dim``).
         """
-        return self.model_params.bnn_layer_params[0].weight.shape[0]
+        return self.feature_config.n_features
 
     def _arrange_update_kwargs(self):
         if self.update_kwargs is None:
@@ -1158,83 +1368,170 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if self._early_stopping_callback is not None:
             self._update_kwargs["fit"]["callbacks"] = [self._early_stopping_callback]
 
+    def _apply_bnn_layers(self, network_input: Any) -> Any:
+        """
+        Apply the BNN layer graph to the input.
+
+        Returns the final logit (output layer pre-activation).
+        """
+        next_layer_input = network_input
+        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+            w_shape = layer_params.weight.shape
+            b_shape = layer_params.bias.shape
+            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
+            input_dim = w_shape[0]
+            output_dim = w_shape[1]
+
+            w = layer_params.weight.to_pymc_distribution(name=weight_layer_params_name, shape=w_shape)
+            b = layer_params.bias.to_pymc_distribution(name=bias_layer_params_name, shape=b_shape)
+
+            linear_transform = math.dot(next_layer_input, w) + b
+
+            if layer_ind < len(self.model_params.bnn_layer_params) - 1:
+                activated_output = self._pymc_activation_fn(linear_transform)
+                if self.use_residual_connections and output_dim >= input_dim:
+                    if output_dim == input_dim:
+                        next_layer_input = activated_output + next_layer_input
+                    else:
+                        residual_padded = math.concatenate(
+                            [next_layer_input, math.zeros((next_layer_input.shape[0], output_dim - input_dim))],
+                            axis=1,
+                        )
+                        next_layer_input = activated_output + residual_padded
+                else:
+                    next_layer_input = activated_output
+
+        return linear_transform
+
+    def _make_embedding_matrix_inputs(self, configs: List[CategoricalFeatureConfig], cat_index_tensors: List) -> List:
+        """
+        Build PyMC embedding variables and return their indexed outputs.
+
+        For each categorical feature ``i``, creates a PyMC random variable for the
+        ``(cardinality, embedding_dim)`` embedding matrix and indexes it with the
+        corresponding integer-index tensor, yielding a ``(n_rows, embedding_dim)`` output.
+
+        Parameters
+        ----------
+        configs : List[CategoricalFeatureConfig]
+            Categorical feature specs (one per embedding).
+        cat_index_tensors : list of PyMC-compatible tensors
+            One integer-index tensor per categorical feature, in the same order as ``configs``.
+            May be plain ``Data`` nodes or ``Minibatch`` slices.
+
+        Returns
+        -------
+        list of PyMC tensors
+            One ``(n_rows, embedding_dim)`` tensor per categorical feature.
+        """
+        parts = []
+        for i, _ in enumerate(configs):
+            emb_dist = self.model_params.embedding_params.embeddings[i]
+            emb_matrix = emb_dist.to_pymc_distribution(name=self.get_embedding_var_name(i), shape=emb_dist.shape)
+            parts.append(emb_matrix[cat_index_tensors[i]])
+        return parts
+
+    def _prepare_bnn_input_output(
+        self,
+        numerical_arr: np.ndarray,
+        cat_indices_dict: Dict[int, np.ndarray],
+        y: np.ndarray,
+        configs: List[CategoricalFeatureConfig],
+        batch_size: Optional[PositiveInt] = None,
+    ) -> Tuple[List, Any, Optional[int]]:
+        """
+        Wrap raw arrays as PyMC tensors (``Data`` or ``Minibatch``), build embedding
+        look-ups, and return everything the BNN graph needs.
+
+        Parameters
+        ----------
+        numerical_arr : np.ndarray
+            Numerical feature columns, shape ``(n_samples, n_numerical)``.
+        cat_indices_dict : Dict[int, np.ndarray]
+            Integer-index arrays for each categorical feature.
+        y : np.ndarray
+            Binary target values, shape ``(n_samples,)``.
+        configs : list of CategoricalFeatureConfig
+            Categorical feature specs.
+        batch_size : Optional[PositiveInt]
+            When set, arrays are wrapped in a single co-indexed ``Minibatch``.
+
+        Returns
+        -------
+        input_parts : list of PyMC tensors
+            Numerical and embedded-categorical inputs ready for concatenation.
+        bnn_output : PyMC-compatible tensor
+            Observed binary targets.
+        n_total : Optional[int]
+            Full dataset size (set only when using minibatch; ``None`` otherwise).
+        """
+        if batch_size is not None:
+            n_total = len(y)
+            mb_arrays = [numerical_arr] if numerical_arr.shape[1] > 0 else []
+            mb_arrays += [cat_indices_dict[i] for i in range(len(configs))]
+            mb_arrays.append(y)
+            mb = Minibatch(*mb_arrays, batch_size=batch_size)
+
+            offset = 0
+            input_parts = []
+            if numerical_arr.shape[1] > 0:
+                input_parts.append(mb[offset])
+                offset += 1
+            cat_tensors = [mb[offset + i] for i in range(len(configs))]
+            bnn_output = mb[offset + len(configs)]
+        else:
+            n_total = None
+            bnn_output = Data("bnn_output", y)
+            input_parts = [Data("bnn_numerical_input", numerical_arr)] if numerical_arr.shape[1] > 0 else []
+            cat_tensors = [Data(f"cat_idx_{i}", cat_indices_dict[i]) for i in range(len(configs))]
+
+        input_parts += self._make_embedding_matrix_inputs(configs, cat_tensors)
+        return input_parts, bnn_output, n_total
+
     def create_update_model(
-        self, x: ArrayLike, y: Union[List[BinaryReward], np.ndarray], batch_size: Optional[PositiveInt] = None
+        self,
+        x: ArrayLike,
+        y: Union[List[BinaryReward], np.ndarray],
+        batch_size: Optional[PositiveInt] = None,
     ) -> PymcModel:
         """
         Create a PyMC model for Bayesian Neural Network.
 
-        This method builds a PyMC model with the network architecture specified in model_params.
-        The model uses tanh activation for hidden layers and sigmoid for the output layer.
+        ``x`` must be a numpy array with ``feature_config.n_features`` columns.
+        Numerical columns are passed through as-is. Categorical columns (identified by their
+        ``column_index``) are modelled with Bayesian embedding matrices inside the PyMC graph.
 
         Parameters
         ----------
         x : ArrayLike
-            Input features of shape (n_samples, n_features)
+            Input features of shape ``(n_samples, n_features)``.
         y : Union[List[BinaryReward], np.ndarray]
-            Binary target values of shape (n_samples,)
+            Binary target values of shape ``(n_samples,)``.
+        batch_size : Optional[PositiveInt]
+            When set, Minibatch is used for numerical-only models.
+            Minibatch with categorical embedding features is not supported.
 
         Returns
         -------
         PymcModel
-            PyMC model object with the specified neural network architecture
-
-        Notes
-        -----
-        The model structure follows these steps:
-        1. For each layer, create weight and bias variables from prior distributions.
-        2. Apply linear transformations and activations through the layers.
-        3. Apply sigmoid activation at the output
-        4. Use Bernoulli likelihood for binary classification
+            PyMC model object with the specified neural network architecture.
         """
         y = np.array(y, dtype=np.int32)
+        numerical_arr, cat_indices_dict = self._prepare_context_arrays(x)
+        configs = self.feature_config.categorical_features_configs
+
         with PymcModel() as _model:
-            # Define data variables
-            if batch_size is None:
-                bnn_output = Data("bnn_output", y)
-                bnn_input = Data("bnn_input", x)
-                likelihood_kwargs = {}
-            else:
-                bnn_input, bnn_output = Minibatch(x, y, batch_size=batch_size)
-                # total_size is the total number of samples in the dataset
-                likelihood_kwargs = dict(total_size=x.shape[0])
+            input_parts, bnn_output, n_total = self._prepare_bnn_input_output(
+                numerical_arr, cat_indices_dict, y, configs, batch_size
+            )
 
-            next_layer_input = bnn_input
-
-            for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-                w_shape = layer_params.weight.shape  # without it n_features = 1 doesn't work
-                b_shape = layer_params.bias.shape
-                weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
-                input_dim = w_shape[0]
-                output_dim = w_shape[1]
-
-                # For training, use shared weights and biases
-                # Use polymorphism to create the appropriate PyMC distribution
-                w = layer_params.weight.to_pymc_distribution(name=weight_layer_params_name, shape=w_shape)
-                b = layer_params.bias.to_pymc_distribution(name=bias_layer_params_name, shape=b_shape)
-
-                linear_transform = math.dot(next_layer_input, w) + b
-
-                if layer_ind < len(self.model_params.bnn_layer_params) - 1:
-                    activated_output = self._pymc_activation_fn(linear_transform)
-
-                    # Add residual connection if enabled and dimensions allow
-                    if self.use_residual_connections and output_dim >= input_dim:
-                        if output_dim == input_dim:
-                            next_layer_input = activated_output + next_layer_input
-                        else:
-                            residual_padded = math.concatenate(
-                                [next_layer_input, math.zeros((next_layer_input.shape[0], output_dim - input_dim))],
-                                axis=1,
-                            )
-                            next_layer_input = activated_output + residual_padded
-                    else:
-                        next_layer_input = activated_output
-
-            # Final output processing
-            logit = Deterministic(self._logit_var_name, linear_transform.squeeze())
-
-            Bernoulli("out", logit_p=logit, observed=bnn_output, **likelihood_kwargs)
+            network_input = input_parts[0] if len(input_parts) == 1 else math.concatenate(input_parts, axis=1)
+            _logit = self._apply_bnn_layers(network_input)
+            logit = Deterministic(self._logit_var_name, _logit.squeeze())
+            bernoulli_kwargs = dict(logit_p=logit, observed=bnn_output)
+            if n_total is not None:
+                bernoulli_kwargs["total_size"] = n_total
+            Bernoulli("out", **bernoulli_kwargs)
 
         return _model
 
@@ -1260,7 +1557,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             input_dim = layer_params.weight.shape[0]
             output_dim = layer_params.weight.shape[1]
 
-            # Sample weights and biases using the distribution's sample_rvs method
             w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim))
             b = layer_params.bias.sample_rvs(size=(n_samples, output_dim))
 
@@ -1268,53 +1564,124 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return sampled_weights
 
-    def _extract_weights(
-        self, sampled_weights: List[Tuple[np.ndarray, np.ndarray]], sample_idx: NonNegativeInt
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def sample_embeddings(self, context: np.ndarray) -> Optional[List[np.ndarray]]:
         """
-        Extract the weights and biases for a specific sample from the sampled weights.
+        Sample embedding vectors for each categorical feature given the context.
+
+        For each categorical feature, extracts the integer indices from the context
+        and samples from the corresponding embedding distribution at those indices.
+
+        Parameters
+        ----------
+        context : np.ndarray
+            Context matrix, shape ``(n_samples, feature_config.n_features)``.
+            Categorical columns contain integer indices into the embedding vocabulary.
+
+        Returns
+        -------
+        Optional[List[np.ndarray]]
+            One array per categorical feature, each of shape ``(n_samples, emb_dim)``.
+            ``None`` when the model has no categorical features.
+        """
+        if not self.feature_config.has_categorical:
+            return None
+        _context = np.atleast_2d(context)
+        _, cat_indices_dict = self._prepare_context_arrays(_context)
+        return [
+            self.model_params.embedding_params.embeddings[i]
+            .sample_at_indices(cat_indices_dict[i])
+            .reshape(len(_context), -1)
+            for i in range(len(self.feature_config.categorical_features_configs))
+        ]
+
+    @staticmethod
+    def extract_sample(
+        sampled_weights: List[Tuple[np.ndarray, np.ndarray]],
+        sampled_embeddings: Optional[List[np.ndarray]],
+        sample_idx: NonNegativeInt,
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], Optional[List[np.ndarray]]]:
+        """
+        Extract the weights, biases, and embeddings for a specific sample.
 
         Parameters
         ----------
         sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
-            List of (weights, biases) per layer from _sample_weights.
+            List of (weights, biases) per layer.
             Each weights has shape (n_samples, input_dim, output_dim), biases (n_samples, output_dim).
+        sampled_embeddings : Optional[List[np.ndarray]]
+            Pre-sampled embedding vectors, one per categorical feature, each of shape
+            ``(n_samples, emb_dim)``. ``None`` when no categorical features.
         sample_idx : NonNegativeInt
-            The index of the sample to extract the weights and biases for.
+            The index of the sample to extract.
 
         Returns
         -------
-        Tuple[np.ndarray, np.ndarray]
-            The weights and biases for the specific sample.
-            Each weights has shape (1, input_dim, output_dim), biases (1, output_dim).
+        Tuple[List[Tuple[np.ndarray, np.ndarray]], Optional[List[np.ndarray]]]
+            ``(weights_idx, embeddings_idx)`` sliced to a single sample (batch dim = 1).
         """
-        sampled_weights_idx = [
-            (w[sample_idx : sample_idx + 1], b[sample_idx : sample_idx + 1]) for w, b in sampled_weights
-        ]
-        return sampled_weights_idx
+        weights_idx = [(w[sample_idx : sample_idx + 1], b[sample_idx : sample_idx + 1]) for w, b in sampled_weights]
+        embeddings_idx = (
+            [ev[sample_idx : sample_idx + 1] for ev in sampled_embeddings] if sampled_embeddings is not None else None
+        )
+        return weights_idx, embeddings_idx
+
+    def _prepare_forward_input(self, context: np.ndarray, sampled_embeddings: Optional[List[np.ndarray]]) -> np.ndarray:
+        """
+        Replace categorical columns with pre-sampled embedding vectors.
+
+        Parameters
+        ----------
+        context : np.ndarray
+            Context matrix, shape ``(n_samples, feature_config.n_features)``.
+        sampled_embeddings : Optional[List[np.ndarray]]
+            One array per categorical feature, each of shape ``(n_samples, emb_dim)``.
+            ``None`` when the model has no categorical features.
+
+        Returns
+        -------
+        np.ndarray
+            Network input with categorical columns replaced by embedding vectors,
+            shape ``(n_samples, feature_config.total_output_dim)``.
+        """
+        if sampled_embeddings is None:
+            return context
+        _context = np.atleast_2d(context)
+        numerical_arr, _ = self._prepare_context_arrays(_context)
+        parts = [numerical_arr] if numerical_arr.shape[1] > 0 else []
+        parts.extend(sampled_embeddings)
+        return np.concatenate(parts, axis=1)
 
     def forward_pass(
         self,
         sampled_weights: List[Tuple[np.ndarray, np.ndarray]],
         context: np.ndarray,
+        sampled_embeddings: Optional[List[np.ndarray]] = None,
     ) -> List[ProbabilityWeight]:
         """
-        Apply the neural network forward pass using pre-sampled weights and biases.
+        Apply the neural network forward pass using pre-sampled weights, biases, and embeddings.
+
+        All stochastic parameters must be sampled externally (via ``sample_weights`` and
+        ``sample_embeddings``) before calling this method.
 
         Parameters
         ----------
         sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
-            List of (weights, biases) per layer from _sample_weights.
+            List of (weights, biases) per layer from ``sample_weights``.
             Each weights has shape (n_samples, input_dim, output_dim), biases (n_samples, output_dim).
         context : np.ndarray
-            Context matrix, shape (n_samples, context_dim).
+            Context matrix, shape (n_samples, feature_config.n_features).
+            Categorical columns contain integer indices into the embedding vocabulary.
+        sampled_embeddings : Optional[List[np.ndarray]]
+            Pre-sampled embedding vectors from ``sample_embeddings``, one array per
+            categorical feature, each of shape ``(n_samples, emb_dim)``.
+            ``None`` when the model has no categorical features.
 
         Returns
         -------
         List[ProbabilityWeight]
             Each element is (probability, weighted_sum) per sample.
         """
-        next_layer_input = context
+        next_layer_input = self._prepare_forward_input(context, sampled_embeddings)
         n_layers = len(self.model_params.bnn_layer_params)
 
         for layer_ind, (w, b) in enumerate(sampled_weights):
@@ -1352,33 +1719,30 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_proba(self, context: np.ndarray) -> List[ProbabilityWeight]:
         """
-        Samples probabilities and weighted sums from the prior predictive distribution.
-
-        This is a refactored version of `sample_proba` that separates weight sampling
-        from the forward pass computation.
+        Samples probabilities and logits from the prior predictive distribution.
 
         Parameters
         ----------
-        context : ArrayLike
+        context : np.ndarray
             The context matrix for which the probabilities are to be sampled.
 
         Returns
         -------
         List[ProbabilityWeight]
             Each element is a tuple containing the probability of a positive reward and
-            the corresponding weighted sum between contextual feature quantities and sampled coefficients.
+            the network logit.
         """
-        # check input args
         self.check_context_matrix(context=context)
 
         _context = np.atleast_2d(context)
         n_samples = len(_context)
 
-        # Step 1: Sample weights (different weights for each sample)
         sampled_weights = self.sample_weights(n_samples)
+        sampled_embeddings = self.sample_embeddings(_context)
 
-        # Step 2: Use sampled weights to compute forward pass
-        return self.forward_pass(sampled_weights=sampled_weights, context=_context)
+        return self.forward_pass(
+            sampled_weights=sampled_weights, context=_context, sampled_embeddings=sampled_embeddings
+        )
 
     def _create_updated_layer_params(
         self,
@@ -1418,6 +1782,46 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return BnnLayerParams(weight=updated_weight, bias=updated_bias)
 
+    def _update_embedding_params_from_mapping(self, mu_sigma_mapping: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> None:
+        """
+        Update embedding matrices in-place from the VI approximate posterior.
+
+        After variational inference converges, the approximate posterior is available as a flat mapping
+        ``{var_name: (mu_flat, sigma_flat)}``.  For each categorical feature ``i``, this method looks up
+        the corresponding variable (``emb_0``, ``emb_1``, …), reshapes the flat posterior arrays back to
+        ``(cardinality, embedding_dim)``, and replaces the prior distribution parameters with the
+        posterior mean and standard deviation via ``with_dist_parameters``.
+
+        Parameters
+        ----------
+        mu_sigma_mapping : Dict[str, Tuple[np.ndarray, np.ndarray]]
+            Mapping from PyMC variable name to a ``(mu_flat, sigma_flat)`` pair of 1-D arrays
+            as returned by the VI approximation posterior.
+        """
+        if self.model_params.embedding_params is None:
+            return
+        updated_embeddings = []
+        for i, orig_emb in enumerate(self.model_params.embedding_params.embeddings):
+            emb_var_name = self.get_embedding_var_name(i)
+            emb_shape = orig_emb.shape
+            emb_mu = mu_sigma_mapping[emb_var_name][0].reshape(emb_shape)
+            emb_sigma = mu_sigma_mapping[emb_var_name][1].reshape(emb_shape)
+            updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
+        self.model_params.embedding_params.embeddings = updated_embeddings
+
+    def _update_embedding_params_from_trace(self, trace) -> None:
+        """Update embedding matrices from an MCMC trace (mean/std over samples)."""
+        if self.model_params.embedding_params is None:
+            return
+        updated_embeddings = []
+        for i, orig_emb in enumerate(self.model_params.embedding_params.embeddings):
+            emb_var_name = self.get_embedding_var_name(i)
+            emb_values = trace[emb_var_name]
+            emb_mu = np.mean(emb_values, axis=0)
+            emb_sigma = np.std(emb_values, axis=0)
+            updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
+        self.model_params.embedding_params.embeddings = updated_embeddings
+
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
         """
@@ -1449,7 +1853,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 fit_kwargs = self._update_kwargs["fit"].copy()
                 # Handle epochs parameter - convert to 'n' based on effective batch size
                 if "epochs" in self._update_kwargs:
-                    num_samples = _context.shape[0]
+                    num_samples = len(_context)
                     effective_batch_size = batch_size if batch_size is not None else num_samples
                     fit_kwargs["n"] = int(self._update_kwargs["epochs"] * num_samples / effective_batch_size)
 
@@ -1477,6 +1881,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     )
                     updated_layer_params_list.append(updated_layer_params)
 
+                self._update_embedding_params_from_mapping(approx_posterior_mapping)
+
             elif self.update_method == "MCMC":
                 trace = sample(**self.update_kwargs["trace"])
 
@@ -1497,6 +1903,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     )
                     updated_layer_params_list.append(updated_layer_params)
 
+                self._update_embedding_params_from_trace(trace)
+
             else:
                 raise ValueError("Invalid update method.")
 
@@ -1514,6 +1922,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
+        categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
         **kwargs,
     ) -> Self:
         """
@@ -1522,11 +1931,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Parameters
         ----------
         n_features : PositiveInt
-            Number of input features for the network.
+            Total number of columns in the context array, including any categorical columns.
         hidden_dim_list : Optional[List[PositiveInt]], optional
             List of dimensions for the hidden layers of the network. If None, no hidden layers are added.
         update_method : UpdateMethods
-            Method to update the network, either "MCMC" or "VI". Default is "MCMC".
+            Method to update the network, either "MCMC" or "VI". Default is "VI".
         update_kwargs : Optional[dict], optional
             Additional keyword arguments for the update method. Default is None.
         dist_type : Literal["normal", "studentt"]
@@ -1543,6 +1952,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Whether to use layerwise scaling in the network (default is False).
             When applied, the sigma is scaled by the square root of the input dimension.
             This is useful to enable smoother convergence with Gaussian Process-like behavior.
+        categorical_features : Optional[Dict[int, int]], optional
+            Categorical columns as ``{column_index: cardinality}``. Each categorical column is
+            modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
+            to ``ceil(cardinality / _embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
@@ -1551,10 +1964,18 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Self
             An instance of the Bayesian Neural Network initialized with the specified parameters.
         """
+        cat_configs = [
+            CategoricalFeatureConfig(
+                column_index=col_idx,
+                cardinality=cardinality,
+                embedding_dim=ceil(cardinality / cls._embedding_dim_divisor),
+            )
+            for col_idx, cardinality in (categorical_features or {}).items()
+        ]
+        feature_config = FeaturesConfig(n_features=n_features, categorical_features_configs=cat_configs)
 
         dist_params_init = (dist_params_init or {}).copy()
 
-        # Get distribution class from mapping
         if dist_type not in cls._distribution_mapping:
             raise ValueError(
                 f"Invalid dist_type: {dist_type}. Must be one of {list(cls._distribution_mapping.keys())}. "
@@ -1562,9 +1983,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             )
 
         dist_class = cls._distribution_mapping[dist_type]
-
         model_params = cls.create_model_params(
-            n_features=n_features,
+            feature_config=feature_config,
             hidden_dim_list=hidden_dim_list,
             use_layerwise_scaling=use_layerwise_scaling,
             dist_class=dist_class,
@@ -1576,14 +1996,58 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             update_kwargs=update_kwargs,
             activation=activation,
             use_residual_connections=use_residual_connections,
+            feature_config=feature_config,
             **kwargs,
         )
 
     def _reset(self):
         """
-        Reset the model.
+        Reset the model to its initial parameters.
         """
         self.model_params.bnn_layer_params = deepcopy(self.model_params.bnn_layer_params_init)
+        if self.model_params.embedding_params is not None:
+            self.model_params.embedding_params.embeddings = deepcopy(self.model_params.embedding_params.embeddings_init)
+
+    @classmethod
+    def from_old_state(cls, state: Dict[str, Any]) -> Self:
+        """
+        Construct an instance from a pre-4.4 state dict that may not contain ``feature_config``.
+
+        Use this when deserializing a ``BayesianNeuralNetwork`` that was saved before version 4.4
+        (when ``feature_config`` was introduced).  If ``feature_config`` is absent, an
+        all-numerical ``FeaturesConfig`` is inferred from the first layer's weight shape.
+
+        Parameters
+        ----------
+        state : Dict[str, Any]
+            Raw state dict as returned by ``model_dump()`` / ``dict()`` for a pre-4.4 model.
+
+        Returns
+        -------
+        Self
+            A fully initialised instance of the calling class.
+
+        Examples
+        --------
+        >>> import json
+        >>> raw = json.loads(old_model.get_state())   # pre-4.4 JSON
+        >>> model = BayesianNeuralNetwork.from_old_state(raw)
+        """
+        if "feature_config" not in state:
+            layer_params = state["model_params"]["bnn_layer_params"]
+            if not layer_params:
+                raise ValueError("Cannot infer feature_config: bnn_layer_params is empty.")
+            # weight.mu is List[List[float]]; outer length == input_dim == n_features for numerical-only models
+            n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name]["mu"])
+            fc = FeaturesConfig(n_features=n_features, categorical_features_configs=[])
+            state = {**state, "feature_config": fc.apply_version_adjusted_method("model_dump", "dict")}
+
+        if pydantic_version == PYDANTIC_VERSION_2:
+            return cls.model_validate(state)
+        elif pydantic_version == PYDANTIC_VERSION_1:
+            return cls.parse_obj(state)
+        else:
+            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
 
 class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):

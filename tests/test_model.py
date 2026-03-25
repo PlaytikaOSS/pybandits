@@ -23,7 +23,6 @@
 from typing import Literal, Optional
 
 import numpy as np
-import pandas as pd
 import pymc
 import pytest
 from hypothesis import given, settings
@@ -42,6 +41,9 @@ from pybandits.model import (
     BetaCC,
     BetaMO,
     BetaMOCC,
+    CategoricalFeatureConfig,
+    EmbeddingParams,
+    FeaturesConfig,
     NormalArray,
     StudentTArray,
     UpdateMethods,
@@ -302,11 +304,13 @@ def test_can_init_bayesian_neural_network(n_features, hidden_dim_list):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list):
         with pytest.raises((ValidationError, ValueError)):
-            model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-            BayesianNeuralNetwork(model_params=model_params)
+            fc = FeaturesConfig(n_features=n_features)
+            model_params = BayesianNeuralNetwork.create_model_params(fc, hidden_dim_list)
+            BayesianNeuralNetwork(model_params=model_params, feature_config=fc)
     else:
-        model_params = BayesianNeuralNetwork.create_model_params(n_features, hidden_dim_list)
-        bnn = BayesianNeuralNetwork(model_params=model_params)
+        fc = FeaturesConfig(n_features=n_features)
+        model_params = BayesianNeuralNetwork.create_model_params(fc, hidden_dim_list)
+        bnn = BayesianNeuralNetwork(model_params=model_params, feature_config=fc)
         assert bnn.model_params == model_params
 
 
@@ -356,7 +360,7 @@ def test_check_context_matrix_bad_input_type(invalid_context) -> None:
     """Test error handling in check_context_matrix method for non-ArrayLike inputs."""
     bnn = BayesianNeuralNetwork.cold_start(n_features=2, hidden_dim_list=[])
 
-    with pytest.raises(ValidationError):
+    with pytest.raises((AttributeError, ValueError)):
         bnn.check_context_matrix(context=invalid_context)
 
 
@@ -427,11 +431,6 @@ def test_bnn_sample_proba(
     # context is python list
     context = context.tolist()
     assert type(context) is list
-    sample_proba(context=context)
-
-    # context is pandas DataFrame
-    context = pd.DataFrame(context)
-    assert type(context) is pd.DataFrame
     sample_proba(context=context)
 
     # check that the model is working with multi-sample prediction
@@ -957,26 +956,29 @@ def test_can_init_bayesian_neural_network_cc(
 ):
     # at least one beta must be specified
     dim_list = [n_features] + hidden_dim_list
+    fc = FeaturesConfig(n_features=n_features)
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
         with pytest.raises((ValidationError, ValueError)):
             model_params = BayesianNeuralNetwork.create_model_params(
-                n_features, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+                fc, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
             )
             bnn = BayesianNeuralNetworkCC(
                 model_params=model_params,
                 cost=cost,
                 activation=activation,
                 use_residual_connections=use_residual_connections,
+                feature_config=fc,
             )
     else:
         model_params = BayesianNeuralNetwork.create_model_params(
-            n_features, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+            fc, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
         )
         bnn = BayesianNeuralNetworkCC(
             model_params=model_params,
             cost=cost,
             activation=activation,
             use_residual_connections=use_residual_connections,
+            feature_config=fc,
         )
         assert bnn.model_params == model_params
         assert bnn.activation == activation
@@ -1015,14 +1017,16 @@ def test_create_default_instance_bayesian_neural_network_cc(
             use_residual_connections=use_residual_connections,
             use_layerwise_scaling=use_layerwise_scaling,
         )
+        fc = FeaturesConfig(n_features=n_features)
         model_params = BayesianNeuralNetwork.create_model_params(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+            fc, hidden_dim_list=hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
         )
         bnn_init = BayesianNeuralNetworkCC(
             model_params=model_params,
             cost=cost,
             activation=activation,
             use_residual_connections=use_residual_connections,
+            feature_config=fc,
         )
         assert bnn_cold_start == bnn_init
         assert bnn_cold_start.activation == activation
@@ -1261,3 +1265,329 @@ def test_can_init_bayesian_neural_network_mo_cc(
         for model in bnn_mo_cc.models:
             assert model.activation == activation
             assert model.use_residual_connections == use_residual_connections
+
+
+########################################################################################################################
+# Embedding layer tests
+########################################################################################################################
+
+
+# ---------------------------------------------------------------------------
+# CategoricalFeatureConfig
+# ---------------------------------------------------------------------------
+
+
+@settings(deadline=500)
+@given(
+    column_index=st.integers(),
+    cardinality=st.integers(),
+    embedding_dim=st.integers(),
+)
+def test_can_init_categorical_feature_config(column_index, cardinality, embedding_dim):
+    if column_index < 0 or cardinality <= 0 or embedding_dim <= 0:
+        with pytest.raises(ValidationError):
+            CategoricalFeatureConfig(column_index=column_index, cardinality=cardinality, embedding_dim=embedding_dim)
+    else:
+        cfg = CategoricalFeatureConfig(column_index=column_index, cardinality=cardinality, embedding_dim=embedding_dim)
+        assert cfg.column_index == column_index
+        assert cfg.cardinality == cardinality
+        assert cfg.embedding_dim == embedding_dim
+
+    if column_index >= 0 and cardinality > 0:
+        cfg = CategoricalFeatureConfig(column_index=column_index, cardinality=cardinality, embedding_dim=8)
+        assert cfg.embedding_dim == 8
+
+
+# ---------------------------------------------------------------------------
+# FeaturesConfig
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "n_features,cat_configs,expected_n_numerical,expected_indices,expected_output_dim",
+    [
+        (4, [(2, 3, 4), (3, 2, 6)], 2, [0, 1], 2 + 4 + 6),
+        (5, [(2, 3, 4), (4, 2, 4)], 3, [0, 1, 3], 3 + 4 + 4),
+    ],
+)
+def test_feature_config_properties(
+    n_features, cat_configs, expected_n_numerical, expected_indices, expected_output_dim
+):
+    """Derived properties are consistent: n_numerical, numerical_indices, total_output_dim."""
+    fc = FeaturesConfig(
+        n_features=n_features,
+        categorical_features_configs=[
+            CategoricalFeatureConfig(column_index=col, cardinality=card, embedding_dim=emb)
+            for col, card, emb in cat_configs
+        ],
+    )
+    assert fc.n_features == n_features
+    assert fc.n_numerical == expected_n_numerical
+    assert fc.numerical_indices == expected_indices
+    assert fc.total_output_dim == expected_output_dim
+
+
+@pytest.mark.parametrize("n_features,n_numerical,total_output_dim", [(0, 0, 0)])
+def test_feature_config_defaults(n_features, n_numerical, total_output_dim):
+    fc = FeaturesConfig()
+    assert fc.n_numerical == n_numerical
+    assert fc.categorical_features_configs == []
+    assert fc.n_features == n_features
+    assert fc.total_output_dim == total_output_dim
+
+
+@pytest.mark.parametrize(
+    "categorical_configs,error_match",
+    [
+        (
+            [
+                CategoricalFeatureConfig(column_index=1, cardinality=3, embedding_dim=4),
+                CategoricalFeatureConfig(column_index=1, cardinality=2, embedding_dim=4),
+            ],
+            "Duplicate",
+        ),
+        (
+            [CategoricalFeatureConfig(column_index=5, cardinality=3, embedding_dim=4)],
+            "out of range",
+        ),
+    ],
+)
+@pytest.mark.parametrize("n_features", [3])
+def test_feature_config_invalid_column_indices(categorical_configs, error_match, n_features):
+    with pytest.raises(ValidationError, match=error_match):
+        FeaturesConfig(n_features=n_features, categorical_features_configs=categorical_configs)
+
+
+# ---------------------------------------------------------------------------
+# EmbeddingParams
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("dist_type,dist_class", [("studentt", StudentTArray), ("normal", NormalArray)])
+@pytest.mark.parametrize(
+    "n_features,cat_configs,expected_shapes",
+    [(2, [(0, 3, 4), (1, 2, 6)], [(3, 4), (2, 6)])],
+)
+def test_embedding_params_cold_start_shapes(dist_type, dist_class, n_features, cat_configs, expected_shapes):
+    fc = FeaturesConfig(
+        n_features=n_features,
+        categorical_features_configs=[
+            CategoricalFeatureConfig(column_index=col, cardinality=card, embedding_dim=emb)
+            for col, card, emb in cat_configs
+        ],
+    )
+    ep = EmbeddingParams.cold_start(fc, dist_class=dist_class)
+    assert len(ep.embeddings) == len(cat_configs)
+    for emb, expected in zip(ep.embeddings, expected_shapes):
+        assert emb.shape == expected
+    assert isinstance(ep.embeddings[0], dist_class)
+
+
+@pytest.mark.parametrize("n_features,cardinality,embedding_dim", [(1, 2, 2)])
+def test_embedding_params_init_is_frozen_copy(n_features, cardinality, embedding_dim):
+    fc = FeaturesConfig(
+        n_features=n_features,
+        categorical_features_configs=[
+            CategoricalFeatureConfig(column_index=0, cardinality=cardinality, embedding_dim=embedding_dim)
+        ],
+    )
+    ep = EmbeddingParams.cold_start(fc)
+    original_mu = [row[:] for row in ep.embeddings[0].mu]
+
+    # Mutate current embeddings
+    new_emb = ep.embeddings[0].with_dist_parameters(mu=[[1.0, 2.0], [3.0, 4.0]], sigma=[[0.1, 0.1], [0.1, 0.1]])
+    ep.embeddings[0] = new_emb
+    assert ep.embeddings[0].mu != original_mu
+
+    # embeddings_init should still have original values
+    assert ep.embeddings_init[0].mu == original_mu
+
+
+# ---------------------------------------------------------------------------
+# BNN with feature_config: cold_start and check_context_matrix
+# ---------------------------------------------------------------------------
+
+
+def _make_bnn_with_categoricals(n_features=2, categorical_features=None, dist_type="studentt", hidden_dim_list=None):
+    return BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        categorical_features=categorical_features or {1: 3},
+        hidden_dim_list=hidden_dim_list or [8],
+        dist_type=dist_type,
+        update_kwargs={"epochs": 1},
+    )
+
+
+def test_cold_start_requires_n_features():
+    with pytest.raises((TypeError, Exception)):
+        BayesianNeuralNetwork.cold_start()
+
+
+@pytest.mark.parametrize(
+    "n_features,categorical_features,expected_emb_shape,expected_input_dim",
+    [(2, {1: 3}, (3, 1), 2)],
+)
+def test_cold_start_with_feature_config(n_features, categorical_features, expected_emb_shape, expected_input_dim):
+    """cold_start creates correct embedding params and first-layer weight shape."""
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
+    assert bnn.model_params.embedding_params is not None
+    assert len(bnn.model_params.embedding_params.embeddings) == 1
+    assert bnn.model_params.embedding_params.embeddings[0].shape == expected_emb_shape
+    assert bnn.model_params.bnn_layer_params[0].weight.shape[0] == expected_input_dim
+
+
+@pytest.mark.parametrize("n_features,cardinality", [(2, 3)])
+def test_check_context_matrix_with_categorical(n_features, cardinality):
+    """check_context_matrix validates column count and categorical range for feature_config models."""
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features={1: cardinality})
+    # valid context
+    bnn.check_context_matrix(np.array([[0.5, 0], [-0.3, 1]]))
+    # too few columns
+    with pytest.raises(AttributeError, match="Shape mismatch"):
+        bnn.check_context_matrix(np.array([[1.0]]))
+    # out-of-range category
+    with pytest.raises(ValueError, match="out of range"):
+        bnn.check_context_matrix(np.array([[1.0, cardinality + 2]]))
+
+
+# ---------------------------------------------------------------------------
+# _prepare_context_arrays
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("n_samples,n_numerical", [(3, 1)])
+def test_prepare_context_arrays_splits_correctly(n_samples, n_numerical):
+    bnn = _make_bnn_with_categoricals()
+    context = np.array([[0.5, 0], [-0.3, 1], [1.2, 2]], dtype=np.float64)
+    num_arr, cat_idx = bnn._prepare_context_arrays(context)
+
+    assert num_arr.shape == (n_samples, n_numerical)
+    np.testing.assert_allclose(num_arr[:, 0], [0.5, -0.3, 1.2])
+    assert cat_idx[0].tolist() == [0, 1, 2]
+
+
+# ---------------------------------------------------------------------------
+# sample_proba with feature_config
+# ---------------------------------------------------------------------------
+
+
+@settings(deadline=None, max_examples=5)
+@given(
+    dist_type=st.sampled_from(["studentt", "normal"]),
+    n_samples=st.integers(min_value=1, max_value=10),
+)
+def test_sample_proba_with_feature_config(dist_type, n_samples):
+    bnn = _make_bnn_with_categoricals(dist_type=dist_type)
+    base = np.array([[0.5, 0], [-0.3, 1], [1.2, 2]], dtype=np.float64)
+    context = np.tile(base, (n_samples // len(base) + 1, 1))[:n_samples]
+    results = bnn.sample_proba(context=context)
+
+    assert len(results) == n_samples
+    for prob, ws in results:
+        assert 0.0 <= prob <= 1.0
+        assert isinstance(ws, float)
+
+
+# ---------------------------------------------------------------------------
+# create_update_model with feature_config
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("expected_rv", ["embedding_0"])
+def test_create_update_model_contains_embedding_variable(expected_rv):
+    bnn = _make_bnn_with_categoricals()
+    context = np.array([[0.5, 0], [-0.3, 1]], dtype=np.float64)
+    pymc_model = bnn.create_update_model(x=context, y=[1, 0])
+    rv_names = [rv.name for rv in pymc_model.free_RVs]
+    assert any(expected_rv in name for name in rv_names)
+
+
+@pytest.mark.parametrize("batch_size,expected_rv", [(2, "embedding_0")])
+def test_create_update_model_minibatch_with_categoricals(batch_size, expected_rv):
+    bnn = _make_bnn_with_categoricals()
+    context = np.array([[0.5, 0], [-0.3, 1], [1.2, 2]], dtype=np.float64)
+    pymc_model = bnn.create_update_model(x=context, y=[1, 0, 1], batch_size=batch_size)
+    rv_names = [rv.name for rv in pymc_model.free_RVs]
+    assert any(expected_rv in name for name in rv_names)
+
+
+# ---------------------------------------------------------------------------
+# _reset with embeddings
+# ---------------------------------------------------------------------------
+
+
+def test_reset_restores_embedding_params():
+    bnn = _make_bnn_with_categoricals()
+    original_mu = [row[:] for row in bnn.model_params.embedding_params.embeddings[0].mu]
+
+    # Manually mutate embeddings
+    new_emb = bnn.model_params.embedding_params.embeddings[0].with_dist_parameters(
+        mu=[[1.0] * 1] * 3, sigma=[[0.1] * 1] * 3
+    )
+    bnn.model_params.embedding_params.embeddings[0] = new_emb
+    assert bnn.model_params.embedding_params.embeddings[0].mu != original_mu
+
+    # Reset should restore
+    bnn._reset()
+    assert bnn.model_params.embedding_params.embeddings[0].mu == original_mu
+
+
+# ---------------------------------------------------------------------------
+# End-to-end VI update with categorical embeddings
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("dist_type", ["studentt", "normal"])
+@pytest.mark.parametrize("n_features,categorical_features,hidden_dim_list", [(2, {1: 3}, [8])])
+def test_bnn_vi_update_with_categorical_features_updates_embeddings(
+    dist_type, n_features, categorical_features, hidden_dim_list
+):
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        categorical_features=categorical_features,
+        hidden_dim_list=hidden_dim_list,
+        dist_type=dist_type,
+        update_kwargs={"fit": {"n": 10}},
+    )
+    # [score, tier_index]  — 4 samples with tier indices 0, 1, 2, 0
+    context = np.array([[0.5, 0], [-0.3, 1], [1.2, 2], [0.0, 0]], dtype=np.float64)
+    rewards = [1, 0, 1, 0]
+
+    init_mu = [row[:] for row in bnn.model_params.embedding_params.embeddings[0].mu]
+    bnn._update(context=context, rewards=rewards)
+    updated_mu = bnn.model_params.embedding_params.embeddings[0].mu
+
+    assert updated_mu != init_mu
+
+    # Reset should restore initial embeddings
+    bnn._reset()
+    assert bnn.model_params.embedding_params.embeddings[0].mu == init_mu
+
+
+# ---------------------------------------------------------------------------
+# from_old_state backward-compatibility
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("n_features,hidden_dim_list", [(3, [4])])
+def test_from_old_state_infers_numerical_feature_config(n_features, hidden_dim_list):
+    """A pre-4.4 state dict (no feature_config) is migrated automatically."""
+    bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
+    state = bnn.apply_version_adjusted_method("model_dump", "dict")
+    state.pop("feature_config")  # simulate pre-4.4 serialised state
+
+    restored = BayesianNeuralNetwork.from_old_state(state)
+
+    assert restored.feature_config.n_features == n_features
+    assert restored.feature_config.categorical_features_configs == []
+
+
+def test_from_old_state_preserves_existing_feature_config():
+    """If feature_config is already present in the state dict it is left untouched."""
+    bnn = _make_bnn_with_categoricals()
+    state = bnn.apply_version_adjusted_method("model_dump", "dict")
+
+    restored = BayesianNeuralNetwork.from_old_state(state)
+
+    assert restored.feature_config == bnn.feature_config
+    assert restored.model_params.embedding_params is not None
