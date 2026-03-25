@@ -25,7 +25,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Offline Policy Evaluation" href="ope.html" />
+    <link rel="next" title="Transfer Learning for Contextual Multi-Armed Bandits" href="transfer_learning.html" />
     <link rel="prev" title="cMAB Simulation" href="cmab_simulator.html" /> 
 </head>
 
@@ -56,20 +56,33 @@
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab.html">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cmab_quant_bnn.html">Contextual Multi-Armed Bandit with BNN-Based Quantitative Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab_simulator.html">cMAB Simulation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Bayesian Neural Network</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#Introduction">Introduction</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Objectives">Objectives</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#Train-Bayesian-models,-including:">Train Bayesian models, including:</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#Evaluation:">Evaluation:</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Introduction">Introduction</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Generate-Data">Generate Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Bayesian-Logistic-Regression">Bayesian Logistic Regression</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#Predictions-+-uncertainty-map">Predictions + uncertainty map</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#id1">Predictions + uncertainty map</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Using-Normal-Priors-Instead-of-Student-t">Using Normal Priors Instead of Student-t</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Predictions-+-uncertainty-map">Predictions + uncertainty map</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id1">Bayesian Neural Network</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Using-Bayesian-Neural-Network">Using Bayesian Neural Network</a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#id2">Predictions + uncertainty map</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Using-Normal-Priors-Instead-of-Student-t">Using Normal Priors Instead of Student-t</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#FeaturesConfig:-Categorical-Embeddings">FeaturesConfig: Categorical Embeddings</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#Preparing-the-Dataset">Preparing the Dataset</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Configuring-FeaturesConfig">Configuring FeaturesConfig</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Training">Training</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id3">Predictions + uncertainty map</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Inspecting-the-Learned-Embeddings">Inspecting the Learned Embeddings</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="transfer_learning.html">Transfer Learning for Contextual Multi-Armed Bandits</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html">Offline Policy Evaluation</a></li>
 </ul>
 </li>
@@ -108,18 +121,8 @@
 <h1>Bayesian Neural Network<a class="headerlink" href="#Bayesian-Neural-Network" title="Link to this heading"></a></h1>
 <section id="Introduction">
 <h2>Introduction<a class="headerlink" href="#Introduction" title="Link to this heading"></a></h2>
-<p>This notebook demonstrates the use of Bayesian models for classification tasks, focusing on Bayesian Logistic Regression and Bayesian Neural Networks. Bayesian methods provide a probabilistic approach to machine learning, allowing for uncertainty quantification in predictions, which is particularly useful in decision-making under uncertainty. The notebook is based on the example in <a class="reference external" href="https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html">https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html</a></p>
-</section>
-<section id="Objectives">
-<h2>Objectives<a class="headerlink" href="#Objectives" title="Link to this heading"></a></h2>
-<section id="Train-Bayesian-models,-including:">
-<h3>Train Bayesian models, including:<a class="headerlink" href="#Train-Bayesian-models,-including:" title="Link to this heading"></a></h3>
-<p>Bayesian Logistic Regression: A probabilistic version of logistic regression. Bayesian Neural Networks: Neural networks with Bayesian inference for parameter estimation.</p>
-</section>
-<section id="Evaluation:">
-<h3>Evaluation:<a class="headerlink" href="#Evaluation:" title="Link to this heading"></a></h3>
-<p>Evaluate the performance of the models using metrics such as: Accuracy: To measure the proportion of correct predictions. ROC-AUC: To assess the model’s ability to distinguish between classes. Visualization:</p>
-<p>Visualize the results, including decision boundaries and uncertainty estimates, to better understand the behavior of Bayesian models.</p>
+<p>This notebook demonstrates Bayesian models for binary classification, progressing from Bayesian Logistic Regression to Bayesian Neural Networks, and then to BNNs with rich feature types: <strong>categorical embeddings</strong> or <strong>numerical normalization</strong>.</p>
+<p>The notebook is based on the example in <a class="reference external" href="https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html">https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html</a></p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
@@ -131,7 +134,12 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_test_split</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">scale</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BayesianNeuralNetwork</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BayesianLogisticRegression</span><span class="p">,</span>
+    <span class="n">BayesianNeuralNetwork</span><span class="p">,</span>
+    <span class="n">CategoricalFeatureConfig</span><span class="p">,</span>
+    <span class="n">FeaturesConfig</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="o">%</span><span class="k">load_ext</span> autoreload
 <span class="o">%</span><span class="k">autoreload</span> 2
@@ -142,35 +150,23 @@
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">plot_map</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">metric</span><span class="p">):</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">plot_map</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
     <span class="n">cmap</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="s2">&quot;coolwarm&quot;</span><span class="p">)</span>
-
     <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
-
-    <span class="c1"># Create the contour plot</span>
     <span class="n">contour</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">contourf</span><span class="p">(</span><span class="o">*</span><span class="n">grid</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">)</span>
-
-    <span class="c1"># Scatter plot for the test points</span>
     <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 0&quot;</span><span class="p">)</span>
     <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 1&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Add a colorbar</span>
     <span class="n">cbar</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">contour</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">)</span>
     <span class="n">cbar</span><span class="o">.</span><span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">metric</span><span class="si">}</span><span class="s2"> of Output&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Set axis limits and labels</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">xlim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">ylim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Add a legend</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">xlim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">ylim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span> <span class="ow">or</span> <span class="n">metric</span><span class="p">)</span>
     <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-
     <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
 </div>
-<section id="Generate-data">
-<h4>Generate data<a class="headerlink" href="#Generate-data" title="Link to this heading"></a></h4>
-<p>We first generate a binary labeled data set, with a two dimensional feature space, and is not linearly separable. We then split the data set to a training data set and a test data set.</p>
+<section id="Generate-Data">
+<h3>Generate Data<a class="headerlink" href="#Generate-Data" title="Link to this heading"></a></h3>
+<p>We generate a 2-D binary dataset that is not linearly separable (two interleaved moons), then split it into training and test sets. A dense 2-D grid is also created here for the uncertainty maps used throughout the notebook.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
@@ -180,51 +176,41 @@
 <span class="n">x_train</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">y_test</span> <span class="o">=</span> <span class="n">train_test_split</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">test_size</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
 <span class="n">y_train</span> <span class="o">=</span> <span class="n">y_train</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 <span class="n">y_test</span> <span class="o">=</span> <span class="n">y_test</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
 <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
 <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">Y</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">X</span><span class="p">[</span><span class="n">Y</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 0&quot;</span><span class="p">)</span>
 <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">Y</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">X</span><span class="p">[</span><span class="n">Y</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 1&quot;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Data set&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Dataset&quot;</span><span class="p">)</span>
 <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+
+<span class="c1"># 2-D grid for uncertainty maps — reused by every model below</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mgrid</span><span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+<span class="n">grid_2d</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f2579b37310&gt;
-</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_6_1.png" src="../_images/tutorials_bnn_6_1.png" />
+<img alt="../_images/tutorials_bnn_6_0.png" src="../_images/tutorials_bnn_6_0.png" />
 </div>
 </div>
 </section>
-<section id="Using-Bayesian-logistic-regression">
-<h4>Using Bayesian logistic regression<a class="headerlink" href="#Using-Bayesian-logistic-regression" title="Link to this heading"></a></h4>
-<p>Using the cold_start method of BayesianLogisticRegression we can create a Bayesian Logistic Regression model with default Student-T parameters. Default parameters values are mu (mean) = 0, sigma (standard deviation) = 10, nu (degrees of freedom) = 5.</p>
-<p>In this case we define the model to run with Variational inference which is usually faster than MCMC.</p>
-<div class="nbinput nblast docutils container">
+<section id="Bayesian-Logistic-Regression">
+<h3>Bayesian Logistic Regression<a class="headerlink" href="#Bayesian-Logistic-Regression" title="Link to this heading"></a></h3>
+<p>Using <code class="docutils literal notranslate"><span class="pre">BayesianLogisticRegression.cold_start</span></code> we create a probabilistic linear classifier with Student-T weight priors (default: mu=0, sigma=10, nu=5).</p>
+<p>We fit it with Variational Inference using Adam and minibatches of 256.</p>
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">blr</span> <span class="o">=</span> <span class="n">BayesianLogisticRegression</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
-    <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
+    <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<p>Applying the update method will calculate the approximated posterior of the parameters, and update the model.</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">blr</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
+<span class="n">blr</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -255,85 +241,67 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
-<p>In order to sample from the posterior distribution, we are creating the model with the new updated parameters, and generate samples using pm.sample_prior_predictive.</p>
-<p>We consider a point to belong to Class 1, if more than half of the samples belong to Class 1 is higher than 0.5.</p>
-<div class="nbinput nblast docutils container">
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">blr</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_blr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">])</span>
+<span class="n">pred_proba_blr</span> <span class="o">=</span> <span class="n">batch_proba_blr</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">pred_blr</span> <span class="o">=</span> <span class="n">pred_proba_blr</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
+
+<span class="n">accuracy_blr</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_blr</span><span class="p">)</span>
+<span class="n">auc_blr</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba_blr</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BLR — Accuracy: </span><span class="si">{</span><span class="n">accuracy_blr</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_blr</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+BLR — Accuracy: 0.876, AUC: 0.949
+</pre></div></div>
+</div>
+<p>Because BLR is linear it struggles with the non-linear moon boundary.</p>
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">blr</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
-<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
-<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
-<span class="p">)</span>
-<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-
-<span class="n">pred</span> <span class="o">=</span> <span class="n">pred_proba</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
-</pre></div>
-</div>
-</div>
-<p>Since the Bayesian Logistic Regression model is linear, it’s not able do separate the space accurately.</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
-</pre></div>
-</div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 0&quot;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 1&quot;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;Predicted labels in testing set&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred_blr</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred_blr</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 0&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred_blr</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred_blr</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 1&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;BLR — predicted labels&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">)</span>
 <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
 </pre></div>
 </div>
 </div>
 <div class="nboutput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;matplotlib.legend.Legend at 0x7f623db59ff0&gt;
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_bnn_12_1.png" src="../_images/tutorials_bnn_12_1.png" />
+</div>
+</div>
+<p>We can check convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior — a higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f25763fe080&gt;
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_15_1.png" src="../_images/tutorials_bnn_15_1.png" />
-</div>
-</div>
-<p>Here we calculate the accuracy and AUC score of the model</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Calculate accuracy</span>
-<span class="n">accuracy</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Accuracy: </span><span class="si">{</span><span class="n">accuracy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># Calculate AUC</span>
-<span class="n">auc</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC: </span><span class="si">{</span><span class="n">auc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Accuracy: 0.87
-AUC: 0.9528688524590164
-</pre></div></div>
-</div>
-<p>We can check the convergence by plotting the Evidence Lower Bound (ELBO) over iterations. ELBO is a metric used in Variational Inference to measure the convergence of the approximation to the true posterior. A higher ELBO indicates a better approximation. <a class="reference external" href="https://en.wikipedia.org/wiki/Evidence_lower_bound">https://en.wikipedia.org/wiki/Evidence_lower_bound</a></p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">blr</span><span class="o">.</span><span class="n">approx_history</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;ELBO&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;iteration&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;BLR ELBO convergence&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -342,55 +310,21 @@ AUC: 0.9528688524590164
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_19_0.png" src="../_images/tutorials_bnn_19_0.png" />
+<img alt="../_images/tutorials_bnn_14_0.png" src="../_images/tutorials_bnn_14_0.png" />
 </div>
 </div>
-</section>
 </section>
 </section>
 <section id="Predictions-+-uncertainty-map">
 <h2>Predictions + uncertainty map<a class="headerlink" href="#Predictions-+-uncertainty-map" title="Link to this heading"></a></h2>
-<p>In order to visualize the posterior predictive distribution, we can create a grid of points in the input space and evaluate the model at those points.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mgrid</span><span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="mi">3</span><span class="p">:</span><span class="mi">100</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
-<span class="n">grid_2d</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
-<span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">blr</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
-<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
-<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
-<span class="p">)</span>
-<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<p>This is the average of the output of the model</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_24_0.png" src="../_images/tutorials_bnn_24_0.png" />
-</div>
-</div>
-<p>This is the standard deviation of the output of the model</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pred_proba_std</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">blr</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_blr_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">])</span>
 
-<span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba_std</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">)</span>
+<span class="n">plot_map</span><span class="p">(</span><span class="n">batch_proba_blr_grid</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred_blr</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">,</span> <span class="s2">&quot;BLR — Mean&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -398,9 +332,37 @@ AUC: 0.9528688524590164
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_26_0.png" src="../_images/tutorials_bnn_26_0.png" />
+<img alt="../_images/tutorials_bnn_16_0.png" src="../_images/tutorials_bnn_16_0.png" />
 </div>
 </div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_map</span><span class="p">(</span><span class="n">batch_proba_blr_grid</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred_blr</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">,</span> <span class="s2">&quot;BLR — Uncertainty&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_bnn_17_0.png" src="../_images/tutorials_bnn_17_0.png" />
+</div>
+</div>
+<section id="id1">
+<h3>Bayesian Neural Network<a class="headerlink" href="#id1" title="Link to this heading"></a></h3>
+<p>A BNN captures non-linear decision boundaries through multiple hidden layers. Each weight is a random variable with a Student-T prior, jointly updated with VI.</p>
+<p>Model settings:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">hidden_dim_list=[16,</span> <span class="pre">16]</span></code> — two hidden layers with 16 neurons each</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">activation=&quot;tanh&quot;</span></code> — symmetric, works well with zero-centred priors</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">use_residual_connections=True</span></code> — skip connections improve gradient flow in deeper networks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dist_type=&quot;studentt&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">dist_params_init={&quot;mu&quot;:</span> <span class="pre">0,</span> <span class="pre">&quot;sigma&quot;:</span> <span class="pre">1,</span> <span class="pre">&quot;nu&quot;:</span> <span class="pre">5}</span></code></p></li>
+</ul>
+</section>
+<section id="Using-Bayesian-Neural-Network">
+<h3>Using Bayesian Neural Network<a class="headerlink" href="#Using-Bayesian-Neural-Network" title="Link to this heading"></a></h3>
 <p>In the following section we will demonstrate how a bayesian neural network (BNN) can capture complex patterns and relationships in data through multiple layers of abstraction, leading to better performance on tasks with high-dimensional features. In contrast, bayesian logistic regression is limited to linear relationships and may not effectively model intricate dependencies within the data.</p>
 <p>In order to define the model structure, we set:</p>
 <ul class="simple">
@@ -411,7 +373,7 @@ AUC: 0.9528688524590164
 <p>The fit is performed using the <strong>Variational Inference</strong> algorithm with <code class="docutils literal notranslate"><span class="pre">10K</span></code> iterations, and with minibatches of size <code class="docutils literal notranslate"><span class="pre">64</span></code>.</p>
 <p>The neurons’ <strong>Student-t distribution</strong> are initialized with <code class="docutils literal notranslate"><span class="pre">mu</span> <span class="pre">=</span> <span class="pre">0,</span> <span class="pre">sigma</span> <span class="pre">=</span> <span class="pre">1</span> <span class="pre">and</span> <span class="pre">nu</span> <span class="pre">=</span> <span class="pre">5</span></code> (Student-t is the default distribution type).</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">dist_params</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>  <span class="c1"># dist_type defaults to &quot;studentt&quot;</span>
@@ -430,7 +392,7 @@ AUC: 0.9528688524590164
 </div>
 <p>Applying the update method will calculate the approximated posterior of the parameters, and update the model.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">bnn</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
@@ -461,46 +423,19 @@ UserWarning: install "ipywidgets" for Jupyter support
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
-<p>We can see that the separation is much better than the bayesian logistic model.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
-<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
-<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
-<span class="p">)</span>
-<span class="n">pred_proba</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_bnn</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">])</span>
+<span class="n">pred_proba_bnn</span> <span class="o">=</span> <span class="n">batch_proba_bnn</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">pred_bnn</span> <span class="o">=</span> <span class="n">pred_proba_bnn</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
 
-<span class="n">pred</span> <span class="o">=</span> <span class="n">pred_proba</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
-
-<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;Predicted labels in testing set&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;Y&quot;</span><span class="p">);</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_34_0.png" src="../_images/tutorials_bnn_34_0.png" />
-</div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Calculate accuracy</span>
-<span class="n">accuracy</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Accuracy: </span><span class="si">{</span><span class="n">accuracy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># Calculate AUC</span>
-<span class="n">auc</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC: </span><span class="si">{</span><span class="n">auc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">accuracy_bnn</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_bnn</span><span class="p">)</span>
+<span class="n">auc_bnn</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba_bnn</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BNN — Accuracy: </span><span class="si">{</span><span class="n">accuracy_bnn</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_bnn</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BLR — Accuracy: </span><span class="si">{</span><span class="n">accuracy_blr</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_blr</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -509,18 +444,48 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Accuracy: 0.884
-AUC: 0.9536693135245902
+BNN — Accuracy: 0.880, AUC: 0.951
+BLR — Accuracy: 0.876, AUC: 0.949
 </pre></div></div>
 </div>
-<p>Plotting the ELBO convergence</p>
+<p>The BNN produces a much better separation than the linear BLR.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred_bnn</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred_bnn</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 0&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_test</span><span class="p">[</span><span class="n">pred_bnn</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x_test</span><span class="p">[</span><span class="n">pred_bnn</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Class 1&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;BNN — predicted labels&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;X1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;X2&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;matplotlib.legend.Legend at 0x7f623c3f8820&gt;
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_bnn_28_1.png" src="../_images/tutorials_bnn_28_1.png" />
+</div>
+</div>
+<p>ELBO convergence</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">bnn</span><span class="o">.</span><span class="n">approx_history</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;ELBO&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;iteration&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;BNN ELBO convergence&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -529,34 +494,21 @@ AUC: 0.9536693135245902
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_37_0.png" src="../_images/tutorials_bnn_37_0.png" />
+<img alt="../_images/tutorials_bnn_30_0.png" src="../_images/tutorials_bnn_30_0.png" />
 </div>
 </div>
 </section>
-<section id="id1">
-<h2>Predictions + uncertainty map<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
-<p>We now visualize the posterior predictive distribution of output of the bayesian neural network model</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
-<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
-<span class="n">batch_proba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">]</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<p>This is the average of the output of the model</p>
+</section>
+<section id="id2">
+<h2>Predictions + uncertainty map<a class="headerlink" href="#id2" title="Link to this heading"></a></h2>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pred_proba_mean</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_bnn_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions</span><span class="p">])</span>
 
-<span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba_mean</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">)</span>
+<span class="n">plot_map</span><span class="p">(</span><span class="n">batch_proba_bnn_grid</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred_bnn</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">,</span> <span class="s2">&quot;BNN — Mean&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -564,17 +516,14 @@ AUC: 0.9536693135245902
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_42_0.png" src="../_images/tutorials_bnn_42_0.png" />
+<img alt="../_images/tutorials_bnn_32_0.png" src="../_images/tutorials_bnn_32_0.png" />
 </div>
 </div>
-<p>This is the standard deviation of the output of the model</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pred_proba_std</span> <span class="o">=</span> <span class="n">batch_proba</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-
-<span class="n">plot_map</span><span class="p">(</span><span class="n">pred_proba_std</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_map</span><span class="p">(</span><span class="n">batch_proba_bnn_grid</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred_bnn</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">,</span> <span class="s2">&quot;BNN — Uncertainty&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -582,32 +531,40 @@ AUC: 0.9536693135245902
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_44_0.png" src="../_images/tutorials_bnn_44_0.png" />
+<img alt="../_images/tutorials_bnn_33_0.png" src="../_images/tutorials_bnn_33_0.png" />
 </div>
 </div>
 </section>
 <section id="Using-Normal-Priors-Instead-of-Student-t">
 <h2>Using Normal Priors Instead of Student-t<a class="headerlink" href="#Using-Normal-Priors-Instead-of-Student-t" title="Link to this heading"></a></h2>
-<p>By default, BNN uses Student-t distributions for weight priors. You can use Normal priors by setting <code class="docutils literal notranslate"><span class="pre">dist_type=&quot;normal&quot;</span></code> and providing <code class="docutils literal notranslate"><span class="pre">dist_params_init</span></code> without the <code class="docutils literal notranslate"><span class="pre">nu</span></code> parameter. Normal priors are simpler and faster, but less robust to outliers compared to Student-t.</p>
-<p><strong>When to use Normal priors:</strong></p>
-<ul class="simple">
-<li><p>When you want faster computation</p></li>
-<li><p>When you don’t expect heavy-tailed distributions</p></li>
-<li><p>For standard regularization (L2-like)</p></li>
-</ul>
-<p><strong>When to use Student-t priors (default):</strong></p>
-<ul class="simple">
-<li><p>When you need robustness to outliers</p></li>
-<li><p>When you want stronger regularization</p></li>
-<li><p>For better generalization in noisy data</p></li>
-</ul>
-<p>BNN with Normal priors</p>
+<p>You can replace the Student-T prior with a Normal prior by setting <code class="docutils literal notranslate"><span class="pre">dist_type=&quot;normal&quot;</span></code> and omitting <code class="docutils literal notranslate"><span class="pre">nu</span></code> from <code class="docutils literal notranslate"><span class="pre">dist_params_init</span></code>.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Prior</p></th>
+<th class="head"><p>Tail weight</p></th>
+<th class="head"><p>Robustness to outliers</p></th>
+<th class="head"><p>Speed</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Student-T (default)</p></td>
+<td><p>Heavy</p></td>
+<td><p>High</p></td>
+<td><p>Slightly slower</p></td>
+</tr>
+<tr class="row-odd"><td><p>Normal</p></td>
+<td><p>Light</p></td>
+<td><p>Lower</p></td>
+<td><p>Faster</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>When to use Normal:</strong> faster computation, no expectation of heavy-tailed noise. <strong>When to use Student-T:</strong> robustness to outliers, stronger regularisation.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create BNN with Normal priors</span>
-<span class="n">bnn_normal</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">bnn_normal</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
     <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
     <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
     <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;relu&quot;</span><span class="p">,</span>
@@ -617,22 +574,17 @@ AUC: 0.9536693135245902
     <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
-
 <span class="n">bnn_normal</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
 
-<span class="c1"># Quick evaluation</span>
 <span class="n">batch_predictions_normal</span> <span class="o">=</span> <span class="p">[</span><span class="n">bnn_normal</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">x_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
-<span class="n">batch_proba_normal</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span> <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions_normal</span><span class="p">]</span>
-<span class="p">)</span>
+<span class="n">batch_proba_normal</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions_normal</span><span class="p">])</span>
 <span class="n">pred_proba_normal</span> <span class="o">=</span> <span class="n">batch_proba_normal</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 <span class="n">pred_normal</span> <span class="o">=</span> <span class="n">pred_proba_normal</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
 
 <span class="n">accuracy_normal</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_normal</span><span class="p">)</span>
 <span class="n">auc_normal</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba_normal</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">BNN with Normal Priors - Accuracy: </span><span class="si">{</span><span class="n">accuracy_normal</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_normal</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BNN with Student-t Priors - Accuracy: </span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BNN Student-T — Accuracy: </span><span class="si">{</span><span class="n">accuracy_bnn</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_bnn</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BNN Normal    — Accuracy: </span><span class="si">{</span><span class="n">accuracy_normal</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_normal</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -665,9 +617,254 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
+BNN Student-T — Accuracy: 0.880, AUC: 0.951
+BNN Normal    — Accuracy: 0.876, AUC: 0.960
+</pre></div></div>
+</div>
+<section id="FeaturesConfig:-Categorical-Embeddings">
+<h3>FeaturesConfig: Categorical Embeddings<a class="headerlink" href="#FeaturesConfig:-Categorical-Embeddings" title="Link to this heading"></a></h3>
+<p>Real-world datasets often mix numerical and categorical columns. <code class="docutils literal notranslate"><span class="pre">FeaturesConfig</span></code> lets you describe the layout of a numpy array with mixed column types.</p>
+<p>Columns can appear <strong>in any order</strong>. Each categorical feature is identified by its <code class="docutils literal notranslate"><span class="pre">column_index</span></code> in the input array; every remaining column is treated as numerical.</p>
+<p>For each categorical feature the BNN learns a <strong>Bayesian embedding matrix</strong> (shape <code class="docutils literal notranslate"><span class="pre">cardinality</span> <span class="pre">×</span> <span class="pre">embedding_dim</span></code>) jointly with its layer weights via VI — the same idea as word embeddings, but fully probabilistic.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Input array  (n_samples, n_features)
+     │
+     ├─► numerical columns (any positions not claimed by a CategoricalFeatureConfig)
+     │
+     └─► column_index k ──► EmbeddingMatrix (cardinality, emb_dim)
+                                      │
+                                      └──► lookup row per sample ──► (n_samples, emb_dim)
+                                                                             │
+                              np.concatenate([numerical, emb_0, emb_1, ...]) ◄─┘
+                                             │
+                                     (n_samples, n_numerical + Σ emb_dim)
+                                             │
+                                      BNN layers (unchanged)
+</pre></div>
+</div>
+</section>
+</section>
+<section id="Preparing-the-Dataset">
+<h2>Preparing the Dataset<a class="headerlink" href="#Preparing-the-Dataset" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">encode_region</span><span class="p">(</span><span class="n">x1_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Encode x1 into region index: 0=left, 1=center, 2=right.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x1_values</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x1_values</span> <span class="o">&lt;</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
 
-BNN with Normal Priors - Accuracy: 0.886, AUC: 0.960
-BNN with Student-t Priors - Accuracy: 0.884, AUC: 0.954
+
+<span class="n">region_labels</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">]</span>  <span class="c1"># index → label</span>
+
+<span class="c1"># Context arrays: [x1, x2, region_index]</span>
+<span class="n">ctx_train</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">x_train</span><span class="p">,</span> <span class="n">encode_region</span><span class="p">(</span><span class="n">x_train</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">])])</span>
+<span class="n">ctx_test</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">x_test</span><span class="p">,</span> <span class="n">encode_region</span><span class="p">(</span><span class="n">x_test</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">])])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;First 5 training samples (x1, x2, region_index):&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">ctx_train</span><span class="p">[:</span><span class="mi">5</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Region distribution:&quot;</span><span class="p">)</span>
+<span class="n">unique</span><span class="p">,</span> <span class="n">counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">ctx_train</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">return_counts</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">unique</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">),</span> <span class="n">counts</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">region_labels</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+First 5 training samples (x1, x2, region_index):
+[[ 0.03375413 -1.10027911  1.        ]
+ [-0.66175552  0.2961951   0.        ]
+ [-0.65505977 -0.16985879  0.        ]
+ [-0.08125112  0.8861023   1.        ]
+ [ 0.44753632  0.64118226  1.        ]]
+
+Region distribution:
+  left: 148
+  center: 193
+  right: 159
+</pre></div></div>
+</div>
+</section>
+<section id="Configuring-FeaturesConfig">
+<h2>Configuring FeaturesConfig<a class="headerlink" href="#Configuring-FeaturesConfig" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">feature_config</span> <span class="o">=</span> <span class="n">FeaturesConfig</span><span class="p">(</span>
+    <span class="n">n_features</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>  <span class="c1"># total columns: x1 (col 0), x2 (col 1), region_index (col 2)</span>
+    <span class="n">categorical_features_configs</span><span class="o">=</span><span class="p">[</span>
+        <span class="n">CategoricalFeatureConfig</span><span class="p">(</span>
+            <span class="n">column_index</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>  <span class="c1"># column 2 = region_index</span>
+            <span class="n">cardinality</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>  <span class="c1"># 0=left, 1=center, 2=right</span>
+            <span class="n">embedding_dim</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">],</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Numerical columns   : </span><span class="si">{</span><span class="n">feature_config</span><span class="o">.</span><span class="n">n_numerical</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># 2</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Categorical features: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">feature_config</span><span class="o">.</span><span class="n">categorical_features_configs</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># 1</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total input columns : </span><span class="si">{</span><span class="n">feature_config</span><span class="o">.</span><span class="n">n_features</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># 3</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total BNN input dim : </span><span class="si">{</span><span class="n">feature_config</span><span class="o">.</span><span class="n">total_output_dim</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># 2 + 4 = 6</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Numerical columns   : 2
+Categorical features: 1
+Total input columns : 3
+Total BNN input dim : 6
+</pre></div></div>
+</div>
+</section>
+<section id="Training">
+<h2>Training<a class="headerlink" href="#Training" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">bnn_emb</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+    <span class="n">n_features</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">categorical_features</span><span class="o">=</span><span class="p">{</span><span class="mi">2</span><span class="p">:</span> <span class="mi">3</span><span class="p">},</span>
+    <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
+    <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
+    <span class="n">use_residual_connections</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
+    <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
+    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+<span class="n">bnn_emb</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">ctx_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
+UserWarning: install "ipywidgets" for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">batch_predictions_emb</span> <span class="o">=</span> <span class="p">[</span><span class="n">bnn_emb</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">ctx_test</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_emb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions_emb</span><span class="p">])</span>
+<span class="n">pred_proba_emb</span> <span class="o">=</span> <span class="n">batch_proba_emb</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">pred_emb</span> <span class="o">=</span> <span class="n">pred_proba_emb</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
+
+<span class="n">accuracy_emb</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_emb</span><span class="p">)</span>
+<span class="n">auc_emb</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">pred_proba_emb</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BNN with embeddings — Accuracy: </span><span class="si">{</span><span class="n">accuracy_emb</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, AUC: </span><span class="si">{</span><span class="n">auc_emb</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+BNN with embeddings — Accuracy: 0.884, AUC: 0.952
+</pre></div></div>
+</div>
+</section>
+<section id="id3">
+<h2>Predictions + uncertainty map<a class="headerlink" href="#id3" title="Link to this heading"></a></h2>
+<p>For the uncertainty map we build a grid context array by encoding the <code class="docutils literal notranslate"><span class="pre">region</span></code> column using the same helper.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">ctx_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">grid_2d</span><span class="p">,</span> <span class="n">encode_region</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">])])</span>
+
+<span class="n">batch_predictions_emb_grid</span> <span class="o">=</span> <span class="p">[</span><span class="n">bnn_emb</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">ctx_grid</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+<span class="n">batch_proba_emb_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">preds</span><span class="p">]</span> <span class="k">for</span> <span class="n">preds</span> <span class="ow">in</span> <span class="n">batch_predictions_emb_grid</span><span class="p">])</span>
+
+<span class="n">plot_map</span><span class="p">(</span><span class="n">batch_proba_emb_grid</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred_emb</span><span class="p">,</span> <span class="s2">&quot;Mean&quot;</span><span class="p">,</span> <span class="s2">&quot;BNN Embeddings — Mean&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_bnn_47_0.png" src="../_images/tutorials_bnn_47_0.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plot_map</span><span class="p">(</span><span class="n">batch_proba_emb_grid</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">grid</span><span class="p">,</span> <span class="n">x_test</span><span class="p">,</span> <span class="n">pred_emb</span><span class="p">,</span> <span class="s2">&quot;Standard Deviation&quot;</span><span class="p">,</span> <span class="s2">&quot;BNN Embeddings — Uncertainty&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_bnn_48_0.png" src="../_images/tutorials_bnn_48_0.png" />
+</div>
+</div>
+</section>
+<section id="Inspecting-the-Learned-Embeddings">
+<h2>Inspecting the Learned Embeddings<a class="headerlink" href="#Inspecting-the-Learned-Embeddings" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Embedding for the first (and only) categorical feature — region (index 0 in the list)</span>
+<span class="n">emb_dist</span> <span class="o">=</span> <span class="n">bnn_emb</span><span class="o">.</span><span class="n">model_params</span><span class="o">.</span><span class="n">embedding_params</span><span class="o">.</span><span class="n">embeddings</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Learned embedding means (mu) for each &#39;region&#39; category:&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">mu_row</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">region_labels</span><span class="p">,</span> <span class="n">emb_dist</span><span class="o">.</span><span class="n">mu</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">label</span><span class="si">:</span><span class="s2">8s</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="p">[</span><span class="nb">round</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">mu_row</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Learned embedding std-devs (sigma) for each &#39;region&#39; category:&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">sigma_row</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">region_labels</span><span class="p">,</span> <span class="n">emb_dist</span><span class="o">.</span><span class="n">sigma</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">label</span><span class="si">:</span><span class="s2">8s</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="p">[</span><span class="nb">round</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">sigma_row</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Learned embedding means (mu) for each &#39;region&#39; category:
+  left    : [-0.033]
+  center  : [-0.027]
+  right   : [-0.048]
+
+Learned embedding std-devs (sigma) for each &#39;region&#39; category:
+  left    : [0.503]
+  center  : [0.397]
+  right   : [0.452]
 </pre></div></div>
 </div>
 </section>
@@ -678,7 +875,7 @@ BNN with Student-t Priors - Accuracy: 0.884, AUC: 0.954
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="cmab_simulator.html" class="btn btn-neutral float-left" title="cMAB Simulation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="ope.html" class="btn btn-neutral float-right" title="Offline Policy Evaluation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="transfer_learning.html" class="btn btn-neutral float-right" title="Transfer Learning for Contextual Multi-Armed Bandits" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

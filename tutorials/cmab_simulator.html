@@ -56,9 +56,11 @@
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab.html">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cmab_quant_bnn.html">Contextual Multi-Armed Bandit with BNN-Based Quantitative Model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
+<li class="toctree-l2"><a class="reference internal" href="transfer_learning.html">Transfer Learning for Contextual Multi-Armed Bandits</a></li>
 <li class="toctree-l2"><a class="reference internal" href="ope.html">Offline Policy Evaluation</a></li>
 </ul>
 </li>
@@ -104,7 +106,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabBernoulli</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab_simulator</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabSimulator</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">StudentTArray</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">FeaturesConfig</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
 </div>
@@ -166,34 +168,30 @@
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># define action model</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create model parameters for Bayesian Logistic Regression.&quot;&quot;&quot;</span>
-
+<span class="k">def</span><span class="w"> </span><span class="nf">create_blr</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="p">,</span> <span class="n">update_method</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a BayesianLogisticRegression with given parameters.&quot;&quot;&quot;</span>
     <span class="n">bias</span> <span class="o">=</span> <span class="n">StudentTArray</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="n">bias_mu</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">bias_sigma</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">weight</span> <span class="o">=</span> <span class="n">StudentTArray</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
     <span class="n">layer_params</span> <span class="o">=</span> <span class="n">BnnLayerParams</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="n">weight</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span>
     <span class="n">model_params</span> <span class="o">=</span> <span class="n">BnnParams</span><span class="p">(</span><span class="n">bnn_layer_params</span><span class="o">=</span><span class="p">[</span><span class="n">layer_params</span><span class="p">])</span>
-    <span class="k">return</span> <span class="n">model_params</span>
+    <span class="n">feature_config</span> <span class="o">=</span> <span class="n">FeaturesConfig</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
+        <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span>
+        <span class="n">feature_config</span><span class="o">=</span><span class="n">feature_config</span><span class="p">,</span>
+        <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span>
+        <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
 
 
 <span class="n">update_method</span> <span class="o">=</span> <span class="s2">&quot;VI&quot;</span>
 <span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
+<span class="n">blr_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+    <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span> <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span>
+<span class="p">)</span>
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
-        <span class="n">model_params</span><span class="o">=</span><span class="n">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span>
-        <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span>
-        <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
-    <span class="p">),</span>
-    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
-        <span class="n">model_params</span><span class="o">=</span><span class="n">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span>
-        <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span>
-        <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
-    <span class="p">),</span>
-    <span class="s2">&quot;a3&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
-        <span class="n">model_params</span><span class="o">=</span><span class="n">create_model_params</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span> <span class="n">bias_mu</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias_sigma</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span>
-        <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span>
-        <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
-    <span class="p">),</span>
+    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">create_blr</span><span class="p">(</span><span class="o">**</span><span class="n">blr_kwargs</span><span class="p">),</span>
+    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">create_blr</span><span class="p">(</span><span class="o">**</span><span class="n">blr_kwargs</span><span class="p">),</span>
+    <span class="s2">&quot;a3&quot;</span><span class="p">:</span> <span class="n">create_blr</span><span class="p">(</span><span class="o">**</span><span class="n">blr_kwargs</span><span class="p">),</span>
 <span class="p">}</span>
 <span class="c1"># init contextual Multi-Armed Bandit model</span>
 <span class="n">cmab</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions</span><span class="p">)</span>
@@ -856,11 +854,11 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2026-03-12 21:17:50.399 | INFO     | pybandits.simulator:_print_results:541 - Simulation results (first 10 observations):
+2026-03-25 15:38:33.436 | INFO     | pybandits.simulator:_print_results:541 - Simulation results (first 10 observations):
 
-2026-03-12 21:17:50.420 | INFO     | pybandits.simulator:_print_results:542 - Count of actions selected by the bandit:
+2026-03-25 15:38:33.458 | INFO     | pybandits.simulator:_print_results:542 - Count of actions selected by the bandit:
 
-2026-03-12 21:17:50.422 | INFO     | pybandits.simulator:_print_results:543 - Observed proportion of positive rewards for each action:
+2026-03-25 15:38:33.462 | INFO     | pybandits.simulator:_print_results:543 - Observed proportion of positive rewards for each action:
 
 </pre></div></div>
 </div>
@@ -919,342 +917,342 @@ UserWarning: install "ipywidgets" for Jupyter support
     <tr>
       <th>0</th>
       <th>0.0</th>
-      <td>17</td>
-      <td>10</td>
-      <td>10</td>
-      <td>17</td>
-      <td>10</td>
-      <td>10</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>0.0</th>
-      <td>8</td>
-      <td>17</td>
-      <td>11</td>
-      <td>8</td>
-      <td>17</td>
-      <td>11</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>0.0</th>
-      <td>7</td>
-      <td>12</td>
-      <td>8</td>
-      <td>7</td>
-      <td>12</td>
-      <td>8</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>1.0</th>
-      <td>14</td>
-      <td>12</td>
-      <td>19</td>
-      <td>31</td>
-      <td>22</td>
-      <td>29</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>1.0</th>
-      <td>12</td>
-      <td>8</td>
-      <td>9</td>
-      <td>20</td>
-      <td>25</td>
-      <td>20</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>1.0</th>
-      <td>6</td>
-      <td>9</td>
-      <td>11</td>
-      <td>13</td>
-      <td>21</td>
-      <td>19</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>2.0</th>
-      <td>11</td>
-      <td>17</td>
-      <td>7</td>
-      <td>42</td>
-      <td>39</td>
-      <td>36</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>2.0</th>
-      <td>8</td>
-      <td>11</td>
-      <td>12</td>
-      <td>28</td>
-      <td>36</td>
-      <td>32</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>2.0</th>
-      <td>8</td>
-      <td>12</td>
-      <td>14</td>
-      <td>21</td>
-      <td>33</td>
-      <td>33</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>3.0</th>
-      <td>10</td>
-      <td>9</td>
-      <td>16</td>
-      <td>52</td>
-      <td>48</td>
-      <td>52</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>3.0</th>
-      <td>7</td>
-      <td>8</td>
-      <td>11</td>
-      <td>35</td>
-      <td>44</td>
-      <td>43</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>3.0</th>
-      <td>9</td>
-      <td>15</td>
-      <td>15</td>
-      <td>30</td>
-      <td>48</td>
-      <td>48</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>4.0</th>
       <td>5</td>
+      <td>11</td>
+      <td>10</td>
+      <td>5</td>
+      <td>11</td>
+      <td>10</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>0.0</th>
+      <td>10</td>
+      <td>21</td>
       <td>9</td>
+      <td>10</td>
+      <td>21</td>
+      <td>9</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>0.0</th>
       <td>14</td>
-      <td>57</td>
-      <td>57</td>
-      <td>66</td>
+      <td>13</td>
+      <td>7</td>
+      <td>14</td>
+      <td>13</td>
+      <td>7</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>1.0</th>
+      <td>10</td>
+      <td>12</td>
+      <td>14</td>
+      <td>15</td>
+      <td>23</td>
+      <td>24</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>1.0</th>
+      <td>14</td>
+      <td>8</td>
+      <td>10</td>
+      <td>24</td>
+      <td>29</td>
+      <td>19</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>1.0</th>
+      <td>5</td>
+      <td>15</td>
+      <td>12</td>
+      <td>19</td>
+      <td>28</td>
+      <td>19</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>2.0</th>
+      <td>13</td>
+      <td>10</td>
+      <td>7</td>
+      <td>28</td>
+      <td>33</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>2.0</th>
+      <td>13</td>
+      <td>13</td>
+      <td>8</td>
+      <td>37</td>
+      <td>42</td>
+      <td>27</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>2.0</th>
+      <td>15</td>
+      <td>14</td>
+      <td>7</td>
+      <td>34</td>
+      <td>42</td>
+      <td>26</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>3.0</th>
+      <td>8</td>
+      <td>11</td>
+      <td>20</td>
+      <td>36</td>
+      <td>44</td>
+      <td>51</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>3.0</th>
+      <td>14</td>
+      <td>7</td>
+      <td>13</td>
+      <td>51</td>
+      <td>49</td>
+      <td>40</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>3.0</th>
+      <td>9</td>
+      <td>8</td>
+      <td>10</td>
+      <td>43</td>
+      <td>50</td>
+      <td>36</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>4.0</th>
+      <td>8</td>
+      <td>18</td>
+      <td>5</td>
+      <td>44</td>
+      <td>62</td>
+      <td>56</td>
     </tr>
     <tr>
       <th>1</th>
       <th>4.0</th>
-      <td>8</td>
-      <td>17</td>
-      <td>17</td>
-      <td>43</td>
-      <td>61</td>
+      <td>7</td>
+      <td>11</td>
+      <td>13</td>
+      <td>58</td>
       <td>60</td>
+      <td>53</td>
     </tr>
     <tr>
       <th>2</th>
       <th>4.0</th>
-      <td>8</td>
-      <td>13</td>
+      <td>12</td>
+      <td>17</td>
       <td>9</td>
-      <td>38</td>
-      <td>61</td>
-      <td>57</td>
+      <td>55</td>
+      <td>67</td>
+      <td>45</td>
     </tr>
     <tr>
       <th>0</th>
       <th>5.0</th>
-      <td>6</td>
-      <td>10</td>
-      <td>11</td>
-      <td>63</td>
-      <td>67</td>
-      <td>77</td>
+      <td>8</td>
+      <td>19</td>
+      <td>13</td>
+      <td>52</td>
+      <td>81</td>
+      <td>69</td>
     </tr>
     <tr>
       <th>1</th>
       <th>5.0</th>
-      <td>14</td>
       <td>12</td>
-      <td>13</td>
-      <td>57</td>
-      <td>73</td>
-      <td>73</td>
+      <td>7</td>
+      <td>11</td>
+      <td>70</td>
+      <td>67</td>
+      <td>64</td>
     </tr>
     <tr>
       <th>2</th>
       <th>5.0</th>
-      <td>13</td>
       <td>11</td>
-      <td>10</td>
-      <td>51</td>
-      <td>72</td>
-      <td>67</td>
+      <td>11</td>
+      <td>8</td>
+      <td>66</td>
+      <td>78</td>
+      <td>53</td>
     </tr>
     <tr>
       <th>0</th>
       <th>6.0</th>
-      <td>10</td>
       <td>8</td>
+      <td>11</td>
+      <td>16</td>
+      <td>60</td>
+      <td>92</td>
+      <td>85</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>6.0</th>
+      <td>9</td>
       <td>12</td>
-      <td>73</td>
-      <td>75</td>
+      <td>15</td>
+      <td>79</td>
+      <td>79</td>
+      <td>79</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>6.0</th>
+      <td>12</td>
+      <td>10</td>
+      <td>7</td>
+      <td>78</td>
+      <td>88</td>
+      <td>60</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>7.0</th>
+      <td>14</td>
+      <td>11</td>
+      <td>4</td>
+      <td>74</td>
+      <td>103</td>
       <td>89</td>
     </tr>
     <tr>
       <th>1</th>
-      <th>6.0</th>
-      <td>11</td>
-      <td>13</td>
-      <td>9</td>
-      <td>68</td>
-      <td>86</td>
-      <td>82</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>6.0</th>
-      <td>8</td>
-      <td>12</td>
-      <td>17</td>
-      <td>59</td>
-      <td>84</td>
-      <td>84</td>
-    </tr>
-    <tr>
-      <th>0</th>
       <th>7.0</th>
-      <td>4</td>
-      <td>11</td>
-      <td>11</td>
-      <td>77</td>
-      <td>86</td>
-      <td>100</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>7.0</th>
-      <td>8</td>
-      <td>12</td>
-      <td>12</td>
-      <td>76</td>
-      <td>98</td>
-      <td>94</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>7.0</th>
-      <td>13</td>
-      <td>13</td>
+      <td>6</td>
       <td>16</td>
-      <td>72</td>
-      <td>97</td>
-      <td>100</td>
+      <td>13</td>
+      <td>85</td>
+      <td>95</td>
+      <td>92</td>
     </tr>
     <tr>
-      <th>0</th>
-      <th>8.0</th>
-      <td>8</td>
+      <th>2</th>
+      <th>7.0</th>
       <td>10</td>
-      <td>23</td>
-      <td>85</td>
-      <td>96</td>
-      <td>123</td>
+      <td>15</td>
+      <td>11</td>
+      <td>88</td>
+      <td>103</td>
+      <td>71</td>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>8.0</th>
+      <td>10</td>
+      <td>17</td>
+      <td>8</td>
+      <td>84</td>
+      <td>120</td>
+      <td>97</td>
     </tr>
     <tr>
       <th>1</th>
       <th>8.0</th>
-      <td>9</td>
-      <td>7</td>
-      <td>11</td>
-      <td>85</td>
-      <td>105</td>
-      <td>105</td>
+      <td>10</td>
+      <td>8</td>
+      <td>12</td>
+      <td>95</td>
+      <td>103</td>
+      <td>104</td>
     </tr>
     <tr>
       <th>2</th>
       <th>8.0</th>
-      <td>6</td>
+      <td>10</td>
       <td>13</td>
-      <td>13</td>
-      <td>78</td>
-      <td>110</td>
-      <td>113</td>
+      <td>12</td>
+      <td>98</td>
+      <td>116</td>
+      <td>83</td>
     </tr>
     <tr>
       <th>0</th>
       <th>9.0</th>
-      <td>8</td>
+      <td>10</td>
+      <td>13</td>
+      <td>7</td>
+      <td>94</td>
+      <td>133</td>
+      <td>104</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>9.0</th>
       <td>9</td>
       <td>12</td>
-      <td>93</td>
-      <td>105</td>
-      <td>135</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>9.0</th>
-      <td>8</td>
-      <td>16</td>
-      <td>14</td>
-      <td>93</td>
-      <td>121</td>
-      <td>119</td>
+      <td>11</td>
+      <td>104</td>
+      <td>115</td>
+      <td>115</td>
     </tr>
     <tr>
       <th>2</th>
       <th>9.0</th>
-      <td>6</td>
-      <td>13</td>
       <td>14</td>
-      <td>84</td>
-      <td>123</td>
-      <td>127</td>
+      <td>16</td>
+      <td>8</td>
+      <td>112</td>
+      <td>132</td>
+      <td>91</td>
     </tr>
     <tr>
       <th>0</th>
       <th>total</th>
-      <td>93</td>
-      <td>105</td>
-      <td>135</td>
-      <td>93</td>
-      <td>105</td>
-      <td>135</td>
+      <td>94</td>
+      <td>133</td>
+      <td>104</td>
+      <td>94</td>
+      <td>133</td>
+      <td>104</td>
     </tr>
     <tr>
       <th>1</th>
       <th>total</th>
-      <td>93</td>
-      <td>121</td>
-      <td>119</td>
-      <td>93</td>
-      <td>121</td>
-      <td>119</td>
+      <td>104</td>
+      <td>115</td>
+      <td>115</td>
+      <td>104</td>
+      <td>115</td>
+      <td>115</td>
     </tr>
     <tr>
       <th>2</th>
       <th>total</th>
-      <td>84</td>
-      <td>123</td>
-      <td>127</td>
-      <td>84</td>
-      <td>123</td>
-      <td>127</td>
+      <td>112</td>
+      <td>132</td>
+      <td>91</td>
+      <td>112</td>
+      <td>132</td>
+      <td>91</td>
     </tr>
     <tr>
       <th>total</th>
       <th>total</th>
-      <td>270</td>
-      <td>349</td>
-      <td>381</td>
-      <td>270</td>
-      <td>349</td>
-      <td>381</td>
+      <td>310</td>
+      <td>380</td>
+      <td>310</td>
+      <td>310</td>
+      <td>380</td>
+      <td>310</td>
     </tr>
   </tbody>
 </table>
@@ -1304,41 +1302,41 @@ UserWarning: install "ipywidgets" for Jupyter support
     <tr>
       <th rowspan="3" valign="top">a1</th>
       <th>0</th>
-      <td>0.268817</td>
+      <td>0.287234</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.956989</td>
+      <td>0.307692</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.130952</td>
+      <td>0.339286</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a2</th>
       <th>0</th>
-      <td>0.561905</td>
+      <td>0.458647</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.619835</td>
+      <td>0.652174</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.674797</td>
+      <td>0.840909</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a3</th>
       <th>0</th>
-      <td>0.844444</td>
+      <td>0.423077</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.605042</td>
+      <td>0.704348</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.677165</td>
+      <td>0.230769</td>
     </tr>
   </tbody>
 </table>

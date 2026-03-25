@@ -87,6 +87,7 @@
  | <a href="#E"><strong>E</strong></a>
  | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
+ | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
@@ -247,6 +248,12 @@
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.CategoricalFeatureConfig.cardinality">cardinality (pybandits.model.CategoricalFeatureConfig attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig.categorical_features_configs">categorical_features_configs (pybandits.model.FeaturesConfig attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.CategoricalFeatureConfig">CategoricalFeatureConfig (class in pybandits.model)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.check_context_matrix">check_context_matrix() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
       <li><a href="fullapi.html#id15">check_models() (pybandits.actions_manager.CmabActionsManager class method)</a>, <a href="fullapi.html#id2">[1]</a>, <a href="fullapi.html#id22">[2]</a>, <a href="fullapi.html#id8">[3]</a>, <a href="fullapi.html#pybandits.actions_manager.CmabActionsManager.check_models">[4]</a>
@@ -275,10 +282,10 @@
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">CmabSimulator (class in pybandits.cmab_simulator)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">[1]</a>
 </li>
-      <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModel">CmabZoomingModel (class in pybandits.quantitative_model)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModel">CmabZoomingModel (class in pybandits.quantitative_model)</a>
+</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.CmabZoomingModelCC">CmabZoomingModelCC (class in pybandits.quantitative_model)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.cold_start">cold_start() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
@@ -290,11 +297,15 @@
 </li>
         <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.cold_start">(pybandits.model.BaseLocationScaleArray class method)</a>
 </li>
+        <li><a href="fullapi.html#pybandits.model.EmbeddingParams.cold_start">(pybandits.model.EmbeddingParams class method)</a>
+</li>
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork.cold_start">(pybandits.quantitative_model.BaseQuantitativeBayesianNeuralNetwork class method)</a>
 </li>
         <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.cold_start">(pybandits.quantitative_model.ZoomingModel class method)</a>
 </li>
       </ul></li>
+      <li><a href="fullapi.html#pybandits.model.CategoricalFeatureConfig.column_index">column_index (pybandits.model.CategoricalFeatureConfig attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.comparison_threshold">comparison_threshold (pybandits.quantitative_model.ZoomingModel attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">context (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">[1]</a>
@@ -353,6 +364,18 @@
 <h2 id="E">E</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.CategoricalFeatureConfig.embedding_dim">embedding_dim (pybandits.model.CategoricalFeatureConfig attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BnnParams.embedding_params">embedding_params (pybandits.model.BnnParams attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BnnParams.embedding_params_init">embedding_params_init (pybandits.model.BnnParams attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.EmbeddingParams">EmbeddingParams (class in pybandits.model)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.EmbeddingParams.embeddings">embeddings (pybandits.model.EmbeddingParams attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.EmbeddingParams.embeddings_init">embeddings_init (pybandits.model.EmbeddingParams attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModelCC.encode_cost">encode_cost() (pybandits.quantitative_model.QuantitativeModelCC method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.estimate_policy_value_with_confidence_interval">estimate_policy_value_with_confidence_interval() (pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator method)</a>
@@ -379,17 +402,25 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.exploit_p">exploit_p (pybandits.strategy.BestActionIdentificationBandit attribute)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.extract_sample">extract_sample() (pybandits.model.BaseBayesianNeuralNetwork static method)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.file_prefix">file_prefix (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.feature_config">feature_config (pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig">FeaturesConfig (class in pybandits.model)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.file_prefix">file_prefix (pybandits.cmab_simulator.CmabSimulator attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.forward_pass">forward_pass() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.from_old_state">from_old_state() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -400,6 +431,8 @@
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedDoublyRobust">GeneralizedDoublyRobust (class in pybandits.offline_policy_estimator)</a>
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.GeneralizedInverseProbabilityWeighting">GeneralizedInverseProbabilityWeighting (class in pybandits.offline_policy_estimator)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.get_embedding_var_name">get_embedding_var_name() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.get_layer_params_name">get_layer_params_name() (pybandits.model.BaseBayesianNeuralNetwork class method)</a>
 </li>
@@ -414,6 +447,14 @@
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">group (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.group">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="H">H</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig.has_categorical">has_categorical (pybandits.model.FeaturesConfig property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -523,6 +564,12 @@
         <li><a href="fullapi.html#pybandits.model.BnnLayerParams.model_config">(pybandits.model.BnnLayerParams attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.model.BnnParams.model_config">(pybandits.model.BnnParams attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.model.CategoricalFeatureConfig.model_config">(pybandits.model.CategoricalFeatureConfig attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.model.EmbeddingParams.model_config">(pybandits.model.EmbeddingParams attribute)</a>
+</li>
+        <li><a href="fullapi.html#pybandits.model.FeaturesConfig.model_config">(pybandits.model.FeaturesConfig attribute)</a>
 </li>
         <li><a href="fullapi.html#pybandits.model.Model.model_config">(pybandits.model.Model attribute)</a>
 </li>
@@ -752,7 +799,11 @@
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.n_comparison_points">n_comparison_points (pybandits.quantitative_model.ZoomingModel attribute)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig.n_features">n_features (pybandits.model.FeaturesConfig attribute)</a>
+</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.ZoomingModel.n_max_segments">n_max_segments (pybandits.quantitative_model.ZoomingModel attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig.n_numerical">n_numerical (pybandits.model.FeaturesConfig property)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.n_updates">n_updates (pybandits.cmab_simulator.CmabSimulator attribute)</a>
 </li>
@@ -794,6 +845,8 @@
 </li>
       <li><a href="fullapi.html#pybandits.model.StudentTArray.nu">nu (pybandits.model.StudentTArray attribute)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig.numerical_indices">numerical_indices (pybandits.model.FeaturesConfig property)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -814,6 +867,12 @@
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.param_map">param_map (pybandits.model.BaseLocationScaleArray attribute)</a>
+
+      <ul>
+        <li><a href="fullapi.html#pybandits.model.StudentTArray.param_map">(pybandits.model.StudentTArray attribute)</a>
+</li>
+      </ul></li>
       <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.params">params (pybandits.model.BaseLocationScaleArray property)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.path">path (pybandits.cmab_simulator.CmabSimulator attribute)</a>
@@ -939,6 +998,10 @@
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.sample_at_indices">sample_at_indices() (pybandits.model.BaseLocationScaleArray method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.sample_embeddings">sample_embeddings() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.sample_proba">sample_proba() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 
       <ul>
@@ -954,13 +1017,7 @@
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.sample_rvs">sample_rvs() (pybandits.model.BaseLocationScaleArray method)</a>
-
-      <ul>
-        <li><a href="fullapi.html#pybandits.model.NormalArray.sample_rvs">(pybandits.model.NormalArray method)</a>
 </li>
-        <li><a href="fullapi.html#pybandits.model.StudentTArray.sample_rvs">(pybandits.model.StudentTArray method)</a>
-</li>
-      </ul></li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.sample_weights">sample_weights() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.save">save (pybandits.cmab_simulator.CmabSimulator attribute)</a>
@@ -1090,6 +1147,8 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.to_pymc_distribution">to_pymc_distribution() (pybandits.model.BaseLocationScaleArray method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.FeaturesConfig.total_output_dim">total_output_dim (pybandits.model.FeaturesConfig property)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.transfer_extendable_keys">transfer_extendable_keys (pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
 
