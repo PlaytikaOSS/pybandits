@@ -97,10 +97,10 @@
              
   <section id="Contextual-Multi-Armed-Bandit">
 <h1>Contextual Multi-Armed Bandit<a class="headerlink" href="#Contextual-Multi-Armed-Bandit" title="Link to this heading"></a></h1>
-<p>For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on PyMC.</p>
+<p>For the contextual multi-armed bandit (cMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on NumPyro.</p>
 <img alt="title" src="../_images/cmab.png" />
 <p>The following notebook contains an example of usage of the class Cmab, which implements the algorithm above.</p>
-<div class="nbinput nblast docutils container">
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -110,6 +110,15 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">FeaturesConfig</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm
+</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -138,16 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.08017469 -0.72185246 -0.64772383  0.44347391  0.13911244]
- [-0.09992546  0.96399165 -0.07784779 -0.09560754  0.30502405]
- [ 0.6257544   0.12900617  0.49002609  0.06602506  0.76338122]
- [ 0.48504967  0.20956455  0.1123245   0.5232322  -0.66608479]
- [-0.90067289 -0.48815946 -0.14290526 -0.01127403 -0.40125928]
- [-0.07324653  0.96504932 -0.52445733  0.0036474   0.16691213]
- [ 0.38022512 -0.3799152   0.43060096  0.53889717 -0.54164785]
- [ 0.77571998 -0.50620564  0.96811004  0.51818064  0.98236748]
- [ 0.36271815 -0.46998137 -0.16821922 -0.07015838 -0.20942472]
- [-0.84854756 -0.11944469 -0.75945899  0.98594957  0.62555692]]
+[[-0.74719097 -0.20593459 -0.79315149  0.10545734  0.61148269]
+ [ 0.72838567  0.36621959 -0.32362969 -0.39322666 -0.596077  ]
+ [ 0.59104087 -0.13260899  0.74572465 -0.59220079  0.77149838]
+ [-0.70713706 -0.7050044   0.73850255 -0.7033699   0.73000025]
+ [ 0.41466496  0.99792934 -0.51664477  0.03767511 -0.74483653]
+ [ 0.5892851  -0.89822204 -0.39235068 -0.37669106 -0.61629239]
+ [ 0.7299874  -0.77367646 -0.24636884 -0.68291155 -0.10731525]
+ [ 0.49907277  0.72977437  0.66324554  0.40371991  0.82724503]
+ [-0.34032082  0.2989315   0.54625664  0.24661924  0.55417621]
+ [ 0.71719284 -0.30738503 -0.21781641 -0.16817508  0.67688839]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -162,7 +171,7 @@ X: context matrix of shape (n_samples, n_features)
 <span class="n">feature_config</span> <span class="o">=</span> <span class="n">FeaturesConfig</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">)</span>
 
 <span class="n">update_method</span> <span class="o">=</span> <span class="s2">&quot;VI&quot;</span>
-<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
+<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
 
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
@@ -207,7 +216,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -226,7 +235,7 @@ Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 0, 0, 1, 0, 1, 1, 0, 1, 1]
+Simulated rewards: [1, 1, 1, 0, 1, 0, 0, 0, 0, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -239,47 +248,13 @@ Simulated rewards: [1, 0, 0, 1, 0, 1, 1, 0, 1, 1]
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
+
 </pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 </section>
 

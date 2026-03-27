@@ -15,7 +15,7 @@
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "For the contextual multi-armed bandit (sMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm ([Agrawal and Goyal, 2014](https://arxiv.org/pdf/1209.3352.pdf)) based on PyMC."
+    "For the contextual multi-armed bandit (cMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm ([Agrawal and Goyal, 2014](https://arxiv.org/pdf/1209.3352.pdf)) based on NumPyro."
    ]
   },
   {
@@ -95,7 +95,7 @@
     "feature_config = FeaturesConfig(n_features=n_features)\n",
     "\n",
     "update_method = \"VI\"\n",
-    "update_kwargs = {\"fit\": {\"n\": 100}, \"batch_size\": 128, \"optimizer_type\": \"adam\"}\n",
+    "update_kwargs = {\"num_steps\": 100, \"batch_size\": 128, \"optimizer_type\": \"adam\"}\n",
     "\n",
     "actions = {\n",
     "    \"a1\": BayesianLogisticRegression(\n",

@@ -122,8 +122,8 @@
 <section id="Introduction">
 <h2>Introduction<a class="headerlink" href="#Introduction" title="Link to this heading"></a></h2>
 <p>This notebook demonstrates Bayesian models for binary classification, progressing from Bayesian Logistic Regression to Bayesian Neural Networks, and then to BNNs with rich feature types: <strong>categorical embeddings</strong> or <strong>numerical normalization</strong>.</p>
-<p>The notebook is based on the example in <a class="reference external" href="https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html">https://www.pymc.io/projects/examples/en/latest/variational_inference/bayesian_neural_network_advi.html</a></p>
-<div class="nbinput nblast docutils container">
+<p>The notebook is based on the example in <a class="reference external" href="https://num.pyro.ai/en/latest/tutorials/bayesian_regression.html">https://num.pyro.ai/en/latest/tutorials/bayesian_regression.html</a></p>
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -145,6 +145,15 @@
 <span class="o">%</span><span class="k">autoreload</span> 2
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm
+</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -208,38 +217,19 @@
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">blr</span> <span class="o">=</span> <span class="n">BayesianLogisticRegression</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
     <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 <span class="n">blr</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
+
 </pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
@@ -261,7 +251,7 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BLR — Accuracy: 0.872, AUC: 0.957
+BLR — Accuracy: 0.878, AUC: 0.942
 </pre></div></div>
 </div>
 <p>Because BLR is linear it struggles with the non-linear moon boundary.</p>
@@ -283,7 +273,7 @@ BLR — Accuracy: 0.872, AUC: 0.957
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f1a0ce63580&gt;
+&lt;matplotlib.legend.Legend at 0x7f67bfac2b90&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -328,11 +318,22 @@ BLR — Accuracy: 0.872, AUC: 0.957
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: overflow encountered in exp
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: invalid value encountered in divide
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+</pre></div></div>
+</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_16_0.png" src="../_images/tutorials_bnn_16_0.png" />
+<img alt="../_images/tutorials_bnn_16_1.png" src="../_images/tutorials_bnn_16_1.png" />
 </div>
 </div>
 <div class="nbinput docutils container">
@@ -385,7 +386,7 @@ BLR — Accuracy: 0.872, AUC: 0.957
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params</span><span class="p">,</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -399,29 +400,13 @@ BLR — Accuracy: 0.872, AUC: 0.957
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+
 </pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
@@ -444,8 +429,8 @@ UserWarning: install "ipywidgets" for Jupyter support
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN — Accuracy: 0.888, AUC: 0.959
-BLR — Accuracy: 0.872, AUC: 0.957
+BNN — Accuracy: 0.868, AUC: 0.950
+BLR — Accuracy: 0.878, AUC: 0.942
 </pre></div></div>
 </div>
 <p>The BNN produces a much better separation than the linear BLR.</p>
@@ -467,7 +452,7 @@ BLR — Accuracy: 0.872, AUC: 0.957
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f1a0cf2d5d0&gt;
+&lt;matplotlib.legend.Legend at 0x7f67248da230&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -512,11 +497,22 @@ BLR — Accuracy: 0.872, AUC: 0.957
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: overflow encountered in exp
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: invalid value encountered in divide
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+</pre></div></div>
+</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_32_0.png" src="../_images/tutorials_bnn_32_0.png" />
+<img alt="../_images/tutorials_bnn_32_1.png" src="../_images/tutorials_bnn_32_1.png" />
 </div>
 </div>
 <div class="nbinput docutils container">
@@ -572,7 +568,7 @@ BLR — Accuracy: 0.872, AUC: 0.957
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 <span class="n">bnn_normal</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
 
@@ -593,32 +589,16 @@ BLR — Accuracy: 0.872, AUC: 0.957
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+
 </pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN Student-T — Accuracy: 0.888, AUC: 0.959
-BNN Normal    — Accuracy: 0.886, AUC: 0.965
+BNN Student-T — Accuracy: 0.868, AUC: 0.950
+BNN Normal    — Accuracy: 0.532, AUC: 0.637
 </pre></div></div>
 </div>
 <section id="FeaturesConfig:-Categorical-Embeddings">
@@ -675,16 +655,16 @@ BNN Normal    — Accuracy: 0.886, AUC: 0.965
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 First 5 training samples (x1, x2, region_index):
-[[ 1.75429824 -0.22355374  2.        ]
- [-0.57704209  0.0617576   0.        ]
- [-0.21218932 -1.17699753  1.        ]
- [ 0.69946409 -0.44510619  2.        ]
- [ 0.184303   -1.25910131  1.        ]]
+[[-0.34138999 -0.55432917  1.        ]
+ [-0.07934869 -0.55092905  1.        ]
+ [-0.13021641  0.02716558  1.        ]
+ [ 1.19496508 -1.13393348  2.        ]
+ [-1.4148367   0.53711738  0.        ]]
 
 Region distribution:
-  left: 159
-  center: 177
-  right: 164
+  left: 157
+  center: 196
+  right: 147
 </pre></div></div>
 </div>
 </section>
@@ -738,36 +718,19 @@ Total BNN input dim : 6
     <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">},</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">},</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 <span class="n">bnn_emb</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">ctx_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+
 </pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
@@ -784,12 +747,23 @@ UserWarning: install "ipywidgets" for Jupyter support
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: overflow encountered in exp
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: invalid value encountered in divide
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+</pre></div></div>
+</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN with embeddings — Accuracy: 0.878, AUC: 0.956
+BNN with embeddings — Accuracy: 0.824, AUC: 0.900
 </pre></div></div>
 </div>
 </section>
@@ -809,11 +783,22 @@ BNN with embeddings — Accuracy: 0.878, AUC: 0.956
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: overflow encountered in exp
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: invalid value encountered in divide
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+</pre></div></div>
+</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_bnn_47_0.png" src="../_images/tutorials_bnn_47_0.png" />
+<img alt="../_images/tutorials_bnn_47_1.png" src="../_images/tutorials_bnn_47_1.png" />
 </div>
 </div>
 <div class="nbinput docutils container">
@@ -857,14 +842,14 @@ BNN with embeddings — Accuracy: 0.878, AUC: 0.956
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Learned embedding means (mu) for each &#39;region&#39; category:
-  left    : [0.1]
-  center  : [-0.041]
-  right   : [-0.073]
+  left    : [1.281]
+  center  : [-0.851]
+  right   : [-0.606]
 
 Learned embedding std-devs (sigma) for each &#39;region&#39; category:
-  left    : [0.603]
-  center  : [0.37]
-  right   : [0.498]
+  left    : [20.449]
+  center  : [19.485]
+  right   : [19.704]
 </pre></div></div>
 </div>
 </section>

@@ -113,7 +113,7 @@
 <li><p><strong>Uncertainty-aware</strong>: The BNN yields a posterior over rewards, which the bandit can use for Thompson sampling or similar strategies.</p></li>
 <li><p><strong>Flexible fitting</strong>: Supports variational inference (VI) or other Bayesian update methods for the BNN weights.</p></li>
 </ul>
-<div class="nbinput nblast docutils container">
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -128,6 +128,15 @@
 <span class="o">%</span><span class="k">autoreload</span> 2
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm
+</pre></div></div>
 </div>
 <section id="Setup">
 <h2>Setup<a class="headerlink" href="#Setup" title="Link to this heading"></a></h2>
@@ -146,7 +155,7 @@
 
 <span class="c1"># Define cold start parameters for the base model</span>
 <span class="n">update_method</span> <span class="o">=</span> <span class="s2">&quot;VI&quot;</span>  <span class="c1"># Variational Inference for Bayesian updates</span>
-<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">20000</span><span class="p">},</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;learning_rate&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">}</span>
+<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">20000</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;optimizer_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">}}</span>
 <span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>
 
 <span class="c1"># Define actions with zooming models</span>
@@ -191,9 +200,12 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-{&#39;fit&#39;: {&#39;method&#39;: &#39;advi&#39;, &#39;n&#39;: 20000},
+{&#39;num_steps&#39;: 20000,
+ &#39;method&#39;: &#39;advi&#39;,
  &#39;optimizer_type&#39;: &#39;adam&#39;,
- &#39;learning_rate&#39;: 0.001}
+ &#39;optimizer_kwargs&#39;: {&#39;step_size&#39;: 0.001},
+ &#39;batch_size&#39;: None,
+ &#39;early_stopping_kwargs&#39;: None}
 </pre></div></div>
 </div>
 <p>Now we can initialize the CmabBernoulli bandit with our zooming models:</p>
@@ -220,7 +232,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-{&#39;fit&#39;: {&#39;method&#39;: &#39;advi&#39;, &#39;n&#39;: 20000}, &#39;optimizer_type&#39;: &#39;adam&#39;, &#39;learning_rate&#39;: 0.001}
+{&#39;num_steps&#39;: 20000, &#39;method&#39;: &#39;advi&#39;, &#39;optimizer_type&#39;: &#39;adam&#39;, &#39;optimizer_kwargs&#39;: {&#39;step_size&#39;: 0.001}, &#39;batch_size&#39;: None, &#39;early_stopping_kwargs&#39;: None}
 epsilon: 1.0
 </pre></div></div>
 </div>
@@ -361,33 +373,33 @@ epsilon: 1.0
   <tbody>
     <tr>
       <th>0</th>
-      <td>0.374540</td>
       <td>0.950714</td>
       <td>0.731994</td>
+      <td>0.598658</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.598658</td>
       <td>0.156019</td>
       <td>0.155995</td>
+      <td>0.058084</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.058084</td>
       <td>0.866176</td>
       <td>0.601115</td>
+      <td>0.708073</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>0.708073</td>
       <td>0.020584</td>
       <td>0.969910</td>
+      <td>0.832443</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>0.832443</td>
       <td>0.212339</td>
       <td>0.181825</td>
+      <td>0.183405</td>
     </tr>
   </tbody>
 </table>
@@ -438,180 +450,95 @@ epsilon: 1.0
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
-WARNING (pytensor.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+
 </pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 0 batches. Avg regret: 0.510808590530212
+Completed 0 batches. Avg regret: 0.5104892755323038
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 1 batches. Avg regret: 0.21535504051652818
+Completed 1 batches. Avg regret: 0.5929450555567964
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 2 batches. Avg regret: 0.053930649789863935
+Completed 2 batches. Avg regret: 0.5962462662863823
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 3 batches. Avg regret: 0.0613962055552078
+Completed 3 batches. Avg regret: 0.5908892570029719
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 4 batches. Avg regret: 0.06518097814405065
+Completed 4 batches. Avg regret: 0.5962130524556485
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 5 batches. Avg regret: 0.06652837370747115
+Completed 5 batches. Avg regret: 0.5912446751199574
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -679,7 +606,7 @@ Completed 5 batches. Avg regret: 0.06652837370747115
 <img alt="../_images/tutorials_cmab_quant_bnn_18_1.png" src="../_images/tutorials_cmab_quant_bnn_18_1.png" />
 </div>
 </div>
-<div class="nbinput nblast docutils container">
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
@@ -710,6 +637,17 @@ Completed 5 batches. Avg regret: 0.06652837370747115
 <span class="p">)</span>
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: overflow encountered in exp
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+/home/runner/work/pybandits/pybandits/pybandits/model.py:85: RuntimeWarning: invalid value encountered in divide
+  return np.where(x &gt;= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+</pre></div></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
@@ -874,35 +812,35 @@ Completed 5 batches. Avg regret: 0.06652837370747115
 
 Test 1: High feature 1, low feature 2
 Context: [1. 0. 0.]
-Chosen Action: action_1
-Chosen Quantity: 0.2199837366574332
-Action Probabilities: 0.611005524692829
-Optimal Quantity: 0.25
-Expected Reward: (1, 0.75)
+Chosen Action: action_2
+Chosen Quantity: 3.6234187872352663e-10
+Action Probabilities: 0.9999999999999385
+Optimal Quantity: 0.75
+Expected Reward: (1, np.float64(0.5))
 
 Test 2: Low feature 1, high feature 2
 Context: [0. 1. 0.]
-Chosen Action: action_1
-Chosen Quantity: 0.24051459699188565
-Action Probabilities: 0.5325402041394055
-Optimal Quantity: 0.25
-Expected Reward: (0, 0.5)
+Chosen Action: action_2
+Chosen Quantity: 0.592415690128817
+Action Probabilities: 0.9999434357112166
+Optimal Quantity: 0.75
+Expected Reward: (0, np.float64(0.75))
 
 Test 3: High feature 1 and 2
 Context: [1. 1. 0.]
 Chosen Action: action_1
-Chosen Quantity: 0.21626947238824673
-Action Probabilities: 0.47911779529714243
+Chosen Quantity: 1.8415766689372504e-09
+Action Probabilities: 5.2890724659307407e-14
 Optimal Quantity: 0.25
-Expected Reward: (1, 0.75)
+Expected Reward: (1, np.float64(0.75))
 
 Test 4: Low feature 1 and 2
 Context: [0. 0. 0.]
 Chosen Action: action_1
-Chosen Quantity: 0.22705777026566867
-Action Probabilities: 0.5764481264694177
+Chosen Quantity: 2.457602066296971e-08
+Action Probabilities: 0.8429841177084031
 Optimal Quantity: 0.25
-Expected Reward: (1, 0.5)
+Expected Reward: (1, np.float64(0.5))
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
@@ -921,10 +859,10 @@ Expected Reward: (1, 0.5)
 <div class="highlight"><pre>
 {&#39;Context&#39;: array([0., 0., 0.]),
  &#39;Chosen Action&#39;: &#39;action_1&#39;,
- &#39;Chosen Quantity&#39;: 0.22705777026566867,
- &#39;Action Probabilities&#39;: 0.5764481264694177,
+ &#39;Chosen Quantity&#39;: np.float64(2.457602066296971e-08),
+ &#39;Action Probabilities&#39;: np.float64(0.8429841177084031),
  &#39;Optimal Quantity&#39;: 0.25,
- &#39;Expected Reward&#39;: (1, 0.5)}
+ &#39;Expected Reward&#39;: (1, np.float64(0.5))}
 </pre></div></div>
 </div>
 </section>

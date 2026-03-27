@@ -117,7 +117,7 @@
 </div>
 <section id="Setup">
 <h2>Setup<a class="headerlink" href="#Setup" title="Link to this heading"></a></h2>
-<div class="nbinput nblast docutils container">
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
@@ -130,6 +130,15 @@
 <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm
+</pre></div></div>
 </div>
 </section>
 <section id="Step-1:-Train-a-CMAB-with-3-features-and-2-actions">
@@ -146,7 +155,7 @@
     <span class="n">n_features</span><span class="o">=</span><span class="n">N_FEATURES_V1</span><span class="p">,</span>
     <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
     <span class="n">strategy</span><span class="o">=</span><span class="n">ClassicBandit</span><span class="p">(),</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">}},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">},</span>
 <span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Actions : </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">mab_v1</span><span class="o">.</span><span class="n">actions</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -192,51 +201,25 @@ Features: 3
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/pytensor/link/c/cmodule.py:2968: UserWarning: PyTensor could not link to a BLAS installation. Operations that might benefit from BLAS will be severely degraded.
-This usually happens when PyTensor is installed via pip. We recommend it be installed via conda/mamba/pixi instead.
-Alternatively, you can use an experimental backend such as Numba or JAX that perform their own BLAS optimizations, by setting `pytensor.config.mode == &#39;NUMBA&#39;` or passing `mode=&#39;NUMBA&#39;` when compiling a PyTensor function.
-For more options and details see https://pytensor.readthedocs.io/en/latest/troubleshooting.html#how-do-i-configure-test-my-blas-library
-  warnings.warn(
+
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Training complete.
+  action_A: n_successes=70, n_failures=34
+  action_B: n_successes=34, n_failures=66
+</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area docutils container">
+<div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Training complete.
-  action_A: n_successes=68, n_failures=35
-  action_B: n_successes=33, n_failures=68
+
 </pre></div></div>
 </div>
 </section>
@@ -265,7 +248,7 @@ Training complete.
     <span class="n">n_features</span><span class="o">=</span><span class="n">N_FEATURES_V2</span><span class="p">,</span>
     <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>  <span class="c1"># must match mab_v1</span>
     <span class="n">strategy</span><span class="o">=</span><span class="n">ClassicBandit</span><span class="p">(),</span>
-    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;fit&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">}},</span>
+    <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">},</span>
 <span class="p">)</span>
 
 <span class="n">mab_v2</span> <span class="o">=</span> <span class="n">edit_model_on_the_fly</span><span class="p">(</span><span class="n">mab_v1</span><span class="p">,</span> <span class="n">template_v2</span><span class="p">)</span>
@@ -292,10 +275,10 @@ Training complete.
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2026-03-25 15:41:52.357 | INFO     | pybandits.transfer:edit_model_on_the_fly:611 - Template has more features (4) than current (3). Expanding current MAB to match template&#39;s dimension.
-2026-03-25 15:41:52.358 | INFO     | pybandits.transfer:_expand_with_template_weights:443 - Expanding current CMAB from 3 to 4 features using template&#39;s weights for 1 new feature(s)
-2026-03-25 15:41:52.361 | INFO     | pybandits.transfer:_merge_mabs:365 - Merged CmabBernoulli: used mab2 as template with 3 action(s), transferred learned state from mab1 for 2 overlapping action(s).
-2026-03-25 15:41:52.364 | INFO     | pybandits.transfer:edit_model_on_the_fly:623 - Updated MAB using new_mab as template. Final MAB has 3 action(s) with new_mab&#39;s configuration and current_mab&#39;s learned state for overlapping actions.
+2026-03-27 18:44:00.177 | INFO     | pybandits.transfer:edit_model_on_the_fly:611 - Template has more features (4) than current (3). Expanding current MAB to match template&#39;s dimension.
+2026-03-27 18:44:00.178 | INFO     | pybandits.transfer:_expand_with_template_weights:443 - Expanding current CMAB from 3 to 4 features using template&#39;s weights for 1 new feature(s)
+2026-03-27 18:44:00.181 | INFO     | pybandits.transfer:_merge_mabs:365 - Merged CmabBernoulli: used mab2 as template with 3 action(s), transferred learned state from mab1 for 2 overlapping action(s).
+2026-03-27 18:44:00.185 | INFO     | pybandits.transfer:edit_model_on_the_fly:623 - Updated MAB using new_mab as template. Final MAB has 3 action(s) with new_mab&#39;s configuration and current_mab&#39;s learned state for overlapping actions.
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -307,8 +290,8 @@ Actions : [&#39;action_A&#39;, &#39;action_B&#39;, &#39;action_C&#39;]
 Features: 4
 
 Learned state preserved for existing actions:
-  action_A: n_successes=68, n_failures=35  ✓
-  action_B: n_successes=33, n_failures=68  ✓
+  action_A: n_successes=70, n_failures=34  ✓
+  action_B: n_successes=34, n_failures=66  ✓
 
 New action starts cold:
   action_C: n_successes=1, n_failures=1
@@ -342,57 +325,28 @@ New action starts cold:
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/rich/live.py:260:
-UserWarning: install "ipywidgets" for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
-</div>
-<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Continued training complete.
-  action_A: n_successes=102, n_failures=59
-  action_B: n_successes=45, n_failures=108
-  action_C: n_successes=38, n_failures=54
+  action_A: n_successes=111, n_failures=55
+  action_B: n_successes=49, n_failures=106
+  action_C: n_successes=34, n_failures=51
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
 </pre></div></div>
 </div>
 </section>
