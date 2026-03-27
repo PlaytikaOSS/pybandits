@@ -88,15 +88,16 @@ class ModelTestConfig:
     def _create_actions(
         self, action_ids: List[str], costs: Optional[st.SearchStrategy], n_objectives: Optional[PositiveInt]
     ) -> Dict[str, Any]:
-        if len(self.model_types) < len(action_ids):
-            indices = np.random.randint(0, len(self.model_types), len(action_ids))
-            self.model_types = [self.model_types[i] for i in indices]
-        if all(model in [BetaCC, SmabZoomingModelCC, BetaMOCC] for model in self.model_types):
+        model_types = list(self.model_types)
+        if len(model_types) < len(action_ids):
+            indices = np.random.randint(0, len(model_types), len(action_ids))
+            model_types = [model_types[i] for i in indices]
+        if all(model in [BetaCC, SmabZoomingModelCC, BetaMOCC] for model in model_types):
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
                 cost if model_type in [BetaCC, BetaMOCC] else partial(_quantitative_cost, cost=cost)
-                for cost, model_type in zip(costs, self.model_types)
+                for cost, model_type in zip(costs, model_types)
             ]
         else:
             costs = None
@@ -107,25 +108,25 @@ class ModelTestConfig:
                     action_id: model_type(cost=cost)
                     if issubclass(model_type, BetaCC)
                     else model_type.cold_start(dimension=1, cost=cost)  # SmabZoomingModelCC
-                    for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
+                    for action_id, model_type, cost in zip(action_ids, model_types, costs)
                 }
             else:
                 return {
                     action_id: model_type()
                     if issubclass(model_type, Beta)
                     else model_type.cold_start(dimension=1)  # SmabZoomingModel
-                    for action_id, model_type in zip(action_ids, self.model_types)
+                    for action_id, model_type in zip(action_ids, model_types)
                 }
         else:
             if costs is not None:
                 return {
                     action_id: model_type(models=[Beta()] * n_objectives, cost=cost)
-                    for action_id, model_type, cost in zip(action_ids, self.model_types, costs)
+                    for action_id, model_type, cost in zip(action_ids, model_types, costs)
                 }
             else:
                 return {
                     action_id: model_type(models=[Beta()] * n_objectives)
-                    for action_id, model_type in zip(action_ids, self.model_types)
+                    for action_id, model_type in zip(action_ids, model_types)
                 }
 
     def create_smab_and_actions(
@@ -145,7 +146,7 @@ class ModelTestConfig:
         )
         actions = self._create_actions(action_ids, costs, n_objectives)
         default_action = action_ids[0] if epsilon and not delta else None
-        if default_action and isinstance(self.model_types[0], QuantitativeModel):
+        if default_action and isinstance(actions[default_action], QuantitativeModel):
             default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
         epsilon = epsilon if not delta else 0.1
         kwargs = {
@@ -221,14 +222,12 @@ def test_cold_start(
 
     # Cold start comparison logic (modified for different model types)
     cold_start_kwargs = {
-        "action_ids": {
-            action for action, model in zip(action_ids, config.model_types) if issubclass(model, (Beta, BetaMO))
-        },
+        "action_ids": {action for action, model in actions.items() if isinstance(model, (Beta, BetaMO))},
         "quantitative_action_ids": {
-            action for action, model in zip(action_ids, config.model_types) if issubclass(model, QuantitativeModel)
+            action for action, model in actions.items() if isinstance(model, QuantitativeModel)
         },
     }
-    if all(model in [BetaCC, SmabZoomingModelCC, BetaMOCC] for model in config.model_types):
+    if all(isinstance(model, (BetaCC, SmabZoomingModelCC, BetaMOCC)) for model in actions.values()):
         cold_start_kwargs["action_ids_cost"] = {
             action: model.cost for action, model in actions.items() if isinstance(model, (BetaCC, BetaMOCC))
         }

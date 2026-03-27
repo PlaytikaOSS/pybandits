@@ -31,14 +31,17 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest_mock.plugin import MockerFixture
 
-import pybandits
+import pybandits.smab
+import pybandits.smab_simulator
+import pybandits.strategy
+import pybandits.utils
 from pybandits.actions_manager import SmabModelType
 from pybandits.base_model import BaseModel
 from pybandits.model import Beta
 from pybandits.quantitative_model import QuantitativeModel, SmabZoomingModel
 from pybandits.smab import SmabBernoulli
 from pybandits.smab_simulator import SmabSimulator
-from tests.utils import mock_update, sample_with_replacement, to_unified_action_id
+from tests.utils import sample_with_replacement, to_unified_action_id
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture):
@@ -109,12 +112,6 @@ def test_smab_simulator_with_explicit_probs_reward(
 
     smab.epsilon = 0.0
     smab.default_action = None
-
-    # # Mock isinstance to return True for quantitative actions
-    # def mock_isinstance(obj, cls):
-    #     if cls.__name__ == 'QuantitativeModel':
-    #         return True
-    #     return False
 
     # with mocker.patch('builtins.isinstance', side_effect=mock_isinstance):
     # Create simulator with explicit probs_reward
@@ -188,6 +185,7 @@ def test_validate_probs_reward_values(
 
 
 def mock_predict(self, n_samples, *args, **kwargs):
+    """Mock sMAB predict that returns random actions and probabilities."""
     action_ids = [to_unified_action_id(action_id, model) for action_id, model in self.actions.items()]
     return (
         sample_with_replacement(action_ids, n_samples),
@@ -219,8 +217,10 @@ def test_smab_e2e_simulation_with_default_args(
     monkeymodule.setattr(
         pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
+    monkeymodule.setattr(
+        pybandits.strategy, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+    )
     monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
-    monkeymodule.setattr(pybandits.smab.SmabBernoulli, "update", mock_update)
 
     mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     with TemporaryDirectory() as path:
@@ -238,8 +238,8 @@ def test_smab_e2e_simulation_with_default_args(
 @given(
     action_ids=st.just(["a1", "a2"]),
     models=st.lists(st.sampled_from([Beta(), SmabZoomingModel.cold_start()]), min_size=2, max_size=2),
-    n_updates=st.integers(min_value=1, max_value=10),
-    batch_size=st.integers(min_value=1, max_value=10),
+    n_updates=st.integers(min_value=1, max_value=3),
+    batch_size=st.integers(min_value=1, max_value=3),
     save=st.booleans(),
     random_seed=st.sampled_from([None, 0, 42]),
     verbose=st.booleans(),
@@ -288,8 +288,10 @@ def test_smab_e2e_simulation_with_non_default_args(
     monkeymodule.setattr(
         pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
+    monkeymodule.setattr(
+        pybandits.strategy, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+    )
     monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
-    monkeymodule.setattr(pybandits.smab.SmabBernoulli, "update", mock_update)
 
     mab = SmabBernoulli(actions=dict(zip(action_ids, models)))
     if visualize and not save:

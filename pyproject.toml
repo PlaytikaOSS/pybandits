@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "5.0.0"
+version = "6.0.0"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -34,15 +34,16 @@ numpy = [
 ]
 pydantic = ">=1.10,<3"
 scipy = [
-    { version = ">=1.9,<1.13", python = ">=3.8,<3.12" },
-    { version = ">=1.11,<1.13", python = "3.12.*" },
+    { version = "^1.9", python = ">=3.9,<3.12" },
+    { version = "^1.11", python = "3.12.*" },
 ]
-pymc = [
-    { version = "^5.3", python = "3.8.*" },
-    { version = "^5.10", python = ">=3.9" },
+numpyro = [
+    { version = "^0.16", python = ">=3.9,<3.11" },
+    { version = "^0.20", python = ">=3.11" },
 ]
 scikit-learn = "^1.1"
 optuna = "^3.6"
+tqdm = "^4"
 bokeh = "^3.1"
 xgboost = {version = "^2", optional=true}
 ipython = {version = "^8", optional=true}
@@ -65,6 +66,7 @@ sphinx_rtd_theme = "^2.0"
 nbsphinx = "^0.9"
 myst-parser = "^3.0"
 pandoc = "^2.4"
+matplotlib = "^3.5"
 
 
 [tool.poetry.extras]

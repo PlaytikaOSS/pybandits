@@ -41,7 +41,7 @@ from pybandits.pydantic_version_compatibility import (
     pydantic_version,
 )
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, SmabZoomingModel
-from tests.utils import FakeApproximation
+from tests.utils import mock_update
 
 REFERENCE_DELTA = 0.0001
 
@@ -453,14 +453,9 @@ def test_smab_actions_different_number_of_objectives(n_objectives, other_n_objec
 )
 def test_cmab_manager_update(context, context_memory, n_features, other_reward, monkeymodule):
     monkeymodule.setattr(
-        pybandits.model,
-        "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
-    )
-    monkeymodule.setattr(
-        pybandits.model,
-        "sample",
-        FakeApproximation(n_features=n_features).sample,
+        pybandits.model.BaseBayesianNeuralNetwork,
+        "_update",
+        mock_update,
     )
 
     actions = {
@@ -470,6 +465,8 @@ def test_cmab_manager_update(context, context_memory, n_features, other_reward, 
     manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions, delta=REFERENCE_DELTA)
     actions = ["action1"] * len(context)
     rewards = [1] * len(context)
+    context = np.array(context)
+    context_memory = np.array(context_memory)
     actions_memory = ["action1"] * len(context_memory)
     rewards_memory = [other_reward] * len(context_memory)
     manager.update(actions_memory, rewards_memory, None, context=context_memory)
@@ -490,13 +487,9 @@ def test_check_context_matrix(n_samples, n_features):
     context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
     CmabActionsManager._check_context_matrix(context=context)
 
-    # raise an error if len(context) != len(self.betas)
+    # raise an error for numpy arrays that cannot be cast to float
     with pytest.raises(AttributeError):
-        CmabActionsManager._check_context_matrix(context=context.loc[:, 1:])
-    with pytest.raises(AttributeError):
-        CmabActionsManager._check_context_matrix(context=[[1], [2, 3]])  # context has shape mismatch
-    with pytest.raises(AttributeError):
-        CmabActionsManager._check_context_matrix(context="a")  # context is a string
+        CmabActionsManager._check_context_matrix(context=np.array(["a", "b"]))  # string array, not castable to float
 
 
 # Handle context and context_memory with non matching feature dimensions
@@ -513,14 +506,9 @@ def test_check_context_matrix(n_samples, n_features):
 )
 def test_cmab_context_memory_matching_dimensions(context, context_memory, n_features, other_reward, monkeymodule):
     monkeymodule.setattr(
-        pybandits.model,
-        "fit",
-        lambda *args, **kwargs: FakeApproximation(n_features=n_features),
-    )
-    monkeymodule.setattr(
-        pybandits.model,
-        "sample",
-        FakeApproximation(n_features=n_features).sample,
+        pybandits.model.BaseBayesianNeuralNetwork,
+        "_update",
+        mock_update,
     )
     actions = {
         "action1": BayesianNeuralNetwork.cold_start(n_features=n_features),
@@ -529,6 +517,8 @@ def test_cmab_context_memory_matching_dimensions(context, context_memory, n_feat
     manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions, delta=REFERENCE_DELTA)
     actions = ["action1"] * len(context)
     rewards = [1] * len(context)
+    context = np.array(context)
+    context_memory = np.array(context_memory)
     actions_memory = ["action1"] * len(context_memory)
     rewards_memory = [other_reward] * len(context_memory)
     manager.update(actions_memory, rewards_memory, None, context=context_memory)
@@ -555,10 +545,10 @@ def test_cmab_context_memory_features_mismatch():
     manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions, delta=REFERENCE_DELTA)
 
     # Context with 3 features
-    context = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    context = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
     # Context memory with 4 features (mismatch)
-    context_memory = [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
+    context_memory = np.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
     actions_list = ["action1", "action2"]
     rewards = [1, 0]

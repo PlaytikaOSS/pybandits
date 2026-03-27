@@ -2,20 +2,18 @@ import json
 import pickle
 import random
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Tuple, get_args
+from typing import Any, List, Tuple, get_args
 
 import numpy as np
 from bokeh.core.serialization import Serializable
 
 from pybandits.base import PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel
-from pybandits.model import BaseBayesianNeuralNetwork, UpdateMethods
+from pybandits.model import BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BnnLayerParams, UpdateMethods
 from pybandits.pydantic_version_compatibility import (
-    Optional,
     PositiveInt,
-    PrivateAttr,
 )
-from pybandits.quantitative_model import QuantitativeModel
+from pybandits.quantitative_model import BaseQuantitativeBayesianNeuralNetwork, QuantitativeModel
 
 literal_update_methods = get_args(UpdateMethods)
 
@@ -55,111 +53,51 @@ def to_unified_action_id(action_id: str, model: BaseModel) -> UnifiedActionId:
 
 
 def mock_update(self, *args, **kwargs):
-    pass
+    """Mock BNN update that validates inputs then sets random parameter values."""
+
+    # For quantitative BNN models, delegate to the inner bnn. Skip context validation
+    # because the raw context lacks the quantity columns expected by the inner bnn.
+    if isinstance(self, BaseQuantitativeBayesianNeuralNetwork):
+        mock_update(self.bnn, *args, **kwargs)
+        return
+
+    updated_layer_params_list = []
+    for layer_params in self.model_params.bnn_layer_params:
+        w_shape = layer_params.weight.shape
+        b_shape = layer_params.bias.shape
+        w_mu = np.random.random(w_shape)
+        w_sigma = np.abs(np.random.random(w_shape)) + 1e-6
+        b_mu = np.random.random(b_shape)
+        b_sigma = np.abs(np.random.random(b_shape)) + 1e-6
+        updated_weight = layer_params.weight.with_dist_parameters(mu=w_mu.tolist(), sigma=w_sigma.tolist())
+        updated_bias = layer_params.bias.with_dist_parameters(mu=b_mu.tolist(), sigma=b_sigma.tolist())
+        updated_layer_params_list.append(BnnLayerParams(weight=updated_weight, bias=updated_bias))
+    self.model_params.bnn_layer_params = updated_layer_params_list
 
 
-class FakeApproximation(PyBanditsBaseModel):
-    n_draws: PositiveInt = 10
-    n_features: PositiveInt
-    hidden_dim_list: Optional[list] = None
-    _hist: Optional[np.ndarray] = PrivateAttr(default=None)
-    _mean: Optional[_EvalArray] = PrivateAttr(default=None)
-    _std: Optional[_EvalArray] = PrivateAttr(default=None)
-    _ordering: Optional[Dict[str, Tuple[Any, slice, Any, Any]]] = PrivateAttr(default=None)
+def apply_mock_update(actions: List[Any]) -> None:
+    """Apply mock_update to every BNN model contained in a list of CMAB actions.
 
-    def model_post_init(self, __context: Any) -> None:
-        """
-        Initialize mean, std, and ordering after model initialization.
+    Handles all three action-model variants:
 
-        Parameters
-        ----------
-        __context : Any
-            The context passed from Pydantic initialization.
-        """
-        if self.hidden_dim_list is None:
-            self.hidden_dim_list = []
-        dim_list = [self.n_features] + self.hidden_dim_list + [1]
+    - ``BaseBayesianNeuralNetwork``: updated directly.
+    - ``BaseBayesianNeuralNetworkMO``: each per-objective sub-model is updated.
+    - ``BaseQuantitativeBayesianNeuralNetwork``: the wrapped ``bnn`` is updated.
 
-        # Calculate total size of flattened parameter array
-        total_size = 0
-        param_sizes = {}
-        for i in range(len(dim_list) - 1):
-            weight_layer_params_name, bias_layer_params_name = BaseBayesianNeuralNetwork.get_layer_params_name(i)
-            weight_size = dim_list[i] * dim_list[i + 1]
-            bias_size = dim_list[i + 1]
-            param_sizes[weight_layer_params_name] = (total_size, weight_size)
-            total_size += weight_size
-            param_sizes[bias_layer_params_name] = (total_size, bias_size)
-            total_size += bias_size
-
-        # Create mean and std arrays
-        mean_array = np.random.random(size=total_size)
-        std_array = np.random.random(size=total_size)
-        self._mean = _EvalArray(mean_array)
-        self._std = _EvalArray(std_array)
-
-        # Create ordering dictionary with slices
-        ordering = {}
-        for param_name, (start_idx, size) in param_sizes.items():
-            end_idx = start_idx + size
-            param_slice = slice(start_idx, end_idx)
-            ordering[param_name] = (None, param_slice, None, None)
-
-        self._ordering = ordering
-
-    @property
-    def hist(self) -> Optional[np.ndarray]:
-        """Return the history array."""
-        return self._hist
-
-    @property
-    def mean(self) -> _EvalArray:
-        """
-        Return the mean tensor-like object with eval() method.
-
-        Returns
-        -------
-        _EvalArray
-            The mean array wrapper.
-        """
-        return self._mean
-
-    @property
-    def std(self) -> _EvalArray:
-        """
-        Return the std tensor-like object with eval() method.
-
-        Returns
-        -------
-        _EvalArray
-            The std array wrapper.
-        """
-        return self._std
-
-    @property
-    def ordering(self) -> Dict[str, Tuple[Any, slice, Any, Any]]:
-        """
-        Return the ordering dictionary mapping parameter names to slices.
-
-        Returns
-        -------
-        Dict[str, Tuple[Any, slice, Any, Any]]
-            Dictionary mapping parameter names to tuples containing slices for indexing.
-        """
-        return self._ordering
-
-    def sample(self, *args, **kwargs) -> Dict[str, np.ndarray]:
-        """Sample from the approximation."""
-        sample_dict = {}
-        if self.hidden_dim_list is None:
-            self.hidden_dim_list = []
-        dim_list = [self.n_features] + self.hidden_dim_list + [1]
-        for i in range(len(dim_list) - 1):
-            weight_layer_params_name, bias_layer_params_name = BaseBayesianNeuralNetwork.get_layer_params_name(i)
-            sample_dict[weight_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i], dim_list[i + 1]))
-            sample_dict[bias_layer_params_name] = np.random.random(size=(self.n_draws, dim_list[i + 1]))
-
-        return sample_dict
+    Parameters
+    ----------
+    actions : List[Any]
+        The action-model objects extracted from a CMAB instance
+        (e.g. ``list(cmab.actions.values())``).
+    """
+    for action in actions:
+        if isinstance(action, BaseBayesianNeuralNetworkMO):
+            for sub_model in action.models:
+                mock_update(sub_model)
+        elif isinstance(action, BaseBayesianNeuralNetwork):
+            mock_update(action)
+        elif isinstance(action, BaseQuantitativeBayesianNeuralNetwork):
+            mock_update(action.bnn)
 
 
 def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:

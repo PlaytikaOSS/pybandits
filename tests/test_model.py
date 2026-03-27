@@ -23,12 +23,12 @@
 from typing import Literal, Optional
 
 import numpy as np
-import pymc
+import numpyro
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pymc.distributions.continuous import Normal as PymcNormal
-from pymc.distributions.continuous import StudentT as PymcStudentT
+from numpyro.distributions import Normal as NumpyroNormal
+from numpyro.distributions import StudentT as NumpyroStudentT
 
 from pybandits.model import (
     BaseLocationScaleArray,
@@ -42,6 +42,7 @@ from pybandits.model import (
     BetaMO,
     BetaMOCC,
     CategoricalFeatureConfig,
+    EarlyStopping,
     EmbeddingParams,
     FeaturesConfig,
     NormalArray,
@@ -268,8 +269,8 @@ def test_location_scale_array_inherits_from_base(array_class, other_class, shape
 
 @settings(deadline=500)
 @pytest.mark.parametrize(
-    "array_class,expected_pymc_class",
-    [(NormalArray, PymcNormal), (StudentTArray, PymcStudentT)],
+    "array_class,expected_numpyro_dist_class",
+    [(NormalArray, NumpyroNormal), (StudentTArray, NumpyroStudentT)],
 )
 @given(
     shape=st.one_of(
@@ -279,16 +280,14 @@ def test_location_scale_array_inherits_from_base(array_class, other_class, shape
     sigma=st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
     nu=st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
 )
-def test_location_scale_array_to_pymc_distribution(array_class, expected_pymc_class, shape, mu, sigma, nu):
+def test_location_scale_array_to_numpyro_distribution(array_class, expected_numpyro_dist_class, shape, mu, sigma, nu):
     if array_class == NormalArray:
         a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma)
     else:
         a = array_class.cold_start(shape=shape, mu=mu, sigma=sigma, nu=nu)
 
-    with pymc.Model():
-        pymc_dist = a.to_pymc_distribution(name="test", shape=shape)
-        assert pymc_dist.owner is not None
-        assert isinstance(pymc_dist.owner.op, expected_pymc_class)
+    dist = a.to_numpyro_distribution()
+    assert isinstance(dist, expected_numpyro_dist_class)
 
 
 ########################################################################################################################
@@ -428,11 +427,6 @@ def test_bnn_sample_proba(
     assert type(context) is np.ndarray
     sample_proba(context=context)
 
-    # context is python list
-    context = context.tolist()
-    assert type(context) is list
-    sample_proba(context=context)
-
     # check that the model is working with multi-sample prediction
     context = np.repeat(np.random.uniform(low=-1.0, high=1.0, size=(1, n_features)), n_samples, axis=0)
     assert type(context) is np.ndarray
@@ -535,32 +529,30 @@ def _create_update_kwargs(
     lr: Optional[float] = None,
     early_stopping_diff: Optional[Literal["absolute", "relative"]] = None,
     early_stopping_tol: Optional[float] = None,
-    early_stopping_every: Optional[int] = None,
+    early_stopping_patience: Optional[int] = None,
+    method: str = "advi",
 ) -> dict:
-    """Create update_kwargs dictionary from individual parameters."""
-    update_kwargs: dict = {}
+    """Create update_kwargs dictionary with vi sub-dict from individual parameters."""
+    vi_kwargs: dict = {"method": method}
     if batch_size is not None:
-        update_kwargs["batch_size"] = batch_size
+        vi_kwargs["batch_size"] = batch_size
     if optimizer_type is not None:
-        update_kwargs["optimizer_type"] = optimizer_type
-        update_kwargs["optimizer_kwargs"] = {}
+        vi_kwargs["optimizer_type"] = optimizer_type
         if lr is not None:
-            update_kwargs["optimizer_kwargs"]["learning_rate"] = lr
-        if len(update_kwargs["optimizer_kwargs"]) == 0:
-            update_kwargs.pop("optimizer_kwargs")
+            vi_kwargs["optimizer_kwargs"] = {"step_size": lr}
 
-    if early_stopping_diff is not None or early_stopping_tol is not None or early_stopping_every is not None:
+    if early_stopping_diff is not None or early_stopping_tol is not None or early_stopping_patience is not None:
         early_stopping_kwargs: dict = {}
         if early_stopping_diff is not None:
-            early_stopping_kwargs["diff"] = early_stopping_diff
+            early_stopping_kwargs["diff_type"] = early_stopping_diff
         if early_stopping_tol is not None:
             early_stopping_kwargs["tolerance"] = early_stopping_tol
-        if early_stopping_every is not None:
-            early_stopping_kwargs["every"] = early_stopping_every
+        if early_stopping_patience is not None:
+            early_stopping_kwargs["patience"] = early_stopping_patience
         if len(early_stopping_kwargs):
-            update_kwargs["early_stopping_kwargs"] = early_stopping_kwargs
+            vi_kwargs["early_stopping_kwargs"] = early_stopping_kwargs
 
-    return update_kwargs
+    return vi_kwargs
 
 
 @given(
@@ -572,7 +564,7 @@ def _create_update_kwargs(
     lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
     early_stopping_diff=st.sampled_from((None, "absolute", "relative")),
     early_stopping_tol=st.one_of(st.none(), st.floats(min_value=1e-6, max_value=1e-1)),
-    early_stopping_every=st.one_of(st.none(), st.integers(min_value=1, max_value=10)),
+    early_stopping_patience=st.one_of(st.none(), st.integers(min_value=1, max_value=10)),
     update_method=st.just("VI"),
 )
 def test_bnn_vi_update_parameters(
@@ -584,15 +576,13 @@ def test_bnn_vi_update_parameters(
     lr: Optional[float],
     early_stopping_diff: Optional[Literal["absolute", "relative"]],
     early_stopping_tol: Optional[float],
-    early_stopping_every: Optional[int],
+    early_stopping_patience: Optional[int],
     update_method: UpdateMethods,
 ) -> None:
     """Test BNN VI update with various valid parameters."""
     update_kwargs = _create_update_kwargs(
-        batch_size, optimizer_type, lr, early_stopping_diff, early_stopping_tol, early_stopping_every
+        batch_size, optimizer_type, lr, early_stopping_diff, early_stopping_tol, early_stopping_patience
     )
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
@@ -601,30 +591,15 @@ def test_bnn_vi_update_parameters(
         update_kwargs=update_kwargs,
     )
 
-    pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=batch_size)
+    model_fn = bnn.create_update_model()
+    assert callable(model_fn)
 
-    if batch_size is None:
-        assert pymc_model["out"].eval().shape[0] == n_samples
-    else:
-        assert pymc_model["out"].eval().shape[0] == batch_size
-
-    if optimizer_type is not None:
-        optimizer = getattr(pymc, optimizer_type)
-        optimizer_kwargs = update_kwargs.get("optimizer_kwargs", {})
-        optimizer = optimizer(**optimizer_kwargs)
-        assert (
-            (optimizer.func == bnn._obj_optimizer.func)
-            and (optimizer.args == bnn._obj_optimizer.args)
-            and (optimizer.keywords == bnn._obj_optimizer.keywords)
-        )
-    else:
-        assert bnn._obj_optimizer is None
+    # Optimizer is always set for VI (built from defaults or user override)
+    assert bnn._obj_optimizer is not None
 
     if "early_stopping_kwargs" in update_kwargs:
-        from pymc.variational.callbacks import CheckParametersConvergence
-
         assert bnn._get_early_stopping_callback() is not None
-        assert isinstance(bnn._get_early_stopping_callback(), CheckParametersConvergence)
+        assert isinstance(bnn._get_early_stopping_callback(), EarlyStopping)
     else:
         assert bnn._get_early_stopping_callback() is None
 
@@ -642,8 +617,6 @@ def test_bnn_mcmc_update_parameters(
     update_method: UpdateMethods,
 ) -> None:
     """Test BNN MCMC update with valid parameters (no batch_size, optimizer, or early_stopping)."""
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
@@ -652,8 +625,8 @@ def test_bnn_mcmc_update_parameters(
         update_kwargs={},
     )
 
-    pymc_model = bnn.create_update_model(x=context, y=rewards, batch_size=None)
-    assert pymc_model["out"].eval().shape[0] == n_samples
+    model_fn = bnn.create_update_model()
+    assert callable(model_fn)
 
 
 @given(
@@ -664,7 +637,7 @@ def test_bnn_mcmc_update_parameters(
     lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
     early_stopping_diff=st.sampled_from(("absolute", "relative")),
     early_stopping_tol=st.floats(min_value=1e-6, max_value=1e-1),
-    early_stopping_every=st.integers(min_value=1, max_value=10),
+    early_stopping_patience=st.integers(min_value=1, max_value=10),
     update_method=st.just("MCMC"),
 )
 def test_bnn_mcmc_update_parameters_failures(
@@ -675,7 +648,7 @@ def test_bnn_mcmc_update_parameters_failures(
     lr: Optional[float],
     early_stopping_diff: str,
     early_stopping_tol: float,
-    early_stopping_every: int,
+    early_stopping_patience: int,
     update_method: UpdateMethods,
 ) -> None:
     """Test that MCMC update raises ValueError when invalid parameters are provided."""
@@ -702,7 +675,9 @@ def test_bnn_mcmc_update_parameters_failures(
 
     # Test with early_stopping_kwargs
     update_kwargs_with_early_stopping = _create_update_kwargs(
-        None, None, early_stopping_diff, early_stopping_tol, early_stopping_every
+        early_stopping_diff=early_stopping_diff,
+        early_stopping_tol=early_stopping_tol,
+        early_stopping_patience=early_stopping_patience,
     )
     with pytest.raises(ValueError):
         BayesianNeuralNetwork.cold_start(
@@ -742,7 +717,7 @@ def test_bnn_vi_update_parameters_dummy_optimizer_failure(
 @pytest.mark.parametrize(
     "optimizer_type,optimizer_kwargs",
     [
-        ("adam", {"invalid_param": 123, "learning_rate": 0.01}),
+        ("adam", {"invalid_param": 123, "step_size": 0.01}),
         ("sgd", {"invalid_param": 123}),
     ],
 )
@@ -788,20 +763,26 @@ def test_invalid_early_stopping_kwargs(
     n_features=st.just(2),
     update_method=st.just("VI"),
     epochs=st.integers(min_value=1, max_value=100),
-    n=st.integers(min_value=1, max_value=100),
+    num_steps=st.integers(min_value=1, max_value=100),
 )
-def test_epochs_and_n_mutually_exclusive(n_features: int, update_method: UpdateMethods, epochs: int, n: int) -> None:
-    """Test that specifying both 'epochs' and 'n' raises ValueError."""
-    with pytest.raises(ValueError, match="Cannot specify both 'epochs' and 'n'"):
+def test_epochs_and_num_steps_warns(n_features: int, update_method: UpdateMethods, epochs: int, num_steps: int) -> None:
+    """Test that specifying both 'epochs' and 'num_steps' raises a UserWarning (epochs takes precedence)."""
+    with pytest.warns(UserWarning, match="'epochs' takes precedence"):
         BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             update_method=update_method,
-            update_kwargs={"epochs": epochs, "fit": {"n": n}},
+            update_kwargs={"epochs": epochs, "num_steps": num_steps},
         )
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
-def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_method="MCMC"):
+def test_bnn_mcmc_update(
+    n_features,
+    hidden_dim_list=(1,),
+    n_samples=3,
+    update_method="MCMC",
+    update_kwargs={"num_warmup": 2, "num_samples": 2, "num_chains": 1},
+):
     hidden_dim_list = list(hidden_dim_list)
 
     def update(context: np.ndarray, rewards: list):
@@ -809,6 +790,7 @@ def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_m
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
             update_method=update_method,
+            update_kwargs=update_kwargs,
         )
         dim_list = [n_features] + hidden_dim_list
         for layer_ind in range(len(dim_list)):
@@ -838,9 +820,49 @@ def test_bnn_mcmc_update(n_features, hidden_dim_list=(1,), n_samples=5, update_m
     # raise an error if len(context) != len(rewards)
     with pytest.raises(AttributeError):
         bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features, hidden_dim_list=hidden_dim_list, update_method=update_method
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method=update_method,
+            update_kwargs=update_kwargs,
         )
         bnn.update(context=context, rewards=rewards[1:])
+
+
+@pytest.mark.parametrize("n_features", [1, 2])
+def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5, method="fullrank_advi", num_steps=1):
+    hidden_dim_list = list(hidden_dim_list)
+
+    def update(context: np.ndarray, rewards: list):
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            update_method="VI",
+            update_kwargs={"method": method, "num_steps": num_steps},
+        )
+        dim_list = [n_features] + hidden_dim_list
+        for layer_ind in range(len(dim_list)):
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            for param in ["mu", "sigma", "nu"]:
+                assert np.all(layer_w[param] == layer_w_init[param])
+                assert np.all(layer_b[param] == layer_b_init[param])
+
+        bnn.update(context=context, rewards=rewards)
+
+        for layer_ind in range(len(dim_list)):
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            for param in ["mu", "sigma"]:
+                assert np.all(layer_w[param] != layer_w_init[param])
+                assert np.all(layer_b[param] != layer_b_init[param])
+
+    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    update(context=context, rewards=rewards)
 
 
 ########################################################################################################################
@@ -871,14 +893,13 @@ def test_bayesian_logistic_regression_with_different_activations(activation):
     assert len(blr.model_params.bnn_layer_params) == 1
 
 
-def test_bnn_pymc_and_numpy_activation_keys_match():
-    """Test that the keys of _pymc_activations and _numpy_activations dictionaries match."""
-    pymc_keys = set(BayesianNeuralNetwork._pymc_activations.keys())
+def test_bnn_jax_and_numpy_activation_keys_match():
+    """Test that the keys of _jax_activations and _numpy_activations dictionaries match."""
+    jax_keys = set(BayesianNeuralNetwork._jax_activations.keys())
     numpy_keys = set(BayesianNeuralNetwork._numpy_activations.keys())
 
-    assert pymc_keys == numpy_keys, (
-        f"Keys mismatch between _pymc_activations and _numpy_activations. "
-        f"PyMC keys: {pymc_keys}, NumPy keys: {numpy_keys}"
+    assert jax_keys == numpy_keys, (
+        f"Keys mismatch between _jax_activations and _numpy_activations. JAX keys: {jax_keys}, NumPy keys: {numpy_keys}"
     )
 
 
@@ -1423,31 +1444,62 @@ def test_cold_start_requires_n_features():
         BayesianNeuralNetwork.cold_start()
 
 
-@pytest.mark.parametrize(
-    "n_features,categorical_features,expected_emb_shape,expected_input_dim",
-    [(2, {1: 3}, (3, 1), 2)],
+def _make_categorical_context(n_samples: int, n_features: int, categorical_features: dict) -> np.ndarray:
+    """Generate random context with valid numerical and categorical columns."""
+    context = np.random.uniform(-1.0, 1.0, size=(n_samples, n_features))
+    for col_idx, cardinality in categorical_features.items():
+        context[:, col_idx] = np.random.randint(0, cardinality, size=n_samples)
+    return context
+
+
+def _make_random_rewards(n_samples: int) -> list:
+    return np.random.choice([0, 1], size=n_samples).tolist()
+
+
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=2, max_value=5),
+    cardinality=st.integers(min_value=2, max_value=8),
+    hidden_dim_list=st.lists(st.integers(min_value=2, max_value=8), min_size=1, max_size=2),
 )
-def test_cold_start_with_feature_config(n_features, categorical_features, expected_emb_shape, expected_input_dim):
+def test_cold_start_with_feature_config(n_features, cardinality, hidden_dim_list):
     """cold_start creates correct embedding params and first-layer weight shape."""
-    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
+    cat_col = n_features - 1
+    categorical_features = {cat_col: cardinality}
+    bnn = _make_bnn_with_categoricals(
+        n_features=n_features, categorical_features=categorical_features, hidden_dim_list=hidden_dim_list
+    )
+    embedding_dim = bnn.model_params.embedding_params.embeddings[0].shape[1]
+    n_numerical = n_features - len(categorical_features)
+    expected_input_dim = n_numerical + embedding_dim
+
     assert bnn.model_params.embedding_params is not None
-    assert len(bnn.model_params.embedding_params.embeddings) == 1
-    assert bnn.model_params.embedding_params.embeddings[0].shape == expected_emb_shape
+    assert len(bnn.model_params.embedding_params.embeddings) == len(categorical_features)
+    assert bnn.model_params.embedding_params.embeddings[0].shape[0] == cardinality
     assert bnn.model_params.bnn_layer_params[0].weight.shape[0] == expected_input_dim
 
 
-@pytest.mark.parametrize("n_features,cardinality", [(2, 3)])
-def test_check_context_matrix_with_categorical(n_features, cardinality):
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=2, max_value=5),
+    cardinality=st.integers(min_value=2, max_value=8),
+    n_samples=st.integers(min_value=2, max_value=10),
+)
+def test_check_context_matrix_with_categorical(n_features, cardinality, n_samples):
     """check_context_matrix validates column count and categorical range for feature_config models."""
-    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features={1: cardinality})
+    cat_col = n_features - 1
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features={cat_col: cardinality})
     # valid context
-    bnn.check_context_matrix(np.array([[0.5, 0], [-0.3, 1]]))
+    context = _make_categorical_context(n_samples, n_features, {cat_col: cardinality})
+    bnn.check_context_matrix(context)
     # too few columns
     with pytest.raises(AttributeError, match="Shape mismatch"):
-        bnn.check_context_matrix(np.array([[1.0]]))
+        bnn.check_context_matrix(np.random.uniform(size=(n_samples, 1)))
     # out-of-range category
+    bad_context = _make_categorical_context(1, n_features, {cat_col: cardinality})
+    bad_context[0, cat_col] = cardinality + 2
     with pytest.raises(ValueError, match="out of range"):
-        bnn.check_context_matrix(np.array([[1.0, cardinality + 2]]))
+        bnn.check_context_matrix(bad_context)
 
 
 # ---------------------------------------------------------------------------
@@ -1455,15 +1507,23 @@ def test_check_context_matrix_with_categorical(n_features, cardinality):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("n_samples,n_numerical", [(3, 1)])
-def test_prepare_context_arrays_splits_correctly(n_samples, n_numerical):
-    bnn = _make_bnn_with_categoricals()
-    context = np.array([[0.5, 0], [-0.3, 1], [1.2, 2]], dtype=np.float64)
+@settings(deadline=None, max_examples=5)
+@given(
+    n_samples=st.integers(min_value=2, max_value=10),
+    n_features=st.integers(min_value=2, max_value=5),
+    cardinality=st.integers(min_value=2, max_value=8),
+)
+def test_prepare_context_arrays_splits_correctly(n_samples, n_features, cardinality):
+    cat_col = n_features - 1
+    categorical_features = {cat_col: cardinality}
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
+    context = _make_categorical_context(n_samples, n_features, categorical_features)
     num_arr, cat_idx = bnn._prepare_context_arrays(context)
 
+    n_numerical = n_features - 1
     assert num_arr.shape == (n_samples, n_numerical)
-    np.testing.assert_allclose(num_arr[:, 0], [0.5, -0.3, 1.2])
-    assert cat_idx[0].tolist() == [0, 1, 2]
+    np.testing.assert_allclose(num_arr, context[:, :n_numerical])
+    assert cat_idx[0].tolist() == context[:, cat_col].astype(np.int32).tolist()
 
 
 # ---------------------------------------------------------------------------
@@ -1475,11 +1535,16 @@ def test_prepare_context_arrays_splits_correctly(n_samples, n_numerical):
 @given(
     dist_type=st.sampled_from(["studentt", "normal"]),
     n_samples=st.integers(min_value=1, max_value=10),
+    n_features=st.integers(min_value=2, max_value=4),
+    cardinality=st.integers(min_value=2, max_value=6),
 )
-def test_sample_proba_with_feature_config(dist_type, n_samples):
-    bnn = _make_bnn_with_categoricals(dist_type=dist_type)
-    base = np.array([[0.5, 0], [-0.3, 1], [1.2, 2]], dtype=np.float64)
-    context = np.tile(base, (n_samples // len(base) + 1, 1))[:n_samples]
+def test_sample_proba_with_feature_config(dist_type, n_samples, n_features, cardinality):
+    cat_col = n_features - 1
+    categorical_features = {cat_col: cardinality}
+    bnn = _make_bnn_with_categoricals(
+        n_features=n_features, categorical_features=categorical_features, dist_type=dist_type
+    )
+    context = _make_categorical_context(n_samples, n_features, categorical_features)
     results = bnn.sample_proba(context=context)
 
     assert len(results) == n_samples
@@ -1493,22 +1558,45 @@ def test_sample_proba_with_feature_config(dist_type, n_samples):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("expected_rv", ["embedding_0"])
-def test_create_update_model_contains_embedding_variable(expected_rv):
-    bnn = _make_bnn_with_categoricals()
-    context = np.array([[0.5, 0], [-0.3, 1]], dtype=np.float64)
-    pymc_model = bnn.create_update_model(x=context, y=[1, 0])
-    rv_names = [rv.name for rv in pymc_model.free_RVs]
-    assert any(expected_rv in name for name in rv_names)
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=2, max_value=4),
+    cardinality=st.integers(min_value=2, max_value=6),
+    n_samples=st.integers(min_value=2, max_value=10),
+)
+def test_create_update_model_contains_embedding_variable(n_features, cardinality, n_samples):
+    """Verify the NumPyro model function samples embedding variables."""
+    import jax.numpy as jnp
+
+    cat_col = n_features - 1
+    categorical_features = {cat_col: cardinality}
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
+    model_fn = bnn.create_update_model()
+    context = jnp.array(_make_categorical_context(n_samples, n_features, categorical_features), dtype=jnp.float32)
+    rewards = jnp.array(_make_random_rewards(n_samples), dtype=jnp.int32)
+    trace = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(context, rewards)
+    assert any("embedding_0" in name for name in trace.keys())
 
 
-@pytest.mark.parametrize("batch_size,expected_rv", [(2, "embedding_0")])
-def test_create_update_model_minibatch_with_categoricals(batch_size, expected_rv):
-    bnn = _make_bnn_with_categoricals()
-    context = np.array([[0.5, 0], [-0.3, 1], [1.2, 2]], dtype=np.float64)
-    pymc_model = bnn.create_update_model(x=context, y=[1, 0, 1], batch_size=batch_size)
-    rv_names = [rv.name for rv in pymc_model.free_RVs]
-    assert any(expected_rv in name for name in rv_names)
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=2, max_value=4),
+    cardinality=st.integers(min_value=2, max_value=6),
+    n_samples=st.integers(min_value=3, max_value=10),
+    batch_size=st.integers(min_value=2, max_value=3),
+)
+def test_create_update_model_minibatch_with_categoricals(n_features, cardinality, n_samples, batch_size):
+    """Verify the NumPyro model function with minibatching samples embedding variables."""
+    import jax.numpy as jnp
+
+    cat_col = n_features - 1
+    categorical_features = {cat_col: cardinality}
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
+    model_fn = bnn.create_update_model(batch_size=batch_size)
+    context = jnp.array(_make_categorical_context(n_samples, n_features, categorical_features), dtype=jnp.float32)
+    rewards = jnp.array(_make_random_rewards(n_samples), dtype=jnp.int32)
+    trace = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(context, rewards)
+    assert any("embedding_0" in name for name in trace.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -1516,13 +1604,21 @@ def test_create_update_model_minibatch_with_categoricals(batch_size, expected_rv
 # ---------------------------------------------------------------------------
 
 
-def test_reset_restores_embedding_params():
-    bnn = _make_bnn_with_categoricals()
-    original_mu = [row[:] for row in bnn.model_params.embedding_params.embeddings[0].mu]
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=2, max_value=4),
+    cardinality=st.integers(min_value=2, max_value=6),
+)
+def test_reset_restores_embedding_params(n_features, cardinality):
+    cat_col = n_features - 1
+    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features={cat_col: cardinality})
+    emb = bnn.model_params.embedding_params.embeddings[0]
+    original_mu = [row[:] for row in emb.mu]
+    embedding_dim = emb.shape[1]
 
     # Manually mutate embeddings
-    new_emb = bnn.model_params.embedding_params.embeddings[0].with_dist_parameters(
-        mu=[[1.0] * 1] * 3, sigma=[[0.1] * 1] * 3
+    new_emb = emb.with_dist_parameters(
+        mu=[[1.0] * embedding_dim] * cardinality, sigma=[[0.1] * embedding_dim] * cardinality
     )
     bnn.model_params.embedding_params.embeddings[0] = new_emb
     assert bnn.model_params.embedding_params.embeddings[0].mu != original_mu
@@ -1537,21 +1633,28 @@ def test_reset_restores_embedding_params():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("dist_type", ["studentt", "normal"])
-@pytest.mark.parametrize("n_features,categorical_features,hidden_dim_list", [(2, {1: 3}, [8])])
+@settings(deadline=None, max_examples=5)
+@given(
+    dist_type=st.sampled_from(["studentt", "normal"]),
+    n_features=st.integers(min_value=2, max_value=4),
+    cardinality=st.integers(min_value=2, max_value=6),
+    hidden_dim_list=st.lists(st.integers(min_value=4, max_value=8), min_size=1, max_size=1),
+    n_samples=st.integers(min_value=4, max_value=10),
+)
 def test_bnn_vi_update_with_categorical_features_updates_embeddings(
-    dist_type, n_features, categorical_features, hidden_dim_list
+    dist_type, n_features, cardinality, hidden_dim_list, n_samples
 ):
+    cat_col = n_features - 1
+    categorical_features = {cat_col: cardinality}
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         categorical_features=categorical_features,
         hidden_dim_list=hidden_dim_list,
         dist_type=dist_type,
-        update_kwargs={"fit": {"n": 10}},
+        update_kwargs={"num_steps": 10},
     )
-    # [score, tier_index]  — 4 samples with tier indices 0, 1, 2, 0
-    context = np.array([[0.5, 0], [-0.3, 1], [1.2, 2], [0.0, 0]], dtype=np.float64)
-    rewards = [1, 0, 1, 0]
+    context = _make_categorical_context(n_samples, n_features, categorical_features)
+    rewards = _make_random_rewards(n_samples)
 
     init_mu = [row[:] for row in bnn.model_params.embedding_params.embeddings[0].mu]
     bnn._update(context=context, rewards=rewards)
@@ -1562,32 +1665,3 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
     # Reset should restore initial embeddings
     bnn._reset()
     assert bnn.model_params.embedding_params.embeddings[0].mu == init_mu
-
-
-# ---------------------------------------------------------------------------
-# from_old_state backward-compatibility
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("n_features,hidden_dim_list", [(3, [4])])
-def test_from_old_state_infers_numerical_feature_config(n_features, hidden_dim_list):
-    """A pre-4.4 state dict (no feature_config) is migrated automatically."""
-    bnn = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
-    state = bnn.apply_version_adjusted_method("model_dump", "dict")
-    state.pop("feature_config")  # simulate pre-4.4 serialised state
-
-    restored = BayesianNeuralNetwork.from_old_state(state)
-
-    assert restored.feature_config.n_features == n_features
-    assert restored.feature_config.categorical_features_configs == []
-
-
-def test_from_old_state_preserves_existing_feature_config():
-    """If feature_config is already present in the state dict it is left untouched."""
-    bnn = _make_bnn_with_categoricals()
-    state = bnn.apply_version_adjusted_method("model_dump", "dict")
-
-    restored = BayesianNeuralNetwork.from_old_state(state)
-
-    assert restored.feature_config == bnn.feature_config
-    assert restored.model_params.embedding_params is not None

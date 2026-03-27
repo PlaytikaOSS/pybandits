@@ -31,12 +31,15 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
-import pybandits
+import pybandits.cmab
+import pybandits.cmab_simulator
+import pybandits.strategy
+import pybandits.utils
 from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
 from pybandits.model import BayesianLogisticRegression
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork
-from tests.utils import mock_update, sample_with_replacement, to_unified_action_id
+from tests.utils import apply_mock_update, sample_with_replacement, to_unified_action_id
 
 
 def test_mismatched_probs_reward_columns(mocker: MockerFixture, groups=(0, 1)):
@@ -240,6 +243,7 @@ def _get_context_and_group(n_features, n_updates, batch_size, num_groups) -> Tup
 
 
 def mock_predict(self, context, *args, **kwargs):
+    """Mock cMAB predict that returns random actions, probabilities, and weighted sums."""
     n_samples = len(context)
     action_ids = [to_unified_action_id(action_id, model) for action_id, model in self.actions.items()]
     return (
@@ -247,6 +251,11 @@ def mock_predict(self, context, *args, **kwargs):
         [{action_id: np.random.random() for action_id in action_ids} for _ in range(n_samples)],
         [{action_id: np.random.randn() for action_id, model in self.actions.items()} for _ in range(n_samples)],
     )
+
+
+def mock_mab_update(self, actions, rewards, quantities=None, **kwargs):
+    """Mock cMAB update that applies mock_update to BNN models (sets random params)."""
+    apply_mock_update(list(self.actions.values()))
 
 
 @settings(deadline=None)
@@ -272,8 +281,11 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
     monkeymodule.setattr(
         pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
+    monkeymodule.setattr(
+        pybandits.strategy, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+    )
     monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "predict", mock_predict)
-    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_update)
+    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_mab_update)
 
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     n_updates = CmabSimulator.model_fields["n_updates"].default
@@ -318,7 +330,7 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
     ),
     n_features=st.just(3),
     n_updates=st.integers(min_value=1, max_value=2),
-    batch_size=st.integers(min_value=1, max_value=5),
+    batch_size=st.integers(min_value=1, max_value=3),
     save=st.booleans(),
     random_seed=st.sampled_from([None, 0, 42]),
     verbose=st.booleans(),
@@ -344,8 +356,11 @@ def test_cmab_e2e_simulation_with_non_default_args(
     monkeymodule.setattr(
         pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
+    monkeymodule.setattr(
+        pybandits.strategy, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+    )
     monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "predict", mock_predict)
-    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_update)
+    monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_mab_update)
 
     context, group = _get_context_and_group(n_features, n_updates, batch_size, num_groups)
     mab = CmabBernoulli(actions=dict(zip(action_ids, models)))

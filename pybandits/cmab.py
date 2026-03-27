@@ -23,8 +23,7 @@
 from abc import ABC
 from typing import Dict, List, Optional, Set, Union
 
-from numpy import array
-from numpy.typing import ArrayLike
+import numpy as np
 
 from pybandits.actions_manager import (
     CmabActionsManager,
@@ -47,11 +46,7 @@ from pybandits.mab import BaseMab
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
     BaseBayesianNeuralNetworkMO,
-    BaseLocationScaleArray,
-    BnnLayerParams,
-    BnnParams,
     FeaturesConfig,
-    StudentTArray,
 )
 from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
@@ -103,7 +98,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def predict(
         self,
-        context: ArrayLike,
+        context: np.ndarray,
         forbidden_actions: Optional[Set[ActionId]] = None,
     ) -> CmabPredictions:
         """
@@ -127,9 +122,6 @@ class BaseCmabBernoulli(BaseMab, ABC):
         ws : Union[List[Dict[UnifiedActionId, float]], List[Dict[UnifiedActionId, List[float]]]]
             The weighted sum of logistic regression logits.
         """
-
-        # cast inputs to numpy arrays to facilitate their manipulation
-        context = array(context)
 
         if len(context) < 1:
             raise AttributeError("Context must have at least one row")
@@ -163,11 +155,11 @@ class BaseCmabBernoulli(BaseMab, ABC):
         self,
         actions: List[ActionId],
         rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        context: ArrayLike,
+        context: np.ndarray,
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
         rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
-        context_memory: Optional[ArrayLike] = None,
+        context_memory: Optional[np.ndarray] = None,
     ):
         """
         Update the contextual Bernoulli bandit given the list of selected actions and their corresponding binary
@@ -210,7 +202,8 @@ class BaseCmabBernoulli(BaseMab, ABC):
     ) -> Dict[str, Serializable]:
         """
         Update the model state to the current version.
-        Besides the updates in the MAB class, it also loads legacy Bayesian Logistic Regression model parmeters into the new Bayesian Neural Network model.
+        Besides the updates in the MAB class, it also loads legacy Bayesian Logistic Regression model parameters
+         into the new Bayesian Neural Network model.
 
         Parameters
         ----------
@@ -229,60 +222,53 @@ class BaseCmabBernoulli(BaseMab, ABC):
         """
         state = super().update_old_state(state, delta)
 
-        if "predict_with_proba" in state:
-            state.pop("predict_with_proba")
-
-        if "predict_actions_randomly" in state:
-            state.pop("predict_actions_randomly")
-
-        # the state is in the old format of PyBandits < 3.0.0.
+        # Migrate update_kwargs from old PyMC format to new NumPyro format
         for action_id, action_state in state["actions_manager"]["actions"].items():
-            # Load legacy Bayesian Logistic Regression model parmeters into the new Bayesian Neural Network model.
-            if ("alpha" in action_state) and ("betas" in action_state):
-                bias = StudentTArray.cold_start(
-                    mu=[action_state["alpha"]["mu"]],
-                    sigma=[action_state["alpha"]["sigma"]],
-                    nu=[action_state["alpha"]["nu"]],
-                    shape=1,
-                )
-                mu_list = []
-                sigma_list = []
-                nu_list = []
-                for beta in action_state["betas"]:
-                    mu_list.append([beta["mu"]])
-                    sigma_list.append([beta["sigma"]])
-                    nu_list.append([beta["nu"]])
-
-                weight = StudentTArray(mu=mu_list, sigma=sigma_list, nu=nu_list)
-                layer_params = BnnLayerParams(weight=weight, bias=bias)
-
-                # add model_params_init - in case we need to reset the model
-                bias_init = StudentTArray.cold_start(shape=1)
-                weight_init = StudentTArray.cold_start(shape=(len(mu_list), 1))
-                layer_params_init = BnnLayerParams(weight=weight_init, bias=bias_init)
-
-                model_params = BnnParams(
-                    bnn_layer_params=[layer_params], bnn_layer_params_init=[layer_params_init]
-                ).apply_version_adjusted_method("model_dump", "dict")
-                action_state["model_params"] = model_params
-
-                feature_config = FeaturesConfig(
-                    n_features=len(mu_list), categorical_features_configs=[]
-                ).apply_version_adjusted_method("model_dump", "dict")
-                action_state["feature_config"] = feature_config
-
-                action_state.pop("alpha")
-                action_state.pop("betas")
-
-            # 3.0 <= version < 5.0: model_params present but feature_config absent (numerical-only).
-            elif "model_params" in action_state and "feature_config" not in action_state:
+            if "feature_config" not in action_state:  # v5.0.0 compatability
                 layer_params = action_state["model_params"]["bnn_layer_params"]
-                first_param = next(iter(BaseLocationScaleArray.param_map))
-                n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name][first_param])
-                feature_config = FeaturesConfig(
-                    n_features=n_features, categorical_features_configs=[]
-                ).apply_version_adjusted_method("model_dump", "dict")
-                action_state["feature_config"] = feature_config
+                if not layer_params:
+                    raise ValueError("Cannot infer feature_config: bnn_layer_params is empty.")
+                # weight.mu is List[List[float]]; outer length == input_dim == n_features for numerical-only models
+                n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name]["mu"])
+                fc = FeaturesConfig(n_features=n_features, categorical_features_configs=[])
+                action_state["feature_config"] = fc.apply_version_adjusted_method("model_dump", "dict")
+
+            if "update_kwargs" in action_state and action_state["update_kwargs"] is not None:  # v6.0.0 compatability
+                kwargs = action_state["update_kwargs"]
+
+                # Migrate VI kwargs: "fit" dict → flat keys
+                if "fit" in kwargs:
+                    fit = kwargs.pop("fit")
+                    if "n" in fit:
+                        kwargs["num_steps"] = fit.pop("n")
+                    if "method" in fit:
+                        kwargs["method"] = fit.pop("method")
+
+                # Migrate MCMC kwargs: "trace" dict → flat keys + "nuts" sub-dict
+                if "trace" in kwargs:
+                    trace = kwargs.pop("trace")
+                    if "tune" in trace:
+                        kwargs["num_warmup"] = trace.pop("tune")
+                    if "draws" in trace:
+                        kwargs["num_samples"] = trace.pop("draws")
+                    if "chains" in trace:
+                        kwargs["num_chains"] = trace.pop("chains")
+                    if "progressbar" in trace:
+                        kwargs["progress_bar"] = trace.pop("progressbar")
+                    nuts = {}
+                    if "target_accept" in trace:
+                        nuts["target_accept_prob"] = trace.pop("target_accept")
+                    if nuts:
+                        kwargs["nuts"] = nuts
+                    # Remove PyMC-only keys
+                    for pymc_key in ("init", "cores", "return_inferencedata"):
+                        trace.pop(pymc_key, None)
+
+                # Migrate optimizer kwargs: learning_rate → step_size
+                if "optimizer_kwargs" in kwargs:
+                    opt_kwargs = kwargs["optimizer_kwargs"]
+                    if "learning_rate" in opt_kwargs:
+                        opt_kwargs["step_size"] = opt_kwargs.pop("learning_rate")
 
         return state
 
