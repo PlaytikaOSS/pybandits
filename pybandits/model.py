@@ -210,7 +210,7 @@ class BetaCC(BaseBeta, ModelCC):
 
 class BaseBetaMO(ModelMO, ABC):
     """
-    Base beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+    Base Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
     Parameters
     ----------
@@ -226,24 +226,17 @@ class BaseBetaMO(ModelMO, ABC):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
+    def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BaseBetaMO":
         """
-        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        Utility function to create a BetaMO or child model with cost control,
         with default parameters.
-
-        It is modeled as:
-
-            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-        where the alpha and betas coefficients are Student's t-distributions.
 
         Parameters
         ----------
-        n_betas : PositiveInt
-            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
-            after in the context matrix.
+        n_objectives : PositiveInt
+            Number of objectives (models) to create.
         kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child model.
+            Additional arguments for the BaseBetaMO child model.
 
         Returns
         -------
@@ -1005,12 +998,12 @@ class EarlyStopping(PyBanditsBaseModel):
         """Check if training should stop based on loss convergence."""
         if self._previous_loss is not None:
             if self.diff_type == "relative":
-                change = abs((loss - self._previous_loss) / (abs(self._previous_loss) + self._epsilon))
+                change = (self._previous_loss - loss) / (abs(self._previous_loss) + self._epsilon)
             elif self.diff_type == "absolute":
-                change = abs(loss - self._previous_loss)
+                change = self._previous_loss - loss
             else:
                 raise ValueError(f"Unknown diff {self.diff_type}")
-
+            logger.info(str((loss, change, self._no_improvement_count)))
             if change < self.tolerance:
                 self._no_improvement_count += 1
             else:
@@ -1131,6 +1124,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         optimizer_kwargs={"step_size": 0.01},
         batch_size=None,
         early_stopping_kwargs=None,
+        restore_best_svi_state=True,
     )
 
     _default_mcmc_kwargs: ClassVar[dict] = dict(
@@ -1908,31 +1902,47 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             static_argnums=(1,),
         )
 
+        restore_best = self._update_kwargs.get("restore_best_svi_state", True)
         all_losses = []
+        best_loss = float("inf")
+        best_svi_state = svi_state
         pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
         for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
             svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
 
             epoch_np = np.array(epoch_losses)
+            epoch_loss = float(np.mean(epoch_np))
             all_losses.append(epoch_np)
             pbar.update(1)
-            pbar.set_postfix(loss=f"{float(epoch_np[-1]):.4f}")
+            pbar.set_postfix(loss=f"{epoch_loss:.4f}")
+
+            if np.isnan(epoch_loss):
+                pbar.close()
+                raise ValueError(
+                    f"SVI training diverged: loss is NaN at epoch {epoch_idx + 1}/{len(epoch_steps_list)}. "
+                    "Consider reducing the learning rate or checking your data for invalid values."
+                )
+
+            if restore_best and epoch_loss < best_loss:
+                best_loss = epoch_loss
+                best_svi_state = svi_state
 
             if self._early_stopping_callback is not None:
-                if self._early_stopping_callback.should_stop(float(epoch_np[-1])):
+                if self._early_stopping_callback.should_stop(epoch_loss):
                     logger.info(
                         f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
                         f"loss change below {self._early_stopping_callback.tolerance} "
                         f"({self._early_stopping_callback.diff_type}) for "
                         f"{self._early_stopping_callback.patience} consecutive epochs. "
-                        f"Last loss: {float(epoch_np[-1]):.6f}."
+                        f"Best loss: {best_loss:.6f}, last loss: {epoch_loss:.6f}."
                     )
                     break
 
         pbar.close()
         self._approx_history = np.concatenate(all_losses) if all_losses else np.array([])
-        params = svi.get_params(svi_state)
+        final_state = best_svi_state if restore_best else svi_state
+        params = svi.get_params(final_state)
         return svi, guide, params
 
     def _extract_advi_params(self, params: dict) -> tuple:
@@ -2413,25 +2423,4 @@ class BayesianNeuralNetworkMOCC(BaseBayesianNeuralNetworkMO, ModelMO, ModelCC):
         The list of Bayesian Neural Network models for each objective.
     cost : NonNegativeFloat
         Cost associated to the Bayesian Neural Network model.
-    """
-
-
-class BayesianLogisticRegression(BayesianNeuralNetwork):
-    """
-    A Bayesian Logistic Regression model that inherits from BayesianNeuralNetwork.
-    This model is a specialized version of a Bayesian Neural Network with a single layer,
-    designed specifically for logistic regression tasks. The model parameters are
-    validated to ensure that the model adheres to this single-layer constraint.
-    """
-
-    @field_validator("model_params")
-    def validate_model_params(cls, model_params):
-        if (len(model_params.bnn_layer_params_init) != 1) or (len(model_params.bnn_layer_params) != 1):
-            raise ValueError("The Bayesian Logistic Regression model should have only one layer.")
-        return model_params
-
-
-class BayesianLogisticRegressionCC(BayesianLogisticRegression, ModelCC):
-    """
-    A Bayesian Logistic Regression model with cost control.
     """

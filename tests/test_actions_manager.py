@@ -40,14 +40,14 @@ from pybandits.pydantic_version_compatibility import (
     ValidationError,
     pydantic_version,
 )
-from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, SmabZoomingModel
+from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, Zooming
 from tests.utils import mock_update
 
 REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
-    actions: Dict[ActionId, Union[Beta, BetaMO, SmabZoomingModel]]
+    actions: Dict[ActionId, Union[Beta, BetaMO, Zooming]]
 
     def _update_actions(
         self,
@@ -177,24 +177,24 @@ def test_mixed_action_types_error(n_features=1):
 
 def test_smab_mixed_action_types_error():
     beta_model = Beta()
-    zoom_model = SmabZoomingModel.cold_start()
+    zoom_model = Zooming.cold_start()
 
     actions = {"a1": beta_model, "a2": zoom_model}
     with pytest.raises(ValidationError):
-        SmabActionsManager[SmabZoomingModel](actions=actions)
+        SmabActionsManager[Zooming](actions=actions)
     with pytest.raises(ValidationError):
         SmabActionsManager[Beta](actions=actions)
 
-    SmabActionsManager[Union[Beta, SmabZoomingModel]](actions=actions)
+    SmabActionsManager[Union[Beta, Zooming]](actions=actions)
 
 
 def test_cmab_mixed_action_types_error(n_features=1):
-    blr_model = BayesianNeuralNetwork.cold_start(n_features=n_features)
-    blr_model2 = BayesianNeuralNetwork.cold_start(n_features=n_features + 1)
+    bnn_model = BayesianNeuralNetwork.cold_start(n_features=n_features)
+    bnn_model2 = BayesianNeuralNetwork.cold_start(n_features=n_features + 1)
     quant_model = QuantitativeBayesianNeuralNetwork.cold_start(n_features=n_features)
     quant_model2 = QuantitativeBayesianNeuralNetwork.cold_start(n_features=n_features + 1)
 
-    actions = {"a1": blr_model, "a2": blr_model2}
+    actions = {"a1": bnn_model, "a2": bnn_model2}
     with pytest.raises(AttributeError):
         CmabActionsManager[BayesianNeuralNetwork](actions=actions)
 
@@ -202,11 +202,11 @@ def test_cmab_mixed_action_types_error(n_features=1):
     with pytest.raises(AttributeError):
         CmabActionsManager[QuantitativeBayesianNeuralNetwork](actions=actions)
 
-    actions = {"a1": blr_model, "a2": quant_model2}
+    actions = {"a1": bnn_model, "a2": quant_model2}
     with pytest.raises(AttributeError):
         CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
 
-    actions = {"a1": blr_model, "a2": quant_model}
+    actions = {"a1": bnn_model, "a2": quant_model}
     CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
 
 

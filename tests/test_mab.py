@@ -230,10 +230,10 @@ def test_mab_model_post_init_quantitative_default_action_validation(epsilon=0.1)
 
 def test_mab_model_post_init_standard_default_action_validation(epsilon=0.1):
     """Test model_post_init validation for standard default action requirements."""
-    from pybandits.quantitative_model import SmabZoomingModel
+    from pybandits.quantitative_model import Zooming
 
     # Create quantitative actions
-    actions = {"action1": SmabZoomingModel.cold_start(), "action2": SmabZoomingModel.cold_start()}
+    actions = {"action1": Zooming.cold_start(), "action2": Zooming.cold_start()}
 
     # Test case: standard default action (string) with quantitative model - should raise AttributeError
     with pytest.raises(AttributeError, match="Standard default action requires a standard action model."):

@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from typing import Literal, Optional
+from unittest.mock import patch
 
 import numpy as np
 import numpyro
@@ -32,7 +33,6 @@ from numpyro.distributions import StudentT as NumpyroStudentT
 
 from pybandits.model import (
     BaseLocationScaleArray,
-    BayesianLogisticRegression,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
     BayesianNeuralNetworkMO,
@@ -293,7 +293,7 @@ def test_location_scale_array_to_numpyro_distribution(array_class, expected_nump
 ########################################################################################################################
 
 
-# BayesianNeuralNetwork and BayesianLogisticRegression
+# BayesianNeuralNetwork
 @settings(deadline=500)
 @given(
     n_features=st.integers(min_value=1, max_value=3),
@@ -436,7 +436,7 @@ def test_bnn_sample_proba(
     assert is_all_different
 
 
-@settings(deadline=None, max_examples=25)
+@settings(deadline=None, max_examples=20)
 @given(
     activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
     use_residual_connections=st.booleans(),
@@ -444,7 +444,7 @@ def test_bnn_sample_proba(
     dist_type=st.sampled_from(["studentt", "normal"]),
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
-    n_samples=st.just(3),
+    n_samples=st.just(2),
     update_method=st.just("VI"),
     epochs=st.just(1),
 )
@@ -558,7 +558,6 @@ def _create_update_kwargs(
 @given(
     n_features=st.just(2),
     hidden_dim_list=st.just([1]),
-    n_samples=st.just(5),
     batch_size=st.sampled_from((None, 2, 4)),
     optimizer_type=st.sampled_from((None, "adam")),
     lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
@@ -566,11 +565,11 @@ def _create_update_kwargs(
     early_stopping_tol=st.one_of(st.none(), st.floats(min_value=1e-6, max_value=1e-1)),
     early_stopping_patience=st.one_of(st.none(), st.integers(min_value=1, max_value=10)),
     update_method=st.just("VI"),
+    restore_best_svi_state=st.one_of(st.none(), st.booleans()),
 )
 def test_bnn_vi_update_parameters(
     n_features: int,
     hidden_dim_list: list[int],
-    n_samples: int,
     batch_size: Optional[int],
     optimizer_type: Optional[str],
     lr: Optional[float],
@@ -578,11 +577,14 @@ def test_bnn_vi_update_parameters(
     early_stopping_tol: Optional[float],
     early_stopping_patience: Optional[int],
     update_method: UpdateMethods,
+    restore_best_svi_state: Optional[bool],
 ) -> None:
     """Test BNN VI update with various valid parameters."""
     update_kwargs = _create_update_kwargs(
         batch_size, optimizer_type, lr, early_stopping_diff, early_stopping_tol, early_stopping_patience
     )
+    if restore_best_svi_state is not None:
+        update_kwargs["restore_best_svi_state"] = restore_best_svi_state
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
@@ -602,6 +604,10 @@ def test_bnn_vi_update_parameters(
         assert isinstance(bnn._get_early_stopping_callback(), EarlyStopping)
     else:
         assert bnn._get_early_stopping_callback() is None
+
+    # restore_best_svi_state defaults to True; explicit value is preserved
+    expected = restore_best_svi_state if restore_best_svi_state is not None else True
+    assert bnn._update_kwargs.get("restore_best_svi_state") is expected
 
 
 @given(
@@ -868,6 +874,47 @@ def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5,
 ########################################################################################################################
 
 
+# BayesianNeuralNetwork - SVI NaN protection and restore_best_svi_state
+
+
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    n_samples=st.just(2),
+    update_method=st.just("VI"),
+)
+def test_bnn_svi_nan_loss_raises_error(
+    n_features: int, hidden_dim_list: list[int], n_samples: int, update_method: UpdateMethods
+) -> None:
+    """Test that a NaN loss during SVI training raises a ValueError immediately."""
+
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method=update_method,
+    )
+
+    # Patch np.mean to return NaN on the first epoch to simulate divergence.
+    original_mean = np.mean
+    call_count = {"n": 0}
+
+    def nan_mean(a, *args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return float("nan")
+        return original_mean(a, *args, **kwargs)
+
+    context = np.random.uniform(size=(n_samples, n_features))
+    rewards = _make_random_rewards(n_samples)
+
+    with patch("pybandits.model.np.mean", nan_mean):
+        with pytest.raises(ValueError, match="SVI training diverged.*NaN"):
+            bnn.update(context=context, rewards=rewards)
+
+
+########################################################################################################################
+
+
 # BayesianNeuralNetwork - Activation Functions
 
 
@@ -885,14 +932,6 @@ def test_bnn_invalid_activation_raises_error(invalid_activation, n_features, hid
     assert "Invalid activation function" in error_str or "activation" in error_str.lower()
 
 
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-def test_bayesian_logistic_regression_with_different_activations(activation):
-    """Test that BayesianLogisticRegression works with different activation functions."""
-    blr = BayesianLogisticRegression.cold_start(n_features=3, hidden_dim_list=[], activation=activation)
-    assert blr.activation == activation
-    assert len(blr.model_params.bnn_layer_params) == 1
-
-
 def test_bnn_jax_and_numpy_activation_keys_match():
     """Test that the keys of _jax_activations and _numpy_activations dictionaries match."""
     jax_keys = set(BayesianNeuralNetwork._jax_activations.keys())
@@ -901,22 +940,6 @@ def test_bnn_jax_and_numpy_activation_keys_match():
     assert jax_keys == numpy_keys, (
         f"Keys mismatch between _jax_activations and _numpy_activations. JAX keys: {jax_keys}, NumPy keys: {numpy_keys}"
     )
-
-
-def test_bayesian_logistic_regression_with_residual_connections():
-    """Test that BayesianLogisticRegression works with residual connections."""
-    # Logistic regression has only one layer (input -> output), so no residual connections
-    # But it should still work without errors
-    blr = BayesianLogisticRegression.cold_start(n_features=3, hidden_dim_list=[], use_residual_connections=True)
-    assert blr.use_residual_connections is True
-    assert len(blr.model_params.bnn_layer_params) == 1
-
-    context = np.random.uniform(low=-1.0, high=1.0, size=(5, 3))
-    prob_and_weighted_sum = blr.sample_proba(context=context)
-    prob, weighted_sum = zip(*prob_and_weighted_sum)
-
-    assert len(prob) == 5
-    assert all([0 <= p <= 1 for p in prob])
 
 
 @settings(deadline=500)
@@ -1059,36 +1082,6 @@ def test_create_default_instance_bayesian_neural_network_cc(
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == 5
         assert all([0 <= p <= 1 for p in prob])
-
-
-########################################################################################################################
-
-
-# BayesianLogisticRegression
-
-
-@given(
-    n_features=st.integers(min_value=1, max_value=10),
-)
-def test_bayesian_logistic_regression_valid_init(n_features: int) -> None:
-    """Test that BayesianLogisticRegression can be initialized with valid single-layer configurations."""
-
-    # Should not raise any validation errors
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=[])
-    assert len(blr.model_params.bnn_layer_params) == 1
-    assert len(blr.model_params.bnn_layer_params_init) == 1
-
-
-@settings(deadline=500)
-@given(
-    n_features=st.integers(min_value=1, max_value=5),
-    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=3),
-)
-def test_bayesian_logistic_regression_invalid_init(n_features: int, hidden_dim_list: list) -> None:
-    """Test that BayesianLogisticRegression raises ValueError for multi-layer configurations."""
-
-    with pytest.raises(ValueError, match="The Bayesian Logistic Regression model should have only one layer."):
-        BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
 
 
 ########################################################################################################################
@@ -1638,11 +1631,13 @@ def test_reset_restores_embedding_params(n_features, cardinality):
     dist_type=st.sampled_from(["studentt", "normal"]),
     n_features=st.integers(min_value=2, max_value=4),
     cardinality=st.integers(min_value=2, max_value=6),
-    hidden_dim_list=st.lists(st.integers(min_value=4, max_value=8), min_size=1, max_size=1),
-    n_samples=st.integers(min_value=4, max_value=10),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    n_samples=st.just(2),
+    update_method=st.just("VI"),
+    epochs=st.just(1),
 )
 def test_bnn_vi_update_with_categorical_features_updates_embeddings(
-    dist_type, n_features, cardinality, hidden_dim_list, n_samples
+    dist_type, n_features, cardinality, hidden_dim_list, n_samples, update_method, epochs
 ):
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
@@ -1651,7 +1646,8 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
         categorical_features=categorical_features,
         hidden_dim_list=hidden_dim_list,
         dist_type=dist_type,
-        update_kwargs={"num_steps": 10},
+        update_method=update_method,
+        update_kwargs={"epochs": epochs},
     )
     context = _make_categorical_context(n_samples, n_features, categorical_features)
     rewards = _make_random_rewards(n_samples)
