@@ -22,13 +22,14 @@
 
 """Tests for transfer learning functionality."""
 
+import json
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pytest
 from _pytest.logging import LogCaptureFixture
-from hypothesis import HealthCheck, given, settings
+from hypothesis import assume, given
 from hypothesis import strategies as st
 from pytest import MonkeyPatch
 
@@ -97,7 +98,6 @@ cost_strategy = st.floats(min_value=0.1, max_value=10.0)
 class TestMergeMABs:
     """Test suite for _merge_mabs function."""
 
-    @settings(suppress_health_check=[HealthCheck.too_slow])
     @given(
         action_ids1=action_ids_strategy,
         action_ids2=action_ids_strategy,
@@ -696,6 +696,21 @@ class TestModelCompatibilityValidation:
         with pytest.raises(ValueError, match="number of objectives mismatch"):
             edit_model_on_the_fly(current, template)
 
+    @given(n_objectives_current=n_objectives_strategy, n_objectives_template=n_objectives_strategy)
+    def test_smab_mo_objective_count_mismatch_raises_error(
+        self, n_objectives_current: int, n_objectives_template: int
+    ) -> None:
+        """Test that merging SmabBernoulliMO with different number of objectives raises ValueError."""
+        assume(n_objectives_current != n_objectives_template)
+        current = SmabBernoulliMO.cold_start(
+            action_ids={_ACTION_ID}, n_objectives=n_objectives_current, strategy=MultiObjectiveBandit()
+        )
+        template = SmabBernoulliMO.cold_start(
+            action_ids={_ACTION_ID}, n_objectives=n_objectives_template, strategy=MultiObjectiveBandit()
+        )
+        with pytest.raises(ValueError, match="number of objectives mismatch"):
+            edit_model_on_the_fly(current, template)
+
     def test_transfer_multiple_actions_validates_each(self) -> None:
         """Test that validation applies to each overlapping action independently."""
         val1, val2 = _BNN_STRUCTURAL_KEY_VALUES["activation"]
@@ -717,6 +732,299 @@ class TestModelCompatibilityValidation:
         )
         template = CmabBernoulli.cold_start(
             action_ids={"a2"}, n_features=_N_FEATURES, activation=val2, strategy=ClassicBandit()
+        )
+        result = edit_model_on_the_fly(current, template)
+        assert set(result.actions.keys()) == {"a2"}
+
+
+# ---------------------------------------------------------------------------
+# Strategies for hidden dim expansion tests
+# ---------------------------------------------------------------------------
+_hidden_dims_strategy = st.lists(st.integers(min_value=2, max_value=4), min_size=1, max_size=3)
+_hidden_dim_multiplier_strategy = st.integers(min_value=2, max_value=4)
+_extra_features_strategy = st.integers(min_value=1, max_value=4)
+
+
+def _scaled_hidden(dims: List[int], factor: int) -> List[int]:
+    """Return each dimension multiplied by factor."""
+    return [d * factor for d in dims]
+
+
+class TestHiddenDimExpansion:
+    """Tests for expanding hidden layer dimensions via edit_model_on_the_fly."""
+
+    # ------------------------------------------------------------------
+    # Hidden dims only — no feature change
+    # ------------------------------------------------------------------
+
+    @given(
+        current_hidden=_hidden_dims_strategy,
+        factor=_hidden_dim_multiplier_strategy,
+        action_id=single_action_id_strategy,
+        n_features=n_features_strategy,
+    )
+    def test_hidden_dim_increase_only_so(
+        self, current_hidden: List[int], factor: int, action_id: str, n_features: int
+    ) -> None:
+        """Increasing hidden dims with unchanged input features succeeds for SO CMAB."""
+        new_hidden = _scaled_hidden(current_hidden, factor)
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id}, n_features=n_features, hidden_dim_list=current_hidden, strategy=ClassicBandit()
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id}, n_features=n_features, hidden_dim_list=new_hidden, strategy=ClassicBandit()
+        )
+        result = edit_model_on_the_fly(current, template)
+        assert result.actions[action_id].hidden_dim_list == new_hidden
+        assert result.actions[action_id].input_dim == n_features
+
+    @given(
+        current_hidden=_hidden_dims_strategy,
+        factor=_hidden_dim_multiplier_strategy,
+        n_objectives=n_objectives_strategy,
+        action_id=single_action_id_strategy,
+        n_features=n_features_strategy,
+    )
+    def test_hidden_dim_increase_only_mo(
+        self, current_hidden: List[int], factor: int, n_objectives: int, action_id: str, n_features: int
+    ) -> None:
+        """Increasing hidden dims with unchanged input features succeeds for MO CMAB."""
+        new_hidden = _scaled_hidden(current_hidden, factor)
+        current = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            hidden_dim_list=current_hidden,
+            strategy=MultiObjectiveBandit(),
+        )
+        template = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            hidden_dim_list=new_hidden,
+            strategy=MultiObjectiveBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        for obj_model in result.actions[action_id].models:
+            assert obj_model.hidden_dim_list == new_hidden
+            assert obj_model.input_dim == n_features
+
+    # ------------------------------------------------------------------
+    # Features + hidden dims — combined expansion
+    # ------------------------------------------------------------------
+
+    @given(
+        current_hidden=_hidden_dims_strategy,
+        factor=_hidden_dim_multiplier_strategy,
+        n_features=n_features_strategy,
+        extra_features=_extra_features_strategy,
+        action_id=single_action_id_strategy,
+    )
+    def test_features_and_hidden_dim_increase_combined_so(
+        self,
+        current_hidden: List[int],
+        factor: int,
+        n_features: int,
+        extra_features: int,
+        action_id: str,
+    ) -> None:
+        """Increasing both input features and hidden dims in a single pass succeeds for SO CMAB."""
+        new_hidden = _scaled_hidden(current_hidden, factor)
+        new_features = n_features + extra_features
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id}, n_features=n_features, hidden_dim_list=current_hidden, strategy=ClassicBandit()
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id}, n_features=new_features, hidden_dim_list=new_hidden, strategy=ClassicBandit()
+        )
+        result = edit_model_on_the_fly(current, template)
+        assert result.actions[action_id].hidden_dim_list == new_hidden
+        assert result.actions[action_id].input_dim == new_features
+
+    @given(
+        current_hidden=_hidden_dims_strategy,
+        factor=_hidden_dim_multiplier_strategy,
+        n_features=n_features_strategy,
+        extra_features=_extra_features_strategy,
+        n_objectives=n_objectives_strategy,
+        action_id=single_action_id_strategy,
+    )
+    def test_features_and_hidden_dim_increase_combined_mo(
+        self,
+        current_hidden: List[int],
+        factor: int,
+        n_features: int,
+        extra_features: int,
+        n_objectives: int,
+        action_id: str,
+    ) -> None:
+        """Increasing both input features and hidden dims in a single pass succeeds for MO CMAB."""
+        new_hidden = _scaled_hidden(current_hidden, factor)
+        new_features = n_features + extra_features
+        current = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            hidden_dim_list=current_hidden,
+            strategy=MultiObjectiveBandit(),
+        )
+        template = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=new_features,
+            n_objectives=n_objectives,
+            hidden_dim_list=new_hidden,
+            strategy=MultiObjectiveBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        for obj_model in result.actions[action_id].models:
+            assert obj_model.hidden_dim_list == new_hidden
+            assert obj_model.input_dim == new_features
+
+    # ------------------------------------------------------------------
+    # Weight block preservation
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "current_hidden,new_hidden,n_features,extra_features",
+        [
+            ([8], [16], 4, 0),  # hidden only
+            ([8], [16], 4, 3),  # both
+            ([4, 4], [8, 8], 3, 2),  # multi-layer, both
+        ],
+    )
+    def test_learned_weight_block_preserved_after_expansion(
+        self,
+        current_hidden: List[int],
+        new_hidden: List[int],
+        n_features: int,
+        extra_features: int,
+    ) -> None:
+        """After expansion the top-left block of each layer's weight is unchanged."""
+        new_features = n_features + extra_features
+        current = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=n_features, hidden_dim_list=current_hidden, strategy=ClassicBandit()
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=new_features, hidden_dim_list=new_hidden, strategy=ClassicBandit()
+        )
+        result = edit_model_on_the_fly(current, template)
+
+        current_state = json.loads(current.get_state()[1])
+        result_state = json.loads(result.get_state()[1])
+        current_layers = current_state["actions_manager"]["actions"][_ACTION_ID]["model_params"]["bnn_layer_params"]
+        result_layers = result_state["actions_manager"]["actions"][_ACTION_ID]["model_params"]["bnn_layer_params"]
+
+        assert len(current_layers) == len(result_layers), (
+            f"Layer count changed after expansion: {len(current_layers)} -> {len(result_layers)}"
+        )
+        for layer_idx, (c_layer, r_layer) in enumerate(zip(current_layers, result_layers)):
+            # Weight: top-left block [0:current_rows, 0:current_cols] must be unchanged
+            for field_name, c_vals in c_layer["weight"].items():
+                if isinstance(c_vals, list) and c_vals and isinstance(c_vals[0], list):
+                    current_cols = len(c_vals[0])
+                    r_vals = r_layer["weight"][field_name]
+                    for row_idx, c_row in enumerate(c_vals):
+                        assert r_vals[row_idx][:current_cols] == c_row, (
+                            f"Layer {layer_idx} weight field '{field_name}' row {row_idx} "
+                            "top-left block was modified during expansion"
+                        )
+            # Bias: first current_out elements must be unchanged
+            for field_name, c_vals in c_layer["bias"].items():
+                if isinstance(c_vals, list) and not (c_vals and isinstance(c_vals[0], list)):
+                    r_vals = r_layer["bias"][field_name]
+                    assert r_vals[: len(c_vals)] == c_vals, (
+                        f"Layer {layer_idx} bias field '{field_name}' existing values were modified during expansion"
+                    )
+
+    # ------------------------------------------------------------------
+    # Error cases
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "current_hidden,new_hidden",
+        [
+            ([32], [16]),
+            ([16, 16], [8, 16]),
+            ([16, 16], [16, 8]),
+            ([64], [32]),
+        ],
+    )
+    def test_hidden_dim_decrease_raises(self, current_hidden: List[int], new_hidden: List[int]) -> None:
+        """Reducing any hidden layer dimension raises ValueError."""
+        current = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=current_hidden, strategy=ClassicBandit()
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=new_hidden, strategy=ClassicBandit()
+        )
+        with pytest.raises(ValueError, match="Cannot reduce"):
+            edit_model_on_the_fly(current, template)
+
+    @pytest.mark.parametrize(
+        "current_hidden,new_hidden",
+        [
+            ([8], [8, 8]),
+            ([8, 8], [8]),
+            ([8], [8, 8, 8]),
+        ],
+    )
+    def test_different_layer_count_raises(self, current_hidden: List[int], new_hidden: List[int]) -> None:
+        """Changing the number of hidden layers raises ValueError."""
+        current = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=current_hidden, strategy=ClassicBandit()
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=new_hidden, strategy=ClassicBandit()
+        )
+        with pytest.raises(ValueError, match="number of hidden layers"):
+            edit_model_on_the_fly(current, template)
+
+    @pytest.mark.parametrize(
+        "current_hidden,new_hidden",
+        [
+            ([32], [16]),
+            ([16, 8], [8, 4]),
+        ],
+    )
+    def test_hidden_dim_decrease_mo_raises(self, current_hidden: List[int], new_hidden: List[int]) -> None:
+        """Reducing hidden dims in a MO CMAB raises ValueError."""
+        current = CmabBernoulliMO.cold_start(
+            action_ids={_ACTION_ID},
+            n_features=_N_FEATURES,
+            n_objectives=2,
+            hidden_dim_list=current_hidden,
+            strategy=MultiObjectiveBandit(),
+        )
+        template = CmabBernoulliMO.cold_start(
+            action_ids={_ACTION_ID},
+            n_features=_N_FEATURES,
+            n_objectives=2,
+            hidden_dim_list=new_hidden,
+            strategy=MultiObjectiveBandit(),
+        )
+        with pytest.raises(ValueError, match="Cannot reduce"):
+            edit_model_on_the_fly(current, template)
+
+    # ------------------------------------------------------------------
+    # Non-overlapping actions: no validation triggered
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "current_hidden,new_hidden",
+        [
+            ([32], [16]),
+            ([8], [8, 8]),
+        ],
+    )
+    def test_incompatible_hidden_dims_non_overlapping_no_error(
+        self, current_hidden: List[int], new_hidden: List[int]
+    ) -> None:
+        """Incompatible hidden dims on non-overlapping actions do not raise errors."""
+        current = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=current_hidden, strategy=ClassicBandit()
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={"a2"}, n_features=_N_FEATURES, hidden_dim_list=new_hidden, strategy=ClassicBandit()
         )
         result = edit_model_on_the_fly(current, template)
         assert set(result.actions.keys()) == {"a2"}
