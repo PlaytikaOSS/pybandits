@@ -795,6 +795,11 @@ dimension is &gt;= input dimension. For expanding dimensions, the residual is ze
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">approx_history</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.approx_history" title="Link to this definition"></a></dt>
 <dd></dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.bias_var_name">
+<span class="sig-name descname"><span class="pre">bias_var_name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'bias'</span></em><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.bias_var_name" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.check_context_matrix">
 <span class="sig-name descname"><span class="pre">check_context_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.check_context_matrix" title="Link to this definition"></a></dt>
@@ -968,6 +973,21 @@ categorical feature, each of shape <code class="docutils literal notranslate"><s
 <dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.get_layer_params_name">
 <em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_layer_params_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">layer_ind</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Gt</span><span class="p"><span class="pre">(</span></span><span class="n"><span class="pre">gt</span></span><span class="o"><span class="pre">=</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.get_layer_params_name" title="Link to this definition"></a></dt>
 <dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.hidden_dim_list">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">hidden_dim_list</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.hidden_dim_list" title="Link to this definition"></a></dt>
+<dd><p>Returns the hidden layer dimensions of the model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Output dimension of each layer except the final output layer.
+Empty list when no hidden layers are present.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[int]</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.input_dim">
@@ -1145,6 +1165,21 @@ the network logit.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="#pybandits.model.BayesianNeuralNetworkMO" title="pybandits.model.BayesianNeuralNetworkMO">BayesianNeuralNetworkMO</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetworkMO.hidden_dim_list">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">hidden_dim_list</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetworkMO.hidden_dim_list" title="Link to this definition"></a></dt>
+<dd><p>Returns the hidden layer dimensions of the model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The output dimension of each layer except the last, derived from
+the shape of the weight matrices in the layer parameters.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[int]</p>
 </dd>
 </dl>
 </dd></dl>
