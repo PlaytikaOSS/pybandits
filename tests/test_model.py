@@ -32,6 +32,7 @@ from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
 
 from pybandits.model import (
+    BaseBayesianNeuralNetwork,
     BaseLocationScaleArray,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
@@ -1661,3 +1662,40 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
     # Reset should restore initial embeddings
     bnn._reset()
     assert bnn.model_params.embedding_params.embeddings[0].mu == init_mu
+
+
+@pytest.mark.parametrize(
+    "update_method, update_kwargs",
+    [("VI", {"num_steps": 2}), ("MCMC", {"num_warmup": 2, "num_samples": 2})],
+)
+def test_bnn_sample_proba_and_update_both_use_forward_layers(
+    update_method: str, update_kwargs: dict, n_features: int = 1, n_samples: int = 1, ref: int = 1
+) -> None:
+    """Verify that both sample_proba and update call _forward_layers."""
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+    )
+    context = np.random.rand(n_samples, n_features).astype(np.float32)
+    rewards = _make_random_rewards(n_samples)
+
+    original_forward_layers = BaseBayesianNeuralNetwork._forward_layers
+    call_count = 0
+
+    def tracking_forward_layers(self_inner, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_forward_layers(self_inner, *args, **kwargs)
+
+    # Check sample_proba calls _forward_layers
+    call_count = 0
+    with patch.object(BaseBayesianNeuralNetwork, "_forward_layers", tracking_forward_layers):
+        bnn.sample_proba(context=context)
+    assert call_count == ref, "sample_proba must call _forward_layers"
+
+    # Check update calls _forward_layers
+    call_count = 0
+    with patch.object(BaseBayesianNeuralNetwork, "_forward_layers", tracking_forward_layers):
+        bnn.update(context=context, rewards=rewards)
+    assert call_count >= ref, "update must call _forward_layers"
