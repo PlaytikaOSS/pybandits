@@ -46,6 +46,7 @@ from pybandits.model import (
     EmbeddingParams,
     FeaturesConfig,
     NormalArray,
+    OptaxKind,
     StudentTArray,
     UpdateMethods,
 )
@@ -503,7 +504,7 @@ def test_bnn_vi_update(
             assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].weight, expected_array)
             assert isinstance(bnn.model_params.bnn_layer_params[layer_ind].bias, expected_array)
 
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    rewards = _make_random_rewards(n_samples)
 
     # context is numpy array
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -591,7 +592,7 @@ def test_bnn_vi_update_parameters(
         update_kwargs=update_kwargs,
     )
 
-    model_fn = bnn.create_update_model()
+    model_fn = bnn._create_update_model()
     assert callable(model_fn)
 
     # Optimizer is always set for VI (built from defaults or user override)
@@ -607,13 +608,11 @@ def test_bnn_vi_update_parameters(
 @given(
     n_features=st.just(2),
     hidden_dim_list=st.just([1]),
-    n_samples=st.just(5),
     update_method=st.just("MCMC"),
 )
 def test_bnn_mcmc_update_parameters(
     n_features: int,
     hidden_dim_list: list[int],
-    n_samples: int,
     update_method: UpdateMethods,
 ) -> None:
     """Test BNN MCMC update with valid parameters (no batch_size, optimizer, or early_stopping)."""
@@ -625,7 +624,7 @@ def test_bnn_mcmc_update_parameters(
         update_kwargs={},
     )
 
-    model_fn = bnn.create_update_model()
+    model_fn = bnn._create_update_model()
     assert callable(model_fn)
 
 
@@ -737,6 +736,17 @@ def test_invalid_optimizer_kwargs(
         )
 
 
+def test_optax_kind_literal_matches_optax_return_types_keys() -> None:
+    """Verify that OptaxKind Literal values exactly match _optax_return_types keys."""
+    from typing import get_args
+
+    literal_values = set(get_args(OptaxKind))
+    classvar_keys = set(BayesianNeuralNetwork._optax_return_types.keys())
+    assert literal_values == classvar_keys, (
+        f"OptaxKind Literal {literal_values} does not match _optax_return_types keys {classvar_keys}"
+    )
+
+
 @pytest.mark.parametrize(
     "early_stopping_kwargs",
     [
@@ -759,6 +769,132 @@ def test_invalid_early_stopping_kwargs(
         )
 
 
+@pytest.mark.parametrize(
+    "optimizer_type,optimizer_kwargs,lr_scheduler_type,lr_scheduler_kwargs",
+    [
+        ("sgd", {"step_size": 0.01}, "exponential_decay", {"transition_steps": 100, "decay_rate": 0.9}),
+        ("adam", {"step_size": 0.01}, "exponential_decay", {"transition_steps": 50, "decay_rate": 0.95}),
+        ("sgd", {"step_size": 0.01, "momentum": 0.9}, "cosine_decay_schedule", {"decay_steps": 100}),
+        (
+            "adam",
+            {"step_size": 0.01},
+            "exponential_decay",
+            {"transition_steps": 100, "decay_rate": 0.9, "staircase": True},
+        ),
+        (
+            "sgd",
+            {"step_size": 0.01},
+            "warmup_cosine_decay_schedule",
+            {"peak_value": 0.05, "warmup_steps": 10, "decay_steps": 100},
+        ),
+        ("adam", {"step_size": 0.01}, "linear_schedule", {"end_value": 1e-5, "transition_steps": 200}),
+    ],
+)
+def test_lr_scheduler_valid(
+    optimizer_type: str,
+    optimizer_kwargs: dict,
+    lr_scheduler_type: str,
+    lr_scheduler_kwargs: dict,
+    n_features: int = 2,
+) -> None:
+    """Test that valid lr_scheduler_type/lr_scheduler_kwargs build an optimizer successfully."""
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        update_method="VI",
+        update_kwargs={
+            "optimizer_type": optimizer_type,
+            "optimizer_kwargs": optimizer_kwargs,
+            "lr_scheduler_type": lr_scheduler_type,
+            "lr_scheduler_kwargs": lr_scheduler_kwargs,
+        },
+    )
+    assert bnn._obj_optimizer is not None
+
+
+@pytest.mark.parametrize(
+    "lr_scheduler_type,lr_scheduler_kwargs",
+    [
+        (
+            "dummy_scheduler",
+            {},
+        ),
+        ("exponential_decay", {"invalid_kwarg": 1}),
+    ],
+)
+def test_lr_scheduler_invalid_type_or_kwargs(
+    lr_scheduler_type: str,
+    lr_scheduler_kwargs: dict,
+    n_features: int = 2,
+) -> None:
+    """Test that invalid lr_scheduler_type or lr_scheduler_kwargs raise ValueError."""
+    with pytest.raises((TypeError, ValueError)):
+        BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            update_method="VI",
+            update_kwargs={
+                "lr_scheduler_type": lr_scheduler_type,
+                "lr_scheduler_kwargs": lr_scheduler_kwargs,
+            },
+        )
+
+
+@given(
+    optimizer_type=st.sampled_from(("sgd", "adam")),
+    num_particles=st.sampled_from((1, 3)),
+    gradient_clip_norm=st.one_of(st.none(), st.floats(min_value=0.1, max_value=10.0)),
+    kl_tau=st.one_of(st.none(), st.floats(min_value=0.01, max_value=1.0)),
+    lr_scheduler_type=st.sampled_from((None, "exponential_decay")),
+    num_steps=st.just(4),
+    n_features=st.just(2),
+    update_method=st.just("VI"),
+    n_samples=st.just(5),
+    decay_rate=st.just(0.9),
+    transition_steps_factor=st.just(2),
+)
+def test_vi_training_options(
+    optimizer_type: str,
+    num_particles: int,
+    gradient_clip_norm: Optional[float],
+    kl_tau: Optional[float],
+    lr_scheduler_type: Optional[str],
+    num_steps: int,
+    n_features: int,
+    update_method: UpdateMethods,
+    n_samples: int,
+    decay_rate: float,
+    transition_steps_factor: int,
+) -> None:
+    """Test that VI training options (num_particles, gradient_clip_norm, kl_tau, lr_scheduler) compose correctly."""
+    update_kwargs: dict = {
+        "num_steps": num_steps,
+        "optimizer_type": optimizer_type,
+        "num_particles": num_particles,
+    }
+    if gradient_clip_norm is not None:
+        update_kwargs["gradient_clip_norm"] = gradient_clip_norm
+    if kl_tau is not None:
+        update_kwargs["kl_tau"] = kl_tau
+    if lr_scheduler_type is not None:
+        update_kwargs["lr_scheduler_type"] = lr_scheduler_type
+        update_kwargs["lr_scheduler_kwargs"] = {
+            "transition_steps": num_steps // transition_steps_factor,
+            "decay_rate": decay_rate,
+        }
+
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+    )
+    context = np.random.rand(n_samples, n_features).astype(np.float32)
+    rewards = _make_random_rewards(n_samples)
+    bnn.update(context=context, rewards=rewards)
+    result = bnn.sample_proba(context=context)
+    assert len(result) == n_samples
+    assert all(0 <= p[0] <= 1 for p in result), f"Probabilities out of [0,1]: {result}"
+    assert all(np.isfinite(p[1]) for p in result), f"Non-finite weights: {result}"
+
+
 @given(
     n_features=st.just(2),
     update_method=st.just("VI"),
@@ -777,13 +913,10 @@ def test_epochs_and_num_steps_warns(n_features: int, update_method: UpdateMethod
 
 @pytest.mark.parametrize("n_features", [1, 2])
 def test_bnn_mcmc_update(
-    n_features,
-    hidden_dim_list=(1,),
-    n_samples=3,
-    update_method="MCMC",
-    update_kwargs={"num_warmup": 2, "num_samples": 2, "num_chains": 1},
+    n_features, hidden_dim_list=(1,), n_samples=3, update_method="MCMC", num_warmup=1, mcmc_num_samples=2, num_chains=1
 ):
     hidden_dim_list = list(hidden_dim_list)
+    update_kwargs = {"num_warmup": num_warmup, "num_samples": mcmc_num_samples, "num_chains": num_chains}
 
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
@@ -813,7 +946,7 @@ def test_bnn_mcmc_update(
                 assert np.all(layer_w[param] != layer_w_init[param])
                 assert np.all(layer_b[param] != layer_b_init[param])
 
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    rewards = _make_random_rewards(n_samples)
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
@@ -860,7 +993,7 @@ def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5,
                 assert np.all(layer_w[param] != layer_w_init[param])
                 assert np.all(layer_b[param] != layer_b_init[param])
 
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    rewards = _make_random_rewards(n_samples)
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
@@ -1429,13 +1562,18 @@ def test_embedding_params_init_is_frozen_copy(n_features, cardinality, embedding
 # ---------------------------------------------------------------------------
 
 
-def _make_bnn_with_categoricals(n_features=2, categorical_features=None, dist_type="studentt", hidden_dim_list=None):
+def _make_bnn_with_categoricals(
+    n_features=2, categorical_features=None, dist_type="studentt", hidden_dim_list=None, update_kwargs=None
+):
+    kwargs = {"epochs": 1}
+    if update_kwargs:
+        kwargs.update(update_kwargs)
     return BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         categorical_features=categorical_features or {1: 3},
         hidden_dim_list=hidden_dim_list or [8],
         dist_type=dist_type,
-        update_kwargs={"epochs": 1},
+        update_kwargs=kwargs,
     )
 
 
@@ -1571,7 +1709,7 @@ def test_create_update_model_contains_embedding_variable(n_features, cardinality
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
     bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
-    model_fn = bnn.create_update_model()
+    model_fn = bnn._create_update_model()
     context = jnp.array(_make_categorical_context(n_samples, n_features, categorical_features), dtype=jnp.float32)
     rewards = jnp.array(_make_random_rewards(n_samples), dtype=jnp.int32)
     trace = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(context, rewards)
@@ -1591,8 +1729,10 @@ def test_create_update_model_minibatch_with_categoricals(n_features, cardinality
 
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
-    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features=categorical_features)
-    model_fn = bnn.create_update_model(batch_size=batch_size)
+    bnn = _make_bnn_with_categoricals(
+        n_features=n_features, categorical_features=categorical_features, update_kwargs={"batch_size": batch_size}
+    )
+    model_fn = bnn._create_update_model()
     context = jnp.array(_make_categorical_context(n_samples, n_features, categorical_features), dtype=jnp.float32)
     rewards = jnp.array(_make_random_rewards(n_samples), dtype=jnp.int32)
     trace = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(context, rewards)
@@ -1633,16 +1773,16 @@ def test_reset_restores_embedding_params(n_features, cardinality):
 # ---------------------------------------------------------------------------
 
 
-@settings(deadline=None, max_examples=5)
 @given(
     dist_type=st.sampled_from(["studentt", "normal"]),
     n_features=st.integers(min_value=2, max_value=4),
     cardinality=st.integers(min_value=2, max_value=6),
     hidden_dim_list=st.lists(st.integers(min_value=4, max_value=8), min_size=1, max_size=1),
     n_samples=st.integers(min_value=4, max_value=10),
+    num_steps=st.just(5),
 )
 def test_bnn_vi_update_with_categorical_features_updates_embeddings(
-    dist_type, n_features, cardinality, hidden_dim_list, n_samples
+    dist_type, n_features, cardinality, hidden_dim_list, n_samples, num_steps
 ):
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
@@ -1651,7 +1791,7 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
         categorical_features=categorical_features,
         hidden_dim_list=hidden_dim_list,
         dist_type=dist_type,
-        update_kwargs={"num_steps": 10},
+        update_kwargs={"num_steps": num_steps},
     )
     context = _make_categorical_context(n_samples, n_features, categorical_features)
     rewards = _make_random_rewards(n_samples)

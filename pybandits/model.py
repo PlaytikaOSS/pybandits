@@ -20,8 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import inspect
 import warnings
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from copy import deepcopy
 from math import ceil
 from random import betavariate
@@ -33,6 +35,7 @@ import numpy as np
 import numpyro
 import numpyro.distributions as npdist
 import numpyro.optim as noptim
+import optax
 from loguru import logger
 from numpy import sqrt
 from numpyro.distributions import Bernoulli as NumpyroBernoulli
@@ -67,6 +70,7 @@ from pybandits.pydantic_version_compatibility import (
 UpdateMethods = Literal["VI", "MCMC"]
 VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
+OptaxKind = Literal["optimizer", "lr_scheduler"]
 
 
 def _numpy_relu(x: np.ndarray) -> np.ndarray:
@@ -1092,16 +1096,58 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "batch_size",
         "early_stopping_kwargs",
         "epochs",
+        "lr_scheduler_type",
+        "lr_scheduler_kwargs",
+        "restore_best_weights",
+        "num_particles",
+        "gradient_clip_norm",
+        "kl_tau",
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
-    _supported_optimizers: ClassVar[dict] = {
-        "sgd": noptim.SGD,
-        "momentum": noptim.Momentum,
-        "adagrad": noptim.Adagrad,
-        "adam": noptim.Adam,
-        "clipped_adam": noptim.ClippedAdam,
+    _optax_return_types: ClassVar[dict] = {
+        "optimizer": optax.GradientTransformation,
+        "lr_scheduler": optax.Schedule,
     }
+
+    def _resolve_optax_fn(self, name: str, kind: OptaxKind) -> Any:
+        """Look up an optax function by name using getattr and validate its return type annotation.
+
+        Parameters
+        ----------
+        name : str
+            Name of the optax attribute (e.g. ``"adam"``, ``"exponential_decay"``).
+        kind : OptaxKind
+            Key into ``_optax_return_types`` (``"optimizer"`` or ``"lr_scheduler"``).
+
+        Returns
+        -------
+        Any
+            The callable found on the ``optax`` module.
+
+        Raises
+        ------
+        ValueError
+            If ``name`` is not a callable attribute of ``optax``, or its return-type
+            annotation does not match the expected type for ``kind``.
+        """
+        fn = getattr(optax, name, None)
+        if fn is None or not callable(fn):
+            raise ValueError(f"Invalid {kind}: '{name}' is not a callable attribute of optax.")
+        expected = self._optax_return_types[kind]
+        return_annotation = inspect.signature(fn).return_annotation
+        if isinstance(expected, type):
+            # e.g. GradientTransformationExtraArgs — check via issubclass
+            valid = isinstance(return_annotation, type) and issubclass(return_annotation, expected)
+        else:
+            # e.g. optax.Schedule (a generic alias) — check for equality
+            valid = return_annotation == expected
+        if not valid:
+            raise ValueError(
+                f"Invalid {kind}: '{name}' does not return {expected} (got return annotation: {return_annotation})."
+            )
+        return fn
+
     _jax_activations: ClassVar[dict] = {
         "tanh": jax.nn.tanh,
         "relu": jax.nn.relu,
@@ -1131,6 +1177,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         optimizer_kwargs={"step_size": 0.01},
         batch_size=None,
         early_stopping_kwargs=None,
+        lr_scheduler_type=None,
+        lr_scheduler_kwargs=None,
+        num_particles=1,
+        gradient_clip_norm=None,
+        kl_tau=None,
     )
 
     _default_mcmc_kwargs: ClassVar[dict] = dict(
@@ -1212,19 +1263,35 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return numerical_arr, cat_indices_dict
 
     def _get_obj_optimizer(self) -> Any:
-        """Build the optimizer from update_kwargs. Always returns an optimizer (uses default if not specified)."""
+        """Build an optax optimizer from update_kwargs, wrapped via ``optax_to_numpyro``.
+
+        Optionally chains a learning-rate schedule and/or gradient clipping.
+        """
         optimizer_type = self.update_kwargs["optimizer_type"]
-        if optimizer_type not in self._supported_optimizers:
-            raise ValueError(
-                f"Invalid optimizer type: {optimizer_type}. "
-                f"Supported optimizers are: {list(self._supported_optimizers.keys())}"
-            )
-        cls_ = self._supported_optimizers[optimizer_type]
-        optimizer_kwargs = self.update_kwargs.get("optimizer_kwargs", {})
+        optimizer_kwargs = dict(self.update_kwargs.get("optimizer_kwargs", {}))
+        lr_scheduler_type = self.update_kwargs.get("lr_scheduler_type")
+        lr_scheduler_kwargs = self.update_kwargs.get("lr_scheduler_kwargs") or {}
+        gradient_clip_norm = self.update_kwargs.get("gradient_clip_norm")
+
+        optimizer_fn = self._resolve_optax_fn(optimizer_type, "optimizer")
+
+        # Resolve learning rate (possibly a schedule)
+        learning_rate = optimizer_kwargs.pop("step_size", 0.01)
+        if lr_scheduler_type is not None:
+            scheduler_fn = self._resolve_optax_fn(lr_scheduler_type, "lr_scheduler")
+            try:
+                learning_rate = scheduler_fn(init_value=learning_rate, **lr_scheduler_kwargs)
+            except (TypeError, ValueError) as e:
+                raise e.__class__(f"Invalid lr_scheduler_kwargs: {lr_scheduler_kwargs}.\n{e}") from e
+
         try:
-            return cls_(**optimizer_kwargs)
+            base_optimizer = optimizer_fn(learning_rate=learning_rate, **optimizer_kwargs)
         except (TypeError, ValueError, KeyError) as e:
-            raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}")
+            raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}") from e
+
+        if gradient_clip_norm is not None:
+            return noptim.optax_to_numpyro(optax.chain(optax.clip_by_global_norm(gradient_clip_norm), base_optimizer))
+        return noptim.optax_to_numpyro(base_optimizer)
 
     def _get_early_stopping_callback(self) -> Optional[EarlyStopping]:
         early_stopping_kwargs = self.update_kwargs.get("early_stopping_kwargs", None)
@@ -1454,7 +1521,42 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.__dict__.update(state)
         self._init_private_attrs()
 
-    def create_update_model(self, batch_size: Optional[PositiveInt] = None) -> Callable:
+    def _kl_scale_ctx(self, n_samples: PositiveInt):
+        """Return a context manager that scales sample-site log-probs for KL temperature.
+
+        When kl_tau is set in update_kwargs, this returns a
+        numpyro.handlers.scale context manager with factor
+        beta = kl_tau * n_samples / n_neurons, where *n_neurons* is the
+        total number of hidden units across all layers except the output layer.
+        Wrapping both the model prior and the guide with this handler scales the
+        full KL divergence term in the ELBO by *beta*.
+
+        When kl_tau is None (the default), returns a plain
+        contextlib.nullcontext (no-op).
+
+        References
+        ----------
+        Variational Inference of overparameterized Bayesian Neural Networks
+        (Huix et al., 2022) - https://arxiv.org/abs/2207.03859
+
+        Parameters
+        ----------
+        n_samples : PositiveInt
+            Number of data points in the current batch. Used to
+            compute the data-dependent part of the scale factor.
+
+        Returns
+        -------
+        contextlib.AbstractContextManager
+            Either numpyro.handlers.scale(scale=beta) or nullcontext().
+        """
+        kl_tau = self._update_kwargs.get("kl_tau")
+        if kl_tau is not None:
+            n_neurons = max(sum(lp.weight.shape[1] for lp in self.model_params.bnn_layer_params[:-1]), 1)
+            return numpyro.handlers.scale(scale=kl_tau * n_samples / n_neurons)
+        return nullcontext()
+
+    def _create_update_model(self) -> Callable:
         """
         Create a NumPyro model function for Bayesian Neural Network.
 
@@ -1463,13 +1565,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         with subsample_size.
 
         Numerical columns are passed through as-is. Categorical columns (identified by their
-        ``column_index`` in ``feature_config``) are modelled with Bayesian embedding matrices
+        ``column_index`` in ``feature_config``) are modeled with Bayesian embedding matrices
         sampled as NumPyro random variables.
-
-        Parameters
-        ----------
-        batch_size : Optional[PositiveInt]
-            If provided, use minibatching with this batch size via numpyro.plate.
 
         Returns
         -------
@@ -1486,31 +1583,36 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         5. Use Bernoulli likelihood for binary classification
         """
 
+        batch_size = self._update_kwargs.get("batch_size")
+        kl_scale = self._kl_scale_ctx
+
         n_layers = len(self.model_params.bnn_layer_params)
         numerical_indices = self.feature_config.numerical_indices
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
 
         def model(x: jax.Array, y: jax.Array):
-            N = x.shape[0]
+            n_samples = x.shape[0]
 
             # Sample all weights (global parameters, outside plate)
             weights_biases = []
-            for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-                weight_name, bias_name = self.get_layer_params_name(layer_ind)
-                w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
-                b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
-                weights_biases.append((w, b, layer_params.weight.shape))
+            with kl_scale(n_samples):
+                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+                    weight_name, bias_name = self.get_layer_params_name(layer_ind)
+                    w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
+                    b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
+                    weights_biases.append((w, b, layer_params.weight.shape))
 
             # Sample embedding matrices (global parameters, outside plate)
             embedding_matrices = []
             if has_embeddings:
-                for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
-                    emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
-                    embedding_matrices.append(emb)
+                with kl_scale(n_samples):
+                    for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
+                        emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
+                        embedding_matrices.append(emb)
 
             # Data plate with optional minibatching
-            with numpyro.plate("data", N, subsample_size=batch_size) as idx:
+            with numpyro.plate("data", n_samples, subsample_size=batch_size) as idx:
                 x_batch = x[idx] if batch_size is not None else x
                 y_batch = y[idx] if batch_size is not None else y
 
@@ -1867,10 +1969,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         if self._early_stopping_callback is not None:
             self._early_stopping_callback.reset()
-        batch_size = self._update_kwargs["batch_size"]
-        _model = self.create_update_model(batch_size=batch_size)
+        _model = self._create_update_model()
 
-        effective_batch_size = batch_size if batch_size is not None else n_samples
+        effective_batch_size = self._update_kwargs.get("batch_size") or n_samples
         steps_per_epoch = max(1, n_samples // effective_batch_size)
 
         if self._update_kwargs.get("epochs") is not None:
@@ -1887,8 +1988,22 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
-        guide = method_config["guide"](_model, init_loc_fn=init_to_median)
-        loss = method_config["loss"]()
+        raw_guide = method_config["guide"](_model, init_loc_fn=init_to_median)
+
+        # When kl_tau is active, wrap the guide with the same scale handler so
+        # both log p(z) and log q(z) are scaled equally → the KL term as a
+        # whole is multiplied by beta = tau * N / n_neurons.
+        if self._update_kwargs.get("kl_tau") is not None:
+            kl_scale = self._kl_scale_ctx
+
+            def guide(x, y, *args, **kwargs):
+                with kl_scale(x.shape[0]):
+                    return raw_guide(x, y, *args, **kwargs)
+        else:
+            guide = raw_guide
+
+        num_particles = self._update_kwargs["num_particles"]
+        loss = method_config["loss"](num_particles=num_particles)
         svi = SVI(_model, guide, self._obj_optimizer, loss=loss)
 
         # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
@@ -1915,12 +2030,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
 
             epoch_np = np.array(epoch_losses)
+            epoch_end_loss = float(epoch_np[-1])
             all_losses.append(epoch_np)
             pbar.update(1)
-            pbar.set_postfix(loss=f"{float(epoch_np[-1]):.4f}")
+            pbar.set_postfix(loss=f"{epoch_end_loss:.4f}")
 
             if self._early_stopping_callback is not None:
-                if self._early_stopping_callback.should_stop(float(epoch_np[-1])):
+                if self._early_stopping_callback.should_stop(epoch_end_loss):
                     logger.info(
                         f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
                         f"loss change below {self._early_stopping_callback.tolerance} "
@@ -1933,7 +2049,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         pbar.close()
         self._approx_history = np.concatenate(all_losses) if all_losses else np.array([])
         params = svi.get_params(svi_state)
-        return svi, guide, params
+        # Return the raw AutoGuide (not the scaled wrapper) so downstream
+        # param extraction (median, scale_tril, etc.) works correctly.
+        return svi, raw_guide, params
 
     def _extract_advi_params(self, params: dict) -> tuple:
         """
@@ -2062,7 +2180,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         List
             Updated ``BnnLayerParams`` list (embeddings are updated in-place as a side-effect).
         """
-        _model = self.create_update_model()
+        _model = self._create_update_model()
         nuts_kwargs = self._update_kwargs["nuts"]
         # All top-level keys except 'nuts' are MCMC kwargs
         mcmc_kwargs = {k: v for k, v in self._update_kwargs.items() if k != "nuts"}
