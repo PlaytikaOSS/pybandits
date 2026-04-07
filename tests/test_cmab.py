@@ -930,7 +930,7 @@ def test_cmab_update_kwargs_migration(
         "strategy": {},
     }
 
-    migrated = CmabBernoulli.update_old_state(state, delta=None)
+    migrated = CmabBernoulli.update_old_state(state)
 
     for action_id in ("a1", "a2"):
         actual_kwargs = migrated["actions_manager"]["actions"][action_id].get("update_kwargs")
