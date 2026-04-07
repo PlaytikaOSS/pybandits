@@ -20,15 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import gc
 import importlib
 import os
 import random
-from copy import deepcopy
 from functools import partial
 from itertools import product
 from math import floor
 from multiprocessing import Pool, cpu_count
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import optuna
@@ -38,6 +38,7 @@ from bokeh.plotting import figure
 from loguru import logger
 from optuna import Trial
 from sklearn.base import ClassifierMixin, TransformerMixin
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
@@ -111,6 +112,10 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         Whether to include action in feature set. Should be set False only for propensity score.
         If True, the model will be trained to predict the probability of the actual action taken.
         If False, the model will be trained to predict the probability of the action that was taken.
+
+    calibrate : bool
+        Whether to apply Platt scaling (sigmoid calibration) via cross validation after fitting.
+        Not applied to logreg regardless of this flag.
     """
 
     if _XGBOOST_AVAILABLE:
@@ -124,6 +129,8 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
     study_name: Optional[str] = None
     multi_action_prediction: bool
     include_action_in_features: bool = True
+    calibrate: bool = True
+    _default_cv: ClassVar[int] = 5
     _model_mapping: ClassVar[Dict[str, type[ClassifierMixin]]] = {
         "mlp": MLPClassifier,
         "rf": RandomForestClassifier,
@@ -132,7 +139,12 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
     }
     if _XGBOOST_AVAILABLE:
         _model: Union[
-            LogisticRegression, GradientBoostingClassifier, RandomForestClassifier, MLPClassifier, XGBClassifier
+            CalibratedClassifierCV,
+            LogisticRegression,
+            GradientBoostingClassifier,
+            RandomForestClassifier,
+            MLPClassifier,
+            XGBClassifier,
         ] = PrivateAttr()
         _model_mapping.update(
             {
@@ -140,9 +152,13 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
             }
         )
     else:
-        _model: Union[LogisticRegression, GradientBoostingClassifier, RandomForestClassifier, MLPClassifier] = (
-            PrivateAttr()
-        )
+        _model: Union[
+            CalibratedClassifierCV,
+            LogisticRegression,
+            GradientBoostingClassifier,
+            RandomForestClassifier,
+            MLPClassifier,
+        ] = PrivateAttr()
 
     @model_validator(mode="before")
     @classmethod
@@ -200,7 +216,9 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         else:
             return context
 
-    def _sample_parameter_space(self, trial: Trial) -> Dict[str, Union[str, int, float]]:
+    def _sample_parameter_space(
+        self, trial: Trial, scale_pos_weight: Optional[float] = None
+    ) -> Dict[str, Union[str, int, float]]:
         """
         Define the hyperparameter search space for a given model type in Optuna.
 
@@ -210,6 +228,10 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         ----------
         trial : optuna.Trial
             A single trial in the Optuna optimization process.
+        scale_pos_weight : Optional[float]
+            The data-driven class imbalance ratio (neg_count / pos_count) for XGBoost.
+            When provided, the search range is [1.0, scale_pos_weight] (or fixed at 1.0
+            if the ratio <= 1). When None, scale_pos_weight is not tuned.
 
         Returns
         -------
@@ -229,9 +251,10 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         elif self.estimator_type == "rf":
             return {
                 "max_depth": trial.suggest_int("max_depth", 2, 5),
-                "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
+                "criterion": "entropy",
                 "max_features": trial.suggest_int("max_features", 1, 3),
                 "n_estimators": trial.suggest_int("n_estimators", 10, 50),
+                "class_weight": trial.suggest_categorical("class_weight", ["balanced", None]),
                 "n_jobs": -1,
             }
         elif self.estimator_type == "logreg":
@@ -239,8 +262,8 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
                 "tol": trial.suggest_float("tol", 0.00001, 0.0001),
                 "C": trial.suggest_float("C", 0.05, 3),
                 "solver": trial.suggest_categorical("solver", ["newton-cg", "lbfgs", "liblinear", "sag", "saga"]),
+                "class_weight": trial.suggest_categorical("class_weight", ["balanced", None]),
                 "max_iter": 1000,
-                "n_jobs": -1,
             }
         elif self.estimator_type == "gbm":
             return {
@@ -249,7 +272,7 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
                 "max_depth": trial.suggest_int("max_depth", 2, 10),
             }
         elif self.estimator_type == "xgb":
-            return {
+            params = {
                 "n_estimators": trial.suggest_int("n_estimators", 10, 50),
                 "max_depth": trial.suggest_int("max_depth", 2, 5),
                 "learning_rate": np.sqrt(10) ** -trial.suggest_int("learning_rate", 0, 6),
@@ -259,13 +282,50 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
                 "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 1.0),
                 "n_jobs": -1,
             }
+            if scale_pos_weight is not None:
+                if scale_pos_weight > 1.0:
+                    params["scale_pos_weight"] = trial.suggest_float(
+                        "scale_pos_weight", 1.0, scale_pos_weight, log=True
+                    )
+                else:
+                    params["scale_pos_weight"] = trial.suggest_float(
+                        "scale_pos_weight", scale_pos_weight, 1.0, log=True
+                    )
+            return params
+
+    @classmethod
+    def _safe_cv(cls, labels: np.ndarray) -> int:
+        """
+        Compute a safe number of CV folds based on the smallest class count.
+
+        Ensures that cv never exceeds the number of samples in the rarest class,
+        preventing crashes with imbalanced data while keeping a minimum of 2 folds.
+
+        Parameters
+        ----------
+        labels : np.ndarray
+            The label array used for stratified cross-validation.
+
+        Returns
+        -------
+        int
+            A safe number of CV folds (between 2 and _default_cv).
+        """
+        min_class_count = min(np.bincount(labels.astype(int)))
+        cv = min(cls._default_cv, min_class_count)
+        if cv < 2:
+            raise ValueError(
+                f"Smallest class has only {min_class_count} sample(s), which is insufficient for cross-validation. "
+                f"At least 2 samples per class are required."
+            )
+        return cv
 
     def _objective(self, trial: Trial, feature_set: np.ndarray, label: np.ndarray) -> float:
         """
         Objective function for Optuna optimization.
 
-        This function trains a model using cross-validation and returns the negative accuracy
-        to be minimized.
+        This function trains a model using cross-validation and returns the ROC-AUC score
+        (binary) or negative log-likelihood (multiclass) to be maximized.
 
         Parameters
         ----------
@@ -278,14 +338,29 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         label : np.ndarray
             The labels for the dataset.
 
+        References
+        ----------
+        A Closer Look at AUROC and AUPRC under Class Imbalance
+        https://arxiv.org/abs/2401.06091
+
         Returns
         -------
         score : float
             The score to be maximized by Optuna.
         """
-        params = self._sample_parameter_space(trial)
+        n_classes = len(np.unique(label))
+        scale_pos_weight = None
+        if n_classes == 2:
+            pos_count = np.sum(label == 1)
+            if pos_count > 0:
+                scale_pos_weight = np.sum(label == 0) / pos_count
+        params = self._sample_parameter_space(trial, scale_pos_weight=scale_pos_weight)
         model = self._model_mapping[self.estimator_type](**params)
-        score = cross_val_score(model, feature_set, label).mean()
+        scoring = "roc_auc" if n_classes == 2 else "neg_log_loss"
+        cv = self._safe_cv(label)
+        scores = cross_val_score(model, feature_set, label, scoring=scoring, cv=cv, n_jobs=-1)
+        valid_scores = scores[~np.isnan(scores)]
+        score = valid_scores.mean() if len(valid_scores) > 0 else float("-inf")
         trial.set_user_attr("model_params", params)
 
         return score
@@ -345,7 +420,11 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
             model_parameters = self._optimize(feature_set, y, study)
 
         model = self._model_mapping[self.estimator_type](**model_parameters)
-        model.fit(feature_set, y)
+        if self.calibrate and self.estimator_type != "logreg":
+            cv = self._safe_cv(y)
+            model = CalibratedClassifierCV(model, cv=cv, method="sigmoid").fit(feature_set, y)
+        else:
+            model.fit(feature_set, y)
         self._model = model
         return self
 
@@ -407,8 +486,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
     Parameters
     ----------
-    logged_data : pd.DataFrame
-        Logging data set
     split_prop: Float01
         Proportion of dataset used as training set
     propensity_score_model_type: Literal["logreg", "gbm", "rf", "mlp", "xgb", "batch_empirical", "empirical", "propensity_score"]
@@ -445,7 +522,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         Whether to log detailed information during the optimization process.
     """
 
-    logged_data: pd.DataFrame
     split_prop: Float01
     if _XGBOOST_AVAILABLE:
         propensity_score_model_type: Literal[
@@ -473,11 +549,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
     true_reward_feature: Optional[Union[str, List[str]]] = None
     propensity_score_feature: Optional[str] = None
     verbose: bool = False
-    _train_data: Optional[Dict[str, Any]] = PrivateAttr()
-    _test_data: Optional[Dict[str, Any]] = PrivateAttr()
-    _estimated_expected_reward: Optional[Dict[str, np.ndarray]] = PrivateAttr(default=None)
     _action_one_hot_encoder = OneHotEncoder(sparse_output=False)
-    _propensity_score_epsilon = 1e-08
+    _clip_epsilon = 1e-08
 
     @field_validator("split_prop", mode="before")
     @classmethod
@@ -495,25 +568,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
     @model_validator(mode="before")
     @classmethod
-    def check_batch_feature(cls, values):
-        if values["batch_feature"] not in values["logged_data"]:
-            raise AttributeError("Batch feature missing from logged data.")
-        if not (
-            pd.api.types.is_datetime64_ns_dtype(values["logged_data"][values["batch_feature"]])
-            or pd.api.types.is_integer_dtype(values["logged_data"][values["batch_feature"]])
-        ):
-            raise TypeError(f"Column {values['batch_feature']} should be either date or int type")
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_action_feature(cls, values):
-        if values["action_feature"] not in values["logged_data"]:
-            raise AttributeError("Action feature missing from logged data.")
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
     def check_propensity_score_estimation_method(cls, values):
         if values["propensity_score_model_type"] == "propensity_score":
             if cls._get_value_with_default("propensity_score_feature", values) is None:
@@ -527,8 +581,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
     def check_reward_features(cls, values):
         reward_feature = values["reward_feature"]
         reward_feature = reward_feature if isinstance(reward_feature, list) else [reward_feature]
-        if not all([reward in values["logged_data"] for reward in reward_feature]):
-            raise AttributeError("Reward feature missing from logged data.")
         values["reward_feature"] = reward_feature
         if "true_reward_feature" in values:
             true_reward_feature = values["true_reward_feature"]
@@ -539,33 +591,10 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 if true_reward_feature is not None
                 else None
             )
-            if not all([true_reward in values["logged_data"] for true_reward in true_reward_feature]):
-                raise AttributeError("True reward feature missing from logged data.")
-            if len(reward_feature) != len(true_reward_feature):
+            if true_reward_feature is not None and len(reward_feature) != len(true_reward_feature):
                 raise ValueError("Reward and true reward features should have the same length")
             values["true_reward_feature"] = true_reward_feature
 
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_optional_scalar_features(cls, values):
-        for feature in [
-            "cost_feature",
-            "group_feature",
-            "propensity_score_feature",
-        ]:
-            value = cls._get_value_with_default(feature, values)
-            if value is not None and value not in values["logged_data"]:
-                raise AttributeError(f"{feature} missing from logged data.")
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_contextual_features(cls, values):
-        value = cls._get_value_with_default("contextual_features", values)
-        if value is not None and not set(value).issubset(values["logged_data"].columns):
-            raise AttributeError("contextual_features missing from logged data.")
         return values
 
     @model_validator(mode="before")
@@ -617,38 +646,62 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             ]
         )
 
-    def model_post_init(self, __context: Any) -> None:
-        # Extract batches for train and test set
-        self._extract_batches()
+    def _validate_logged_data(self, logged_data: pd.DataFrame) -> None:
+        """
+        Validate logged_data against the configured feature names.
 
-        # Estimate propensity score in the train and test set
-        self._estimate_propensity_score()
+        Parameters
+        ----------
+        logged_data : pd.DataFrame
+            The logged data to validate.
+        """
+        if self.batch_feature not in logged_data:
+            raise AttributeError("Batch feature missing from logged data.")
+        if not (
+            pd.api.types.is_datetime64_ns_dtype(logged_data[self.batch_feature])
+            or pd.api.types.is_integer_dtype(logged_data[self.batch_feature])
+        ):
+            raise TypeError(f"Column {self.batch_feature} should be either date or int type")
+        if self.action_feature not in logged_data:
+            raise AttributeError("Action feature missing from logged data.")
+        if not all(reward in logged_data for reward in self.reward_feature):
+            raise AttributeError("Reward feature missing from logged data.")
+        if self.true_reward_feature is not None and not all(
+            true_reward in logged_data for true_reward in self.true_reward_feature
+        ):
+            raise AttributeError("True reward feature missing from logged data.")
+        for feature_name, feature_value in [
+            ("cost_feature", self.cost_feature),
+            ("group_feature", self.group_feature),
+            ("propensity_score_feature", self.propensity_score_feature),
+        ]:
+            if feature_value is not None and feature_value not in logged_data:
+                raise AttributeError(f"{feature_name} missing from logged data.")
+        if self.contextual_features is not None and not set(self.contextual_features).issubset(logged_data.columns):
+            raise AttributeError("contextual_features missing from logged data.")
 
-        # Estimate expected reward estimator and predict in the test set, when required by OPE estimators
-        if self._check_argument_required_by_estimators("expected_reward", self.ope_estimators):
-            self._estimate_expected_reward()
-
-    def _extract_batches(self):
+    def _extract_batches(self, logged_data: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Create training and test sets in dictionary form.
 
         """
-        logged_data = self.logged_data.sort_values(by=self.batch_feature)
+        self._validate_logged_data(logged_data)
+        logged_data = logged_data.sort_values(by=self.batch_feature)
         unique_batch = logged_data[self.batch_feature].unique()
         split_batch = unique_batch[int(floor(len(unique_batch) * self.split_prop))]
 
         # add list of actions in dict in order to avoid test set with n_actions
         # lower than nb of total actions
-        unique_actions = sorted(self.logged_data[self.action_feature].unique().tolist())
+        unique_actions = sorted(logged_data[self.action_feature].unique().tolist())
         action_label_encoder = LabelEncoder()
         if self.shuffle:
             logged_data[self.batch_feature] = np.random.permutation(logged_data[self.batch_feature].values)
         for batch_idx in tqdm(range(2)):
             # extract samples batch
             if batch_idx == 0:
-                extracted_batch = self.logged_data[self.logged_data[self.batch_feature] <= split_batch]
+                extracted_batch = logged_data[logged_data[self.batch_feature] <= split_batch]
             else:
-                extracted_batch = self.logged_data[self.logged_data[self.batch_feature] > split_batch]
+                extracted_batch = logged_data[logged_data[self.batch_feature] > split_batch]
             extracted_batch = extracted_batch.reset_index(drop=True)
 
             # dict data set information for OPE
@@ -733,9 +786,10 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 "cost": cost,  # samples' action cost for bandit with cost control
             }
             if batch_idx == 0:
-                self._train_data = data_batch
+                train_data = data_batch
             else:
-                self._test_data = data_batch
+                test_data = data_batch
+        return train_data, test_data
 
     def _estimate_propensity_score_empirical(
         self, batch: Dict[str, Any], groupby_cols: List[str], inner_groupby_cols: Optional[List[str]] = None
@@ -832,7 +886,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         return self._estimate_propensity_score_empirical(batch=batch, groupby_cols=[self.action_feature])
 
-    def _estimate_propensity_score(self):
+    def _estimate_propensity_score(self, train_data: Dict[str, Any], test_data: Dict[str, Any]) -> None:
         """
         Compute/approximate propensity score based on different methods in the train and test set.
         Different approaches may be evaluated when logging policy is unknown.
@@ -840,8 +894,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         if not self.contextual_features:
             # if no contextual features, propensity score is directly defined by the action taken,
             # thus uniformly set to 1
-            train_propensity_score = np.ones(self._train_data["n_rounds"])
-            test_propensity_score = np.ones(self._test_data["n_rounds"])
+            train_propensity_score = np.ones(train_data["n_rounds"])
+            test_propensity_score = np.ones(test_data["n_rounds"])
             logger.warning(
                 f"No contextual features available, "
                 f"overriding the requested propensity_score_model_type={self.propensity_score_model_type} "
@@ -853,23 +907,23 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                     logger.info("Data batch-empirical estimation of propensity score.")
 
                 # Empirical approach: propensity score pi_b computed as action means per samples batch
-                train_propensity_score = self._empirical_propensity_score(self._train_data)
-                test_propensity_score = self._empirical_propensity_score(self._test_data)
+                train_propensity_score = self._empirical_propensity_score(train_data)
+                test_propensity_score = self._empirical_propensity_score(test_data)
 
             elif self.propensity_score_model_type == "empirical":
                 if self.verbose:
                     logger.info("Data empirical estimation of propensity score.")
 
                 # Empirical approach: propensity score pi_b computed as action means per samples batch
-                train_propensity_score = self._empirical_averaged_propensity_score(self._train_data)
-                test_propensity_score = self._empirical_averaged_propensity_score(self._test_data)
+                train_propensity_score = self._empirical_averaged_propensity_score(train_data)
+                test_propensity_score = self._empirical_averaged_propensity_score(test_data)
 
             elif self.propensity_score_model_type == "propensity_score":
                 if self.verbose:
                     logger.info("Data given value of propensity score.")
 
-                train_propensity_score = self._train_data["propensity_score"]
-                test_propensity_score = self._test_data["propensity_score"]
+                train_propensity_score = train_data["propensity_score"]
+                test_propensity_score = test_data["propensity_score"]
 
             else:  # self.propensity_score_model_type in ["gbm", "rf", "logreg", "mlp", "xgb"]
                 if self.verbose:
@@ -886,24 +940,22 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                     multi_action_prediction=False,
                     include_action_in_features=False,
                 )
-                propensity_score_estimator.fit(X=self._train_data, y=self._train_data["action"])
-                train_propensity_score = np.clip(
-                    propensity_score_estimator.predict(self._train_data), self._propensity_score_epsilon, 1
-                )
-                test_propensity_score = np.clip(
-                    propensity_score_estimator.predict(self._test_data), self._propensity_score_epsilon, 1
-                )
-        self._train_data["propensity_score"] = train_propensity_score
-        self._test_data["propensity_score"] = test_propensity_score
+                propensity_score_estimator.fit(X=train_data, y=train_data["action"])
+                train_propensity_score = np.clip(propensity_score_estimator.predict(train_data), self._clip_epsilon, 1)
+                test_propensity_score = np.clip(propensity_score_estimator.predict(test_data), self._clip_epsilon, 1)
+                del propensity_score_estimator
+                gc.collect()
+        train_data["propensity_score"] = train_propensity_score
+        test_data["propensity_score"] = test_propensity_score
 
-    def _estimate_expected_reward(self):
+    def _estimate_expected_reward(self, train_data: Dict[str, Any], test_data: Dict[str, Any]) -> Dict[str, np.ndarray]:
         """
         Compute expected reward for each round and action.
         """
         if self.verbose:
             logger.info(f"Data prediction of expected reward based on {self.expected_reward_model_type} model.")
         estimated_expected_reward = {}
-        for reward_feature, reward in zip(self.reward_feature, self._train_data["reward"].T):
+        for reward_feature, reward in zip(self.reward_feature, train_data["reward"].T):
             expected_reward_model = _FunctionEstimator(
                 estimator_type=self.expected_reward_model_type,
                 fast_fit=self.fast_fit,
@@ -914,13 +966,17 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 multi_action_prediction=True,
             )
 
-            expected_reward_model.fit(X=self._train_data, y=reward.T)
+            expected_reward_model.fit(X=train_data, y=reward.T)
 
             # predict in test set
-            estimated_expected_reward[reward_feature] = expected_reward_model.predict(self._test_data)
-        self._estimated_expected_reward = estimated_expected_reward
+            estimated_expected_reward[reward_feature] = expected_reward_model.predict(test_data)
+            del expected_reward_model
+            gc.collect()
+        return estimated_expected_reward
 
-    def _estimate_importance_weight(self, mab: BaseMab) -> np.ndarray:
+    def _estimate_importance_weight(
+        self, mab: BaseMab, train_data: Dict[str, Any], test_data: Dict[str, Any]
+    ) -> np.ndarray:
         """
         Compute importance weights induced by the behavior and evaluation policies.
 
@@ -933,6 +989,10 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit to be evaluated
+        train_data : Dict[str, Any]
+            Training data dictionary
+        test_data : Dict[str, Any]
+            Test data dictionary
 
         Return
         ------
@@ -950,23 +1010,33 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             verbose=self.verbose,
             study_name=f"{self.importance_weights_model_type}_importance_weights",
             multi_action_prediction=False,
+            calibrate=False,
         )
-        train_data = deepcopy(self._train_data)
-        mab_data = self._train_data["context"] if self.contextual_features else self._train_data["n_rounds"]
+        mab_data = train_data["context"] if self.contextual_features else train_data["n_rounds"]
         selected_actions = _mab_predict(mab, mab_data)
-        train_data["action_ids"] = np.concatenate((train_data["action_ids"], selected_actions), axis=0)
-        train_data["context"] = np.concatenate((train_data["context"], train_data["context"]), axis=0)
+        iw_train_data = {
+            "action_ids": np.concatenate((train_data["action_ids"], selected_actions), axis=0),
+            "context": np.concatenate((train_data["context"], train_data["context"]), axis=0),
+            "n_rounds": train_data["n_rounds"],
+        }
         y = np.concatenate((np.zeros(len(selected_actions)), np.ones(len(selected_actions))), axis=0)
-        importance_weights_model.fit(X=train_data, y=y)
+        importance_weights_model.fit(X=iw_train_data, y=y)
 
         # predict in test set
-        estimated_proba = importance_weights_model.predict(self._test_data)
+        estimated_proba = np.clip(
+            importance_weights_model.predict(test_data),
+            self._clip_epsilon,
+            1 - self._clip_epsilon,
+        )
         expected_importance_weights = estimated_proba / (1 - estimated_proba)
+        del importance_weights_model, iw_train_data
+        gc.collect()
         return expected_importance_weights
 
     def estimate_policy(
         self,
         mab: BaseMab,
+        test_data: Dict[str, Any],
         n_mc_experiments: PositiveInt = 1000,
         n_cores: Optional[NonNegativeInt] = None,
     ) -> pd.DataFrame:
@@ -986,6 +1056,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit to be evaluated
+        test_data : Dict[str, Any]
+            Test data dictionary
         n_mc_experiments: PositiveInt
             Number of MC sampling rounds. Default: 1000
         n_cores: Optional[NonNegativeInt], all available cores if not specified.
@@ -1002,50 +1074,63 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         # using MC, create a () best actions matrix
         mc_actions = []
-        mab_data = self._test_data["context"] if self.contextual_features else self._test_data["n_rounds"]
+        mab_data = test_data["context"] if self.contextual_features else test_data["n_rounds"]
         # Serialize MAB to avoid pickling issues with PyMC function references in BayesianNeuralNetwork
         mab_class_name, mab_state = mab.get_state()
-        predict_func = partial(_mab_predict_serialized, mab_class_name, mab_state, mab_data, self.verbose)
         # predict best action for a new prior parameters draw
         # using argmax(p(r|a, x)) with a in the list of actions
         if n_cores:
             # Use maxtasksperchild to recycle workers and prevent resource accumulation
             # Without this, workers can accumulate memory/resources and cause hangs
-            with Pool(processes=n_cores, maxtasksperchild=1) as pool:
+            # Use pool initializer to share mab_data once per worker instead of pickling it with every task
+            with Pool(
+                processes=n_cores,
+                maxtasksperchild=1,
+                initializer=_pool_initializer,
+                initargs=(mab_class_name, mab_state, mab_data, self.verbose),
+            ) as pool:
                 for mc_action in tqdm(
-                    pool.imap_unordered(predict_func, range(n_mc_experiments), chunksize=1), total=n_mc_experiments
+                    pool.imap_unordered(_mab_predict_worker, range(n_mc_experiments), chunksize=1),
+                    total=n_mc_experiments,
                 ):
                     mc_actions.append(mc_action)
         else:
+            predict_func = partial(_mab_predict_serialized, mab_class_name, mab_state, mab_data, self.verbose)
             for mc_action in tqdm(map(predict_func, range(n_mc_experiments)), total=n_mc_experiments):
                 mc_actions.append(mc_action)
 
-        # finalize the dataframe shape to #samples X #mc experiments
-        mc_actions = pd.DataFrame(mc_actions).T
-
-        # for each sample / each action, count the occurrence frequency during MC iteration
-        mc_action_counts = pd.DataFrame(0, index=mc_actions.index, columns=self._test_data["unique_actions"])
-        for action in self._test_data["unique_actions"]:
-            mc_action_counts[action] = (mc_actions == action).sum(axis=1)
-        estimated_policy = mc_action_counts / n_mc_experiments
+        # Build (n_samples, n_actions) frequency matrix: convert list → array then delete list,
+        # avoiding holding both the raw (n_mc, n_samples) array and the counts DataFrame simultaneously
+        mc_actions_arr = np.array(mc_actions)  # (n_mc_experiments, n_samples)
+        del mc_actions
+        unique_actions = test_data["unique_actions"]
+        estimated_policy_arr = np.stack([(mc_actions_arr == action).mean(axis=0) for action in unique_actions], axis=1)
+        del mc_actions_arr
+        estimated_policy = pd.DataFrame(estimated_policy_arr, columns=unique_actions)
 
         return estimated_policy
 
-    def evaluate(
+    def _evaluate(
         self,
         mab: BaseMab,
+        train_data: Dict[str, Any],
+        test_data: Dict[str, Any],
         n_mc_experiments: int = 1000,
         save_path: Optional[str] = None,
         visualize: bool = True,
         n_cores: Optional[NonNegativeInt] = None,
     ) -> pd.DataFrame:
         """
-        Execute the OPE process with multiple estimators simultaneously.
+        Execute the OPE process on already-extracted train/test data.
 
         Parameters
         ----------
         mab : BaseMab
             Multi-armed bandit model to be evaluated
+        train_data : Dict[str, Any]
+            Training data dictionary produced by _extract_batches
+        test_data : Dict[str, Any]
+            Test data dictionary produced by _extract_batches
         n_mc_experiments : int
             Number of Monte Carlo experiments for policy estimation
         save_path : Optional[str], defaults to None.
@@ -1060,6 +1145,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         estimated_policy_value_df : pd.DataFrame
             Estimated policy values and confidence intervals
         """
+        self._estimate_propensity_score(train_data, test_data)
+        estimated_expected_reward = (
+            self._estimate_expected_reward(train_data, test_data)
+            if self._check_argument_required_by_estimators("expected_reward", self.ope_estimators)
+            else None
+        )
+
         if visualize and not save_path and not in_jupyter_notebook():
             raise ValueError("save_path is required for visualization when not running in a Jupyter notebook")
 
@@ -1071,15 +1163,15 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         # Define OPE keyword arguments
         kwargs = {}
         if self._check_argument_required_by_estimators("action", self.ope_estimators):
-            kwargs["action"] = self._test_data["action"]
+            kwargs["action"] = test_data["action"]
         if self._check_argument_required_by_estimators("estimated_policy", self.ope_estimators):
             kwargs["estimated_policy"] = self.estimate_policy(
-                mab=mab, n_mc_experiments=n_mc_experiments, n_cores=n_cores
+                mab=mab, test_data=test_data, n_mc_experiments=n_mc_experiments, n_cores=n_cores
             ).values
         if self._check_argument_required_by_estimators("propensity_score", self.ope_estimators):
-            kwargs["propensity_score"] = self._test_data["propensity_score"]
+            kwargs["propensity_score"] = test_data["propensity_score"]
         if self._check_argument_required_by_estimators("expected_importance_weight", self.ope_estimators):
-            kwargs["expected_importance_weight"] = self._estimate_importance_weight(mab)
+            kwargs["expected_importance_weight"] = self._estimate_importance_weight(mab, train_data, test_data)
 
         # Instantiate class to conduct OPE by multiple estimators simultaneously
         multi_objective_estimated_policy_value_df = pd.DataFrame()
@@ -1089,12 +1181,14 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 logger.info(f"Offline Policy Evaluation for {reward_feature}.")
 
             if self._check_argument_required_by_estimators("reward", self.ope_estimators):
-                kwargs["reward"] = self._test_data["reward"][:, self.reward_feature.index(reward_feature)]
+                kwargs["reward"] = test_data["reward"][:, self.reward_feature.index(reward_feature)]
             if self._check_argument_required_by_estimators("expected_reward", self.ope_estimators):
-                kwargs["expected_reward"] = self._estimated_expected_reward[reward_feature]
+                kwargs["expected_reward"] = estimated_expected_reward[reward_feature]
 
             # Summarize policy values and their confidence intervals estimated by OPE estimators
             for ope_estimator in self.ope_estimators:
+                if self.verbose:
+                    logger.info(f"Running OPE estimator '{ope_estimator.name}' for reward '{reward_feature}'.")
                 estimated_policy_value, low, high, std = ope_estimator.estimate_policy_value_with_confidence_interval(
                     **kwargs,
                 )
@@ -1109,6 +1203,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 [multi_objective_estimated_policy_value_df, pd.DataFrame.from_dict(results)],
                 axis=0,
             )
+        kwargs.pop("estimated_policy", None)  # Release large (n_samples, n_actions) array after all estimators run
         if save_path:
             os.makedirs(save_path, exist_ok=True)
             multi_objective_estimated_policy_value_df.to_csv(os.path.join(save_path, "estimated_policy_value.csv"))
@@ -1118,9 +1213,45 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         return multi_objective_estimated_policy_value_df
 
+    def evaluate(
+        self,
+        mab: BaseMab,
+        logged_data: pd.DataFrame,
+        n_mc_experiments: int = 1000,
+        save_path: Optional[str] = None,
+        visualize: bool = True,
+        n_cores: Optional[NonNegativeInt] = None,
+    ) -> pd.DataFrame:
+        """
+        Execute the OPE process with multiple estimators simultaneously.
+
+        Parameters
+        ----------
+        mab : BaseMab
+            Multi-armed bandit model to be evaluated
+        logged_data : pd.DataFrame
+            Logging data set
+        n_mc_experiments : int
+            Number of Monte Carlo experiments for policy estimation
+        save_path : Optional[str], defaults to None.
+            Path to save the results. Nothing is saved if not specified.
+        visualize : bool, defaults to True.
+            Whether to visualize the results of the OPE process
+        n_cores : Optional[NonNegativeInt], all available cores if not specified.
+            Number of cores used for multiprocessing. If None, uses all available cores.
+
+        Returns
+        -------
+        estimated_policy_value_df : pd.DataFrame
+            Estimated policy values and confidence intervals
+        """
+        train_data, test_data = self._extract_batches(logged_data)
+        return self._evaluate(mab, train_data, test_data, n_mc_experiments, save_path, visualize, n_cores)
+
     def update_and_evaluate(
         self,
         mab: BaseMab,
+        logged_data: pd.DataFrame,
         n_mc_experiments: int = 1000,
         save_path: Optional[str] = None,
         visualize: bool = True,
@@ -1135,6 +1266,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit model to be updated and evaluated
+        logged_data : pd.DataFrame
+            Logging data set
         n_mc_experiments : int
             Number of Monte Carlo experiments for policy estimation
         save_path : Optional[str]
@@ -1151,11 +1284,11 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         estimated_policy_value_df : pd.DataFrame
             Estimated policy values
         """
-        self._update_mab(mab, self._train_data)
+        train_data, test_data = self._extract_batches(logged_data)
+        self._update_mab(mab, train_data)
         if with_test:
-            self._update_mab(mab, self._test_data)
-        estimated_policy_value_df = self.evaluate(mab, n_mc_experiments, save_path, visualize, n_cores)
-        return estimated_policy_value_df
+            self._update_mab(mab, test_data)
+        return self._evaluate(mab, train_data, test_data, n_mc_experiments, save_path, visualize, n_cores)
 
     def _update_mab(self, mab: BaseMab, data: Dict[str, Any]):
         """
@@ -1228,6 +1361,28 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         output_path = os.path.join(save_path, "multi_objective_estimated_policy.html") if save_path else None
         visualize_via_bokeh(tabs=tabs, output_path=output_path)
+
+
+_WORKER_INIT_DATA: Dict[str, Any] = {}
+
+
+def _pool_initializer(mab_class_name: str, mab_state: str, mab_data: Any, verbose: bool) -> None:
+    """Initialize worker process with shared data to avoid per-task pickling of large arrays."""
+    global _WORKER_INIT_DATA
+    _WORKER_INIT_DATA.update(
+        {"mab_class_name": mab_class_name, "mab_state": mab_state, "mab_data": mab_data, "verbose": verbose}
+    )
+
+
+def _mab_predict_worker(mc_experiment: int) -> List[ActionId]:
+    """Worker function that uses process-local data set by _pool_initializer."""
+    return _mab_predict_serialized(
+        _WORKER_INIT_DATA["mab_class_name"],
+        _WORKER_INIT_DATA["mab_state"],
+        _WORKER_INIT_DATA["mab_data"],
+        _WORKER_INIT_DATA["verbose"],
+        mc_experiment,
+    )
 
 
 def _mab_predict(mab: BaseMab, mab_data: Union[np.ndarray, PositiveInt], mc_experiment: int = 0) -> List[ActionId]:
