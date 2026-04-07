@@ -162,7 +162,6 @@
    "outputs": [],
    "source": [
     "evaluator = OfflinePolicyEvaluator(\n",
-    "    logged_data=df,\n",
     "    split_prop=0.5,\n",
     "    n_trials=10,\n",
     "    fast_fit=True,\n",
@@ -189,7 +188,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "evaluator.evaluate(mab=mab, visualize=True, n_mc_experiments=1000)"
+    "evaluator.evaluate(mab=mab, logged_data=df, visualize=True, n_mc_experiments=1000)"
    ]
   },
   {
@@ -198,7 +197,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "evaluator.update_and_evaluate(mab=mab, visualize=True, n_mc_experiments=1000)"
+    "evaluator.update_and_evaluate(mab=mab, logged_data=df, visualize=True, n_mc_experiments=1000)"
    ]
   }
  ],
