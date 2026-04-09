@@ -24,7 +24,6 @@ import warnings
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from math import ceil
-from random import betavariate
 from types import ModuleType
 from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
@@ -43,7 +42,6 @@ from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
 from numpyro.infer.initialization import init_to_median
 from scipy.special import erf
-from scipy.stats import norm, t
 from tqdm import trange
 from typing_extensions import Self
 
@@ -103,9 +101,16 @@ class Model(BaseModelSO, ABC):
     """
 
     @abstractmethod
-    def sample_proba(self, **kwargs) -> Union[List[Probability], List[MOProbability], List[ProbabilityWeight]]:
+    def sample_proba(
+        self, rng: np.random.Generator, **kwargs
+    ) -> Union[List[Probability], List[MOProbability], List[ProbabilityWeight]]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
         """
 
 
@@ -174,16 +179,23 @@ class BaseBeta(Model, ABC):
     def _reset(self):
         pass
 
-    def sample_proba(self, n_samples: PositiveInt) -> List[Probability]:
+    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Probability]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        n_samples : PositiveInt
+            Number of samples to draw.
+        rng : np.random.Generator
+            Numpy random generator. Vectorized sampling via ``rng.beta``.
 
         Returns
         -------
         prob: Probability
             Probability of getting a positive reward.
         """
-        return [betavariate(self.n_successes, self.n_failures) for _ in range(n_samples)]
+        return list(rng.beta(self.n_successes, self.n_failures, size=n_samples))
 
 
 class Beta(BaseBeta):
@@ -297,8 +309,9 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     _mu_array: np.ndarray = PrivateAttr()
     _sigma_array: np.ndarray = PrivateAttr()
     _params: Dict[str, np.ndarray] = PrivateAttr()
-    _sampler: ClassVar[Callable]
     _numpyro_dist_class: ClassVar[type]
+    _sampler: ClassVar[str]  # name of the numpy Generator method
+    _sampler_kwargs: ClassVar[Dict[str, str]] = {}  # internal param name → numpy kwarg name
     param_map: ClassVar[Dict[str, str]] = {"mu": "loc", "sigma": "scale"}
 
     def to_numpyro_distribution(self) -> npdist.Distribution:
@@ -344,10 +357,15 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         else:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    def _to_sampler_kwargs(self, params: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        return {self.param_map[k]: v for k, v in params.items()}
+    def _draw(
+        self, params: Dict[str, np.ndarray], rng: np.random.Generator, size: Optional[Tuple[int, ...]] = None
+    ) -> np.ndarray:
+        """Apply the loc-scale transform: ``mu + sigma * rng.<_sampler>(**_sampler_kwargs)``."""
+        _size = size if size is not None else params["mu"].shape
+        extra = {rng_key: params[param_key] for param_key, rng_key in self._sampler_kwargs.items()}
+        return params["mu"] + params["sigma"] * getattr(rng, self._sampler)(size=_size, **extra)
 
-    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
+    def sample_rvs(self, size: Tuple[int, ...], rng: np.random.Generator) -> np.ndarray:
         """
         Sample random variates from this distribution.
 
@@ -355,15 +373,19 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         ----------
         size : Tuple[int, ...]
             Shape of the output array.
+        rng : np.random.Generator
+            Numpy random generator.
 
         Returns
         -------
         np.ndarray
             Array of sampled values.
         """
-        return self._sampler(size=size, **self._to_sampler_kwargs(self._params))
+        return self._draw(self._params, rng, size=size)
 
-    def sample_at_indices(self, indices: Union[List[NonNegativeInt], np.ndarray]) -> np.ndarray:
+    def sample_at_indices(
+        self, indices: Union[List[NonNegativeInt], np.ndarray], rng: np.random.Generator
+    ) -> np.ndarray:
         """
         Sample one row-vector per entry in ``indices`` from a 2-D distribution matrix.
 
@@ -376,6 +398,8 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         ----------
         indices : Union[List[NonNegativeInt], np.ndarray] of shape (n,) with dtype int
             Row indices to sample from.
+        rng : np.random.Generator
+            Numpy random generator.
 
         Returns
         -------
@@ -383,7 +407,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             Sampled instances.
         """
         sliced = {k: v[indices] for k, v in self._params.items()}
-        return self._sampler(**self._to_sampler_kwargs(sliced))
+        return self._draw(sliced, rng)
 
     @staticmethod
     def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> np.ndarray:
@@ -531,28 +555,6 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         """
         return self._params
 
-    def __eq__(self, other: Any) -> bool:
-        """
-        Check equality with another distribution array.
-
-        Parameters
-        ----------
-        other : Any
-            Other object to compare with.
-
-        Returns
-        -------
-        bool
-            True if distributions are equal, False otherwise.
-        """
-        if not isinstance(other, BaseLocationScaleArray):
-            return False
-        return (
-            np.all(self._mu_array == other._mu_array)
-            and np.all(self._sigma_array == other._sigma_array)
-            and type(self) is type(other)
-        )
-
     @classmethod
     def cold_start(
         cls,
@@ -659,8 +661,9 @@ class StudentTArray(BaseLocationScaleArray):
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
     _nu_array: np.ndarray = PrivateAttr()
-    _sampler: ClassVar[Callable] = t.rvs
     _numpyro_dist_class: ClassVar[type] = NumpyroStudentT
+    _sampler: ClassVar[str] = "standard_t"
+    _sampler_kwargs: ClassVar[Dict[str, str]] = {"nu": "df"}
     param_map: ClassVar[Dict[str, str]] = {**BaseLocationScaleArray.param_map, "nu": "df"}
 
     @model_validator(mode="before")
@@ -669,12 +672,6 @@ class StudentTArray(BaseLocationScaleArray):
         # The parent class method is now generic and handles all array-like parameters
         # including mu, sigma, and nu, so we can just call it directly
         return super().validate_input_shapes(values)
-
-    def __eq__(self, other: Any) -> bool:
-        """Check equality including nu parameter."""
-        if not isinstance(other, StudentTArray):
-            return False
-        return super().__eq__(other) and np.all(self._nu_array == other._nu_array)
 
     @classmethod
     def _get_distribution_specific_params(
@@ -752,8 +749,9 @@ class NormalArray(BaseLocationScaleArray):
     ... )
     """
 
-    _sampler: ClassVar[Callable] = norm.rvs
     _numpyro_dist_class: ClassVar[type] = NumpyroNormal
+    _sampler: ClassVar[str] = "standard_normal"
+    _sampler_kwargs: ClassVar[Dict[str, str]] = {}
 
     @classmethod
     def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
@@ -1119,7 +1117,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
-    random_seed: Optional[int] = None
+    random_seed: Optional[NonNegativeInt] = None
 
     _rng_key: Any = PrivateAttr(default=None)
 
@@ -1417,7 +1415,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self._numpy_activation_fn = self._numpy_activations[self.activation]
         self._jax_activation_fn = self._jax_activations[self.activation]
         self._rng_key = jax.random.PRNGKey(
-            self.random_seed if self.random_seed else int(np.random.randint(0, np.iinfo(np.int32).max))
+            self.random_seed
+            if self.random_seed is not None
+            else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
         )
         if self.update_method == "VI":
             self._obj_optimizer = self._get_obj_optimizer()
@@ -1430,16 +1430,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self._arrange_update_kwargs()
         self._init_private_attrs()
         self._update_kwargs = deepcopy(self.update_kwargs)
-
-    def __eq__(self, other: Any) -> bool:
-        """Compare equality based on model fields only, excluding non-serializable private attributes."""
-        if not isinstance(other, BaseBayesianNeuralNetwork):
-            return False
-        if type(self) is not type(other):
-            return False
-        return self.apply_version_adjusted_method("model_dump", "dict") == other.apply_version_adjusted_method(
-            "model_dump", "dict"
-        )
 
     def __getstate__(self) -> dict:
         """Exclude unpicklable private attributes (JAX functions, optimizer objects)."""
@@ -1600,7 +1590,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_weights(self, n_samples: PositiveInt) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def sample_weights(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Sample weights and biases for each sample and each layer.
 
@@ -1608,6 +1598,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ----------
         n_samples : PositiveInt
             The number of samples (users) to draw weights for. Must be positive.
+        rng : np.random.Generator
+            Numpy random generator forwarded to numpy samplers. Enables reproducible
+            weight sampling and integration with the central MAB-level RNG.
 
         Returns
         -------
@@ -1621,14 +1614,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             input_dim = layer_params.weight.shape[0]
             output_dim = layer_params.weight.shape[1]
 
-            w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim))
-            b = layer_params.bias.sample_rvs(size=(n_samples, output_dim))
+            w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim), rng=rng)
+            b = layer_params.bias.sample_rvs(size=(n_samples, output_dim), rng=rng)
 
             sampled_weights.append((w, b))
 
         return sampled_weights
 
-    def sample_embeddings(self, context: np.ndarray) -> Optional[List[np.ndarray]]:
+    def sample_embeddings(self, context: np.ndarray, rng: np.random.Generator) -> Optional[List[np.ndarray]]:
         """
         Sample embedding vectors for each categorical feature given the context.
 
@@ -1640,6 +1633,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         context : np.ndarray
             Context matrix, shape ``(n_samples, feature_config.n_features)``.
             Categorical columns contain integer indices into the embedding vocabulary.
+        rng : np.random.Generator
+            Numpy random generator forwarded to numpy samplers.
 
         Returns
         -------
@@ -1653,7 +1648,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _, cat_indices_dict = self._prepare_context_arrays(_context)
         return [
             self.model_params.embedding_params.embeddings[i]
-            .sample_at_indices(cat_indices_dict[i])
+            .sample_at_indices(cat_indices_dict[i], rng=rng)
             .reshape(len(_context), -1)
             for i in range(len(self.feature_config.categorical_features_configs))
         ]
@@ -1760,7 +1755,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return list(zip(prob, weighted_sum))
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray) -> List[ProbabilityWeight]:
+    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[ProbabilityWeight]:
         """
         Samples probabilities and logits from the prior predictive distribution.
 
@@ -1768,6 +1763,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ----------
         context : np.ndarray
             The context matrix for which the probabilities are to be sampled.
+        rng : np.random.Generator
+            Numpy random generator for weight/embedding sampling.
+            The JAX ``_rng_key`` remains the authority for VI/MCMC training.
 
         Returns
         -------
@@ -1780,8 +1778,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _context = np.atleast_2d(context)
         n_samples = len(_context)
 
-        sampled_weights = self.sample_weights(n_samples)
-        sampled_embeddings = self.sample_embeddings(_context)
+        sampled_weights = self.sample_weights(n_samples, rng=rng)
+        sampled_embeddings = self.sample_embeddings(_context, rng=rng)
 
         return self.forward_pass(
             sampled_weights=sampled_weights, context=_context, sampled_embeddings=sampled_embeddings
@@ -2185,7 +2183,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
-        random_seed: Optional[int] = None,
+        random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
     ) -> Self:
         """
@@ -2219,7 +2217,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
             to ``ceil(cardinality / _embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
-        random_seed : Optional[int], optional
+        random_seed : Optional[NonNegativeInt], optional
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.
             Pass an explicit integer for fully reproducible runs.

@@ -153,9 +153,9 @@ def test_similar_segments_merge():
 
 
 # Sample_proba returns valid probability functions
-def test_sample_proba_returns_valid_probabilities(n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))):
+def test_sample_proba_returns_valid_probabilities(rng, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))):
     model = DummyZooming.cold_start(dimension=1)
-    prob_functions = model.sample_proba(n_samples=n_samples)
+    prob_functions = model.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob_functions) == n_samples
 
     # Test that each function is callable and returns valid probabilities
@@ -165,6 +165,26 @@ def test_sample_proba_returns_valid_probabilities(n_samples=100, test_locations=
         for location in test_locations:
             prob = prob_func(location)
             assert 0 <= prob <= 1
+
+
+# Same-seed RNG must yield identical sampled probabilities; different seeds must differ.
+@given(
+    dimension=st.integers(min_value=1, max_value=3),
+    n_samples=st.integers(min_value=10, max_value=30),
+    seeds=st.lists(st.integers(min_value=0, max_value=2**31 - 1), min_size=2, max_size=2, unique=True),
+    n_locations=st.just(10),
+)
+def test_sample_proba_reproducible_with_same_rng(dimension, n_samples, seeds, n_locations):
+    model = Zooming.cold_start(dimension=dimension, n_max_segments=None)
+    locations = [tuple([q] * dimension) for q in np.random.uniform(size=n_locations)]
+
+    def draw(seed):
+        functions = model.sample_proba(n_samples=n_samples, rng=np.random.default_rng(seed=seed))
+        return [[fn(loc) for loc in locations] for fn in functions]
+
+    seed_a, seed_b = seeds
+    assert draw(seed_a) == draw(seed_a)
+    assert draw(seed_a) != draw(seed_b)
 
 
 # Update with empty rewards/quantities list
@@ -292,10 +312,10 @@ def test_updates_smab_zooming_model_correctly(rewards, dimension):
 
 # Test Zooming sample_proba returns valid probability functions
 def test_sample_proba_returns_valid_probabilities_smab(
-    dimension=1, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))
+    rng, dimension=1, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))
 ):
     model = Zooming.cold_start(dimension=dimension)
-    prob_functions = model.sample_proba(n_samples=n_samples)
+    prob_functions = model.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob_functions) == n_samples
 
     # Test that each function is callable and returns valid probabilities
@@ -387,7 +407,7 @@ def test_updates_cmab_quantitative_model_correctly(
     quantity=st.floats(min_value=0, max_value=1),
 )
 def test_sample_proba_returns_valid_probabilities_cmab(
-    dimension, n_features, quantity, use_embedding, categorical_features
+    rng, dimension, n_features, quantity, use_embedding, categorical_features
 ):
     if use_embedding:
         model = QuantitativeBayesianNeuralNetwork.cold_start(
@@ -398,7 +418,7 @@ def test_sample_proba_returns_valid_probabilities_cmab(
         model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
         context = np.random.uniform(low=0, high=1, size=(5, 1))
 
-    prob_functions = model.sample_proba(context=context)
+    prob_functions = model.sample_proba(context=context, rng=rng)
     assert len(prob_functions) == len(context)
 
     # Test that each function is callable and returns valid probabilities
@@ -428,7 +448,7 @@ def quantity_strategy(draw):
     test_quantity=quantity_strategy(),
     context=arrays(dtype=np.float64, shape=(5, 2), elements=st.floats(min_value=0, max_value=1)),
 )
-def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, test_quantity, context):
+def test_quantitative_bnn_to_quantitative_probabilities_consistency(rng, n_calls, test_quantity, context):
     """Test that QuantitativeBayesianNeuralNetwork._to_quantitative_probabilities returns consistent results when called repeatedly."""
     if isinstance(test_quantity[0], float):
         dimension = 1
@@ -436,7 +456,7 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, tes
         dimension = len(test_quantity[0])
     model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=2)
     n_samples = len(context)
-    sampled_weights = model.bnn.sample_weights(n_samples)
+    sampled_weights = model.bnn.sample_weights(n_samples, rng=rng)
     # Create context and sample probability functions
     prob_functions = model._to_quantitative_probabilities(context=context, sampled_weights=sampled_weights)
 
@@ -459,7 +479,7 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, tes
     test_quantities=arrays(dtype=np.float64, shape=(5,), elements=st.floats(min_value=0, max_value=1)),
 )
 def test_quantitative_bnn_to_quantitative_probabilities_consistency_with_categorical(
-    dimension, categorical_features, n_calls, tier_indices, test_quantities
+    rng, dimension, categorical_features, n_calls, tier_indices, test_quantities
 ):
     """Pre-sampled embeddings make repeated closure calls deterministic for QBNN with categorical features.
 
@@ -472,9 +492,9 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency_with_categor
     n_samples = len(context)
 
     # Replicate exactly what sample_proba does: sample weights and pre-sample embeddings once.
-    sampled_weights = model.bnn.sample_weights(n_samples)
+    sampled_weights = model.bnn.sample_weights(n_samples, rng=rng)
     dummy_full = np.column_stack([np.zeros((n_samples, dimension)), context])
-    sampled_embeddings = model.bnn.sample_embeddings(dummy_full)
+    sampled_embeddings = model.bnn.sample_embeddings(dummy_full, rng=rng)
 
     prob_functions = model._to_quantitative_probabilities(
         context=context,

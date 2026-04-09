@@ -1171,3 +1171,46 @@ def test_extract_element_from_probability_weight_unsupported_type(unsupported_ty
     """Test that unsupported types raise TypeError."""
     with pytest.raises(TypeError, match=f"Unsupported probability weight type: {type(unsupported_type)}"):
         BaseCmabBernoulli._extract_element_from_probability_weight(0, unsupported_type)
+
+
+@settings(deadline=None, max_examples=10)
+@given(
+    action_ids=st.lists(st.text(min_size=1), min_size=1, max_size=4, unique=True),
+    n_samples=st.integers(min_value=1, max_value=100),
+    n_features=st.integers(min_value=1, max_value=4),
+    random_seed=st.integers(min_value=0, max_value=2**31 - 1),
+)
+def test_random_seed_propagates_to_bnn(
+    action_ids: List[str], n_samples: int, n_features: int, random_seed: int
+) -> None:
+    """Verify that random_seed set on the CMAB cold_start flows through to every BNN action model.
+
+    The seed must appear on each BNN so that both the MAB-level RNG (epsilon-greedy,
+    Thompson sampling) and the BNN-level JAX RNG (VI/MCMC training) are reproducible
+    from a single top-level parameter.
+    """
+    cmab1 = CmabBernoulli.cold_start(
+        action_ids=action_ids,
+        strategy=ClassicBandit(),
+        n_features=n_features,
+        random_seed=random_seed,
+    )
+
+    assert cmab1.random_seed == random_seed, "MAB should store the random_seed"
+    for action_id, model in cmab1.actions.items():
+        assert isinstance(model, BaseBayesianNeuralNetwork)
+        assert model.random_seed == random_seed, (
+            f"Action '{action_id}': expected BNN random_seed={random_seed}, got {model.random_seed}"
+        )
+
+    apply_mock_update(list(cmab1.actions.values()))
+    # Deep-copy after mock update so both instances share identical layer params AND rng state.
+    cmab2 = CmabBernoulli.from_state(cmab1.get_state()[1])
+
+    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    actions1, probs1, ws1 = cmab1.predict(context=context)
+    actions2, probs2, ws2 = cmab2.predict(context=context)
+
+    assert actions1 == actions2
+    assert probs1 == probs2
+    assert ws1 == ws2
