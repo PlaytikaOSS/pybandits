@@ -471,7 +471,7 @@ def test_initialization_when_xgboost_not_available(
             assert evaluator is not None
 
 
-def test_safe_cv_raises_on_single_sample_class(labels=np.array([0, 0, 0, 0, 1])) -> None:
+def test_safe_cv_raises_on_single_sample_class(labels=(0, 0, 0, 0, 1)) -> None:
     """Test that _safe_cv raises ValueError when a class has fewer than 2 samples."""
     with pytest.raises(ValueError, match="insufficient for cross-validation"):
-        _FunctionEstimator._safe_cv(labels)
+        _FunctionEstimator._safe_cv(np.array(labels))

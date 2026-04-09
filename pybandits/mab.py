@@ -23,8 +23,10 @@
 import importlib.metadata
 import json
 import random
+import re
 from abc import ABC, abstractmethod
 from inspect import isclass
+from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Set, Union, get_origin
 
 import numpy as np
@@ -38,7 +40,6 @@ from pybandits.base import (
     Float01,
     MOProbability,
     MOProbabilityWeight,
-    PositiveProbability,
     Predictions,
     Probability,
     ProbabilityWeight,
@@ -58,6 +59,23 @@ from pybandits.pydantic_version_compatibility import (
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.strategy import BaseStrategy
 from pybandits.utils import extract_argument_names_from_function
+
+
+def _get_pybandits_version() -> str:
+    """Get pybandits version from installed metadata or pyproject.toml."""
+    # Try installed metadata first (works in wheels)
+    try:
+        return importlib.metadata.version("pybandits")
+    except importlib.metadata.PackageNotFoundError:
+        # Fall back to parsing pyproject.toml (development only)
+        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        if pyproject_path.exists():
+            with open(pyproject_path) as f:
+                content = f.read()
+            match = re.search(r'version = "([^"]+)"', content)
+            if match:
+                return match.group(1)
+    raise RuntimeError("Could not determine pybandits version")
 
 
 class BaseMab(PyBanditsBaseModel, ABC):
@@ -87,8 +105,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
     epsilon: Optional[Float01] = None
     default_action: Optional[UnifiedActionId] = None
     version: Optional[str] = None
-    _deprecated_adwin_keys: ClassVar[List[str]] = ["adaptive_window_size", "actions_memory", "rewards_memory"]
-    _current_supported_version_th: ClassVar[str] = "3.0.0"
+    _current_supported_version_th: ClassVar[str] = _get_pybandits_version()
 
     def __init__(
         self,
@@ -104,7 +121,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         if kwargs:
             raise ValueError(f"Unknown arguments: {kwargs.keys()}")
 
-        version = importlib.metadata.version("pybandits")
+        version = _get_pybandits_version()
         super().__init__(**class_attributes, epsilon=epsilon, default_action=default_action, version=version)
 
     @classmethod
@@ -392,23 +409,15 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return cls.model_validate_json(state)
 
     @classmethod
-    def update_old_state(
-        cls, state: Dict[str, Serializable], delta: Optional[PositiveProbability]
-    ) -> Dict[str, Serializable]:
+    def update_old_state(cls, state: Dict[str, Serializable]) -> Dict[str, Serializable]:
         """
         Update the model state to the current version if needed.
-        It adjusts the following:
-        1. Adding actions_manager to the state if it is not present.
-        2. Removes deprecated members from the state.
 
         Parameters
         ----------
         state : str
             The internal state of a model (actions, strategy, etc.) of the same type.
             The state is expected to be in the old format of PyBandits below the current supported version.
-        delta : Optional[PositiveProbability]
-            The delta value to be set in the actions_manager. If None, it will not be set.
-            This is relevant only for adaptive window models.
 
         Returns
         -------
@@ -417,24 +426,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The state is in the current format of PyBandits, with actions_manager and delta added if needed.
         """
 
-        # the state is in the old format of PyBandits < 2.0.0.
-        if "actions" in state:
-            state["actions_manager"] = {}
-            state["actions_manager"]["actions"] = state.pop("actions")
-            state["actions_manager"]["delta"] = delta
-
-        for key in cls._deprecated_adwin_keys:
-            if key in state["actions_manager"]:
-                state["actions_manager"].pop(key)
-
         return state
 
     @classmethod
-    def from_old_state(
-        cls,
-        state: str,
-        delta: Optional[PositiveProbability] = None,
-    ) -> "BaseMab":
+    def from_old_state(cls, state: str) -> "BaseMab":
         """
         Create a new instance of the class from previous versions of the model state.
         (The state can be obtained by applying get_state() to a model.)
@@ -444,9 +439,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
         state : str
             The internal state of a model (actions, strategy, etc.) of the same type.
             The state is expected to be in the old format of PyBandits below the current supported version (cls.current_supported_version_th).
-        delta : Optional[PositiveProbability]
-            The delta value to be set in the actions_manager. If None, it will not be set.
-            This is relevant only for adaptive window models.
 
         Returns
         -------
@@ -461,7 +453,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             raise ValueError(
                 f"The state is expected to be in the old format of PyBandits < {cls._current_supported_version_th}."
             )
-        state_dict = cls.update_old_state(state_dict, delta)
+        state_dict = cls.update_old_state(state_dict)
         state = json.dumps(state_dict)
         return cls.from_state(state)
 

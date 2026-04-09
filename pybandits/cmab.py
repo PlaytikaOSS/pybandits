@@ -38,7 +38,6 @@ from pybandits.base import (
     BinaryReward,
     CmabPredictions,
     MOProbabilityWeight,
-    PositiveProbability,
     ProbabilityWeight,
     Serializable,
 )
@@ -197,22 +196,16 @@ class BaseCmabBernoulli(BaseMab, ABC):
         )
 
     @classmethod
-    def update_old_state(
-        cls, state: Dict[str, Serializable], delta: Optional[PositiveProbability]
-    ) -> Dict[str, Serializable]:
+    def update_old_state(cls, state: Dict[str, Serializable]) -> Dict[str, Serializable]:
         """
         Update the model state to the current version.
-        Besides the updates in the MAB class, it also loads legacy Bayesian Logistic Regression model parameters
-         into the new Bayesian Neural Network model.
+        Besides the updates in the MAB class, it also adapts internal Bayesian Neural Network models.
 
         Parameters
         ----------
         state : Dict[str, Serializable]
             The internal state of a model (actions, strategy, etc.) of the same type.
             The state is expected to be in the old format of PyBandits below the current supported version.
-        delta : Optional[PositiveProbability]
-            The delta value to be set in the actions_manager. If None, it will not be set.
-            This is relevant only for adaptive window models.
 
         Returns
         -------
@@ -220,7 +213,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
             The updated state of the model.
             The state is in the current format of PyBandits, with actions_manager and delta added if needed.
         """
-        state = super().update_old_state(state, delta)
+        state = super().update_old_state(state)
 
         # Migrate update_kwargs from old PyMC format to new NumPyro format
         for action_id, action_state in state["actions_manager"]["actions"].items():

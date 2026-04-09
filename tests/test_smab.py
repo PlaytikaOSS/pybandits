@@ -52,7 +52,7 @@ from pybandits.strategy import (
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
-from tests.utils import pop_from_state, push_to_state, sample_with_replacement, to_temporary_pickle
+from tests.utils import sample_with_replacement, to_temporary_pickle
 
 
 @st.composite
@@ -546,16 +546,6 @@ def test_serialization(
 
     # Test serialization
     restored_smab_state = config.smab_class.from_state(post_update_state[1]).get_state()
-    assert restored_smab_state == post_update_state
-
-    # Test serialization from old state
-    old_post_update_state = post_update_state[1]
-    old_post_update_state = push_to_state(
-        old_post_update_state, "actions", pop_from_state(old_post_update_state, "actions_manager")[0]["actions"]
-    )
-    old_post_update_state = pop_from_state(old_post_update_state, "version")[1]
-
-    restored_smab_state = config.smab_class.from_old_state(old_post_update_state, delta=delta).get_state()
     assert restored_smab_state == post_update_state
 
 
