@@ -133,7 +133,7 @@
     "blr = BayesianLogisticRegression.cold_start(\n",
     "    n_features=2,\n",
     "    update_method=\"VI\",\n",
-    "    update_kwargs={\"num_steps\": 10000, \"batch_size\": 256, \"optimizer_type\": \"adam\"},\n",
+    "    update_kwargs={\"num_steps\": 4000, \"batch_size\": 256, \"optimizer_type\": \"adam\"},\n",
     ")\n",
     "blr.update(context=x_train, rewards=y_train)"
    ]
@@ -302,7 +302,7 @@
     "    update_method=\"VI\",\n",
     "    dist_type=\"studentt\",\n",
     "    dist_params_init=dist_params,\n",
-    "    update_kwargs={\"num_steps\": 10000, \"batch_size\": 64, \"optimizer_type\": \"adam\"},\n",
+    "    update_kwargs={\"num_steps\": 4000, \"batch_size\": 64, \"optimizer_type\": \"adam\"},\n",
     ")"
    ]
   },
@@ -456,7 +456,7 @@
     "    update_method=\"VI\",\n",
     "    dist_type=\"normal\",\n",
     "    dist_params_init={\"mu\": 0, \"sigma\": 1},\n",
-    "    update_kwargs={\"num_steps\": 10000, \"batch_size\": 256, \"optimizer_type\": \"adam\"},\n",
+    "    update_kwargs={\"num_steps\": 4000, \"batch_size\": 256, \"optimizer_type\": \"adam\"},\n",
     ")\n",
     "bnn_normal.update(context=x_train, rewards=y_train)\n",
     "\n",
@@ -596,7 +596,7 @@
     "    update_method=\"VI\",\n",
     "    dist_type=\"studentt\",\n",
     "    dist_params_init={\"mu\": 0, \"sigma\": 1, \"nu\": 5},\n",
-    "    update_kwargs={\"num_steps\": 10000, \"optimizer_type\": \"adam\"},\n",
+    "    update_kwargs={\"num_steps\": 4000, \"optimizer_type\": \"adam\"},\n",
     ")\n",
     "bnn_emb.update(context=ctx_train, rewards=y_train)"
    ]

@@ -52,7 +52,7 @@
    "outputs": [],
    "source": [
     "# general simulator parameters\n",
-    "n_updates = 10\n",
+    "n_updates = 5\n",
     "batch_size = 100\n",
     "random_seed = None\n",
     "verbose = True\n",
@@ -117,7 +117,7 @@
     "\n",
     "\n",
     "update_method = \"VI\"\n",
-    "update_kwargs = {\"num_steps\": 100, \"batch_size\": 128, \"optimizer_type\": \"adam\"}\n",
+    "update_kwargs = {\"num_steps\": 10, \"batch_size\": 32, \"optimizer_type\": \"adam\"}\n",
     "blr_kwargs = dict(\n",
     "    n_features=n_features, bias_mu=1, bias_sigma=2, update_method=update_method, update_kwargs=update_kwargs\n",
     ")\n",
