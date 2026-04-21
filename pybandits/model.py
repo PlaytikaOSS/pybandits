@@ -1951,7 +1951,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (std)
         site_mu = {k.removesuffix("_auto_loc"): v for k, v in params.items() if k.endswith("_auto_loc")}
-        site_sigma = {k.removesuffix("_auto_scale"): v for k, v in params.items() if k.endswith("_auto_scale")}
+        site_sigma = {
+            k.removesuffix("_auto_scale"): jax.nn.softplus(v) for k, v in params.items() if k.endswith("_auto_scale")
+        }
         return site_mu, site_sigma
 
     def _extract_fullrank_advi_params(self, guide, params: dict) -> tuple:
