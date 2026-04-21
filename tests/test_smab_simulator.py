@@ -38,7 +38,7 @@ import pybandits.utils
 from pybandits.actions_manager import SmabModelType
 from pybandits.base_model import BaseModel
 from pybandits.model import Beta
-from pybandits.quantitative_model import QuantitativeModel, SmabZoomingModel
+from pybandits.quantitative_model import QuantitativeModel, Zooming
 from pybandits.smab import SmabBernoulli
 from pybandits.smab_simulator import SmabSimulator
 from tests.utils import sample_with_replacement, to_unified_action_id
@@ -196,7 +196,7 @@ def mock_predict(self, n_samples, *args, **kwargs):
 @settings(deadline=None)
 @given(
     action_ids=st.just(["a1", "a2"]),
-    models=st.lists(st.sampled_from([Beta(), SmabZoomingModel.cold_start()]), min_size=2, max_size=2),
+    models=st.lists(st.sampled_from([Beta(), Zooming.cold_start()]), min_size=2, max_size=2),
 )
 def test_smab_e2e_simulation_with_default_args(
     action_ids: List[str], models: List[BaseModel], monkeymodule: pytest.MonkeyPatch
@@ -237,7 +237,7 @@ def test_smab_e2e_simulation_with_default_args(
 @settings(deadline=None)
 @given(
     action_ids=st.just(["a1", "a2"]),
-    models=st.lists(st.sampled_from([Beta(), SmabZoomingModel.cold_start()]), min_size=2, max_size=2),
+    models=st.lists(st.sampled_from([Beta(), Zooming.cold_start()]), min_size=2, max_size=2),
     n_updates=st.integers(min_value=1, max_value=3),
     batch_size=st.integers(min_value=1, max_value=3),
     save=st.booleans(),

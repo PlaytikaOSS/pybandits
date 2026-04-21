@@ -37,7 +37,7 @@ import pybandits.strategy
 import pybandits.utils
 from pybandits.cmab import CmabBernoulli
 from pybandits.cmab_simulator import CmabSimulator
-from pybandits.model import BayesianLogisticRegression
+from pybandits.model import BayesianNeuralNetwork
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork
 from tests.utils import apply_mock_update, sample_with_replacement, to_unified_action_id
 
@@ -200,7 +200,7 @@ def test_cmab_simulator_with_explicit_probs_reward(
     models=st.lists(
         st.sampled_from(
             [
-                BayesianLogisticRegression.cold_start(n_features=2, update_method="VI"),
+                BayesianNeuralNetwork.cold_start(n_features=2, update_method="VI"),
                 QuantitativeBayesianNeuralNetwork.cold_start(
                     n_features=2, base_model_cold_start_kwargs={"update_method": "VI"}
                 ),
@@ -264,7 +264,7 @@ def mock_mab_update(self, actions, rewards, quantities=None, **kwargs):
     st.lists(
         st.sampled_from(
             [
-                BayesianLogisticRegression.cold_start(n_features=2, update_method="VI"),
+                BayesianNeuralNetwork.cold_start(n_features=2, update_method="VI"),
                 QuantitativeBayesianNeuralNetwork.cold_start(
                     n_features=2, base_model_cold_start_kwargs={"update_method": "VI"}
                 ),
@@ -319,7 +319,7 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, mo
     models=st.lists(
         st.sampled_from(
             [
-                BayesianLogisticRegression.cold_start(n_features=3, update_method="VI"),
+                BayesianNeuralNetwork.cold_start(n_features=3, update_method="VI"),
                 QuantitativeBayesianNeuralNetwork.cold_start(
                     n_features=3, base_model_cold_start_kwargs={"update_method": "VI"}
                 ),
