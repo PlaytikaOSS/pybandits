@@ -118,7 +118,7 @@
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.quantitative_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">SmabZoomingModel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.quantitative_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">Zooming</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.smab</span><span class="w"> </span><span class="kn">import</span> <span class="n">SmabBernoulli</span>
 </pre></div>
 </div>
@@ -143,7 +143,7 @@
 <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 
 <span class="c1"># Define actions with zooming models</span>
-<span class="n">actions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;action_1&quot;</span><span class="p">:</span> <span class="n">SmabZoomingModel</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="s2">&quot;action_2&quot;</span><span class="p">:</span> <span class="n">SmabZoomingModel</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">1</span><span class="p">)}</span>
+<span class="n">actions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;action_1&quot;</span><span class="p">:</span> <span class="n">Zooming</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="s2">&quot;action_2&quot;</span><span class="p">:</span> <span class="n">Zooming</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">1</span><span class="p">)}</span>
 </pre></div>
 </div>
 </div>

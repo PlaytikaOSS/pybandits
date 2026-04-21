@@ -28,7 +28,7 @@
     "import matplotlib.pyplot as plt\n",
     "import numpy as np\n",
     "\n",
-    "from pybandits.quantitative_model import SmabZoomingModel\n",
+    "from pybandits.quantitative_model import Zooming\n",
     "from pybandits.smab import SmabBernoulli"
    ]
   },
@@ -51,7 +51,7 @@
     "np.random.seed(42)\n",
     "\n",
     "# Define actions with zooming models\n",
-    "actions = {\"action_1\": SmabZoomingModel.cold_start(dimension=1), \"action_2\": SmabZoomingModel.cold_start(dimension=1)}"
+    "actions = {\"action_1\": Zooming.cold_start(dimension=1), \"action_2\": Zooming.cold_start(dimension=1)}"
    ]
   },
   {

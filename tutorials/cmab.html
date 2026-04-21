@@ -107,7 +107,7 @@
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabBernoulli</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianLogisticRegression</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">FeaturesConfig</span><span class="p">,</span> <span class="n">StudentTArray</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">BayesianNeuralNetwork</span><span class="p">,</span> <span class="n">BnnLayerParams</span><span class="p">,</span> <span class="n">BnnParams</span><span class="p">,</span> <span class="n">FeaturesConfig</span><span class="p">,</span> <span class="n">StudentTArray</span>
 </pre></div>
 </div>
 </div>
@@ -147,16 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.34893695  0.19688423  0.91186718 -0.06005952  0.00401736]
- [ 0.99976898 -0.31903798 -0.53716279 -0.60025315  0.33776753]
- [-0.43632653  0.23500865 -0.33669263  0.40982046  0.08591975]
- [ 0.53461827 -0.47902015 -0.35288617 -0.0199405  -0.35625943]
- [ 0.44022825 -0.61584435  0.26902483 -0.72442012 -0.81711553]
- [ 0.3551328   0.54307667 -0.11291123  0.48187203  0.62740013]
- [-0.84701573  0.10031094  0.51946317 -0.53188947  0.65233626]
- [ 0.9534233  -0.90340091 -0.45135071  0.12761641  0.47940979]
- [-0.60732955 -0.95589278 -0.67009613 -0.49869096 -0.32123924]
- [-0.89528708 -0.2652834   0.63693658 -0.69452743 -0.7099346 ]]
+[[-0.84902284  0.73533697  0.11449077  0.27326443 -0.85327431]
+ [-0.68876913  0.507391   -0.26447278  0.33487447 -0.60533834]
+ [-0.45558024  0.72171067 -0.76540726  0.81322327  0.64394703]
+ [ 0.40792383  0.44783707 -0.67687233  0.35037202 -0.05752822]
+ [ 0.78812978  0.33303642 -0.91643312 -0.34801155 -0.88680455]
+ [ 0.49107852 -0.71513548  0.24090308  0.17019137 -0.31519956]
+ [-0.48444562  0.84287714  0.11720863  0.15438249 -0.63520841]
+ [-0.97482046 -0.29286474 -0.76114254 -0.19698918 -0.16855604]
+ [-0.98761174 -0.92192165  0.93769083  0.53491842 -0.34187264]
+ [-0.06489629  0.07786136 -0.26758214 -0.40542587  0.26388793]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -174,13 +174,13 @@ X: context matrix of shape (n_samples, n_features)
 <span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
 
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
+    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianNeuralNetwork</span><span class="p">(</span>
         <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span>
         <span class="n">feature_config</span><span class="o">=</span><span class="n">feature_config</span><span class="p">,</span>
         <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span>
         <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
     <span class="p">),</span>
-    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianLogisticRegression</span><span class="p">(</span>
+    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianNeuralNetwork</span><span class="p">(</span>
         <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span>
         <span class="n">feature_config</span><span class="o">=</span><span class="n">feature_config</span><span class="p">,</span>
         <span class="n">update_method</span><span class="o">=</span><span class="n">update_method</span><span class="p">,</span>
@@ -216,7 +216,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -235,7 +235,7 @@ Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 0, 0, 1, 1, 1, 0, 1, 1, 1]
+Simulated rewards: [1, 0, 0, 0, 0, 1, 0, 1, 0, 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>

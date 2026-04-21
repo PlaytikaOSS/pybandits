@@ -35,7 +35,6 @@
     "from sklearn.preprocessing import scale\n",
     "\n",
     "from pybandits.model import (\n",
-    "    BayesianLogisticRegression,\n",
     "    BayesianNeuralNetwork,\n",
     "    CategoricalFeatureConfig,\n",
     "    FeaturesConfig,\n",
@@ -118,7 +117,7 @@
    "id": "8",
    "metadata": {},
    "source": [
-    "Using `BayesianLogisticRegression.cold_start` we create a probabilistic linear classifier with Student-T weight priors (default: mu=0, sigma=10, nu=5).\n",
+    "Using `BayesianNeuralNetwork.cold_start` we create a probabilistic linear classifier with Student-T weight priors (default: mu=0, sigma=10, nu=5).\n",
     "\n",
     "We fit it with Variational Inference using Adam and minibatches of 256."
    ]
@@ -130,7 +129,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "blr = BayesianLogisticRegression.cold_start(\n",
+    "blr = BayesianNeuralNetwork.cold_start(\n",
     "    n_features=2,\n",
     "    update_method=\"VI\",\n",
     "    update_kwargs={\"num_steps\": 4000, \"batch_size\": 256, \"optimizer_type\": \"adam\"},\n",
