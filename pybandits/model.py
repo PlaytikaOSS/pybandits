@@ -1102,6 +1102,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "num_particles",
         "gradient_clip_norm",
         "kl_tau",
+        "kl_annealing_fraction",
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
@@ -1182,6 +1183,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         num_particles=1,
         gradient_clip_norm=None,
         kl_tau=None,
+        kl_annealing_fraction=None,
     )
 
     _default_mcmc_kwargs: ClassVar[dict] = dict(
@@ -1457,6 +1459,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
             self.update_kwargs = {**self._default_vi_kwargs, **self.update_kwargs}
 
+            kl_annealing_fraction = self.update_kwargs.get("kl_annealing_fraction")
+            if kl_annealing_fraction is not None and not (0.0 <= kl_annealing_fraction <= 1.0):
+                raise ValueError(f"kl_annealing_fraction must be in [0, 1] or None, got {kl_annealing_fraction}")
+
             # Validate VI method
             vi_method = self.update_kwargs.get("method")
             if vi_method not in self._vi_method_config:
@@ -1521,18 +1527,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.__dict__.update(state)
         self._init_private_attrs()
 
-    def _kl_scale_ctx(self, n_samples: PositiveInt):
-        """Return a context manager that scales sample-site log-probs for KL temperature.
+    def _kl_scale_ctx(self, n_samples: PositiveInt, kl_annealing_factor=1.0):
+        """Return a context manager that scales sample-site log-probs for KL.
 
-        When kl_tau is set in update_kwargs, this returns a
-        numpyro.handlers.scale context manager with factor
-        beta = kl_tau * n_samples / n_neurons, where *n_neurons* is the
-        total number of hidden units across all layers except the output layer.
-        Wrapping both the model prior and the guide with this handler scales the
-        full KL divergence term in the ELBO by *beta*.
+        The effective scale is ``kl_base_factor * kl_annealing_factor`` where
+        ``kl_base_factor = kl_tau * n_samples / n_neurons`` if ``kl_tau`` is set,
+        else ``1.0``. Wrapping both the model prior and the guide with this
+        handler multiplies the full KL term in the ELBO by that product.
 
-        When kl_tau is None (the default), returns a plain
-        contextlib.nullcontext (no-op).
+        When neither ``kl_tau`` nor ``kl_annealing_fraction`` is active, returns
+        ``contextlib.nullcontext`` (no-op).
 
         References
         ----------
@@ -1542,19 +1546,31 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Parameters
         ----------
         n_samples : PositiveInt
-            Number of data points in the current batch. Used to
-            compute the data-dependent part of the scale factor.
+            Number of data points in the current batch.
+        kl_annealing_factor : float or jax scalar, optional
+            Multiplicative factor in [0, 1]. Default 1.0 (no annealing).
+            May be a traced JAX scalar inside lax.scan - do not coerce to float.
 
         Returns
         -------
         contextlib.AbstractContextManager
-            Either numpyro.handlers.scale(scale=beta) or nullcontext().
+            Either numpyro.handlers.scale(scale=kl_base_factor * kl_annealing_factor) or nullcontext().
         """
         kl_tau = self._update_kwargs.get("kl_tau")
-        if kl_tau is not None:
+        kl_annealing_fraction = self._update_kwargs.get("kl_annealing_fraction")
+        kl_tau_active = kl_tau is not None
+        kl_annealing_active = kl_annealing_fraction not in (None, 0.0)
+
+        if not kl_tau_active and not kl_annealing_active:
+            return nullcontext()
+
+        if kl_tau_active:
             n_neurons = max(sum(lp.weight.shape[1] for lp in self.model_params.bnn_layer_params[:-1]), 1)
-            return numpyro.handlers.scale(scale=kl_tau * n_samples / n_neurons)
-        return nullcontext()
+            kl_base_factor = kl_tau * n_samples / n_neurons
+        else:
+            kl_base_factor = 1.0
+
+        return numpyro.handlers.scale(scale=kl_base_factor * kl_annealing_factor)
 
     def _create_update_model(self) -> Callable:
         """
@@ -1591,12 +1607,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
 
-        def model(x: jax.Array, y: jax.Array):
+        def model(x: jax.Array, y: jax.Array, kl_annealing_factor=1.0):
             n_samples = x.shape[0]
 
             # Sample all weights (global parameters, outside plate)
             weights_biases = []
-            with kl_scale(n_samples):
+            with kl_scale(n_samples, kl_annealing_factor):
                 for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                     weight_name, bias_name = self.get_layer_params_name(layer_ind)
                     w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
@@ -1606,7 +1622,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # Sample embedding matrices (global parameters, outside plate)
             embedding_matrices = []
             if has_embeddings:
-                with kl_scale(n_samples):
+                with kl_scale(n_samples, kl_annealing_factor):
                     for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
                         emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
                         embedding_matrices.append(emb)
@@ -1985,20 +2001,26 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             if not epoch_steps_list:
                 epoch_steps_list = [1]
 
+        total_steps = sum(epoch_steps_list)
+        kl_annealing_fraction = self._update_kwargs.get("kl_annealing_fraction")
+        kl_annealing_active = kl_annealing_fraction not in (None, 0.0)
+        kl_warmup_steps = max(1, int(np.ceil(kl_annealing_fraction * total_steps))) if kl_annealing_active else None
+
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
         raw_guide = method_config["guide"](_model, init_loc_fn=init_to_median)
 
-        # When kl_tau is active, wrap the guide with the same scale handler so
+        # When kl_tau or KL annealing is active, wrap the guide with the same scale handler so
         # both log p(z) and log q(z) are scaled equally → the KL term as a
-        # whole is multiplied by beta = tau * N / n_neurons.
-        if self._update_kwargs.get("kl_tau") is not None:
+        # whole is multiplied by kl_base_factor * kl_annealing_factor.
+        kl_tau_active = self._update_kwargs.get("kl_tau") is not None
+        if kl_tau_active or kl_annealing_active:
             kl_scale = self._kl_scale_ctx
 
-            def guide(x, y, *args, **kwargs):
-                with kl_scale(x.shape[0]):
-                    return raw_guide(x, y, *args, **kwargs)
+            def guide(x, y, kl_annealing_factor, *args, **kwargs):
+                with kl_scale(x.shape[0], kl_annealing_factor):
+                    return raw_guide(x, y, kl_annealing_factor, *args, **kwargs)
         else:
             guide = raw_guide
 
@@ -2012,22 +2034,46 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # a fixed step count regardless of batch size or FP precision.
         # lax.scan compiles the loop body once and runs it entirely in XLA.
         self._rng_key, subkey = jax.random.split(self._rng_key)
-        svi_state = svi.init(subkey, x_jnp, y_jnp)
+        svi_state = svi.init(subkey, x_jnp, y_jnp, 1.0)
+        if kl_annealing_active:
+            kl_warmup_f = jnp.float32(kl_warmup_steps)
 
-        def _svi_body(state, _):
-            state, loss = svi.update(state, x_jnp, y_jnp)
-            return state, loss
+            def _svi_body(state, step):  # step is a traced int32 scalar (global index)
+                kl_annealing_factor = jnp.minimum(1.0, (step.astype(jnp.float32) + 1.0) / kl_warmup_f)
+                state, loss = svi.update(state, x_jnp, y_jnp, kl_annealing_factor)
+                return state, loss
 
-        _run_epoch = jax.jit(
-            lambda state, n: jax.lax.scan(_svi_body, state, None, length=n),
-            static_argnums=(1,),
-        )
+            _run_epoch = jax.jit(
+                lambda state, steps: jax.lax.scan(_svi_body, state, steps),
+            )  # steps is a 1-D int32 array; scan feeds each element as xs to _svi_body
+        else:
+
+            def _svi_body(state, _):
+                # kl_annealing_factor = 1.0 is safe: _kl_scale_ctx returns nullcontext
+                # if kl_tau is also None; otherwise kl_base_factor * 1.0 == kl_base_factor.
+                state, loss = svi.update(state, x_jnp, y_jnp, 1.0)
+                return state, loss
+
+            _run_epoch = jax.jit(
+                lambda state, n: jax.lax.scan(_svi_body, state, None, length=n),
+                static_argnums=(1,),
+            )
 
         all_losses = []
         pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
+        global_step_offset = 0
         for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
-            svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
+            if kl_annealing_active:
+                steps_arr = jnp.arange(
+                    global_step_offset,
+                    global_step_offset + epoch_steps,
+                    dtype=jnp.int32,
+                )
+                svi_state, epoch_losses = _run_epoch(svi_state, steps_arr)
+            else:
+                svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
+            global_step_offset += epoch_steps
 
             epoch_np = np.array(epoch_losses)
             epoch_end_loss = float(epoch_np[-1])

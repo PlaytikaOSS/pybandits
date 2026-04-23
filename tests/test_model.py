@@ -843,6 +843,10 @@ def test_lr_scheduler_invalid_type_or_kwargs(
     num_particles=st.sampled_from((1, 3)),
     gradient_clip_norm=st.one_of(st.none(), st.floats(min_value=0.1, max_value=10.0)),
     kl_tau=st.one_of(st.none(), st.floats(min_value=0.01, max_value=1.0)),
+    kl_annealing_fraction=st.one_of(
+        st.none(),
+        st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+    ),
     lr_scheduler_type=st.sampled_from((None, "exponential_decay")),
     num_steps=st.just(4),
     n_features=st.just(2),
@@ -856,6 +860,7 @@ def test_vi_training_options(
     num_particles: int,
     gradient_clip_norm: Optional[float],
     kl_tau: Optional[float],
+    kl_annealing_fraction: Optional[float],
     lr_scheduler_type: Optional[str],
     num_steps: int,
     n_features: int,
@@ -864,7 +869,7 @@ def test_vi_training_options(
     decay_rate: float,
     transition_steps_factor: int,
 ) -> None:
-    """Test that VI training options (num_particles, gradient_clip_norm, kl_tau, lr_scheduler) compose correctly."""
+    """Test that VI training options (num_particles, gradient_clip_norm, kl_tau, kl_annealing_fraction, lr_scheduler) compose correctly."""
     update_kwargs: dict = {
         "num_steps": num_steps,
         "optimizer_type": optimizer_type,
@@ -874,6 +879,8 @@ def test_vi_training_options(
         update_kwargs["gradient_clip_norm"] = gradient_clip_norm
     if kl_tau is not None:
         update_kwargs["kl_tau"] = kl_tau
+    if kl_annealing_fraction is not None:
+        update_kwargs["kl_annealing_fraction"] = kl_annealing_fraction
     if lr_scheduler_type is not None:
         update_kwargs["lr_scheduler_type"] = lr_scheduler_type
         update_kwargs["lr_scheduler_kwargs"] = {
@@ -1805,3 +1812,83 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
     # Reset should restore initial embeddings
     bnn._reset()
     assert bnn.model_params.embedding_params.embeddings[0].mu == init_mu
+
+
+# ---------------------------------------------------------------------------
+# KL annealing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_value", [-0.1, 1.5, 2.0, -1.0])
+def test_kl_annealing_fraction_range_validation(bad_value: float):
+    """Out-of-range kl_annealing_fraction raises ValueError at construction time."""
+    with pytest.raises(ValueError, match="kl_annealing_fraction"):
+        BayesianNeuralNetwork.cold_start(
+            n_features=2,
+            update_kwargs={"kl_annealing_fraction": bad_value},
+        )
+
+
+def test_kl_annealing_none_and_zero_equivalent():
+    """kl_annealing_fraction=None and =0.0 produce identical approx_history (both inactive)."""
+    np.random.seed(42)
+    context = np.random.rand(10, 2).astype(np.float32)
+    rewards = [1, 0, 1, 1, 0, 0, 1, 0, 1, 1]
+
+    bnn_none = BayesianNeuralNetwork.cold_start(
+        n_features=2,
+        update_kwargs={"num_steps": 6, "kl_annealing_fraction": None},
+        random_seed=7,
+    )
+    bnn_zero = BayesianNeuralNetwork.cold_start(
+        n_features=2,
+        update_kwargs={"num_steps": 6, "kl_annealing_fraction": 0.0},
+        random_seed=7,
+    )
+
+    bnn_none.update(context=context, rewards=rewards)
+    bnn_zero.update(context=context, rewards=rewards)
+
+    np.testing.assert_array_equal(bnn_none._approx_history, bnn_zero._approx_history)
+
+
+def test_kl_annealing_interacts_with_kl_tau():
+    """kl_tau alone vs kl_tau + annealing produce distinct early-step loss trajectories."""
+    np.random.seed(0)
+    context = np.random.rand(20, 2).astype(np.float32)
+    rewards = [1, 0] * 10
+
+    bnn_tau_only = BayesianNeuralNetwork.cold_start(
+        n_features=2,
+        update_kwargs={"num_steps": 10, "kl_tau": 1.0},
+        random_seed=99,
+    )
+    bnn_tau_anneal = BayesianNeuralNetwork.cold_start(
+        n_features=2,
+        update_kwargs={"num_steps": 10, "kl_tau": 1.0, "kl_annealing_fraction": 0.5},
+        random_seed=99,
+    )
+
+    bnn_tau_only.update(context=context, rewards=rewards)
+    bnn_tau_anneal.update(context=context, rewards=rewards)
+
+    # Both should complete without error and produce valid histories
+    assert bnn_tau_only._approx_history is not None
+    assert bnn_tau_anneal._approx_history is not None
+    # The KL weighting differs during warmup, so losses should diverge
+    assert not np.allclose(bnn_tau_only._approx_history, bnn_tau_anneal._approx_history)
+
+
+def test_kl_annealing_fraction_serialization_round_trip():
+    """kl_annealing_fraction survives a model_dump / reconstruction round-trip."""
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=2,
+        update_kwargs={"num_steps": 4, "kl_annealing_fraction": 0.3},
+    )
+    dumped = bnn.apply_version_adjusted_method("model_dump", "dict")
+    # The value must be preserved in the serialised update_kwargs
+    assert dumped["update_kwargs"]["kl_annealing_fraction"] == 0.3
+
+    # Reconstruct from the dump and verify the field is still present
+    bnn2 = BayesianNeuralNetwork(**dumped)
+    assert bnn2._update_kwargs["kl_annealing_fraction"] == 0.3
