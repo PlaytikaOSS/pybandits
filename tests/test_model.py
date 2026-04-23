@@ -95,9 +95,9 @@ def test_beta_get_stats_is_working(e: Beta):
     assert e.count >= 2, "Count too low"
 
 
-def test_beta_sample_proba(n_samples=100):
+def test_beta_sample_proba(rng, n_samples=100):
     b = Beta(n_successes=1, n_failures=2)
-    prob = b.sample_proba(n_samples=n_samples)
+    prob = b.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob) == n_samples
     assert all([p >= 0 and p <= 1 for p in prob])
 
@@ -145,9 +145,9 @@ def test_can_init_base_beta_mo():
         BetaMO(models=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
-def test_calculate_proba_beta_mo(n_samples=100):
+def test_calculate_proba_beta_mo(rng, n_samples=100):
     b = BetaMO(models=[Beta(), Beta()])
-    b.sample_proba(n_samples=n_samples)
+    b.sample_proba(n_samples=n_samples, rng=rng)
 
 
 @given(
@@ -400,10 +400,10 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
 def test_bnn_sample_proba(
-    activation, use_residual_connections, use_layerwise_scaling, dist_type, n_samples, n_features, hidden_dim_list
+    rng, activation, use_residual_connections, use_layerwise_scaling, dist_type, n_samples, n_features, hidden_dim_list
 ):
     def sample_proba(context):
-        prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
+        prob_and_weighted_sum = bnn.sample_proba(context=np.array(context), rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
@@ -431,7 +431,7 @@ def test_bnn_sample_proba(
     # check that the model is working with multi-sample prediction
     context = np.repeat(np.random.uniform(low=-1.0, high=1.0, size=(1, n_features)), n_samples, axis=0)
     assert type(context) is np.ndarray
-    prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
+    prob_and_weighted_sum = bnn.sample_proba(context=np.array(context), rng=rng)
     prob, weighted_sum = zip(*prob_and_weighted_sum)
     is_all_different = len(np.unique(weighted_sum)) == len(weighted_sum)
     assert is_all_different
@@ -491,13 +491,17 @@ def test_bnn_vi_update(
 
         # mu and sigma are updated:
         for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
             for param in ["mu", "sigma"]:
-                assert np.all(layer_w[param] != layer_w_init[param])
-                assert np.all(layer_b[param] != layer_b_init[param])
+                assert np.all(layer_w.params[param] != layer_w_init.params[param])
+                assert np.all(layer_b.params[param] != layer_b_init.params[param])
+
+            for param in expected_array.model_fields.keys():
+                assert layer_w.params[param].tolist() == getattr(layer_w, param)
+                assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
         # Verify distribution type is preserved after update
         for layer_ind in range(len(dim_list)):
@@ -812,13 +816,17 @@ def test_bnn_mcmc_update(
         bnn.update(context=context, rewards=rewards)
 
         for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
             for param in ["mu", "sigma"]:
-                assert np.all(layer_w[param] != layer_w_init[param])
-                assert np.all(layer_b[param] != layer_b_init[param])
+                assert np.all(layer_w.params[param] != layer_w_init.params[param])
+                assert np.all(layer_b.params[param] != layer_b_init.params[param])
+
+            for param in ["mu", "sigma", "nu"]:
+                assert layer_w.params[param].tolist() == getattr(layer_w, param)
+                assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -859,13 +867,17 @@ def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5,
         bnn.update(context=context, rewards=rewards)
 
         for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
             for param in ["mu", "sigma"]:
-                assert np.all(layer_w[param] != layer_w_init[param])
-                assert np.all(layer_b[param] != layer_b_init[param])
+                assert np.all(layer_w.params[param] != layer_w_init.params[param])
+                assert np.all(layer_b.params[param] != layer_b_init.params[param])
+
+            for param in ["mu", "sigma", "nu"]:
+                assert layer_w.params[param].tolist() == getattr(layer_w, param)
+                assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -1040,7 +1052,7 @@ def test_can_init_bayesian_neural_network_cc(
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
 def test_create_default_instance_bayesian_neural_network_cc(
-    activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
+    rng, activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
 ):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
@@ -1079,7 +1091,7 @@ def test_create_default_instance_bayesian_neural_network_cc(
 
         # Test sample_proba works
         context = np.random.uniform(low=-1.0, high=1.0, size=(5, n_features))
-        prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context)
+        prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context, rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == 5
         assert all([0 <= p <= 1 for p in prob])
@@ -1158,7 +1170,14 @@ def test_can_init_bayesian_neural_network_mo(n_features, hidden_dim_list, n_obje
     n_objectives=st.integers(min_value=1, max_value=3),
 )
 def test_bayesian_neural_network_mo_sample_proba(
-    activation, use_residual_connections, use_layerwise_scaling, n_samples, n_features, hidden_dim_list, n_objectives
+    rng,
+    activation,
+    use_residual_connections,
+    use_layerwise_scaling,
+    n_samples,
+    n_features,
+    hidden_dim_list,
+    n_objectives,
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
@@ -1177,7 +1196,7 @@ def test_bayesian_neural_network_mo_sample_proba(
         assert model.use_residual_connections == use_residual_connections
 
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    prob_weights = bnn_mo.sample_proba(context=context)
+    prob_weights = bnn_mo.sample_proba(context=context, rng=rng)
 
     assert len(prob_weights) == n_samples
 
@@ -1532,14 +1551,14 @@ def test_prepare_context_arrays_splits_correctly(n_samples, n_features, cardinal
     n_features=st.integers(min_value=2, max_value=4),
     cardinality=st.integers(min_value=2, max_value=6),
 )
-def test_sample_proba_with_feature_config(dist_type, n_samples, n_features, cardinality):
+def test_sample_proba_with_feature_config(rng, dist_type, n_samples, n_features, cardinality):
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
     bnn = _make_bnn_with_categoricals(
         n_features=n_features, categorical_features=categorical_features, dist_type=dist_type
     )
     context = _make_categorical_context(n_samples, n_features, categorical_features)
-    results = bnn.sample_proba(context=context)
+    results = bnn.sample_proba(context=context, rng=rng)
 
     assert len(results) == n_samples
     for prob, ws in results:
@@ -1669,7 +1688,7 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
     [("VI", {"num_steps": 2}), ("MCMC", {"num_warmup": 2, "num_samples": 2})],
 )
 def test_bnn_sample_proba_and_update_both_use_forward_layers(
-    update_method: str, update_kwargs: dict, n_features: int = 1, n_samples: int = 1, ref: int = 1
+    rng, update_method: str, update_kwargs: dict, n_features: int = 1, n_samples: int = 1, ref: int = 1
 ) -> None:
     """Verify that both sample_proba and update call _forward_layers."""
     bnn = BayesianNeuralNetwork.cold_start(
@@ -1691,7 +1710,7 @@ def test_bnn_sample_proba_and_update_both_use_forward_layers(
     # Check sample_proba calls _forward_layers
     call_count = 0
     with patch.object(BaseBayesianNeuralNetwork, "_forward_layers", tracking_forward_layers):
-        bnn.sample_proba(context=context)
+        bnn.sample_proba(context=context, rng=rng)
     assert call_count == ref, "sample_proba must call _forward_layers"
 
     # Check update calls _forward_layers

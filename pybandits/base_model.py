@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, ClassVar, List, Tuple, Union
 
 import numpy as np
+from numpy.random import Generator
 
 from pybandits.base import (
     BinaryReward,
@@ -55,7 +56,7 @@ class BaseModel(PyBanditsBaseModel, ABC):
 
     @abstractmethod
     def sample_proba(
-        self, **kwargs
+        self, rng: Generator, **kwargs
     ) -> Union[
         List[Probability],
         List[MOProbability],
@@ -66,6 +67,11 @@ class BaseModel(PyBanditsBaseModel, ABC):
     ]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
         """
 
     @abstractmethod
@@ -136,12 +142,17 @@ class BaseModelSO(BaseModel, ABC):
 
     @abstractmethod
     def sample_proba(
-        self, **kwargs
+        self, rng: Generator, **kwargs
     ) -> Union[
         List[Probability], List[ProbabilityWeight], List[QuantitativeProbability], List[QuantitativeProbabilityWeight]
     ]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
         """
 
     @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
@@ -215,11 +226,16 @@ class BaseModelMO(BaseModel, ABC):
     else:
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    def sample_proba(self, **kwargs) -> Union[List[MOProbability], List[QuantitativeMOProbability]]:
+    def sample_proba(self, rng: Generator, **kwargs) -> Union[List[MOProbability], List[QuantitativeMOProbability]]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
         """
-        return [list(p) for p in zip(*[model.sample_proba(**kwargs) for model in self.models])]
+        return [list(p) for p in zip(*[model.sample_proba(rng=rng, **kwargs) for model in self.models])]
 
     @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
     def update(self, rewards: List[List[BinaryReward]], **kwargs):

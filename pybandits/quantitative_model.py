@@ -76,9 +76,16 @@ class QuantitativeModel(BaseModelSO, ABC):
     _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("dimension",)
 
     @abstractmethod
-    def sample_proba(self, **kwargs) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
+    def sample_proba(
+        self, rng: np.random.Generator, **kwargs
+    ) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
         """
         Sample the model.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
 
         Returns
         -------
@@ -500,7 +507,7 @@ class BaseZooming(QuantitativeModel, ABC):
 
         Returns
         -------
-        Zooming
+        BaseZooming
             Cold start model.
         """
         sub_actions = dict(zip(cls._generate_initial_segments(dimension), [None] * cls._n_initial_segments**dimension))
@@ -519,9 +526,14 @@ class BaseZooming(QuantitativeModel, ABC):
         intervals = [(interval_points[i], interval_points[i + 1]) for i in range(cls._n_initial_segments)]
         return [tuple(segment) for segment in product(intervals, repeat=dimension)]
 
-    def sample_proba(self, n_samples: PositiveInt) -> List[QuantitativeProbability]:
+    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[QuantitativeProbability]:
         """
         Sample probability functions from the model.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
 
         Returns
         -------
@@ -531,7 +543,7 @@ class BaseZooming(QuantitativeModel, ABC):
         # Get sampled probabilities from each segment model
         segment_probabilities = {}
         for segment, model in self.segmented_actions.items():
-            segment_probabilities[segment] = model.sample_proba(n_samples)
+            segment_probabilities[segment] = model.sample_proba(n_samples=n_samples, rng=rng)
         return self._to_quantitative_probabilities(segment_probabilities)
 
     def _to_quantitative_probabilities(
@@ -1002,7 +1014,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         return result
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbabilityWeight]:
+    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[QuantitativeProbabilityWeight]:
         """
         Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
 
@@ -1010,6 +1022,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         ----------
         context : np.ndarray
             The context at which to evaluate the probability.
+        rng : np.random.Generator
+            Numpy random generator forwarded to BNN weight/embedding sampling.
 
         Returns
         -------
@@ -1020,10 +1034,10 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         n_samples = _context.shape[0]
 
         # Pre-sample weights and embeddings so the forward pass is deterministic.
-        sampled_weights = self.bnn.sample_weights(n_samples)
+        sampled_weights = self.bnn.sample_weights(n_samples, rng=rng)
         # Build a dummy full array so sample_embeddings can extract the right columns from the context part.
         dummy_full = np.column_stack([np.zeros((n_samples, self.dimension)), _context])
-        sampled_embeddings = self.bnn.sample_embeddings(dummy_full)
+        sampled_embeddings = self.bnn.sample_embeddings(dummy_full, rng=rng)
 
         result = self._to_quantitative_probabilities(
             context=_context,

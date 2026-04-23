@@ -22,7 +22,6 @@
 
 import importlib.metadata
 import json
-import random
 import re
 from abc import ABC, abstractmethod
 from inspect import isclass
@@ -54,6 +53,8 @@ from pybandits.base import (
 from pybandits.base_model import BaseModel
 from pybandits.model import Model, ModelMO
 from pybandits.pydantic_version_compatibility import (
+    NonNegativeInt,
+    PrivateAttr,
     validate_call,
 )
 from pybandits.quantitative_model import QuantitativeModel
@@ -105,24 +106,38 @@ class BaseMab(PyBanditsBaseModel, ABC):
     epsilon: Optional[Float01] = None
     default_action: Optional[UnifiedActionId] = None
     version: Optional[str] = None
+    random_seed: Optional[NonNegativeInt] = None
     _current_supported_version_th: ClassVar[str] = _get_pybandits_version()
+    _rng: Any = PrivateAttr(default=None)
 
     def __init__(
         self,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
         version: Optional[str] = None,
+        random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
     ):
+        # Inject random_seed into kwargs so it flows through ActionsManager into BNN cold_start.
+        if "random_seed" not in kwargs:
+            kwargs["random_seed"] = random_seed
         class_attributes = {
             attribute_name: self._get_instantiated_class_attribute(attribute_name, kwargs)
             for attribute_name in self._get_class_type_attributes()
         }
+        # Pop random_seed in case it was not consumed by any sub-model constructor.
+        kwargs.pop("random_seed", None)
         if kwargs:
             raise ValueError(f"Unknown arguments: {kwargs.keys()}")
 
         version = _get_pybandits_version()
-        super().__init__(**class_attributes, epsilon=epsilon, default_action=default_action, version=version)
+        super().__init__(
+            **class_attributes,
+            epsilon=epsilon,
+            default_action=default_action,
+            version=version,
+            random_seed=random_seed,
+        )
 
     @classmethod
     def _get_instantiated_class_attribute(cls, attribute_name: str, kwargs: Dict[str, Any]) -> PyBanditsBaseModel:
@@ -152,6 +167,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
     ############################################ Instance Input Validators #############################################
 
     def model_post_init(self, __context: Any) -> None:
+        self._rng = np.random.default_rng(self.random_seed)
         if self.actions_manager.delta is not None and (not self.epsilon or self.default_action is not None):
             raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
         if not self.epsilon and self.default_action:
@@ -279,7 +295,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         valid_actions = self._get_valid_actions(forbidden_actions)
         action_probabilities = {
-            action: model.sample_proba(**kwargs) for action, model in self.actions.items() if action in valid_actions
+            action: model.sample_proba(**kwargs, rng=self._rng)
+            for action, model in self.actions.items()
+            if action in valid_actions
         }
         # Handle standard actions for which the value is a (probability, weight) tuple
         actions_transformations = [[{key: proba} for proba in value] for key, value in action_probabilities.items()]
@@ -372,16 +390,16 @@ class BaseMab(PyBanditsBaseModel, ABC):
                         raise KeyError(f"Default action {self.default_action} not in actions.")
                 elif self.default_action not in p.keys():
                     raise KeyError(f"Default action {self.default_action} not in actions.")
-            if np.random.binomial(1, self.epsilon):
+            if self._rng.binomial(1, self.epsilon):
                 if self.default_action:
                     selected_action = self.default_action
                 else:
-                    actions = list(p.keys())
-                    selected_action = random.choice(actions)
+                    _keys = list(p.keys())
+                    selected_action = _keys[self._rng.integers(len(_keys))]
                     if isinstance(self.actions[selected_action], QuantitativeModel):
                         selected_action = (
                             selected_action,
-                            tuple(np.random.random(self.actions[selected_action].dimension)),
+                            tuple(self._rng.random(self.actions[selected_action].dimension)),
                         )
             else:
                 selected_action = self.strategy.select_action(p=p, actions=actions)
@@ -479,6 +497,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         cls,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
+        random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
     ) -> "BaseMab":
         """
@@ -492,6 +511,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
         default_action : Optional[ActionId]
             The default action to select with a probability of epsilon when using the epsilon-greedy approach.
             If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
+        random_seed : Optional[NonNegativeInt]
+            Seed for the MAB's central numpy RNG (used for epsilon-greedy and Thompson sampling).
+            Propagated automatically to BNN action models so the full pipeline is reproducible.
         kwargs : Dict[str, Any]
             Additional parameters for the mab and for the action model.
 
@@ -501,5 +523,5 @@ class BaseMab(PyBanditsBaseModel, ABC):
             Multi-Armed Bandit
         """
         # Instantiate the MAB
-        mab = cls(epsilon=epsilon, default_action=default_action, **kwargs)
+        mab = cls(epsilon=epsilon, default_action=default_action, random_seed=random_seed, **kwargs)
         return mab
