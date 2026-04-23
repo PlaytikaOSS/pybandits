@@ -25,6 +25,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from math import ceil
 from random import betavariate
+from types import ModuleType
 from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import jax
@@ -64,9 +65,13 @@ from pybandits.pydantic_version_compatibility import (
     validate_call,
 )
 
+_Array = Union[np.ndarray, jax.Array]
+
 UpdateMethods = Literal["VI", "MCMC"]
 VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
+
+_LOGIT_CLIPPING_THRESHOLD = 15
 
 
 def _numpy_relu(x: np.ndarray) -> np.ndarray:
@@ -81,6 +86,7 @@ def _numpy_gelu(x: np.ndarray) -> np.ndarray:
 
 def _numpy_sigmoid(x):
     """Stable sigmoid activation function for NumPy."""
+    x = np.clip(x, -_LOGIT_CLIPPING_THRESHOLD, _LOGIT_CLIPPING_THRESHOLD)
     return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
 
@@ -1448,6 +1454,62 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.__dict__.update(state)
         self._init_private_attrs()
 
+    def _forward_layers(
+        self,
+        next_layer_input: _Array,
+        weights_biases: List[Tuple[_Array, _Array]],
+        activation_fn: Callable[[_Array], _Array],
+        linear_fn: Callable[[_Array, _Array, _Array], _Array],
+        backend: ModuleType,
+    ) -> _Array:
+        """
+        Shared layer-by-layer forward computation for both JAX/NumPyro and NumPy backends.
+
+        Parameters
+        ----------
+        next_layer_input : _Array
+            Network input, shape ``(batch, input_dim)``. May be a JAX or NumPy array.
+        weights_biases : List[Tuple[_Array, _Array]]
+            Per-layer ``(weights, biases)``. Shapes depend on the backend:
+            NumPyro — ``(input_dim, output_dim)`` / ``(output_dim,)``;
+            NumPy — ``(n_samples, input_dim, output_dim)`` / ``(n_samples, output_dim)``.
+        activation_fn : Callable[[_Array], _Array]
+            Activation function matching the backend (``_jax_activation_fn`` or ``_numpy_activation_fn``).
+        linear_fn : Callable[[_Array, _Array, _Array], _Array]
+            Backend-specific linear transform: ``(x, w, b) -> x @ w + b``.
+            For JAX: ``lambda x, w, b: jnp.dot(x, w) + b``.
+            For NumPy: ``lambda x, w, b: np.einsum("...i,...ij->...j", x, w) + b``.
+        backend : ModuleType
+            Array namespace — either ``jnp`` (JAX) or ``np`` (NumPy). Used for
+            ``backend.zeros`` and ``backend.concatenate`` in residual padding.
+
+        Returns
+        -------
+        _Array
+            The raw linear output of the final layer (pre-sigmoid).
+        """
+        n_layers = len(self.model_params.bnn_layer_params)
+        for layer_ind, (w, b) in enumerate(weights_biases):
+            layer_params = self.model_params.bnn_layer_params[layer_ind]
+            input_dim = layer_params.weight.shape[0]
+            output_dim = layer_params.weight.shape[1]
+
+            linear_transform = linear_fn(next_layer_input, w, b)
+
+            if layer_ind < n_layers - 1:
+                activated_output = activation_fn(linear_transform)
+                # Add residual connection if enabled and dimensions allow
+                if self.use_residual_connections and output_dim >= input_dim:
+                    if output_dim == input_dim:
+                        next_layer_input = activated_output + next_layer_input
+                    else:
+                        pad = backend.zeros((next_layer_input.shape[0], output_dim - input_dim))
+                        next_layer_input = activated_output + backend.concatenate([next_layer_input, pad], axis=1)
+                else:
+                    next_layer_input = activated_output
+
+        return linear_transform
+
     def create_update_model(self, batch_size: Optional[PositiveInt] = None) -> Callable:
         """
         Create a NumPyro model function for Bayesian Neural Network.
@@ -1480,7 +1542,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         5. Use Bernoulli likelihood for binary classification
         """
 
-        n_layers = len(self.model_params.bnn_layer_params)
         numerical_indices = self.feature_config.numerical_indices
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
@@ -1494,7 +1555,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 weight_name, bias_name = self.get_layer_params_name(layer_ind)
                 w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
                 b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
-                weights_biases.append((w, b, layer_params.weight.shape))
+                weights_biases.append((w, b))
 
             # Sample embedding matrices (global parameters, outside plate)
             embedding_matrices = []
@@ -1521,30 +1582,19 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     next_layer_input = x_batch
 
                 # Forward pass
-                for layer_ind, (w, b, w_shape) in enumerate(weights_biases):
-                    input_dim = w_shape[0]
-                    output_dim = w_shape[1]
-
-                    linear_transform = jnp.dot(next_layer_input, w) + b
-
-                    if layer_ind < n_layers - 1:
-                        activated_output = self._jax_activation_fn(linear_transform)
-
-                        # Add residual connection if enabled and dimensions allow
-                        if self.use_residual_connections and output_dim >= input_dim:
-                            if output_dim == input_dim:
-                                next_layer_input = activated_output + next_layer_input
-                            else:
-                                residual_padded = jnp.concatenate(
-                                    [next_layer_input, jnp.zeros((next_layer_input.shape[0], output_dim - input_dim))],
-                                    axis=1,
-                                )
-                                next_layer_input = activated_output + residual_padded
-                        else:
-                            next_layer_input = activated_output
+                linear_transform = self._forward_layers(
+                    next_layer_input=next_layer_input,
+                    weights_biases=weights_biases,
+                    activation_fn=self._jax_activation_fn,
+                    linear_fn=lambda x, w, b: jnp.dot(x, w) + b,
+                    backend=jnp,
+                )
 
                 # Final output processing
-                logit = numpyro.deterministic(self._logit_var_name, jnp.clip(linear_transform.squeeze(-1), -15, 15))
+                logit = numpyro.deterministic(
+                    self._logit_var_name,
+                    jnp.clip(linear_transform.squeeze(-1), -_LOGIT_CLIPPING_THRESHOLD, _LOGIT_CLIPPING_THRESHOLD),
+                )
                 numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
 
         return model
@@ -1696,38 +1746,17 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Each element is (probability, weighted_sum) per sample.
         """
         next_layer_input = self._prepare_forward_input(context, sampled_embeddings)
-        n_layers = len(self.model_params.bnn_layer_params)
 
-        for layer_ind, (w, b) in enumerate(sampled_weights):
-            layer_params = self.model_params.bnn_layer_params[layer_ind]
-            input_dim = layer_params.weight.shape[0]
-            output_dim = layer_params.weight.shape[1]
+        linear_transform = self._forward_layers(
+            next_layer_input=next_layer_input,
+            weights_biases=sampled_weights,
+            activation_fn=self._numpy_activation_fn,
+            linear_fn=lambda x, w, b: np.einsum("...i,...ij->...j", x, w) + b,
+            backend=np,
+        )
 
-            # Linear transformation: same as sample_proba
-            linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
-
-            # Apply activation function for hidden layers
-            if layer_ind < n_layers - 1:
-                # Apply activation function
-                activated_output = self._numpy_activation_fn(linear_transform)
-                # Add residual connection if enabled and dimensions allow
-                if self.use_residual_connections and output_dim >= input_dim:
-                    if output_dim == input_dim:
-                        next_layer_input = activated_output + next_layer_input
-                    else:
-                        residual_padded = np.pad(
-                            next_layer_input,
-                            ((0, 0), (0, output_dim - input_dim)),
-                            mode="constant",
-                            constant_values=0,
-                        )
-                        next_layer_input = activated_output + residual_padded
-                else:
-                    next_layer_input = activated_output
-            else:
-                weighted_sum = linear_transform.squeeze(-1)
-                prob = _numpy_sigmoid(weighted_sum)
-
+        weighted_sum = linear_transform.squeeze(-1)
+        prob = _numpy_sigmoid(weighted_sum)
         return list(zip(prob, weighted_sum))
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
