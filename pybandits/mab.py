@@ -39,8 +39,8 @@ from pybandits.base import (
     Float01,
     MOProbability,
     MOProbabilityWeight,
-    Predictions,
     PositiveFloat01,
+    Predictions,
     Probability,
     ProbabilityWeight,
     PyBanditsBaseModel,
@@ -414,8 +414,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
                 # When default_action_fraction is set, it acts as the probability of picking
                 # default_action vs a uniformly-random action on the explore branch.
                 use_default = self.default_action and (
-                    self.default_action_fraction is None
-                    or self._rng.binomial(1, self.default_action_fraction)
+                    self.default_action_fraction is None or self._rng.binomial(1, self.default_action_fraction)
                 )
                 if use_default:
                     selected_action = self.default_action
