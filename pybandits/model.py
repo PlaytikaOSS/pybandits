@@ -24,7 +24,7 @@ import warnings
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from math import ceil
-from random import betavariate
+from types import ModuleType
 from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 import jax
@@ -42,7 +42,6 @@ from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
 from numpyro.infer.initialization import init_to_median
 from scipy.special import erf
-from scipy.stats import norm, t
 from tqdm import trange
 from typing_extensions import Self
 
@@ -64,9 +63,13 @@ from pybandits.pydantic_version_compatibility import (
     validate_call,
 )
 
+_Array = Union[np.ndarray, jax.Array]
+
 UpdateMethods = Literal["VI", "MCMC"]
 VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
+
+_LOGIT_CLIPPING_THRESHOLD = 15
 
 
 def _numpy_relu(x: np.ndarray) -> np.ndarray:
@@ -81,6 +84,7 @@ def _numpy_gelu(x: np.ndarray) -> np.ndarray:
 
 def _numpy_sigmoid(x):
     """Stable sigmoid activation function for NumPy."""
+    x = np.clip(x, -_LOGIT_CLIPPING_THRESHOLD, _LOGIT_CLIPPING_THRESHOLD)
     return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
 
@@ -97,9 +101,16 @@ class Model(BaseModelSO, ABC):
     """
 
     @abstractmethod
-    def sample_proba(self, **kwargs) -> Union[List[Probability], List[MOProbability], List[ProbabilityWeight]]:
+    def sample_proba(
+        self, rng: np.random.Generator, **kwargs
+    ) -> Union[List[Probability], List[MOProbability], List[ProbabilityWeight]]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
         """
 
 
@@ -168,16 +179,23 @@ class BaseBeta(Model, ABC):
     def _reset(self):
         pass
 
-    def sample_proba(self, n_samples: PositiveInt) -> List[Probability]:
+    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Probability]:
         """
         Sample the probability of getting a positive reward.
+
+        Parameters
+        ----------
+        n_samples : PositiveInt
+            Number of samples to draw.
+        rng : np.random.Generator
+            Numpy random generator. Vectorized sampling via ``rng.beta``.
 
         Returns
         -------
         prob: Probability
             Probability of getting a positive reward.
         """
-        return [betavariate(self.n_successes, self.n_failures) for _ in range(n_samples)]
+        return list(rng.beta(self.n_successes, self.n_failures, size=n_samples))
 
 
 class Beta(BaseBeta):
@@ -210,7 +228,7 @@ class BetaCC(BaseBeta, ModelCC):
 
 class BaseBetaMO(ModelMO, ABC):
     """
-    Base beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
+    Base Beta Distribution model for Bernoulli multi-armed bandits with multi-objectives.
 
     Parameters
     ----------
@@ -226,24 +244,17 @@ class BaseBetaMO(ModelMO, ABC):
         raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
     @classmethod
-    def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BetaMO":
+    def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BaseBetaMO":
         """
-        Utility function to create a Bayesian Logistic Regression model  or child model with cost control,
+        Utility function to create a BetaMO or child model with cost control,
         with default parameters.
-
-        It is modeled as:
-
-            y = sigmoid(alpha + beta1 * x1 + beta2 * x2 + ... + betaN * xN)
-
-        where the alpha and betas coefficients are Student's t-distributions.
 
         Parameters
         ----------
-        n_betas : PositiveInt
-            The number of betas of the Bayesian Logistic Regression model. This is also the number of features expected
-            after in the context matrix.
+        n_objectives : PositiveInt
+            Number of objectives (models) to create.
         kwargs: Dict[str, Any]
-            Additional arguments for the Bayesian Logistic Regression child model.
+            Additional arguments for the BaseBetaMO child model.
 
         Returns
         -------
@@ -298,8 +309,9 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     _mu_array: np.ndarray = PrivateAttr()
     _sigma_array: np.ndarray = PrivateAttr()
     _params: Dict[str, np.ndarray] = PrivateAttr()
-    _sampler: ClassVar[Callable]
     _numpyro_dist_class: ClassVar[type]
+    _sampler: ClassVar[str]  # name of the numpy Generator method
+    _sampler_kwargs: ClassVar[Dict[str, str]] = {}  # internal param name → numpy kwarg name
     param_map: ClassVar[Dict[str, str]] = {"mu": "loc", "sigma": "scale"}
 
     def to_numpyro_distribution(self) -> npdist.Distribution:
@@ -345,10 +357,15 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         else:
             raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
 
-    def _to_sampler_kwargs(self, params: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        return {self.param_map[k]: v for k, v in params.items()}
+    def _draw(
+        self, params: Dict[str, np.ndarray], rng: np.random.Generator, size: Optional[Tuple[int, ...]] = None
+    ) -> np.ndarray:
+        """Apply the loc-scale transform: ``mu + sigma * rng.<_sampler>(**_sampler_kwargs)``."""
+        _size = size if size is not None else params["mu"].shape
+        extra = {rng_key: params[param_key] for param_key, rng_key in self._sampler_kwargs.items()}
+        return params["mu"] + params["sigma"] * getattr(rng, self._sampler)(size=_size, **extra)
 
-    def sample_rvs(self, size: Tuple[int, ...]) -> np.ndarray:
+    def sample_rvs(self, size: Tuple[int, ...], rng: np.random.Generator) -> np.ndarray:
         """
         Sample random variates from this distribution.
 
@@ -356,15 +373,19 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         ----------
         size : Tuple[int, ...]
             Shape of the output array.
+        rng : np.random.Generator
+            Numpy random generator.
 
         Returns
         -------
         np.ndarray
             Array of sampled values.
         """
-        return self._sampler(size=size, **self._to_sampler_kwargs(self._params))
+        return self._draw(self._params, rng, size=size)
 
-    def sample_at_indices(self, indices: Union[List[NonNegativeInt], np.ndarray]) -> np.ndarray:
+    def sample_at_indices(
+        self, indices: Union[List[NonNegativeInt], np.ndarray], rng: np.random.Generator
+    ) -> np.ndarray:
         """
         Sample one row-vector per entry in ``indices`` from a 2-D distribution matrix.
 
@@ -377,6 +398,8 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         ----------
         indices : Union[List[NonNegativeInt], np.ndarray] of shape (n,) with dtype int
             Row indices to sample from.
+        rng : np.random.Generator
+            Numpy random generator.
 
         Returns
         -------
@@ -384,7 +407,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             Sampled instances.
         """
         sliced = {k: v[indices] for k, v in self._params.items()}
-        return self._sampler(**self._to_sampler_kwargs(sliced))
+        return self._draw(sliced, rng)
 
     @staticmethod
     def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> np.ndarray:
@@ -532,28 +555,6 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         """
         return self._params
 
-    def __eq__(self, other: Any) -> bool:
-        """
-        Check equality with another distribution array.
-
-        Parameters
-        ----------
-        other : Any
-            Other object to compare with.
-
-        Returns
-        -------
-        bool
-            True if distributions are equal, False otherwise.
-        """
-        if not isinstance(other, BaseLocationScaleArray):
-            return False
-        return (
-            np.all(self._mu_array == other._mu_array)
-            and np.all(self._sigma_array == other._sigma_array)
-            and type(self) is type(other)
-        )
-
     @classmethod
     def cold_start(
         cls,
@@ -660,8 +661,9 @@ class StudentTArray(BaseLocationScaleArray):
     nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
     _nu_array: np.ndarray = PrivateAttr()
-    _sampler: ClassVar[Callable] = t.rvs
     _numpyro_dist_class: ClassVar[type] = NumpyroStudentT
+    _sampler: ClassVar[str] = "standard_t"
+    _sampler_kwargs: ClassVar[Dict[str, str]] = {"nu": "df"}
     param_map: ClassVar[Dict[str, str]] = {**BaseLocationScaleArray.param_map, "nu": "df"}
 
     @model_validator(mode="before")
@@ -670,12 +672,6 @@ class StudentTArray(BaseLocationScaleArray):
         # The parent class method is now generic and handles all array-like parameters
         # including mu, sigma, and nu, so we can just call it directly
         return super().validate_input_shapes(values)
-
-    def __eq__(self, other: Any) -> bool:
-        """Check equality including nu parameter."""
-        if not isinstance(other, StudentTArray):
-            return False
-        return super().__eq__(other) and np.all(self._nu_array == other._nu_array)
 
     @classmethod
     def _get_distribution_specific_params(
@@ -753,8 +749,9 @@ class NormalArray(BaseLocationScaleArray):
     ... )
     """
 
-    _sampler: ClassVar[Callable] = norm.rvs
     _numpyro_dist_class: ClassVar[type] = NumpyroNormal
+    _sampler: ClassVar[str] = "standard_normal"
+    _sampler_kwargs: ClassVar[Dict[str, str]] = {}
 
     @classmethod
     def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
@@ -1005,12 +1002,12 @@ class EarlyStopping(PyBanditsBaseModel):
         """Check if training should stop based on loss convergence."""
         if self._previous_loss is not None:
             if self.diff_type == "relative":
-                change = abs((loss - self._previous_loss) / (abs(self._previous_loss) + self._epsilon))
+                change = (self._previous_loss - loss) / (abs(self._previous_loss) + self._epsilon)
             elif self.diff_type == "absolute":
-                change = abs(loss - self._previous_loss)
+                change = self._previous_loss - loss
             else:
                 raise ValueError(f"Unknown diff {self.diff_type}")
-
+            logger.info(str((loss, change, self._no_improvement_count)))
             if change < self.tolerance:
                 self._no_improvement_count += 1
             else:
@@ -1120,7 +1117,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
-    random_seed: Optional[int] = None
+    random_seed: Optional[NonNegativeInt] = None
 
     _rng_key: Any = PrivateAttr(default=None)
 
@@ -1131,6 +1128,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         optimizer_kwargs={"step_size": 0.01},
         batch_size=None,
         early_stopping_kwargs=None,
+        restore_best_svi_state=True,
     )
 
     _default_mcmc_kwargs: ClassVar[dict] = dict(
@@ -1417,7 +1415,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self._numpy_activation_fn = self._numpy_activations[self.activation]
         self._jax_activation_fn = self._jax_activations[self.activation]
         self._rng_key = jax.random.PRNGKey(
-            self.random_seed if self.random_seed else int(np.random.randint(0, np.iinfo(np.int32).max))
+            self.random_seed
+            if self.random_seed is not None
+            else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
         )
         if self.update_method == "VI":
             self._obj_optimizer = self._get_obj_optimizer()
@@ -1431,16 +1431,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self._init_private_attrs()
         self._update_kwargs = deepcopy(self.update_kwargs)
 
-    def __eq__(self, other: Any) -> bool:
-        """Compare equality based on model fields only, excluding non-serializable private attributes."""
-        if not isinstance(other, BaseBayesianNeuralNetwork):
-            return False
-        if type(self) is not type(other):
-            return False
-        return self.apply_version_adjusted_method("model_dump", "dict") == other.apply_version_adjusted_method(
-            "model_dump", "dict"
-        )
-
     def __getstate__(self) -> dict:
         """Exclude unpicklable private attributes (JAX functions, optimizer objects)."""
         state = self.__dict__.copy()
@@ -1453,6 +1443,62 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """Restore state and reconstruct derived private attributes."""
         self.__dict__.update(state)
         self._init_private_attrs()
+
+    def _forward_layers(
+        self,
+        next_layer_input: _Array,
+        weights_biases: List[Tuple[_Array, _Array]],
+        activation_fn: Callable[[_Array], _Array],
+        linear_fn: Callable[[_Array, _Array, _Array], _Array],
+        backend: ModuleType,
+    ) -> _Array:
+        """
+        Shared layer-by-layer forward computation for both JAX/NumPyro and NumPy backends.
+
+        Parameters
+        ----------
+        next_layer_input : _Array
+            Network input, shape ``(batch, input_dim)``. May be a JAX or NumPy array.
+        weights_biases : List[Tuple[_Array, _Array]]
+            Per-layer ``(weights, biases)``. Shapes depend on the backend:
+            NumPyro — ``(input_dim, output_dim)`` / ``(output_dim,)``;
+            NumPy — ``(n_samples, input_dim, output_dim)`` / ``(n_samples, output_dim)``.
+        activation_fn : Callable[[_Array], _Array]
+            Activation function matching the backend (``_jax_activation_fn`` or ``_numpy_activation_fn``).
+        linear_fn : Callable[[_Array, _Array, _Array], _Array]
+            Backend-specific linear transform: ``(x, w, b) -> x @ w + b``.
+            For JAX: ``lambda x, w, b: jnp.dot(x, w) + b``.
+            For NumPy: ``lambda x, w, b: np.einsum("...i,...ij->...j", x, w) + b``.
+        backend : ModuleType
+            Array namespace — either ``jnp`` (JAX) or ``np`` (NumPy). Used for
+            ``backend.zeros`` and ``backend.concatenate`` in residual padding.
+
+        Returns
+        -------
+        _Array
+            The raw linear output of the final layer (pre-sigmoid).
+        """
+        n_layers = len(self.model_params.bnn_layer_params)
+        for layer_ind, (w, b) in enumerate(weights_biases):
+            layer_params = self.model_params.bnn_layer_params[layer_ind]
+            input_dim = layer_params.weight.shape[0]
+            output_dim = layer_params.weight.shape[1]
+
+            linear_transform = linear_fn(next_layer_input, w, b)
+
+            if layer_ind < n_layers - 1:
+                activated_output = activation_fn(linear_transform)
+                # Add residual connection if enabled and dimensions allow
+                if self.use_residual_connections and output_dim >= input_dim:
+                    if output_dim == input_dim:
+                        next_layer_input = activated_output + next_layer_input
+                    else:
+                        pad = backend.zeros((next_layer_input.shape[0], output_dim - input_dim))
+                        next_layer_input = activated_output + backend.concatenate([next_layer_input, pad], axis=1)
+                else:
+                    next_layer_input = activated_output
+
+        return linear_transform
 
     def create_update_model(self, batch_size: Optional[PositiveInt] = None) -> Callable:
         """
@@ -1486,7 +1532,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         5. Use Bernoulli likelihood for binary classification
         """
 
-        n_layers = len(self.model_params.bnn_layer_params)
         numerical_indices = self.feature_config.numerical_indices
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
@@ -1500,7 +1545,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 weight_name, bias_name = self.get_layer_params_name(layer_ind)
                 w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
                 b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
-                weights_biases.append((w, b, layer_params.weight.shape))
+                weights_biases.append((w, b))
 
             # Sample embedding matrices (global parameters, outside plate)
             embedding_matrices = []
@@ -1527,36 +1572,25 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     next_layer_input = x_batch
 
                 # Forward pass
-                for layer_ind, (w, b, w_shape) in enumerate(weights_biases):
-                    input_dim = w_shape[0]
-                    output_dim = w_shape[1]
-
-                    linear_transform = jnp.dot(next_layer_input, w) + b
-
-                    if layer_ind < n_layers - 1:
-                        activated_output = self._jax_activation_fn(linear_transform)
-
-                        # Add residual connection if enabled and dimensions allow
-                        if self.use_residual_connections and output_dim >= input_dim:
-                            if output_dim == input_dim:
-                                next_layer_input = activated_output + next_layer_input
-                            else:
-                                residual_padded = jnp.concatenate(
-                                    [next_layer_input, jnp.zeros((next_layer_input.shape[0], output_dim - input_dim))],
-                                    axis=1,
-                                )
-                                next_layer_input = activated_output + residual_padded
-                        else:
-                            next_layer_input = activated_output
+                linear_transform = self._forward_layers(
+                    next_layer_input=next_layer_input,
+                    weights_biases=weights_biases,
+                    activation_fn=self._jax_activation_fn,
+                    linear_fn=lambda x, w, b: jnp.dot(x, w) + b,
+                    backend=jnp,
+                )
 
                 # Final output processing
-                logit = numpyro.deterministic(self._logit_var_name, jnp.clip(linear_transform.squeeze(-1), -15, 15))
+                logit = numpyro.deterministic(
+                    self._logit_var_name,
+                    jnp.clip(linear_transform.squeeze(-1), -_LOGIT_CLIPPING_THRESHOLD, _LOGIT_CLIPPING_THRESHOLD),
+                )
                 numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
 
         return model
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_weights(self, n_samples: PositiveInt) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def sample_weights(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Sample weights and biases for each sample and each layer.
 
@@ -1564,6 +1598,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ----------
         n_samples : PositiveInt
             The number of samples (users) to draw weights for. Must be positive.
+        rng : np.random.Generator
+            Numpy random generator forwarded to numpy samplers. Enables reproducible
+            weight sampling and integration with the central MAB-level RNG.
 
         Returns
         -------
@@ -1577,14 +1614,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             input_dim = layer_params.weight.shape[0]
             output_dim = layer_params.weight.shape[1]
 
-            w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim))
-            b = layer_params.bias.sample_rvs(size=(n_samples, output_dim))
+            w = layer_params.weight.sample_rvs(size=(n_samples, input_dim, output_dim), rng=rng)
+            b = layer_params.bias.sample_rvs(size=(n_samples, output_dim), rng=rng)
 
             sampled_weights.append((w, b))
 
         return sampled_weights
 
-    def sample_embeddings(self, context: np.ndarray) -> Optional[List[np.ndarray]]:
+    def sample_embeddings(self, context: np.ndarray, rng: np.random.Generator) -> Optional[List[np.ndarray]]:
         """
         Sample embedding vectors for each categorical feature given the context.
 
@@ -1596,6 +1633,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         context : np.ndarray
             Context matrix, shape ``(n_samples, feature_config.n_features)``.
             Categorical columns contain integer indices into the embedding vocabulary.
+        rng : np.random.Generator
+            Numpy random generator forwarded to numpy samplers.
 
         Returns
         -------
@@ -1609,7 +1648,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _, cat_indices_dict = self._prepare_context_arrays(_context)
         return [
             self.model_params.embedding_params.embeddings[i]
-            .sample_at_indices(cat_indices_dict[i])
+            .sample_at_indices(cat_indices_dict[i], rng=rng)
             .reshape(len(_context), -1)
             for i in range(len(self.feature_config.categorical_features_configs))
         ]
@@ -1702,42 +1741,21 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Each element is (probability, weighted_sum) per sample.
         """
         next_layer_input = self._prepare_forward_input(context, sampled_embeddings)
-        n_layers = len(self.model_params.bnn_layer_params)
 
-        for layer_ind, (w, b) in enumerate(sampled_weights):
-            layer_params = self.model_params.bnn_layer_params[layer_ind]
-            input_dim = layer_params.weight.shape[0]
-            output_dim = layer_params.weight.shape[1]
+        linear_transform = self._forward_layers(
+            next_layer_input=next_layer_input,
+            weights_biases=sampled_weights,
+            activation_fn=self._numpy_activation_fn,
+            linear_fn=lambda x, w, b: np.einsum("...i,...ij->...j", x, w) + b,
+            backend=np,
+        )
 
-            # Linear transformation: same as sample_proba
-            linear_transform = np.einsum("...i,...ij->...j", next_layer_input, w) + b
-
-            # Apply activation function for hidden layers
-            if layer_ind < n_layers - 1:
-                # Apply activation function
-                activated_output = self._numpy_activation_fn(linear_transform)
-                # Add residual connection if enabled and dimensions allow
-                if self.use_residual_connections and output_dim >= input_dim:
-                    if output_dim == input_dim:
-                        next_layer_input = activated_output + next_layer_input
-                    else:
-                        residual_padded = np.pad(
-                            next_layer_input,
-                            ((0, 0), (0, output_dim - input_dim)),
-                            mode="constant",
-                            constant_values=0,
-                        )
-                        next_layer_input = activated_output + residual_padded
-                else:
-                    next_layer_input = activated_output
-            else:
-                weighted_sum = linear_transform.squeeze(-1)
-                prob = _numpy_sigmoid(weighted_sum)
-
+        weighted_sum = linear_transform.squeeze(-1)
+        prob = _numpy_sigmoid(weighted_sum)
         return list(zip(prob, weighted_sum))
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray) -> List[ProbabilityWeight]:
+    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[ProbabilityWeight]:
         """
         Samples probabilities and logits from the prior predictive distribution.
 
@@ -1745,6 +1763,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         ----------
         context : np.ndarray
             The context matrix for which the probabilities are to be sampled.
+        rng : np.random.Generator
+            Numpy random generator for weight/embedding sampling.
+            The JAX ``_rng_key`` remains the authority for VI/MCMC training.
 
         Returns
         -------
@@ -1757,8 +1778,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _context = np.atleast_2d(context)
         n_samples = len(_context)
 
-        sampled_weights = self.sample_weights(n_samples)
-        sampled_embeddings = self.sample_embeddings(_context)
+        sampled_weights = self.sample_weights(n_samples, rng=rng)
+        sampled_embeddings = self.sample_embeddings(_context, rng=rng)
 
         return self.forward_pass(
             sampled_weights=sampled_weights, context=_context, sampled_embeddings=sampled_embeddings
@@ -1908,31 +1929,47 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             static_argnums=(1,),
         )
 
+        restore_best = self._update_kwargs.get("restore_best_svi_state", True)
         all_losses = []
+        best_loss = float("inf")
+        best_svi_state = svi_state
         pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
         for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
             svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
 
             epoch_np = np.array(epoch_losses)
+            epoch_loss = float(np.mean(epoch_np))
             all_losses.append(epoch_np)
             pbar.update(1)
-            pbar.set_postfix(loss=f"{float(epoch_np[-1]):.4f}")
+            pbar.set_postfix(loss=f"{epoch_loss:.4f}")
+
+            if np.isnan(epoch_loss):
+                pbar.close()
+                raise ValueError(
+                    f"SVI training diverged: loss is NaN at epoch {epoch_idx + 1}/{len(epoch_steps_list)}. "
+                    "Consider reducing the learning rate or checking your data for invalid values."
+                )
+
+            if restore_best and epoch_loss < best_loss:
+                best_loss = epoch_loss
+                best_svi_state = svi_state
 
             if self._early_stopping_callback is not None:
-                if self._early_stopping_callback.should_stop(float(epoch_np[-1])):
+                if self._early_stopping_callback.should_stop(epoch_loss):
                     logger.info(
                         f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
                         f"loss change below {self._early_stopping_callback.tolerance} "
                         f"({self._early_stopping_callback.diff_type}) for "
                         f"{self._early_stopping_callback.patience} consecutive epochs. "
-                        f"Last loss: {float(epoch_np[-1]):.6f}."
+                        f"Best loss: {best_loss:.6f}, last loss: {epoch_loss:.6f}."
                     )
                     break
 
         pbar.close()
         self._approx_history = np.concatenate(all_losses) if all_losses else np.array([])
-        params = svi.get_params(svi_state)
+        final_state = best_svi_state if restore_best else svi_state
+        params = svi.get_params(final_state)
         return svi, guide, params
 
     def _extract_advi_params(self, params: dict) -> tuple:
@@ -1951,7 +1988,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (std)
         site_mu = {k.removesuffix("_auto_loc"): v for k, v in params.items() if k.endswith("_auto_loc")}
-        site_sigma = {k.removesuffix("_auto_scale"): v for k, v in params.items() if k.endswith("_auto_scale")}
+        site_sigma = {
+            k.removesuffix("_auto_scale"): jax.nn.softplus(v) for k, v in params.items() if k.endswith("_auto_scale")
+        }
         return site_mu, site_sigma
 
     def _extract_fullrank_advi_params(self, guide, params: dict) -> tuple:
@@ -2144,7 +2183,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
-        random_seed: Optional[int] = None,
+        random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
     ) -> Self:
         """
@@ -2178,7 +2217,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
             to ``ceil(cardinality / _embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
-        random_seed : Optional[int], optional
+        random_seed : Optional[NonNegativeInt], optional
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.
             Pass an explicit integer for fully reproducible runs.
@@ -2411,25 +2450,4 @@ class BayesianNeuralNetworkMOCC(BaseBayesianNeuralNetworkMO, ModelMO, ModelCC):
         The list of Bayesian Neural Network models for each objective.
     cost : NonNegativeFloat
         Cost associated to the Bayesian Neural Network model.
-    """
-
-
-class BayesianLogisticRegression(BayesianNeuralNetwork):
-    """
-    A Bayesian Logistic Regression model that inherits from BayesianNeuralNetwork.
-    This model is a specialized version of a Bayesian Neural Network with a single layer,
-    designed specifically for logistic regression tasks. The model parameters are
-    validated to ensure that the model adheres to this single-layer constraint.
-    """
-
-    @field_validator("model_params")
-    def validate_model_params(cls, model_params):
-        if (len(model_params.bnn_layer_params_init) != 1) or (len(model_params.bnn_layer_params) != 1):
-            raise ValueError("The Bayesian Logistic Regression model should have only one layer.")
-        return model_params
-
-
-class BayesianLogisticRegressionCC(BayesianLogisticRegression, ModelCC):
-    """
-    A Bayesian Logistic Regression model with cost control.
     """

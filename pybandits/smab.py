@@ -38,7 +38,7 @@ from pybandits.base import (
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBeta
 from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
-from pybandits.quantitative_model import BaseSmabZoomingModel
+from pybandits.quantitative_model import BaseZooming
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
@@ -54,13 +54,13 @@ class BaseSmabBernoulli(BaseMab, ABC):
 
     Parameters
     ----------
-    actions: Dict[ActionId, Union[BaseBeta, BaseSmabZoomingModel]]
+    actions: Dict[ActionId, Union[BaseBeta, BaseZooming]]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[Union[BaseBeta, BaseSmabZoomingModel]]
+    actions_manager: SmabActionsManager[Union[BaseBeta, BaseZooming]]
 
     @validate_call
     def predict(

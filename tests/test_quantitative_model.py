@@ -36,11 +36,11 @@ from pybandits.base import BinaryReward, QuantitativeProbability, UnifiedProbabi
 from pybandits.model import Beta
 from pybandits.pydantic_version_compatibility import NonNegativeFloat
 from pybandits.quantitative_model import (
+    BaseZooming,
     QuantitativeBayesianNeuralNetwork,
     Segment,
-    SmabZoomingModel,
-    SmabZoomingModelCC,
-    ZoomingModel,
+    Zooming,
+    ZoomingCC,
 )
 from tests.utils import mock_update
 
@@ -90,7 +90,7 @@ def test_add_nonadjacent_segments():
         seg1 + seg2
 
 
-class DummyZoomingModel(ZoomingModel):
+class DummyZooming(BaseZooming):
     cost: Optional[Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]] = None
 
     def _init_base_model(self):
@@ -109,8 +109,8 @@ class DummyZoomingModel(ZoomingModel):
 # Model initialization with valid parameters creates correct number of segments
 @given(dimension=st.integers(min_value=1, max_value=3))
 def test_init_creates_correct_segments(dimension):
-    model = DummyZoomingModel.cold_start(dimension=dimension, n_max_segments=None)
-    expected_segments = DummyZoomingModel._n_initial_segments**dimension
+    model = DummyZooming.cold_start(dimension=dimension, n_max_segments=None)
+    expected_segments = DummyZooming._n_initial_segments**dimension
     assert len(model.sub_actions) == expected_segments
 
 
@@ -125,14 +125,14 @@ def test_init_creates_correct_segments(dimension):
 )
 def test_update_processes_rewards_correctly(data):
     rewards, quantities = data
-    model = DummyZoomingModel.cold_start(dimension=1)
+    model = DummyZooming.cold_start(dimension=1)
     model.update(quantities=quantities, rewards=rewards)
     assert model.n_successes != 1 or model.n_failures != 1
 
 
 # Best performing segment gets split when below max segments limit
 def test_best_segment_splits():
-    model = DummyZoomingModel.cold_start(dimension=1, n_max_segments=8)
+    model = DummyZooming.cold_start(dimension=1, n_max_segments=8)
     quantities = [0.25, 0.75]
     rewards = [1, 0]
     model.update(quantities=quantities, rewards=rewards)
@@ -143,7 +143,7 @@ def test_best_segment_splits():
 
 # Adjacent segments with similar performance get merged correctly
 def test_similar_segments_merge():
-    model = DummyZoomingModel.cold_start(dimension=1, comparison_threshold=0.5)
+    model = DummyZooming.cold_start(dimension=1, comparison_threshold=0.5)
     initial_segmented_actions = model.sub_actions.copy()
     quantities = [0.75, 0.75]
     rewards = [1, 1]
@@ -153,9 +153,9 @@ def test_similar_segments_merge():
 
 
 # Sample_proba returns valid probability functions
-def test_sample_proba_returns_valid_probabilities(n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))):
-    model = DummyZoomingModel.cold_start(dimension=1)
-    prob_functions = model.sample_proba(n_samples=n_samples)
+def test_sample_proba_returns_valid_probabilities(rng, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))):
+    model = DummyZooming.cold_start(dimension=1)
+    prob_functions = model.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob_functions) == n_samples
 
     # Test that each function is callable and returns valid probabilities
@@ -167,9 +167,29 @@ def test_sample_proba_returns_valid_probabilities(n_samples=100, test_locations=
             assert 0 <= prob <= 1
 
 
+# Same-seed RNG must yield identical sampled probabilities; different seeds must differ.
+@given(
+    dimension=st.integers(min_value=1, max_value=3),
+    n_samples=st.integers(min_value=10, max_value=30),
+    seeds=st.lists(st.integers(min_value=0, max_value=2**31 - 1), min_size=2, max_size=2, unique=True),
+    n_locations=st.just(10),
+)
+def test_sample_proba_reproducible_with_same_rng(dimension, n_samples, seeds, n_locations):
+    model = Zooming.cold_start(dimension=dimension, n_max_segments=None)
+    locations = [tuple([q] * dimension) for q in np.random.uniform(size=n_locations)]
+
+    def draw(seed):
+        functions = model.sample_proba(n_samples=n_samples, rng=np.random.default_rng(seed=seed))
+        return [[fn(loc) for loc in locations] for fn in functions]
+
+    seed_a, seed_b = seeds
+    assert draw(seed_a) == draw(seed_a)
+    assert draw(seed_a) != draw(seed_b)
+
+
 # Update with empty rewards/quantities list
 def test_update_with_empty_lists():
-    model = DummyZoomingModel.cold_start(dimension=1)
+    model = DummyZooming.cold_start(dimension=1)
     initial_segments = len(model.sub_actions)
     model.update(quantities=[], rewards=[])
     assert len(model.sub_actions) == initial_segments
@@ -177,7 +197,7 @@ def test_update_with_empty_lists():
 
 # Update when at maximum number of segments
 def test_update_at_max_segments():
-    model = DummyZoomingModel.cold_start(dimension=1, n_max_segments=4)
+    model = DummyZooming.cold_start(dimension=1, n_max_segments=4)
     quantities = [0.5]
     rewards = [1]
     model.update(quantities=quantities, rewards=rewards)
@@ -186,7 +206,7 @@ def test_update_at_max_segments():
 
 # Merging segments when only 2 segments remain
 def test_merge_with_two_segments():
-    model = DummyZoomingModel.cold_start(dimension=1, comparison_threshold=1.0)
+    model = DummyZooming.cold_start(dimension=1, comparison_threshold=1.0)
     quantities = [0.25, 0.75]
     rewards = [1, 1]
     model.update(quantities=quantities, rewards=rewards)
@@ -195,7 +215,7 @@ def test_merge_with_two_segments():
 
 # Comparing non-adjacent segments for merging
 def test_non_adjacent_segments_comparison():
-    model = DummyZoomingModel.cold_start(dimension=1)
+    model = DummyZooming.cold_start(dimension=1)
     segments = list(model.segmented_actions.keys())
     non_adjacent = [segments[0], segments[2]]
     assert not non_adjacent[0].is_adjacent(non_adjacent[1])
@@ -260,7 +280,7 @@ def test_higher_dimension_adjacency(dimension, base_interval):
 # Values that fall on segment boundaries
 @given(st.integers(min_value=4, max_value=8))
 def test_boundary_values(n_segments):
-    model = DummyZoomingModel.cold_start(dimension=1, n_max_segments=n_segments)
+    model = DummyZooming.cold_start(dimension=1, n_max_segments=n_segments)
     boundary = 1.0 / n_segments
     quantities = [boundary]
     rewards = [1]
@@ -269,33 +289,33 @@ def test_boundary_values(n_segments):
     assert len(mapped_segments) >= 1
 
 
-# Test SmabZoomingModel initialization with valid parameters
+# Test Zooming initialization with valid parameters
 @given(dimension=st.integers(min_value=1, max_value=3), n_max_segments=st.just(None))
 def test_initializes_smab_zooming_model_correctly(dimension, n_max_segments):
-    model = SmabZoomingModel.cold_start(dimension=dimension, n_max_segments=n_max_segments)
-    expected_segments = SmabZoomingModel._n_initial_segments**dimension
+    model = Zooming.cold_start(dimension=dimension, n_max_segments=n_max_segments)
+    expected_segments = Zooming._n_initial_segments**dimension
     assert len(model.segmented_actions) == expected_segments
 
 
-# Test SmabZoomingModel update with valid rewards and quantities
+# Test Zooming update with valid rewards and quantities
 @given(
     rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=1, max_size=5),
     dimension=st.just(1),
 )
 def test_updates_smab_zooming_model_correctly(rewards, dimension):
-    model = SmabZoomingModel.cold_start(dimension=dimension)
+    model = Zooming.cold_start(dimension=dimension)
     initial_segments = deepcopy(model.segmented_actions)
     quantities = np.random.uniform(0, 1, size=len(rewards)).tolist()
     model.update(quantities=quantities, rewards=rewards)
     assert model.segmented_actions != initial_segments
 
 
-# Test SmabZoomingModel sample_proba returns valid probability functions
+# Test Zooming sample_proba returns valid probability functions
 def test_sample_proba_returns_valid_probabilities_smab(
-    dimension=1, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))
+    rng, dimension=1, n_samples=100, test_locations=((0.1,), (0.5,), (0.9,))
 ):
-    model = SmabZoomingModel.cold_start(dimension=dimension)
-    prob_functions = model.sample_proba(n_samples=n_samples)
+    model = Zooming.cold_start(dimension=dimension)
+    prob_functions = model.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob_functions) == n_samples
 
     # Test that each function is callable and returns valid probabilities
@@ -387,7 +407,7 @@ def test_updates_cmab_quantitative_model_correctly(
     quantity=st.floats(min_value=0, max_value=1),
 )
 def test_sample_proba_returns_valid_probabilities_cmab(
-    dimension, n_features, quantity, use_embedding, categorical_features
+    rng, dimension, n_features, quantity, use_embedding, categorical_features
 ):
     if use_embedding:
         model = QuantitativeBayesianNeuralNetwork.cold_start(
@@ -398,7 +418,7 @@ def test_sample_proba_returns_valid_probabilities_cmab(
         model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
         context = np.random.uniform(low=0, high=1, size=(5, 1))
 
-    prob_functions = model.sample_proba(context=context)
+    prob_functions = model.sample_proba(context=context, rng=rng)
     assert len(prob_functions) == len(context)
 
     # Test that each function is callable and returns valid probabilities
@@ -428,7 +448,7 @@ def quantity_strategy(draw):
     test_quantity=quantity_strategy(),
     context=arrays(dtype=np.float64, shape=(5, 2), elements=st.floats(min_value=0, max_value=1)),
 )
-def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, test_quantity, context):
+def test_quantitative_bnn_to_quantitative_probabilities_consistency(rng, n_calls, test_quantity, context):
     """Test that QuantitativeBayesianNeuralNetwork._to_quantitative_probabilities returns consistent results when called repeatedly."""
     if isinstance(test_quantity[0], float):
         dimension = 1
@@ -436,7 +456,7 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, tes
         dimension = len(test_quantity[0])
     model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=2)
     n_samples = len(context)
-    sampled_weights = model.bnn.sample_weights(n_samples)
+    sampled_weights = model.bnn.sample_weights(n_samples, rng=rng)
     # Create context and sample probability functions
     prob_functions = model._to_quantitative_probabilities(context=context, sampled_weights=sampled_weights)
 
@@ -459,7 +479,7 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency(n_calls, tes
     test_quantities=arrays(dtype=np.float64, shape=(5,), elements=st.floats(min_value=0, max_value=1)),
 )
 def test_quantitative_bnn_to_quantitative_probabilities_consistency_with_categorical(
-    dimension, categorical_features, n_calls, tier_indices, test_quantities
+    rng, dimension, categorical_features, n_calls, tier_indices, test_quantities
 ):
     """Pre-sampled embeddings make repeated closure calls deterministic for QBNN with categorical features.
 
@@ -472,9 +492,9 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency_with_categor
     n_samples = len(context)
 
     # Replicate exactly what sample_proba does: sample weights and pre-sample embeddings once.
-    sampled_weights = model.bnn.sample_weights(n_samples)
+    sampled_weights = model.bnn.sample_weights(n_samples, rng=rng)
     dummy_full = np.column_stack([np.zeros((n_samples, dimension)), context])
-    sampled_embeddings = model.bnn.sample_embeddings(dummy_full)
+    sampled_embeddings = model.bnn.sample_embeddings(dummy_full, rng=rng)
 
     prob_functions = model._to_quantitative_probabilities(
         context=context,
@@ -497,7 +517,7 @@ def test_quantitative_bnn_to_quantitative_probabilities_consistency_with_categor
 ########################################################################################################################
 
 
-# QuantitativeModelCC tests via SmabZoomingModelCC
+# QuantitativeModelCC tests via ZoomingCC
 
 
 def simple_cost(value: float) -> float:
@@ -523,14 +543,14 @@ def test_cost_serialization_deserialization(cost_function):
     """Test serialization and deserialization of cost field with different callables."""
 
     # Create model with the test callable as cost
-    model = SmabZoomingModelCC.cold_start(cost=cost_function)
+    model = ZoomingCC.cold_start(cost=cost_function)
     serialized = model.apply_version_adjusted_method("model_dump_json", "json")
     serialized_dict = json.loads(serialized)
 
     assert "cost" in serialized_dict
     assert isinstance(serialized_dict["cost"], str)
 
-    deserialized_model = SmabZoomingModelCC.model_validate_json(serialized)
+    deserialized_model = ZoomingCC.model_validate_json(serialized)
     # Check callable was properly restored
     assert callable(deserialized_model.cost)
 

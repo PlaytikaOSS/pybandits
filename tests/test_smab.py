@@ -36,7 +36,7 @@ from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.base_model import BaseModel
 from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
 from pybandits.pydantic_version_compatibility import PositiveInt, ValidationError
-from pybandits.quantitative_model import QuantitativeModel, SmabZoomingModel, SmabZoomingModelCC
+from pybandits.quantitative_model import QuantitativeModel, Zooming, ZoomingCC
 from pybandits.smab import (
     BaseSmabBernoulli,
     SmabBernoulli,
@@ -92,7 +92,7 @@ class ModelTestConfig:
         if len(model_types) < len(action_ids):
             indices = np.random.randint(0, len(model_types), len(action_ids))
             model_types = [model_types[i] for i in indices]
-        if all(model in [BetaCC, SmabZoomingModelCC, BetaMOCC] for model in model_types):
+        if all(model in [BetaCC, ZoomingCC, BetaMOCC] for model in model_types):
             # Generate random costs
             costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
             costs = [
@@ -107,14 +107,14 @@ class ModelTestConfig:
                 return {
                     action_id: model_type(cost=cost)
                     if issubclass(model_type, BetaCC)
-                    else model_type.cold_start(dimension=1, cost=cost)  # SmabZoomingModelCC
+                    else model_type.cold_start(dimension=1, cost=cost)  # ZoomingCC
                     for action_id, model_type, cost in zip(action_ids, model_types, costs)
                 }
             else:
                 return {
                     action_id: model_type()
                     if issubclass(model_type, Beta)
-                    else model_type.cold_start(dimension=1)  # SmabZoomingModel
+                    else model_type.cold_start(dimension=1)  # Zooming
                     for action_id, model_type in zip(action_ids, model_types)
                 }
         else:
@@ -175,12 +175,12 @@ class ModelTestConfig:
 
 
 TEST_CONFIGS = {
-    "smab": ModelTestConfig(SmabBernoulli, ClassicBandit, [Beta, SmabZoomingModel]),
-    "smab_bai": ModelTestConfig(SmabBernoulliBAI, BestActionIdentificationBandit, [Beta, SmabZoomingModel]),
+    "smab": ModelTestConfig(SmabBernoulli, ClassicBandit, [Beta, Zooming]),
+    "smab_bai": ModelTestConfig(SmabBernoulliBAI, BestActionIdentificationBandit, [Beta, Zooming]),
     "smab_cc": ModelTestConfig(
         SmabBernoulliCC,
         CostControlBandit,
-        [BetaCC, SmabZoomingModelCC],
+        [BetaCC, ZoomingCC],
     ),
     "smab_mo": ModelTestConfig(SmabBernoulliMO, MultiObjectiveBandit, [BetaMO]),
     "smab_mocc": ModelTestConfig(SmabBernoulliMOCC, MultiObjectiveCostControlBandit, [BetaMOCC]),
@@ -227,12 +227,12 @@ def test_cold_start(
             action for action, model in actions.items() if isinstance(model, QuantitativeModel)
         },
     }
-    if all(isinstance(model, (BetaCC, SmabZoomingModelCC, BetaMOCC)) for model in actions.values()):
+    if all(isinstance(model, (BetaCC, ZoomingCC, BetaMOCC)) for model in actions.values()):
         cold_start_kwargs["action_ids_cost"] = {
             action: model.cost for action, model in actions.items() if isinstance(model, (BetaCC, BetaMOCC))
         }
         cold_start_kwargs["quantitative_action_ids_cost"] = {
-            action: model.cost for action, model in actions.items() if isinstance(model, SmabZoomingModelCC)
+            action: model.cost for action, model in actions.items() if isinstance(model, ZoomingCC)
         }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}

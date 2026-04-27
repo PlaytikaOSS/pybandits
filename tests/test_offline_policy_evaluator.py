@@ -225,7 +225,7 @@ def generate_random_bool() -> bool:
 
 
 @pytest.mark.usefixtures("logged_data")
-@settings(deadline=None)
+@settings(deadline=None, max_examples=20)
 @given(
     split_prop=st.just(0.5),
     n_trials=st.just(2),

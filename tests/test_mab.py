@@ -220,27 +220,32 @@ class TestDefaultActionFraction:
 
     @pytest.mark.parametrize("fraction", [None, 1.0])
     def test_always_returns_default_action(
-        self, mocker: MockerFixture, p: Dict[ActionId, Probability], fraction: Optional[float]
+        self, p: Dict[ActionId, Probability], fraction: Optional[float]
     ):
-        """When fraction is None or 1.0, exploration must always return default_action."""
-        mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
-        mocker.patch("numpy.random.binomial", return_value=1)  # always explore + always default
+        """When fraction is None or 1.0, exploration must always return default_action.
+
+        epsilon=1.0 guarantees the explore branch always fires.
+        fraction=None always picks default; fraction=1.0 makes _rng.binomial(1, 1.0) always return 1.
+        """
         mab = DummyMab(
             actions={"a1": Beta(), "a2": Beta()},
             strategy=ClassicBandit(),
-            epsilon=0.5,
+            epsilon=1.0,
             default_action="a1",
             default_action_fraction=fraction,
         )
         for _ in range(_N_REPEATS):
             assert mab._select_epsilon_greedy_action(p) == "a1"
 
-    def test_mix_distribution(self, mocker: MockerFixture, p: Dict[ActionId, Probability]):
-        """Empirical share of default_action under explore must approximate default_action_fraction."""
-        np.random.seed(42)
-        # Force the random branch to deterministically pick the non-default arm so the empirical
-        # share of "a1" reflects only the default_action_fraction Bernoulli (not the uniform draw).
-        mocker.patch("random.choice", return_value="a2")
+    def test_mix_distribution(self, p: Dict[ActionId, Probability]):
+        """Empirical share of default_action under explore must approximate default_action_fraction.
+
+        epsilon=1.0 always fires the explore branch. A seeded real rng is used for the fraction
+        Bernoulli while integers is stubbed to always return the non-default arm index, isolating
+        the fraction draw as the sole source of variance in the default_action share.
+        """
+        from unittest.mock import MagicMock
+
         mab = DummyMab(
             actions={"a1": Beta(), "a2": Beta()},
             strategy=ClassicBandit(),
@@ -248,16 +253,27 @@ class TestDefaultActionFraction:
             default_action="a1",
             default_action_fraction=_MIX_FRACTION,
         )
+        # Replace _rng with a mock: binomial delegates to a seeded real generator for realistic
+        # fraction sampling; integers always returns 1 (index of "a2") so the random branch never
+        # accidentally picks "a1", keeping the empirical share unconfounded.
+        real_rng = np.random.default_rng(42)
+        mock_rng = MagicMock()
+        mock_rng.binomial.side_effect = real_rng.binomial
+        mock_rng.integers.return_value = 1
+        mab._rng = mock_rng
+
         selections = [mab._select_epsilon_greedy_action(p) for _ in range(_N_DRAWS)]
         default_share = sum(1 for s in selections if s == "a1") / _N_DRAWS
         assert "a1" in selections and "a2" in selections
         assert abs(default_share - _MIX_FRACTION) < _MIX_TOLERANCE
 
-    def test_quantitative_random_branch(self, mocker: MockerFixture):
+    def test_quantitative_random_branch(self):
         """When the random branch fires for a quantitative model, the result is (action_id, quantity_tuple)."""
-        from pybandits.quantitative_model import SmabZoomingModel
+        from unittest.mock import MagicMock
 
-        actions = {"a1": SmabZoomingModel.cold_start(), "a2": SmabZoomingModel.cold_start()}
+        from pybandits.quantitative_model import Zooming
+
+        actions = {"a1": Zooming.cold_start(), "a2": Zooming.cold_start()}
         mab = DummyMab(
             actions=actions,
             strategy=ClassicBandit(),
@@ -265,9 +281,14 @@ class TestDefaultActionFraction:
             default_action=("a1", (0.5,)),
             default_action_fraction=0.5,
         )
-        # binomial: explore=1, then default=0 (forces random branch regardless of fraction)
-        mocker.patch("numpy.random.binomial", side_effect=[1, 0] * 5)
-        mocker.patch("random.choice", return_value="a2")
+        # Replace _rng with a mock: binomial returns [1, 0] so epsilon fires (explore) but the
+        # fraction check fails (random branch). integers picks "a2" (index 1). random supplies
+        # the quantity tuple for the quantitative action.
+        mock_rng = MagicMock()
+        mock_rng.binomial.side_effect = [1, 0]
+        mock_rng.integers.return_value = 1
+        mock_rng.random.return_value = np.array([0.5])
+        mab._rng = mock_rng
 
         p_quant = {"a1": 0.5, "a2": 0.5}
         selected = mab._select_epsilon_greedy_action(p_quant)
@@ -334,10 +355,10 @@ def test_mab_model_post_init_quantitative_default_action_validation(epsilon=0.1)
 
 def test_mab_model_post_init_standard_default_action_validation(epsilon=0.1):
     """Test model_post_init validation for standard default action requirements."""
-    from pybandits.quantitative_model import SmabZoomingModel
+    from pybandits.quantitative_model import Zooming
 
     # Create quantitative actions
-    actions = {"action1": SmabZoomingModel.cold_start(), "action2": SmabZoomingModel.cold_start()}
+    actions = {"action1": Zooming.cold_start(), "action2": Zooming.cold_start()}
 
     # Test case: standard default action (string) with quantitative model - should raise AttributeError
     with pytest.raises(AttributeError, match="Standard default action requires a standard action model."):

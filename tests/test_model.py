@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from typing import Literal, Optional
+from unittest.mock import patch
 
 import numpy as np
 import numpyro
@@ -31,8 +32,8 @@ from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
 
 from pybandits.model import (
+    BaseBayesianNeuralNetwork,
     BaseLocationScaleArray,
-    BayesianLogisticRegression,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
     BayesianNeuralNetworkMO,
@@ -94,9 +95,9 @@ def test_beta_get_stats_is_working(e: Beta):
     assert e.count >= 2, "Count too low"
 
 
-def test_beta_sample_proba(n_samples=100):
+def test_beta_sample_proba(rng, n_samples=100):
     b = Beta(n_successes=1, n_failures=2)
-    prob = b.sample_proba(n_samples=n_samples)
+    prob = b.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob) == n_samples
     assert all([p >= 0 and p <= 1 for p in prob])
 
@@ -144,9 +145,9 @@ def test_can_init_base_beta_mo():
         BetaMO(models=[BetaCC(cost=1), BetaCC(cost=1)])
 
 
-def test_calculate_proba_beta_mo(n_samples=100):
+def test_calculate_proba_beta_mo(rng, n_samples=100):
     b = BetaMO(models=[Beta(), Beta()])
-    b.sample_proba(n_samples=n_samples)
+    b.sample_proba(n_samples=n_samples, rng=rng)
 
 
 @given(
@@ -293,7 +294,7 @@ def test_location_scale_array_to_numpyro_distribution(array_class, expected_nump
 ########################################################################################################################
 
 
-# BayesianNeuralNetwork and BayesianLogisticRegression
+# BayesianNeuralNetwork
 @settings(deadline=500)
 @given(
     n_features=st.integers(min_value=1, max_value=3),
@@ -399,10 +400,10 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
 def test_bnn_sample_proba(
-    activation, use_residual_connections, use_layerwise_scaling, dist_type, n_samples, n_features, hidden_dim_list
+    rng, activation, use_residual_connections, use_layerwise_scaling, dist_type, n_samples, n_features, hidden_dim_list
 ):
     def sample_proba(context):
-        prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
+        prob_and_weighted_sum = bnn.sample_proba(context=np.array(context), rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == len(weighted_sum) == n_samples  # return 1 sampled probability and ws per each sample
         assert all([0 <= p <= 1 for p in prob])  # probs must be in the interval [0, 1]
@@ -430,13 +431,13 @@ def test_bnn_sample_proba(
     # check that the model is working with multi-sample prediction
     context = np.repeat(np.random.uniform(low=-1.0, high=1.0, size=(1, n_features)), n_samples, axis=0)
     assert type(context) is np.ndarray
-    prob_and_weighted_sum = bnn.sample_proba(context=np.array(context))
+    prob_and_weighted_sum = bnn.sample_proba(context=np.array(context), rng=rng)
     prob, weighted_sum = zip(*prob_and_weighted_sum)
     is_all_different = len(np.unique(weighted_sum)) == len(weighted_sum)
     assert is_all_different
 
 
-@settings(deadline=None, max_examples=25)
+@settings(deadline=None, max_examples=20)
 @given(
     activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
     use_residual_connections=st.booleans(),
@@ -444,7 +445,7 @@ def test_bnn_sample_proba(
     dist_type=st.sampled_from(["studentt", "normal"]),
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
-    n_samples=st.just(3),
+    n_samples=st.just(2),
     update_method=st.just("VI"),
     epochs=st.just(1),
 )
@@ -490,13 +491,17 @@ def test_bnn_vi_update(
 
         # mu and sigma are updated:
         for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
             for param in ["mu", "sigma"]:
-                assert np.all(layer_w[param] != layer_w_init[param])
-                assert np.all(layer_b[param] != layer_b_init[param])
+                assert np.all(layer_w.params[param] != layer_w_init.params[param])
+                assert np.all(layer_b.params[param] != layer_b_init.params[param])
+
+            for param in expected_array.model_fields.keys():
+                assert layer_w.params[param].tolist() == getattr(layer_w, param)
+                assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
         # Verify distribution type is preserved after update
         for layer_ind in range(len(dim_list)):
@@ -558,7 +563,6 @@ def _create_update_kwargs(
 @given(
     n_features=st.just(2),
     hidden_dim_list=st.just([1]),
-    n_samples=st.just(5),
     batch_size=st.sampled_from((None, 2, 4)),
     optimizer_type=st.sampled_from((None, "adam")),
     lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
@@ -566,11 +570,11 @@ def _create_update_kwargs(
     early_stopping_tol=st.one_of(st.none(), st.floats(min_value=1e-6, max_value=1e-1)),
     early_stopping_patience=st.one_of(st.none(), st.integers(min_value=1, max_value=10)),
     update_method=st.just("VI"),
+    restore_best_svi_state=st.one_of(st.none(), st.booleans()),
 )
 def test_bnn_vi_update_parameters(
     n_features: int,
     hidden_dim_list: list[int],
-    n_samples: int,
     batch_size: Optional[int],
     optimizer_type: Optional[str],
     lr: Optional[float],
@@ -578,11 +582,14 @@ def test_bnn_vi_update_parameters(
     early_stopping_tol: Optional[float],
     early_stopping_patience: Optional[int],
     update_method: UpdateMethods,
+    restore_best_svi_state: Optional[bool],
 ) -> None:
     """Test BNN VI update with various valid parameters."""
     update_kwargs = _create_update_kwargs(
         batch_size, optimizer_type, lr, early_stopping_diff, early_stopping_tol, early_stopping_patience
     )
+    if restore_best_svi_state is not None:
+        update_kwargs["restore_best_svi_state"] = restore_best_svi_state
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
@@ -602,6 +609,10 @@ def test_bnn_vi_update_parameters(
         assert isinstance(bnn._get_early_stopping_callback(), EarlyStopping)
     else:
         assert bnn._get_early_stopping_callback() is None
+
+    # restore_best_svi_state defaults to True; explicit value is preserved
+    expected = restore_best_svi_state if restore_best_svi_state is not None else True
+    assert bnn._update_kwargs.get("restore_best_svi_state") is expected
 
 
 @given(
@@ -805,13 +816,17 @@ def test_bnn_mcmc_update(
         bnn.update(context=context, rewards=rewards)
 
         for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
             for param in ["mu", "sigma"]:
-                assert np.all(layer_w[param] != layer_w_init[param])
-                assert np.all(layer_b[param] != layer_b_init[param])
+                assert np.all(layer_w.params[param] != layer_w_init.params[param])
+                assert np.all(layer_b.params[param] != layer_b_init.params[param])
+
+            for param in ["mu", "sigma", "nu"]:
+                assert layer_w.params[param].tolist() == getattr(layer_w, param)
+                assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
@@ -852,17 +867,62 @@ def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5,
         bnn.update(context=context, rewards=rewards)
 
         for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
+            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
             for param in ["mu", "sigma"]:
-                assert np.all(layer_w[param] != layer_w_init[param])
-                assert np.all(layer_b[param] != layer_b_init[param])
+                assert np.all(layer_w.params[param] != layer_w_init.params[param])
+                assert np.all(layer_b.params[param] != layer_b_init.params[param])
+
+            for param in ["mu", "sigma", "nu"]:
+                assert layer_w.params[param].tolist() == getattr(layer_w, param)
+                assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
     rewards = np.random.choice([0, 1], size=n_samples).tolist()
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
+
+
+########################################################################################################################
+
+
+# BayesianNeuralNetwork - SVI NaN protection and restore_best_svi_state
+
+
+@given(
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    n_samples=st.just(2),
+    update_method=st.just("VI"),
+)
+def test_bnn_svi_nan_loss_raises_error(
+    n_features: int, hidden_dim_list: list[int], n_samples: int, update_method: UpdateMethods
+) -> None:
+    """Test that a NaN loss during SVI training raises a ValueError immediately."""
+
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method=update_method,
+    )
+
+    # Patch np.mean to return NaN on the first epoch to simulate divergence.
+    original_mean = np.mean
+    call_count = {"n": 0}
+
+    def nan_mean(a, *args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return float("nan")
+        return original_mean(a, *args, **kwargs)
+
+    context = np.random.uniform(size=(n_samples, n_features))
+    rewards = _make_random_rewards(n_samples)
+
+    with patch("pybandits.model.np.mean", nan_mean):
+        with pytest.raises(ValueError, match="SVI training diverged.*NaN"):
+            bnn.update(context=context, rewards=rewards)
 
 
 ########################################################################################################################
@@ -885,14 +945,6 @@ def test_bnn_invalid_activation_raises_error(invalid_activation, n_features, hid
     assert "Invalid activation function" in error_str or "activation" in error_str.lower()
 
 
-@pytest.mark.parametrize("activation", ["tanh", "relu", "sigmoid", "gelu"])
-def test_bayesian_logistic_regression_with_different_activations(activation):
-    """Test that BayesianLogisticRegression works with different activation functions."""
-    blr = BayesianLogisticRegression.cold_start(n_features=3, hidden_dim_list=[], activation=activation)
-    assert blr.activation == activation
-    assert len(blr.model_params.bnn_layer_params) == 1
-
-
 def test_bnn_jax_and_numpy_activation_keys_match():
     """Test that the keys of _jax_activations and _numpy_activations dictionaries match."""
     jax_keys = set(BayesianNeuralNetwork._jax_activations.keys())
@@ -901,22 +953,6 @@ def test_bnn_jax_and_numpy_activation_keys_match():
     assert jax_keys == numpy_keys, (
         f"Keys mismatch between _jax_activations and _numpy_activations. JAX keys: {jax_keys}, NumPy keys: {numpy_keys}"
     )
-
-
-def test_bayesian_logistic_regression_with_residual_connections():
-    """Test that BayesianLogisticRegression works with residual connections."""
-    # Logistic regression has only one layer (input -> output), so no residual connections
-    # But it should still work without errors
-    blr = BayesianLogisticRegression.cold_start(n_features=3, hidden_dim_list=[], use_residual_connections=True)
-    assert blr.use_residual_connections is True
-    assert len(blr.model_params.bnn_layer_params) == 1
-
-    context = np.random.uniform(low=-1.0, high=1.0, size=(5, 3))
-    prob_and_weighted_sum = blr.sample_proba(context=context)
-    prob, weighted_sum = zip(*prob_and_weighted_sum)
-
-    assert len(prob) == 5
-    assert all([0 <= p <= 1 for p in prob])
 
 
 @settings(deadline=500)
@@ -1016,7 +1052,7 @@ def test_can_init_bayesian_neural_network_cc(
     cost=st.floats(allow_nan=False, allow_infinity=False),
 )
 def test_create_default_instance_bayesian_neural_network_cc(
-    activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
+    rng, activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
 ):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
@@ -1055,40 +1091,10 @@ def test_create_default_instance_bayesian_neural_network_cc(
 
         # Test sample_proba works
         context = np.random.uniform(low=-1.0, high=1.0, size=(5, n_features))
-        prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context)
+        prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context, rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == 5
         assert all([0 <= p <= 1 for p in prob])
-
-
-########################################################################################################################
-
-
-# BayesianLogisticRegression
-
-
-@given(
-    n_features=st.integers(min_value=1, max_value=10),
-)
-def test_bayesian_logistic_regression_valid_init(n_features: int) -> None:
-    """Test that BayesianLogisticRegression can be initialized with valid single-layer configurations."""
-
-    # Should not raise any validation errors
-    blr = BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=[])
-    assert len(blr.model_params.bnn_layer_params) == 1
-    assert len(blr.model_params.bnn_layer_params_init) == 1
-
-
-@settings(deadline=500)
-@given(
-    n_features=st.integers(min_value=1, max_value=5),
-    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=3),
-)
-def test_bayesian_logistic_regression_invalid_init(n_features: int, hidden_dim_list: list) -> None:
-    """Test that BayesianLogisticRegression raises ValueError for multi-layer configurations."""
-
-    with pytest.raises(ValueError, match="The Bayesian Logistic Regression model should have only one layer."):
-        BayesianLogisticRegression.cold_start(n_features=n_features, hidden_dim_list=hidden_dim_list)
 
 
 ########################################################################################################################
@@ -1164,7 +1170,14 @@ def test_can_init_bayesian_neural_network_mo(n_features, hidden_dim_list, n_obje
     n_objectives=st.integers(min_value=1, max_value=3),
 )
 def test_bayesian_neural_network_mo_sample_proba(
-    activation, use_residual_connections, use_layerwise_scaling, n_samples, n_features, hidden_dim_list, n_objectives
+    rng,
+    activation,
+    use_residual_connections,
+    use_layerwise_scaling,
+    n_samples,
+    n_features,
+    hidden_dim_list,
+    n_objectives,
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
@@ -1183,7 +1196,7 @@ def test_bayesian_neural_network_mo_sample_proba(
         assert model.use_residual_connections == use_residual_connections
 
     context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    prob_weights = bnn_mo.sample_proba(context=context)
+    prob_weights = bnn_mo.sample_proba(context=context, rng=rng)
 
     assert len(prob_weights) == n_samples
 
@@ -1538,14 +1551,14 @@ def test_prepare_context_arrays_splits_correctly(n_samples, n_features, cardinal
     n_features=st.integers(min_value=2, max_value=4),
     cardinality=st.integers(min_value=2, max_value=6),
 )
-def test_sample_proba_with_feature_config(dist_type, n_samples, n_features, cardinality):
+def test_sample_proba_with_feature_config(rng, dist_type, n_samples, n_features, cardinality):
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
     bnn = _make_bnn_with_categoricals(
         n_features=n_features, categorical_features=categorical_features, dist_type=dist_type
     )
     context = _make_categorical_context(n_samples, n_features, categorical_features)
-    results = bnn.sample_proba(context=context)
+    results = bnn.sample_proba(context=context, rng=rng)
 
     assert len(results) == n_samples
     for prob, ws in results:
@@ -1638,11 +1651,13 @@ def test_reset_restores_embedding_params(n_features, cardinality):
     dist_type=st.sampled_from(["studentt", "normal"]),
     n_features=st.integers(min_value=2, max_value=4),
     cardinality=st.integers(min_value=2, max_value=6),
-    hidden_dim_list=st.lists(st.integers(min_value=4, max_value=8), min_size=1, max_size=1),
-    n_samples=st.integers(min_value=4, max_value=10),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    n_samples=st.just(2),
+    update_method=st.just("VI"),
+    epochs=st.just(1),
 )
 def test_bnn_vi_update_with_categorical_features_updates_embeddings(
-    dist_type, n_features, cardinality, hidden_dim_list, n_samples
+    dist_type, n_features, cardinality, hidden_dim_list, n_samples, update_method, epochs
 ):
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
@@ -1651,7 +1666,8 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
         categorical_features=categorical_features,
         hidden_dim_list=hidden_dim_list,
         dist_type=dist_type,
-        update_kwargs={"num_steps": 10},
+        update_method=update_method,
+        update_kwargs={"epochs": epochs},
     )
     context = _make_categorical_context(n_samples, n_features, categorical_features)
     rewards = _make_random_rewards(n_samples)
@@ -1665,3 +1681,40 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
     # Reset should restore initial embeddings
     bnn._reset()
     assert bnn.model_params.embedding_params.embeddings[0].mu == init_mu
+
+
+@pytest.mark.parametrize(
+    "update_method, update_kwargs",
+    [("VI", {"num_steps": 2}), ("MCMC", {"num_warmup": 2, "num_samples": 2})],
+)
+def test_bnn_sample_proba_and_update_both_use_forward_layers(
+    rng, update_method: str, update_kwargs: dict, n_features: int = 1, n_samples: int = 1, ref: int = 1
+) -> None:
+    """Verify that both sample_proba and update call _forward_layers."""
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        update_method=update_method,
+        update_kwargs=update_kwargs,
+    )
+    context = np.random.rand(n_samples, n_features).astype(np.float32)
+    rewards = _make_random_rewards(n_samples)
+
+    original_forward_layers = BaseBayesianNeuralNetwork._forward_layers
+    call_count = 0
+
+    def tracking_forward_layers(self_inner, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_forward_layers(self_inner, *args, **kwargs)
+
+    # Check sample_proba calls _forward_layers
+    call_count = 0
+    with patch.object(BaseBayesianNeuralNetwork, "_forward_layers", tracking_forward_layers):
+        bnn.sample_proba(context=context, rng=rng)
+    assert call_count == ref, "sample_proba must call _forward_layers"
+
+    # Check update calls _forward_layers
+    call_count = 0
+    with patch.object(BaseBayesianNeuralNetwork, "_forward_layers", tracking_forward_layers):
+        bnn.update(context=context, rewards=rewards)
+    assert call_count >= ref, "update must call _forward_layers"

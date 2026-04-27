@@ -20,7 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import numpy as np
 import pytest
+
+
+@pytest.fixture(scope="session")
+def rng() -> np.random.Generator:
+    """Central numpy random generator for tests."""
+    return np.random.default_rng(seed=42)
 
 
 @pytest.fixture(scope="module")

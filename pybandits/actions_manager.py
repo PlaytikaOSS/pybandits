@@ -66,12 +66,12 @@ from pybandits.pydantic_version_compatibility import (
 )
 from pybandits.quantitative_model import (
     BaseQuantitativeBayesianNeuralNetwork,
-    BaseSmabZoomingModel,
+    BaseZooming,
     QuantitativeBayesianNeuralNetwork,
     QuantitativeBayesianNeuralNetworkCC,
     QuantitativeModel,
-    SmabZoomingModel,
-    SmabZoomingModelCC,
+    Zooming,
+    ZoomingCC,
 )
 from pybandits.utils import classproperty, extract_argument_names_from_function
 
@@ -826,7 +826,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         return action_model_classes
 
 
-SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BaseBetaMO, BaseSmabZoomingModel])
+SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BaseBetaMO, BaseZooming])
 
 
 class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
@@ -1116,8 +1116,8 @@ class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
 
 
 # For pickling purposes
-SmabActionsManagerSO = SmabActionsManager[Union[Beta, SmabZoomingModel]]
-SmabActionsManagerCC = SmabActionsManager[Union[BetaCC, SmabZoomingModelCC]]
+SmabActionsManagerSO = SmabActionsManager[Union[Beta, Zooming]]
+SmabActionsManagerCC = SmabActionsManager[Union[BetaCC, ZoomingCC]]
 SmabActionsManagerMO = SmabActionsManager[BetaMO]
 SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 

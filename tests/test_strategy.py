@@ -44,7 +44,7 @@ from pybandits.strategy import (
     MultiObjectiveStrategy,
     SingleObjectiveStrategy,
 )
-from tests.test_quantitative_model import DummyZoomingModel
+from tests.test_quantitative_model import DummyZooming
 
 ########################################################################################################################
 # Helper functions and fixtures
@@ -159,7 +159,7 @@ def action_probability_pairs(draw, min_actions: int = 2, max_actions: int = 10, 
         if allow_callables and draw(st.booleans()):
             # Create a callable probability
             probabilities[action_id] = lambda x, p=probability_value: p
-            models[action_id] = DummyZoomingModel.cold_start(dimension=DEFAULT_DIMENSION, cost=lambda x: cost_value)
+            models[action_id] = DummyZooming.cold_start(dimension=DEFAULT_DIMENSION, cost=lambda x, c=cost_value: c)
         else:
             # Create a fixed probability
             probabilities[action_id] = probability_value

@@ -150,6 +150,14 @@ class PyBanditsBaseModel(BaseModel):
                 if (v is None or len(v) != reference) if force_values else (v is not None and len(v) != reference):
                     raise AttributeError(f"Shape mismatch: {k} should have the same length as the other parameters.")
 
+    def __eq__(self, other: Any) -> bool:
+        """Compare equality based on serializable fields only, excluding private attributes."""
+        if type(self) is not type(other):
+            return False
+        return self.apply_version_adjusted_method("model_dump", "dict") == other.apply_version_adjusted_method(
+            "model_dump", "dict"
+        )
+
     def apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
         """
         Apply the method with the given name, adjusting for the pydantic version.

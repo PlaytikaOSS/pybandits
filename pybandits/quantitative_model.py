@@ -24,7 +24,7 @@ import functools
 import inspect
 import json
 from abc import ABC, abstractmethod
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import product
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, get_args, get_type_hints
 
@@ -38,7 +38,6 @@ from pybandits.base import (
     BinaryReward,
     Float01,
     Probability,
-    ProbabilityWeight,
     PyBanditsBaseModel,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
@@ -77,9 +76,16 @@ class QuantitativeModel(BaseModelSO, ABC):
     _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("dimension",)
 
     @abstractmethod
-    def sample_proba(self, **kwargs) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
+    def sample_proba(
+        self, rng: np.random.Generator, **kwargs
+    ) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
         """
         Sample the model.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
 
         Returns
         -------
@@ -373,10 +379,10 @@ class Segment(PyBanditsBaseModel):
             return False
 
 
-class ZoomingModel(QuantitativeModel, ABC):
+class BaseZooming(QuantitativeModel, ABC):
     """
-    This class is used to implement the zooming method. The approach is based on adaptive discretization of the
-    quantitative action space. The space is represented s a hyper cube with a dimension number of dimensions.
+    Zooming model for sMAB. The approach is based on adaptive discretization of the
+    quantitative action space. The space is represented as a hyper cube with a dimension number of dimensions.
     After each update step, the model checks if the segments are interesting or nuisance based on segment_update_factor.
     If a segment is interesting, it can be split to two segments.
     In contrast, adjacent nuisance segments can be merged based on comparison_threshold.
@@ -402,8 +408,8 @@ class ZoomingModel(QuantitativeModel, ABC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Model]]
-        Mapping of segments to models.
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+        Mapping of segments to Beta models.
     """
 
     dimension: PositiveInt
@@ -411,7 +417,7 @@ class ZoomingModel(QuantitativeModel, ABC):
     segment_update_factor: Float01 = 0.1
     n_comparison_points: PositiveInt = 1000
     n_max_segments: Optional[PositiveInt] = 32
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Model]]
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
     _base_model: Model = PrivateAttr()
     _n_initial_segments: ClassVar = 4
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("sub_actions",)
@@ -477,14 +483,14 @@ class ZoomingModel(QuantitativeModel, ABC):
             )
 
     @property
-    def segmented_actions(self) -> Dict[Segment, Optional[Model]]:
+    def segmented_actions(self) -> Dict[Segment, Optional[Beta]]:
         return {Segment(intervals=segment): model for segment, model in self.sub_actions.items()}
 
-    @abstractmethod
     def _init_base_model(self):
         """
         Initialize the base model.
         """
+        self._base_model = Beta()
 
     @classmethod
     @validate_call
@@ -501,7 +507,7 @@ class ZoomingModel(QuantitativeModel, ABC):
 
         Returns
         -------
-        ZoomingModel
+        BaseZooming
             Cold start model.
         """
         sub_actions = dict(zip(cls._generate_initial_segments(dimension), [None] * cls._n_initial_segments**dimension))
@@ -520,9 +526,14 @@ class ZoomingModel(QuantitativeModel, ABC):
         intervals = [(interval_points[i], interval_points[i + 1]) for i in range(cls._n_initial_segments)]
         return [tuple(segment) for segment in product(intervals, repeat=dimension)]
 
-    def sample_proba(self, **kwargs) -> List[QuantitativeProbability]:
+    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[QuantitativeProbability]:
         """
         Sample probability functions from the model.
+
+        Parameters
+        ----------
+        rng : numpy.random.Generator
+            Central numpy random generator provided by the MAB.
 
         Returns
         -------
@@ -532,315 +543,8 @@ class ZoomingModel(QuantitativeModel, ABC):
         # Get sampled probabilities from each segment model
         segment_probabilities = {}
         for segment, model in self.segmented_actions.items():
-            segment_probabilities[segment] = model.sample_proba(**kwargs)
+            segment_probabilities[segment] = model.sample_proba(n_samples=n_samples, rng=rng)
         return self._to_quantitative_probabilities(segment_probabilities)
-
-    @abstractmethod
-    def _to_quantitative_probabilities(
-        self, segment_probabilities: Dict[Segment, Union[List[Probability], List[ProbabilityWeight]]]
-    ) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
-        """
-        Convert the segment probabilities to quantitative probabilities.
-
-        Parameters
-        ----------
-        segment_probabilities : Dict[Segment, Union[List[Probability], List[ProbabilityWeight]]]
-            The probabilities of each segment.
-
-        Returns
-        -------
-        Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]
-            The quantitative probabilities.
-        """
-
-    def _quantitative_update(
-        self, quantities: List[Union[float, List[float], None]], rewards: List[BinaryReward], **kwargs
-    ):
-        """
-        Update the model parameters.
-
-        Parameters
-        ----------
-        quantities : List[Union[float, List[float], None]],
-            The value associated with each action.
-        rewards: List[BinaryReward]
-            The reward for each sample.
-        context : Optional[ArrayLike]
-            Context for each sample.
-        """
-
-        segments = self._map_and_update_segment_models(quantities, rewards, **kwargs)
-        self._update_segmentation(quantities, segments, rewards, **kwargs)
-
-    def _map_and_update_segment_models(
-        self, quantities: List[Union[float, List[float], None]], rewards: List[BinaryReward], **kwargs
-    ) -> List[Segment]:
-        """
-        Map and update the segment models.
-
-        Parameters
-        ----------
-        quantities : List[Union[float, List[float], None]]
-            The value associated with each action.
-        rewards: List[BinaryReward]
-            The reward for each sample.
-
-        Returns
-        -------
-        List[Segment]
-            Segments to update.
-        """
-        segments = self._map_values_to_segments(quantities)
-        self._inner_update(segments, rewards, **kwargs)
-        return segments
-
-    @abstractmethod
-    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward], **kwargs):
-        """
-        Update the segments models.
-
-        Parameters
-        ----------
-        segments : List[Segment]
-            Segments to update.
-        rewards : List[BinaryReward]
-            Rewards for update.
-        context : Optional[ArrayLike]
-            Context for update.
-        """
-
-    def _map_values_to_segments(
-        self,
-        quantities: List[Union[float, List[float], None]],
-    ) -> List[Segment]:
-        segments = [segment for value in quantities for segment in self.segmented_actions.keys() if value in segment]
-        return segments
-
-    def _update_segmentation(
-        self,
-        quantities: List[Union[float, List[float], None]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
-        **kwargs,
-    ):
-        """
-        Sort segments into three categories: interest (good), nuisance (bad), and all others (neutral).
-        Segments of interest are to be splitted; adjucent nuisance segments to be merged; and reminder remain untouched.
-        The segment classification is based on the rate of exploitation using self.segment_update_factor.
-
-        Parameters
-        ----------
-        quantities : List[Union[float, List[float], None]]
-            The value associated with each action.
-        segments : List[Segment]
-            All segments in the model.
-        rewards : List[BinaryReward]
-            Rewards for update.
-        kwargs : Dict[str, Any]
-            Keyword arguments for update.
-        """
-        segments_counts = Counter(segments)
-        num_segments = len(self.sub_actions)
-        interest_segments = []
-        nuisance_segments = []
-        for segment in segments_counts:
-            if segments_counts[segment] > (len(segments) / num_segments) * (1 + self.segment_update_factor):
-                interest_segments.append(segment)
-            elif segments_counts[segment] < (len(segments) / num_segments) * (1 - self.segment_update_factor):
-                nuisance_segments.append(segment)
-        interest_segments = sorted(interest_segments, key=lambda x: segments_counts[x], reverse=True)
-
-        self._merge_adjacent_nuisance_segments(nuisance_segments, quantities, segments, rewards, **kwargs)
-        self._split_segments_of_interest(interest_segments, quantities, segments, rewards, **kwargs)
-
-    def _merge_adjacent_nuisance_segments(
-        self,
-        nuisance_segments: List[Segment],
-        quantities: List[Union[float, List[float], None]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
-        **kwargs,
-    ):
-        """
-        Merge adjacent segments that have similar performance.
-
-        Parameters
-        ----------
-        nuisance_segments : List[Segment]
-            List of segments to consider for merging.
-        quantities : List[Union[float, List[float], None]]
-            The value associated with each action.
-        segments : List[Segment]
-            All segments in the model.
-        rewards : List[BinaryReward]
-            The reward for each sample.
-        """
-        i = 0
-        while i < len(nuisance_segments) - 1:
-            segment = nuisance_segments[i]
-            j = i + 1
-            while j < len(nuisance_segments):
-                other_segment = nuisance_segments[j]
-                if segment.is_adjacent(other_segment) and self.is_similar_performance(segment, other_segment):
-                    del self.sub_actions[segment.intervals]
-                    del self.sub_actions[other_segment.intervals]
-                    nuisance_segments.remove(segment)
-                    nuisance_segments.remove(other_segment)
-                    merged_segment = segment + other_segment
-                    self.sub_actions[merged_segment.intervals] = self._base_model.model_copy(deep=True)
-                    filtered_quantities, filtered_rewards, filtered_kwargs = self._filter_by_segment(
-                        merged_segment, quantities, segments, rewards, **kwargs
-                    )
-                    self._map_and_update_segment_models(filtered_quantities, filtered_rewards, **filtered_kwargs)
-                    break
-                j += 1
-            i += 1
-
-    def _split_segments_of_interest(
-        self,
-        interest_segments: List[Segment],
-        quantities: List[Union[float, List[float], None]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
-        **kwargs,
-    ):
-        """
-        Split segments of interest into two sub-segments if possible.
-
-        Parameters
-        ----------
-        interest_segments : List[Segment]
-            List of segments to consider for splitting.
-        quantities : List[Union[float, List[float], None]]
-            The value associated with each action.
-        segments : List[Segment]
-            All segments in the model.
-        rewards : List[BinaryReward]
-            The reward for each sample.
-        """
-        i = 0
-        while i < len(interest_segments) - 1 and (
-            self.n_max_segments is None or len(self.sub_actions) < self.n_max_segments
-        ):
-            best_segment = interest_segments[i]
-            del self.sub_actions[best_segment.intervals]
-            sub_best_segments = best_segment.split()
-            self.sub_actions[sub_best_segments[0].intervals] = self._base_model.model_copy(deep=True)
-            self.sub_actions[sub_best_segments[1].intervals] = self._base_model.model_copy(deep=True)
-            filtered_quantities, filtered_rewards, filtered_kwargs = self._filter_by_segment(
-                best_segment, quantities, segments, rewards, **kwargs
-            )
-            self._map_and_update_segment_models(filtered_quantities, filtered_rewards, **filtered_kwargs)
-            i += 1
-
-    def is_similar_performance(self, segment1: Segment, segment2: Segment) -> bool:
-        """
-        Check if two segments have similar performance.
-
-        Parameters
-        ----------
-        segment1 : Segment
-            First segment.
-        segment2 : Segment
-            Second segment.
-
-        Returns
-        -------
-        bool
-            Whether the segments have similar performance.
-        """
-        x = np.linspace(0, 1, self.n_comparison_points)
-        model1 = self.sub_actions[segment1.intervals]
-        model2 = self.sub_actions[segment2.intervals]
-        p1 = beta.pdf(x, model1.n_successes, model1.n_failures)
-        p2 = beta.pdf(x, model2.n_successes, model2.n_failures)
-        return jensenshannon(p1, p2) < self.comparison_threshold
-
-    def _filter_by_segment(
-        self,
-        reference_segment: Segment,
-        quantities: List[Union[float, List[float], None]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
-        **kwargs,
-    ) -> Tuple[List[Union[float, List[float], None]], List[BinaryReward], Dict[str, Any]]:
-        """
-        Filter and update the segments models.
-
-        Parameters
-        ----------
-        reference_segment : Segment
-            Reference segment to filter upon.
-        segments : List[Segment]
-            Segments to filter.
-        quantities : List[Union[float, List[float], None]]
-            Values to filter.
-        rewards : List[BinaryReward]
-            Rewards to filter.
-
-        Returns
-        -------
-        filtered_values : List[Union[float, List[float], None]]
-            Filtered quantities.
-        filtered_rewards : List[BinaryReward]
-            Filtered rewards.
-        filtered_kwargs : Dict[str, Any]
-            Filtered context.
-        """
-        filtered_values_rewards_kwargs = [
-            (value, reward, *[kwarg[i] for kwarg in kwargs.values()])
-            for i, (value, reward, segment) in enumerate(zip(quantities, rewards, segments))
-            if segment == reference_segment
-        ]
-        if filtered_values_rewards_kwargs:
-            filtered_values, filtered_rewards, *filtered_kwargs = zip(*filtered_values_rewards_kwargs)
-            filtered_kwargs = dict(zip(kwargs.keys(), filtered_kwargs))
-        else:
-            filtered_values, filtered_rewards, filtered_kwargs = [], [], {k: [] for k in kwargs.keys()}
-        filtered_kwargs = {
-            k: np.array(v) if isinstance(kwargs[k], np.ndarray) else v for k, v in filtered_kwargs.items()
-        }
-        return filtered_values, filtered_rewards, filtered_kwargs
-
-    def _reset(self):
-        self.sub_actions = dict(
-            zip(
-                self._generate_initial_segments(self.dimension),
-                [self._base_model.model_copy(deep=True) for _ in range(self._n_initial_segments**self.dimension)],
-            )
-        )
-
-
-class BaseSmabZoomingModel(ZoomingModel, ABC):
-    """
-    Zooming model for sMAB.
-
-    Parameters
-    ----------
-    dimension: PositiveInt
-        Number of parameters of the model.
-    comparison_threshold: Float01
-        Comparison threshold.
-    segment_update_factor: Float01
-        Segment update factor. If the number of samples in a segment is more than the average number of samples in all
-        segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
-        than the average number of samples in all segments by this factor, the segment is considered a nuisance.
-        Interest segments can be split, while nuisance segments can be merged.
-    n_comparison_points: PositiveInt
-        Number of comparison points.
-    n_max_segments: PositiveInt
-        Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
-        Mapping of segments to Beta models.
-    """
-
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
-
-    def _init_base_model(self):
-        """
-        Initialize the base model.
-        """
-        self._base_model = Beta()
 
     def _to_quantitative_probabilities(
         self, segment_probabilities: Dict[Segment, List[Probability]]
@@ -879,24 +583,43 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
         return result
 
     @validate_call
-    def _quantitative_update(
-        self,
-        quantities: List[Union[float, List[float], None]],
-        rewards: List[BinaryReward],
-    ):
+    def _quantitative_update(self, quantities: Union[List[float], List[List[float]]], rewards: List[BinaryReward]):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        quantities : Optional[List[Union[float, List[float], None]]
-            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
+        quantities : Union[List[float], List[List[float]]],
+            The value associated with each action.
         rewards: List[BinaryReward]
             The reward for each sample.
         """
-        super()._quantitative_update(quantities, rewards)
 
-    @validate_call(config=dict(arbitrary_types_allowed=True))
+        segments = self._map_and_update_segment_models(quantities, rewards)
+        self._update_segmentation(quantities, segments, rewards)
+
+    def _map_and_update_segment_models(
+        self, quantities: Union[List[float], List[List[float]]], rewards: List[BinaryReward]
+    ) -> List[Segment]:
+        """
+        Map and update the segment models.
+
+        Parameters
+        ----------
+        quantities : Union[List[float], List[List[float]]]
+            The value associated with each action.
+        rewards: List[BinaryReward]
+            The reward for each sample.
+
+        Returns
+        -------
+        List[Segment]
+            Segments to update.
+        """
+        segments = self._map_values_to_segments(quantities)
+        self._inner_update(segments, rewards)
+        return segments
+
     def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward]):
         """
         Update the segments models.
@@ -908,13 +631,203 @@ class BaseSmabZoomingModel(ZoomingModel, ABC):
         rewards : List[BinaryReward]
             Rewards for update.
         """
-        rewards = np.array(rewards)
-        for segment in set(segments):
-            rewards_of_segment = [r for r, s in zip(rewards, segments) if s == segment]
+        rewards_by_segment = defaultdict(list)
+        for segment, reward in zip(segments, rewards):
+            rewards_by_segment[segment].append(reward)
+
+        for segment, rewards_of_segment in rewards_by_segment.items():
             self.sub_actions[segment.intervals].update(rewards=rewards_of_segment)
 
+    def _map_values_to_segments(
+        self,
+        quantities: Union[List[float], List[List[float]]],
+    ) -> List[Segment]:
+        segments = [segment for value in quantities for segment in self.segmented_actions.keys() if value in segment]
+        return segments
 
-class SmabZoomingModel(BaseSmabZoomingModel):
+    def _update_segmentation(
+        self,
+        quantities: Union[List[float], List[List[float]]],
+        segments: List[Segment],
+        rewards: List[BinaryReward],
+    ):
+        """
+        Sort segments into three categories: interest (good), nuisance (bad), and all others (neutral).
+        Segments of interest are to be split; adjacent nuisance segments to be merged; and reminder remain untouched.
+        The segment classification is based on the rate of exploitation using self.segment_update_factor.
+
+        Parameters
+        ----------
+        quantities : Union[List[float], List[List[float]]]
+            The value associated with each action.
+        segments : List[Segment]
+            All segments in the model.
+        rewards : List[BinaryReward]
+            Rewards for update.
+        """
+        segments_counts = Counter(segments)
+        num_segments = len(self.sub_actions)
+        interest_segments = []
+        nuisance_segments = []
+        for segment in segments_counts:
+            if segments_counts[segment] > (len(segments) / num_segments) * (1 + self.segment_update_factor):
+                interest_segments.append(segment)
+            elif segments_counts[segment] < (len(segments) / num_segments) * (1 - self.segment_update_factor):
+                nuisance_segments.append(segment)
+        interest_segments = sorted(interest_segments, key=lambda x: segments_counts[x], reverse=True)
+
+        self._merge_adjacent_nuisance_segments(nuisance_segments, quantities, segments, rewards)
+        self._split_segments_of_interest(interest_segments, quantities, segments, rewards)
+
+    def _merge_adjacent_nuisance_segments(
+        self,
+        nuisance_segments: List[Segment],
+        quantities: Union[List[float], List[List[float]]],
+        segments: List[Segment],
+        rewards: List[BinaryReward],
+    ):
+        """
+        Merge adjacent segments that have similar performance.
+
+        Parameters
+        ----------
+        nuisance_segments : List[Segment]
+            List of segments to consider for merging.
+        quantities : Union[List[float], List[List[float]]]
+            The value associated with each action.
+        segments : List[Segment]
+            All segments in the model.
+        rewards : List[BinaryReward]
+            The reward for each sample.
+        """
+        i = 0
+        while i < len(nuisance_segments) - 1:
+            segment = nuisance_segments[i]
+            j = i + 1
+            while j < len(nuisance_segments):
+                other_segment = nuisance_segments[j]
+                if segment.is_adjacent(other_segment) and self.is_similar_performance(segment, other_segment):
+                    del self.sub_actions[segment.intervals]
+                    del self.sub_actions[other_segment.intervals]
+                    nuisance_segments.remove(segment)
+                    nuisance_segments.remove(other_segment)
+                    merged_segment = segment + other_segment
+                    self.sub_actions[merged_segment.intervals] = self._base_model.model_copy(deep=True)
+                    filtered_quantities, filtered_rewards = self._filter_by_segment(
+                        [segment, other_segment], quantities, segments, rewards
+                    )
+                    self._map_and_update_segment_models(filtered_quantities, filtered_rewards)
+                    break
+                j += 1
+            i += 1
+
+    def _split_segments_of_interest(
+        self,
+        interest_segments: List[Segment],
+        quantities: Union[List[float], List[List[float]]],
+        segments: List[Segment],
+        rewards: List[BinaryReward],
+    ):
+        """
+        Split segments of interest into two sub-segments if possible.
+
+        Parameters
+        ----------
+        interest_segments : List[Segment]
+            List of segments to consider for splitting.
+        quantities : Union[List[float], List[List[float]]]
+            The value associated with each action.
+        segments : List[Segment]
+            All segments in the model.
+        rewards : List[BinaryReward]
+            The reward for each sample.
+        """
+        i = 0
+        while i < len(interest_segments) - 1 and (
+            self.n_max_segments is None or len(self.sub_actions) < self.n_max_segments
+        ):
+            best_segment = interest_segments[i]
+            del self.sub_actions[best_segment.intervals]
+            sub_best_segments = best_segment.split()
+            self.sub_actions[sub_best_segments[0].intervals] = self._base_model.model_copy(deep=True)
+            self.sub_actions[sub_best_segments[1].intervals] = self._base_model.model_copy(deep=True)
+            filtered_quantities, filtered_rewards = self._filter_by_segment(best_segment, quantities, segments, rewards)
+            self._map_and_update_segment_models(filtered_quantities, filtered_rewards)
+            i += 1
+
+    def is_similar_performance(self, segment1: Segment, segment2: Segment) -> bool:
+        """
+        Check if two segments have similar performance.
+
+        Parameters
+        ----------
+        segment1 : Segment
+            First segment.
+        segment2 : Segment
+            Second segment.
+
+        Returns
+        -------
+        bool
+            Whether the segments have similar performance.
+        """
+        x = np.linspace(0, 1, self.n_comparison_points)
+        model1 = self.sub_actions[segment1.intervals]
+        model2 = self.sub_actions[segment2.intervals]
+        p1 = beta.pdf(x, model1.n_successes, model1.n_failures)
+        p2 = beta.pdf(x, model2.n_successes, model2.n_failures)
+        return jensenshannon(p1, p2) < self.comparison_threshold
+
+    def _filter_by_segment(
+        self,
+        reference_segment: Union[Segment, List[Segment]],
+        quantities: Union[List[float], List[List[float]]],
+        segments: List[Segment],
+        rewards: List[BinaryReward],
+    ) -> Tuple[Union[List[float], List[List[float]]], List[BinaryReward]]:
+        """
+        Filter and update the segments models.
+
+        Parameters
+        ----------
+        reference_segment : Union[Segment, List[Segment]]
+            Reference segment(s) to filter upon. Pass a list when multiple source
+            segments should be included (e.g. after a merge).
+        segments : List[Segment]
+            Segments to filter.
+        quantities : Union[List[float], List[List[float]]]
+            Values to filter.
+        rewards : List[BinaryReward]
+            Rewards to filter.
+
+        Returns
+        -------
+        filtered_values : Union[List[float], List[List[float]]]
+            Filtered quantities.
+        filtered_rewards : List[BinaryReward]
+            Filtered rewards.
+        """
+        reference_segments = reference_segment if isinstance(reference_segment, list) else [reference_segment]
+        filtered_values_rewards = [
+            (value, reward)
+            for value, reward, segment in zip(quantities, rewards, segments)
+            if segment in reference_segments
+        ]
+        if filtered_values_rewards:
+            filtered_values, filtered_rewards = zip(*filtered_values_rewards)
+            return list(filtered_values), list(filtered_rewards)
+        return [], []
+
+    def _reset(self):
+        self.sub_actions = dict(
+            zip(
+                self._generate_initial_segments(self.dimension),
+                [self._base_model.model_copy(deep=True) for _ in range(self._n_initial_segments**self.dimension)],
+            )
+        )
+
+
+class Zooming(BaseZooming):
     """
     Zooming model for sMAB.
 
@@ -938,7 +851,7 @@ class SmabZoomingModel(BaseSmabZoomingModel):
     """
 
 
-class SmabZoomingModelCC(BaseSmabZoomingModel, QuantitativeModelCC):
+class ZoomingCC(BaseZooming, QuantitativeModelCC):
     """
     Zooming model for sMAB with cost control.
 
@@ -959,192 +872,6 @@ class SmabZoomingModelCC(BaseSmabZoomingModel, QuantitativeModelCC):
         Maximum number of segments.
     sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
         Mapping of segments to Beta models.
-    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
-        Cost associated to the Beta distribution.
-    """
-
-
-class BaseCmabZoomingModel(ZoomingModel, ABC):
-    """
-    Zooming model for CMAB.
-
-    Parameters
-    ----------
-    dimension: PositiveInt
-        Number of parameters of the model.
-    comparison_threshold: Float01
-        Comparison threshold.
-    segment_update_factor: Float01
-        Segment update factor. If the number of samples in a segment is more than the average number of samples in all
-        segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
-        than the average number of samples in all segments by this factor, the segment is considered a nuisance.
-        Interest segments can be split, while nuisance segments can be merged.
-    n_comparison_points: PositiveInt
-        Number of comparison points.
-    n_max_segments: PositiveInt
-        Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
-        Mapping of segments to Bayesian Logistic Regression models.
-    base_model_cold_start_kwargs: Dict[str, Any]
-        Keyword arguments for the base model cold start.
-    """
-
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
-    base_model_cold_start_kwargs: Dict[str, Any]
-
-    @field_validator("base_model_cold_start_kwargs", mode="before")
-    @classmethod
-    def validate_n_features(cls, value):
-        if "n_features" not in value:
-            raise KeyError("n_features must be in base_model_cold_start_kwargs.")
-        return value
-
-    @property
-    def input_dim(self) -> int:
-        """Returns the input feature dimension (number of context features)."""
-        return self.base_model_cold_start_kwargs["n_features"]
-
-    def _init_base_model(self):
-        """
-        Initialize the base model.
-        """
-        self._base_model = BayesianNeuralNetwork.cold_start(**self.base_model_cold_start_kwargs)
-
-    def _to_quantitative_probabilities(
-        self, segment_probabilities: Dict[Segment, List[ProbabilityWeight]]
-    ) -> List[QuantitativeProbabilityWeight]:
-        """
-        Convert the segment probabilities and weights to quantitative probabilities and weights.
-
-        Parameters
-        ----------
-        segment_probabilities : Dict[Segment, List[ProbabilityWeight]]
-            The probabilities and weights of each segment.
-
-        Returns
-        -------
-        List[QuantitativeProbabilityWeight]
-            The quantitative probabilities and weights.
-        """
-        result = []
-        max_samples = max(len(probas) for probas in segment_probabilities.values())
-        n_outputs = len(next(iter(segment_probabilities.values()))[0])
-        for sample_idx in range(max_samples):
-
-            def create_probability_or_weight_function(
-                sample_idx: NonNegativeInt, output_index: NonNegativeInt
-            ) -> Union[QuantitativeProbability, QuantitativeWeight]:
-                def output_function(quantity: np.ndarray) -> Union[Probability, float]:  # Probability or weight
-                    """
-                    Evaluate output at the given quantity.
-                    """
-                    for segment in segment_probabilities.keys():
-                        if quantity in segment:
-                            segment_probas_for_segment = segment_probabilities[segment]
-                            return segment_probas_for_segment[sample_idx][output_index]  # Probability or weight
-                    return 0.0
-
-                return output_function
-
-            result.append(
-                tuple(
-                    create_probability_or_weight_function(sample_idx, output_index) for output_index in range(n_outputs)
-                )
-            )
-        return result
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _quantitative_update(
-        self,
-        quantities: List[Union[float, List[float], None]],
-        rewards: List[BinaryReward],
-        context: np.ndarray,
-    ):
-        """
-        Update the model parameters.
-
-        Parameters
-        ----------
-        quantities : Optional[List[Union[float, List[float], None]]
-            The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: List[BinaryReward]
-            The reward for each sample.
-        context : ArrayLike
-            Context for each sample
-        """
-        super()._quantitative_update(quantities, rewards, context=context)
-
-    @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward], context: np.ndarray):
-        """
-        Update the segments models.
-
-        Parameters
-        ----------
-        segments : List[Segment]
-            Segments to update.
-        rewards : List[BinaryReward]
-            Rewards for update.
-        context : Optional[ArrayLike]
-            Context for update.
-        """
-        context = np.array(context)
-        for segment in set(segments):
-            rewards_of_segment = [r for r, s in zip(rewards, segments) if s == segment]
-            context_of_segment = context[[s == segment for s in segments]]
-            if rewards_of_segment:
-                self.sub_actions[segment.intervals].update(rewards=rewards_of_segment, context=context_of_segment)
-
-
-class CmabZoomingModel(BaseCmabZoomingModel):
-    """
-    Zooming model for CMAB.
-
-    Parameters
-    ----------
-    dimension: PositiveInt
-        Number of parameters of the model.
-    comparison_threshold: Float01
-        Comparison threshold.
-    segment_update_factor: Float01
-        Segment update factor. If the number of samples in a segment is more than the average number of samples in all
-        segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
-        than the average number of samples in all segments by this factor, the segment is considered a nuisance.
-        Interest segments can be split, while nuisance segments can be merged.
-    n_comparison_points: PositiveInt
-        Number of comparison points.
-    n_max_segments: PositiveInt
-        Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
-        Mapping of segments to Bayesian Logistic Regression models.
-    base_model_cold_start_kwargs: Dict[str, Any]
-        Keyword arguments for the base model cold start.
-    """
-
-
-class CmabZoomingModelCC(BaseCmabZoomingModel, QuantitativeModelCC):
-    """
-    Zooming model for CMAB with cost control.
-
-    Parameters
-    ----------
-    dimension: PositiveInt
-        Number of parameters of the model.
-    comparison_threshold: Float01
-        Comparison threshold.
-    segment_update_factor: Float01
-        Segment update factor. If the number of samples in a segment is more than the average number of samples in all
-        segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
-        than the average number of samples in all segments by this factor, the segment is considered a nuisance.
-        Interest segments can be split, while nuisance segments can be merged.
-    n_comparison_points: PositiveInt
-        Number of comparison points.
-    n_max_segments: PositiveInt
-        Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[BayesianNeuralNetwork]]
-        Mapping of segments to Bayesian Logistic Regression models.
-    base_model_cold_start_kwargs: Dict[str, Any]
-        Keyword arguments for the base model cold start.
     cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
         Cost associated to the Beta distribution.
     """
@@ -1287,7 +1014,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         return result
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray) -> List[QuantitativeProbabilityWeight]:
+    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[QuantitativeProbabilityWeight]:
         """
         Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
 
@@ -1295,6 +1022,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         ----------
         context : np.ndarray
             The context at which to evaluate the probability.
+        rng : np.random.Generator
+            Numpy random generator forwarded to BNN weight/embedding sampling.
 
         Returns
         -------
@@ -1305,10 +1034,10 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         n_samples = _context.shape[0]
 
         # Pre-sample weights and embeddings so the forward pass is deterministic.
-        sampled_weights = self.bnn.sample_weights(n_samples)
+        sampled_weights = self.bnn.sample_weights(n_samples, rng=rng)
         # Build a dummy full array so sample_embeddings can extract the right columns from the context part.
         dummy_full = np.column_stack([np.zeros((n_samples, self.dimension)), _context])
-        sampled_embeddings = self.bnn.sample_embeddings(dummy_full)
+        sampled_embeddings = self.bnn.sample_embeddings(dummy_full, rng=rng)
 
         result = self._to_quantitative_probabilities(
             context=_context,
