@@ -41,6 +41,7 @@ from pybandits.base import (
     MOProbability,
     MOProbabilityWeight,
     Predictions,
+    PositiveFloat01,
     Probability,
     ProbabilityWeight,
     PyBanditsBaseModel,
@@ -93,12 +94,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
     default_action : Optional[ActionId], None if not specified.
         The default action to select with a probability of epsilon when using the epsilon-greedy approach.
         If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-    default_action_fraction : Optional[Float01], None if not specified.
+    default_action_fraction : Optional[PositiveFloat01], None if not specified.
         Probability of picking `default_action` (vs a uniformly-random action) when the epsilon-greedy
         coin flip selects the explore branch. Only meaningful together with `epsilon` and `default_action`.
+        Must be in the range (0, 1] — use ``None`` to preserve legacy behavior (always default when set).
         Boundary semantics:
             - `default_action_fraction = 1.0`: explore always returns `default_action` (same as omitting this field).
-            - `default_action_fraction = 0.0`: explore always returns a uniformly-random action.
             - `None` (default): legacy behavior; explore returns `default_action` deterministically when set,
               otherwise a uniformly-random action.
     current_supported_version_th : ClassVar[str]
@@ -112,7 +113,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
     strategy: BaseStrategy
     epsilon: Optional[Float01] = None
     default_action: Optional[UnifiedActionId] = None
-    default_action_fraction: Optional[Float01] = None
+    default_action_fraction: Optional[PositiveFloat01] = None
     version: Optional[str] = None
     _current_supported_version_th: ClassVar[str] = _get_pybandits_version()
 
@@ -120,7 +121,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         self,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
-        default_action_fraction: Optional[Float01] = None,
+        default_action_fraction: Optional[PositiveFloat01] = None,
         version: Optional[str] = None,
         **kwargs,
     ):
@@ -170,12 +171,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def model_post_init(self, __context: Any) -> None:
         if self.actions_manager.delta is not None and (not self.epsilon or self.default_action is not None):
             raise ValueError("Adaptive window requires epsilon greedy super strategy with not default action.")
-        if not self.epsilon and self.default_action:
-            raise AttributeError("A default action should only be defined when epsilon is defined.")
         if self.default_action_fraction is not None and not self.epsilon:
             raise AttributeError("default_action_fraction requires epsilon to be defined.")
         if self.default_action_fraction is not None and self.default_action is None:
             raise AttributeError("default_action_fraction requires default_action to be defined.")
+        if not self.epsilon and self.default_action:
+            raise AttributeError("A default action should only be defined when epsilon is defined.")
         if self.default_action:
             action_id = self.default_action[0] if isinstance(self.default_action, tuple) else self.default_action
             if action_id not in self.actions:
@@ -509,7 +510,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         cls,
         epsilon: Optional[Float01] = None,
         default_action: Optional[ActionId] = None,
-        default_action_fraction: Optional[Float01] = None,
+        default_action_fraction: Optional[PositiveFloat01] = None,
         **kwargs,
     ) -> "BaseMab":
         """

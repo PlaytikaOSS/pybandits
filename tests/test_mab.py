@@ -28,7 +28,7 @@ import pytest
 from hypothesis import given
 from pytest_mock import MockerFixture
 
-from pybandits.base import ActionId, BinaryReward, Float01, Probability, UnifiedActionId
+from pybandits.base import ActionId, BinaryReward, Float01, PositiveFloat01, Probability, UnifiedActionId
 from pybandits.mab import BaseMab
 from pybandits.model import Beta, BetaCC
 from pybandits.pydantic_version_compatibility import ValidationError
@@ -177,128 +177,105 @@ def test_adaptive_window_without_epsilon_fails(adaptive_window_size, epsilon):
 ########################################################################################################################
 
 
-# Epsilon-greedy with default_action_fraction (mix of default + random) tests
+_MIX_FRACTION: PositiveFloat01 = 0.3
+_MIX_TOLERANCE: float = 0.03
+_N_DRAWS: int = 4_000
+_N_REPEATS: int = 20
 
 
-def test_default_action_fraction_requires_epsilon():
-    with pytest.raises(AttributeError, match="default_action_fraction requires epsilon to be defined."):
-        DummyMab(
+class TestDefaultActionFraction:
+    """Tests for BaseMab.default_action_fraction mixed epsilon-greedy behavior."""
+
+    def test_requires_epsilon(self):
+        """default_action_fraction is rejected when epsilon is not set."""
+        with pytest.raises(AttributeError, match=r"default_action_fraction requires epsilon to be defined\."):
+            DummyMab(
+                actions={"a1": Beta(), "a2": Beta()},
+                strategy=ClassicBandit(),
+                epsilon=None,
+                default_action_fraction=0.5,
+            )
+
+    def test_requires_default_action(self):
+        """default_action_fraction is rejected when default_action is not set."""
+        with pytest.raises(AttributeError, match=r"default_action_fraction requires default_action to be defined\."):
+            DummyMab(
+                actions={"a1": Beta(), "a2": Beta()},
+                strategy=ClassicBandit(),
+                epsilon=0.1,
+                default_action=None,
+                default_action_fraction=0.5,
+            )
+
+    def test_zero_fraction_is_invalid(self):
+        """default_action_fraction=0.0 must be rejected — equivalent to having no default_action."""
+        with pytest.raises(ValidationError):
+            DummyMab(
+                actions={"a1": Beta(), "a2": Beta()},
+                strategy=ClassicBandit(),
+                epsilon=0.1,
+                default_action="a1",
+                default_action_fraction=0.0,
+            )
+
+    @pytest.mark.parametrize("fraction", [None, 1.0])
+    def test_always_returns_default_action(
+        self, mocker: MockerFixture, p: Dict[ActionId, Probability], fraction: Optional[float]
+    ):
+        """When fraction is None or 1.0, exploration must always return default_action."""
+        mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
+        mocker.patch("numpy.random.binomial", return_value=1)  # always explore + always default
+        mab = DummyMab(
             actions={"a1": Beta(), "a2": Beta()},
             strategy=ClassicBandit(),
-            epsilon=None,
-            default_action_fraction=0.5,
+            epsilon=0.5,
+            default_action="a1",
+            default_action_fraction=fraction,
         )
+        for _ in range(_N_REPEATS):
+            assert mab._select_epsilon_greedy_action(p) == "a1"
 
-
-def test_default_action_fraction_requires_default_action():
-    with pytest.raises(AttributeError, match="default_action_fraction requires default_action to be defined."):
-        DummyMab(
+    def test_mix_distribution(self, mocker: MockerFixture, p: Dict[ActionId, Probability]):
+        """Empirical share of default_action under explore must approximate default_action_fraction."""
+        np.random.seed(42)
+        # Force the random branch to deterministically pick the non-default arm so the empirical
+        # share of "a1" reflects only the default_action_fraction Bernoulli (not the uniform draw).
+        mocker.patch("random.choice", return_value="a2")
+        mab = DummyMab(
             actions={"a1": Beta(), "a2": Beta()},
             strategy=ClassicBandit(),
-            epsilon=0.1,
-            default_action=None,
+            epsilon=1.0,  # always explore
+            default_action="a1",
+            default_action_fraction=_MIX_FRACTION,
+        )
+        selections = [mab._select_epsilon_greedy_action(p) for _ in range(_N_DRAWS)]
+        default_share = sum(1 for s in selections if s == "a1") / _N_DRAWS
+        assert "a1" in selections and "a2" in selections
+        assert abs(default_share - _MIX_FRACTION) < _MIX_TOLERANCE
+
+    def test_quantitative_random_branch(self, mocker: MockerFixture):
+        """When the random branch fires for a quantitative model, the result is (action_id, quantity_tuple)."""
+        from pybandits.quantitative_model import SmabZoomingModel
+
+        actions = {"a1": SmabZoomingModel.cold_start(), "a2": SmabZoomingModel.cold_start()}
+        mab = DummyMab(
+            actions=actions,
+            strategy=ClassicBandit(),
+            epsilon=1.0,
+            default_action=("a1", (0.5,)),
             default_action_fraction=0.5,
         )
+        # binomial: explore=1, then default=0 (forces random branch regardless of fraction)
+        mocker.patch("numpy.random.binomial", side_effect=[1, 0] * 5)
+        mocker.patch("random.choice", return_value="a2")
 
+        p_quant = {"a1": 0.5, "a2": 0.5}
+        selected = mab._select_epsilon_greedy_action(p_quant)
 
-def test_default_action_fraction_none_is_backward_compatible(
-    mocker: MockerFixture, p: Dict[ActionId, Probability]
-):
-    """When default_action_fraction is None, exploration must always return default_action."""
-    mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
-    mocker.patch("numpy.random.binomial", return_value=1)  # always explore
-    mab = DummyMab(
-        actions={"a1": Beta(), "a2": Beta()},
-        strategy=ClassicBandit(),
-        epsilon=0.5,
-        default_action="a1",
-        default_action_fraction=None,
-    )
-    for _ in range(20):
-        assert mab._select_epsilon_greedy_action(p) == "a1"
-
-
-def test_default_action_fraction_one_matches_default_only(
-    mocker: MockerFixture, p: Dict[ActionId, Probability]
-):
-    """default_action_fraction=1.0 must always pick the default on the explore branch."""
-    mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
-    mocker.patch("numpy.random.binomial", return_value=1)  # always explore + always default
-    mab = DummyMab(
-        actions={"a1": Beta(), "a2": Beta()},
-        strategy=ClassicBandit(),
-        epsilon=0.5,
-        default_action="a1",
-        default_action_fraction=1.0,
-    )
-    for _ in range(20):
-        assert mab._select_epsilon_greedy_action(p) == "a1"
-
-
-def test_default_action_fraction_zero_matches_random_only(
-    mocker: MockerFixture, p: Dict[ActionId, Probability]
-):
-    """default_action_fraction=0.0 must always pick a random arm on the explore branch."""
-    mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
-    # binomial returns 1 for the epsilon flip, then 0 for the default-vs-random flip
-    mocker.patch("numpy.random.binomial", side_effect=[1, 0] * 50)
-    mocker.patch("random.choice", return_value="a2")
-    mab = DummyMab(
-        actions={"a1": Beta(), "a2": Beta()},
-        strategy=ClassicBandit(),
-        epsilon=0.5,
-        default_action="a1",
-        default_action_fraction=0.0,
-    )
-    for _ in range(20):
-        assert mab._select_epsilon_greedy_action(p) == "a2"
-
-
-def test_default_action_fraction_mix_distribution(mocker: MockerFixture, p: Dict[ActionId, Probability]):
-    """Empirical share of default_action under explore must approximate default_action_fraction."""
-    np.random.seed(42)
-    # Force the random branch to deterministically pick the non-default arm so the empirical
-    # share of "a1" reflects only the default_action_fraction Bernoulli (not the uniform draw).
-    mocker.patch("random.choice", return_value="a2")
-
-    fraction = 0.3
-    n_draws = 4000
-    mab = DummyMab(
-        actions={"a1": Beta(), "a2": Beta()},
-        strategy=ClassicBandit(),
-        epsilon=1.0,  # always explore
-        default_action="a1",
-        default_action_fraction=fraction,
-    )
-    selections = [mab._select_epsilon_greedy_action(p) for _ in range(n_draws)]
-    default_share = sum(1 for s in selections if s == "a1") / n_draws
-    assert "a1" in selections and "a2" in selections
-    assert abs(default_share - fraction) < 0.03
-
-
-def test_default_action_fraction_quantitative_random_branch(mocker: MockerFixture):
-    """When the random branch fires for a quantitative model, the result is (action_id, quantity_tuple)."""
-    from pybandits.quantitative_model import SmabZoomingModel
-
-    actions = {"a1": SmabZoomingModel.cold_start(), "a2": SmabZoomingModel.cold_start()}
-    mab = DummyMab(
-        actions=actions,
-        strategy=ClassicBandit(),
-        epsilon=1.0,
-        default_action=("a1", (0.5,)),
-        default_action_fraction=0.0,  # always go through the random branch
-    )
-    # Force binomial to always pick: explore=1, default=0 (i.e. random branch)
-    mocker.patch("numpy.random.binomial", side_effect=[1, 0] * 5)
-    mocker.patch("random.choice", return_value="a2")
-
-    p_quant = {"a1": 0.5, "a2": 0.5}
-    selected = mab._select_epsilon_greedy_action(p_quant)
-
-    assert isinstance(selected, tuple)
-    assert selected[0] == "a2"
-    assert isinstance(selected[1], tuple)
-    assert len(selected[1]) == actions["a2"].dimension
+        assert isinstance(selected, tuple)
+        assert selected[0] == "a2"
+        assert isinstance(selected[1], tuple)
+        assert len(selected[1]) == actions["a2"].dimension
 
 
 ########################################################################################################################

@@ -61,25 +61,6 @@ simulated_rewards = np.random.randint(2, size=n_samples)
 smab.update(actions=pred_actions, rewards=simulated_rewards)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Epsilon-greedy exploration optionally mixes a default action with a uniformly-random one via
-``default_action_fraction`` (a ``Float01``):
-
-* ``1.0`` -> always pick ``default_action`` when exploring (legacy behavior with a default set).
-* ``0.0`` -> always pick a random action when exploring (legacy behavior without a default).
-* ``None`` (default) -> preserves the legacy behavior, i.e. fully default if ``default_action`` is set, otherwise fully random.
-* Any value in between -> probability of choosing ``default_action`` vs a random action on the explore branch.
-
-Requires both ``epsilon`` and ``default_action`` to be set.
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~python
-smab = SmabBernoulli(
-    actions={"a1": Beta(), "a2": Beta()},
-    epsilon=0.2,
-    default_action="a1",
-    default_action_fraction=0.7,  # 70% default / 30% random when exploring
-)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 Documentation
 -------------
 
