@@ -1818,77 +1818,125 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
 # KL annealing
 # ---------------------------------------------------------------------------
 
+# Boundary-derived invalid fractions covering both sides of the (0, 1] range.
+_INVALID_KL_ANNEALING_FRACTIONS = (-1e-6, -0.1, -1.0, 1.0 + 1e-6, 1.5, 2.0)
 
-@pytest.mark.parametrize("bad_value", [-0.1, 1.5, 2.0, -1.0])
-def test_kl_annealing_fraction_range_validation(bad_value: float):
-    """Out-of-range kl_annealing_fraction raises ValueError at construction time."""
-    with pytest.raises(ValueError, match="kl_annealing_fraction"):
-        BayesianNeuralNetwork.cold_start(
-            n_features=2,
-            update_kwargs={"kl_annealing_fraction": bad_value},
+
+class TestKLAnnealing:
+    """Tests for the kl_annealing_fraction VI knob on BayesianNeuralNetwork."""
+
+    N_FEATURES = 2
+
+    @pytest.mark.parametrize("bad_value", _INVALID_KL_ANNEALING_FRACTIONS)
+    def test_kl_annealing_fraction_range_validation(self, bad_value: float):
+        """Out-of-range kl_annealing_fraction raises ValueError at construction time."""
+        with pytest.raises(ValueError, match="kl_annealing_fraction"):
+            BayesianNeuralNetwork.cold_start(
+                n_features=self.N_FEATURES,
+                update_kwargs={"kl_annealing_fraction": bad_value},
+            )
+
+    @pytest.mark.parametrize("kl_annealing_fraction", [None, 0.0])
+    def test_kl_annealing_inactive_no_scale_on_prior_sites(self, kl_annealing_fraction):
+        """Inactive values (None, 0.0) gate _kl_scale_ctx to nullcontext, so prior
+        sample sites carry no scale annotation in the model trace."""
+        import jax.numpy as jnp
+
+        n_samples = 10
+        context = jnp.asarray(np.random.rand(n_samples, self.N_FEATURES).astype(np.float32))
+        rewards = jnp.asarray(np.random.randint(0, 2, size=n_samples))
+
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=self.N_FEATURES,
+            update_kwargs={"kl_annealing_fraction": kl_annealing_fraction},
+        )
+        model_fn = bnn._create_update_model()
+        trace = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(context, rewards, 1.0)
+
+        # Prior sample sites = type 'sample' minus the likelihood site 'out'
+        # (which lives inside the data plate, outside the kl_scale ctx).
+        prior_sites = {n: s for n, s in trace.items() if s.get("type") == "sample" and n != "out"}
+        assert prior_sites, "expected at least one prior sample site in the trace"
+        for name, site in prior_sites.items():
+            assert site.get("scale") is None, (
+                f"kl_annealing_fraction={kl_annealing_fraction!r}: site {name!r} "
+                f"has unexpected scale={site.get('scale')!r}; expected None."
+            )
+
+    @pytest.mark.parametrize("factor", [0.1, 1.0])
+    def test_kl_annealing_active_scales_prior_sites(self, factor: float):
+        """When annealing is active, prior sample sites carry the factor passed
+        to model_fn as their cumulative scale (with kl_tau off, base = 1.0 so the
+        site scale equals the factor exactly)."""
+        import jax.numpy as jnp
+
+        n_samples = 10
+        context = jnp.asarray(np.random.rand(n_samples, self.N_FEATURES).astype(np.float32))
+        rewards = jnp.asarray(np.random.randint(0, 2, size=n_samples))
+
+        # Construction-time fraction only gates the active branch; the per-site
+        # scale comes from the runtime `factor` arg passed to model_fn below.
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=self.N_FEATURES,
+            update_kwargs={"kl_annealing_fraction": float(np.random.uniform(0.01, 1.0))},
+        )
+        model_fn = bnn._create_update_model()
+        trace = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(context, rewards, factor)
+
+        prior_sites = {n: s for n, s in trace.items() if s.get("type") == "sample" and n != "out"}
+        assert prior_sites, "expected at least one prior sample site in the trace"
+        for name, site in prior_sites.items():
+            assert site.get("scale") == pytest.approx(factor), (
+                f"factor={factor}: site {name!r} has scale={site.get('scale')!r}, expected {factor}."
+            )
+
+    def test_kl_annealing_interacts_with_kl_tau(self):
+        """kl_tau alone vs kl_tau + annealing produce distinct loss trajectories."""
+        random_seed = int(np.random.randint(0, 2**31 - 1))
+        kl_tau = float(np.random.uniform(0.01, 1.0))
+        # Lower bound 0.3: at num_steps=10, smaller fractions ramp the warmup
+        # window in too few steps to produce a divergent trajectory.
+        kl_annealing_fraction = float(np.random.uniform(0.3, 1.0))
+
+        n_samples = 20
+        context = np.random.rand(n_samples, self.N_FEATURES).astype(np.float32)
+        rewards = np.random.randint(0, 2, size=n_samples).tolist()
+
+        bnn_tau_only = BayesianNeuralNetwork.cold_start(
+            n_features=self.N_FEATURES,
+            update_kwargs={"num_steps": 10, "kl_tau": kl_tau},
+            random_seed=random_seed,
+        )
+        bnn_tau_anneal = BayesianNeuralNetwork.cold_start(
+            n_features=self.N_FEATURES,
+            update_kwargs={
+                "num_steps": 10,
+                "kl_tau": kl_tau,
+                "kl_annealing_fraction": kl_annealing_fraction,
+            },
+            random_seed=random_seed,
         )
 
+        bnn_tau_only.update(context=context, rewards=rewards)
+        bnn_tau_anneal.update(context=context, rewards=rewards)
 
-def test_kl_annealing_none_and_zero_equivalent():
-    """kl_annealing_fraction=None and =0.0 produce identical approx_history (both inactive)."""
-    np.random.seed(42)
-    context = np.random.rand(10, 2).astype(np.float32)
-    rewards = [1, 0, 1, 1, 0, 0, 1, 0, 1, 1]
+        # Both should complete without error and produce valid histories
+        assert bnn_tau_only._approx_history is not None
+        assert bnn_tau_anneal._approx_history is not None
+        # The KL weighting differs during warmup, so losses should diverge
+        assert not np.allclose(bnn_tau_only._approx_history, bnn_tau_anneal._approx_history)
 
-    bnn_none = BayesianNeuralNetwork.cold_start(
-        n_features=2,
-        update_kwargs={"num_steps": 6, "kl_annealing_fraction": None},
-        random_seed=7,
-    )
-    bnn_zero = BayesianNeuralNetwork.cold_start(
-        n_features=2,
-        update_kwargs={"num_steps": 6, "kl_annealing_fraction": 0.0},
-        random_seed=7,
-    )
+    def test_kl_annealing_fraction_serialization_round_trip(self):
+        """kl_annealing_fraction survives a model_dump / reconstruction round-trip."""
+        kl_annealing_fraction = float(np.random.uniform(0.01, 1.0))
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=self.N_FEATURES,
+            update_kwargs={"num_steps": 4, "kl_annealing_fraction": kl_annealing_fraction},
+        )
+        dumped = bnn.apply_version_adjusted_method("model_dump", "dict")
+        # The value must be preserved in the serialised update_kwargs
+        assert dumped["update_kwargs"]["kl_annealing_fraction"] == kl_annealing_fraction
 
-    bnn_none.update(context=context, rewards=rewards)
-    bnn_zero.update(context=context, rewards=rewards)
-
-    np.testing.assert_array_equal(bnn_none._approx_history, bnn_zero._approx_history)
-
-
-def test_kl_annealing_interacts_with_kl_tau():
-    """kl_tau alone vs kl_tau + annealing produce distinct early-step loss trajectories."""
-    np.random.seed(0)
-    context = np.random.rand(20, 2).astype(np.float32)
-    rewards = [1, 0] * 10
-
-    bnn_tau_only = BayesianNeuralNetwork.cold_start(
-        n_features=2,
-        update_kwargs={"num_steps": 10, "kl_tau": 1.0},
-        random_seed=99,
-    )
-    bnn_tau_anneal = BayesianNeuralNetwork.cold_start(
-        n_features=2,
-        update_kwargs={"num_steps": 10, "kl_tau": 1.0, "kl_annealing_fraction": 0.5},
-        random_seed=99,
-    )
-
-    bnn_tau_only.update(context=context, rewards=rewards)
-    bnn_tau_anneal.update(context=context, rewards=rewards)
-
-    # Both should complete without error and produce valid histories
-    assert bnn_tau_only._approx_history is not None
-    assert bnn_tau_anneal._approx_history is not None
-    # The KL weighting differs during warmup, so losses should diverge
-    assert not np.allclose(bnn_tau_only._approx_history, bnn_tau_anneal._approx_history)
-
-
-def test_kl_annealing_fraction_serialization_round_trip():
-    """kl_annealing_fraction survives a model_dump / reconstruction round-trip."""
-    bnn = BayesianNeuralNetwork.cold_start(
-        n_features=2,
-        update_kwargs={"num_steps": 4, "kl_annealing_fraction": 0.3},
-    )
-    dumped = bnn.apply_version_adjusted_method("model_dump", "dict")
-    # The value must be preserved in the serialised update_kwargs
-    assert dumped["update_kwargs"]["kl_annealing_fraction"] == 0.3
-
-    # Reconstruct from the dump and verify the field is still present
-    bnn2 = BayesianNeuralNetwork(**dumped)
-    assert bnn2._update_kwargs["kl_annealing_fraction"] == 0.3
+        # Reconstruct from the dump and verify the field is still present
+        bnn2 = BayesianNeuralNetwork(**dumped)
+        assert bnn2._update_kwargs["kl_annealing_fraction"] == kl_annealing_fraction

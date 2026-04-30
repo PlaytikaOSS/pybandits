@@ -49,7 +49,7 @@ from scipy.stats import norm, t
 from tqdm import trange
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
+from pybandits.base import BinaryReward, Float01, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
 from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
 from pybandits.pydantic_version_compatibility import (
     PYDANTIC_VERSION_1,
@@ -1527,7 +1527,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.__dict__.update(state)
         self._init_private_attrs()
 
-    def _kl_scale_ctx(self, n_samples: PositiveInt, kl_annealing_factor=1.0):
+    def _kl_scale_ctx(
+        self,
+        n_samples: Union[PositiveInt, jax.Array],
+        kl_annealing_factor: Union[Float01, jax.Array] = 1.0,
+    ):
         """Return a context manager that scales sample-site log-probs for KL.
 
         The effective scale is ``kl_base_factor * kl_annealing_factor`` where
@@ -1545,11 +1549,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         Parameters
         ----------
-        n_samples : PositiveInt
+        n_samples : PositiveInt or jax.Array
             Number of data points in the current batch.
-        kl_annealing_factor : float or jax scalar, optional
-            Multiplicative factor in [0, 1]. Default 1.0 (no annealing).
-            May be a traced JAX scalar inside lax.scan - do not coerce to float.
+            May be a traced JAX integer scalar (``x.shape[0]`` inside ``lax.scan``).
+        kl_annealing_factor : Float01 or jax.Array, optional
+            Multiplicative factor in (0, 1]. Default 1.0 (no annealing).
+            May be a traced JAX scalar inside ``lax.scan`` - do not coerce to a Python float.
 
         Returns
         -------
@@ -1607,7 +1612,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
 
-        def model(x: jax.Array, y: jax.Array, kl_annealing_factor=1.0):
+        def model(x: jax.Array, y: jax.Array, kl_annealing_factor: Union[Float01, jax.Array] = 1.0):
             n_samples = x.shape[0]
 
             # Sample all weights (global parameters, outside plate)
@@ -2004,25 +2009,40 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         total_steps = sum(epoch_steps_list)
         kl_annealing_fraction = self._update_kwargs.get("kl_annealing_fraction")
         kl_annealing_active = kl_annealing_fraction not in (None, 0.0)
-        kl_warmup_steps = max(1, int(np.ceil(kl_annealing_fraction * total_steps))) if kl_annealing_active else None
+
+        # Per-step KL annealing schedule, fed as the xs runtime array to lax.scan
+        # below. Inactive: a constant-1.0 array (no-op multiplier; nullcontext when
+        # kl_tau is also off). Active: linear ramp `min(1, (step+1) / warmup_steps)`
+        # over global step indices.
+        if kl_annealing_active:
+            kl_warmup_steps = max(1, int(np.ceil(kl_annealing_fraction * total_steps)))
+            all_steps = jnp.arange(total_steps, dtype=jnp.float32)
+            kl_factors_full = jnp.minimum(1.0, (all_steps + 1.0) / jnp.float32(kl_warmup_steps))
+        else:
+            kl_factors_full = jnp.ones(total_steps, dtype=jnp.float32)
 
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
         raw_guide = method_config["guide"](_model, init_loc_fn=init_to_median)
 
-        # When kl_tau or KL annealing is active, wrap the guide with the same scale handler so
-        # both log p(z) and log q(z) are scaled equally → the KL term as a
-        # whole is multiplied by kl_base_factor * kl_annealing_factor.
-        kl_tau_active = self._update_kwargs.get("kl_tau") is not None
-        if kl_tau_active or kl_annealing_active:
-            kl_scale = self._kl_scale_ctx
+        # Wrap raw_guide so its signature matches the model's (svi.update forwards
+        # kl_annealing_factor into both). Wrapping both with the same kl_scale
+        # handler scales log p(z) and log q(z) equally, so the full KL term is
+        # multiplied by kl_base_factor * kl_annealing_factor. The wrapper is a
+        # no-op when both kl_tau and kl_annealing are inactive (kl_scale returns
+        # nullcontext()).
+        kl_scale = self._kl_scale_ctx
 
-            def guide(x, y, kl_annealing_factor, *args, **kwargs):
-                with kl_scale(x.shape[0], kl_annealing_factor):
-                    return raw_guide(x, y, kl_annealing_factor, *args, **kwargs)
-        else:
-            guide = raw_guide
+        def guide(
+            x: jax.Array,
+            y: jax.Array,
+            kl_annealing_factor: Union[Float01, jax.Array],
+            *args,
+            **kwargs,
+        ):
+            with kl_scale(x.shape[0], kl_annealing_factor):
+                return raw_guide(x, y, kl_annealing_factor, *args, **kwargs)
 
         num_particles = self._update_kwargs["num_particles"]
         loss = method_config["loss"](num_particles=num_particles)
@@ -2035,44 +2055,22 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # lax.scan compiles the loop body once and runs it entirely in XLA.
         self._rng_key, subkey = jax.random.split(self._rng_key)
         svi_state = svi.init(subkey, x_jnp, y_jnp, 1.0)
-        if kl_annealing_active:
-            kl_warmup_f = jnp.float32(kl_warmup_steps)
 
-            def _svi_body(state, step):  # step is a traced int32 scalar (global index)
-                kl_annealing_factor = jnp.minimum(1.0, (step.astype(jnp.float32) + 1.0) / kl_warmup_f)
-                state, loss = svi.update(state, x_jnp, y_jnp, kl_annealing_factor)
-                return state, loss
+        def _svi_body(state, kl_annealing_factor: jax.Array):
+            # kl_annealing_factor is a traced float32 scalar from kl_factors_full
+            # (1.0 on the inactive path).
+            state, loss = svi.update(state, x_jnp, y_jnp, kl_annealing_factor)
+            return state, loss
 
-            _run_epoch = jax.jit(
-                lambda state, steps: jax.lax.scan(_svi_body, state, steps),
-            )  # steps is a 1-D int32 array; scan feeds each element as xs to _svi_body
-        else:
-
-            def _svi_body(state, _):
-                # kl_annealing_factor = 1.0 is safe: _kl_scale_ctx returns nullcontext
-                # if kl_tau is also None; otherwise kl_base_factor * 1.0 == kl_base_factor.
-                state, loss = svi.update(state, x_jnp, y_jnp, 1.0)
-                return state, loss
-
-            _run_epoch = jax.jit(
-                lambda state, n: jax.lax.scan(_svi_body, state, None, length=n),
-                static_argnums=(1,),
-            )
+        _run_epoch = jax.jit(lambda state, factors: jax.lax.scan(_svi_body, state, factors))
 
         all_losses = []
         pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
         global_step_offset = 0
         for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
-            if kl_annealing_active:
-                steps_arr = jnp.arange(
-                    global_step_offset,
-                    global_step_offset + epoch_steps,
-                    dtype=jnp.int32,
-                )
-                svi_state, epoch_losses = _run_epoch(svi_state, steps_arr)
-            else:
-                svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
+            factors_slice = kl_factors_full[global_step_offset : global_step_offset + epoch_steps]
+            svi_state, epoch_losses = _run_epoch(svi_state, factors_slice)
             global_step_offset += epoch_steps
 
             epoch_np = np.array(epoch_losses)
