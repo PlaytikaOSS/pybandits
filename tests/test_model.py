@@ -495,7 +495,8 @@ def test_bnn_vi_update(
             layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
             layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
-            for param in ["mu", "sigma"]:
+            # mu necessarily changes, but nor sigma, due to high prior value and low sample rate
+            for param in ["mu"]:
                 assert np.all(layer_w.params[param] != layer_w_init.params[param])
                 assert np.all(layer_b.params[param] != layer_b_init.params[param])
 

@@ -22,6 +22,7 @@
 
 import warnings
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from copy import deepcopy
 from math import ceil
 from types import ModuleType
@@ -40,7 +41,7 @@ from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
 from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
-from numpyro.infer.initialization import init_to_median
+from numpyro.infer.initialization import init_to_median, init_to_value
 from scipy.special import erf
 from tqdm import trange
 from typing_extensions import Self
@@ -1092,6 +1093,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
+    _min_vi_sigma: ClassVar[float] = 1e-6
     _supported_optimizers: ClassVar[dict] = {
         "sgd": noptim.SGD,
         "momentum": noptim.Momentum,
@@ -1555,9 +1557,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     embedding_matrices.append(emb)
 
             # Data plate with optional minibatching
-            with numpyro.plate("data", N, subsample_size=batch_size) as idx:
-                x_batch = x[idx] if batch_size is not None else x
-                y_batch = y[idx] if batch_size is not None else y
+            if batch_size is not None and batch_size < N:
+                plate_ctx = numpyro.plate("data", size=N, subsample_size=batch_size)
+            else:
+                plate_ctx = nullcontext()
+
+            with plate_ctx as idx:
+                x_batch = x[idx] if idx is not None else x
+                y_batch = y[idx] if idx is not None else y
 
                 # Build network input: numerical features + embedded categoricals
                 if has_embeddings:
@@ -1867,6 +1874,39 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
         self.model_params.embedding_params.embeddings = updated_embeddings
 
+    def _build_svi_guide_init(self) -> tuple:
+        """Build ``init_loc_fn`` and ``init_scale`` for the AutoNormal/AutoMultivariateNormal guide.
+
+        ``init_loc_fn`` is ``init_to_value`` seeded with the current model mu values, unless all
+        mu values are zero (cold start), in which case ``init_to_median`` is used instead.
+        ``init_scale`` is the mean of all current sigma values so the guide scale starts close to
+        the model's posterior width rather than at the AutoNormal default of 0.1.
+        """
+        values: dict = {}
+        all_mus: list = []
+        all_sigmas: list = []
+
+        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+            w_name, b_name = self.get_layer_params_name(layer_ind)
+            values[w_name] = jnp.array(layer_params.weight.params["mu"])
+            values[b_name] = jnp.array(layer_params.bias.params["mu"])
+            all_mus.append(layer_params.weight.params["mu"].ravel())
+            all_mus.append(layer_params.bias.params["mu"].ravel())
+            all_sigmas.append(layer_params.weight.params["sigma"].ravel())
+            all_sigmas.append(layer_params.bias.params["sigma"].ravel())
+
+        if self.model_params.embedding_params is not None:
+            for i, emb in enumerate(self.model_params.embedding_params.embeddings):
+                emb_name = self.get_embedding_var_name(i)
+                values[emb_name] = jnp.array(emb.params["mu"])
+                all_mus.append(emb.params["mu"].ravel())
+                all_sigmas.append(emb.params["sigma"].ravel())
+
+        all_mus_flat = np.concatenate(all_mus)
+        init_loc_fn = init_to_median if np.all(all_mus_flat == 0) else init_to_value(values=values)
+        init_scale = float(np.mean(np.concatenate(all_sigmas)))
+        return init_loc_fn, init_scale
+
     def _run_svi_training_loop(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> tuple:
         """
         Set up and run the SVI training loop, returning ``(svi, params)``.
@@ -1908,7 +1948,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
-        guide = method_config["guide"](_model, init_loc_fn=init_to_median)
+        init_loc_fn, init_scale = self._build_svi_guide_init()
+        guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale)
         loss = method_config["loss"]()
         svi = SVI(_model, guide, self._obj_optimizer, loss=loss)
 
@@ -1986,10 +2027,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         tuple
             ``(site_mu, site_sigma)`` dicts mapping site name → array.
         """
-        # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (std)
+        # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (already-constrained std)
         site_mu = {k.removesuffix("_auto_loc"): v for k, v in params.items() if k.endswith("_auto_loc")}
         site_sigma = {
-            k.removesuffix("_auto_scale"): jax.nn.softplus(v) for k, v in params.items() if k.endswith("_auto_scale")
+            k.removesuffix("_auto_scale"): np.maximum(v, self._min_vi_sigma)
+            for k, v in params.items()
+            if k.endswith("_auto_scale")
         }
         return site_mu, site_sigma
 
