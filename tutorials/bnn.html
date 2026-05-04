@@ -252,7 +252,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BLR — Accuracy: 0.878, AUC: 0.952
+BLR — Accuracy: 0.870, AUC: 0.954
 </pre></div></div>
 </div>
 <p>Because BLR is linear it struggles with the non-linear moon boundary.</p>
@@ -274,7 +274,7 @@ BLR — Accuracy: 0.878, AUC: 0.952
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f75b04ee920&gt;
+&lt;matplotlib.legend.Legend at 0x7f7b7d73a320&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -419,8 +419,8 @@ BLR — Accuracy: 0.878, AUC: 0.952
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN — Accuracy: 0.930, AUC: 0.987
-BLR — Accuracy: 0.878, AUC: 0.952
+BNN — Accuracy: 0.960, AUC: 0.991
+BLR — Accuracy: 0.870, AUC: 0.954
 </pre></div></div>
 </div>
 <p>The BNN produces a much better separation than the linear BLR.</p>
@@ -442,7 +442,7 @@ BLR — Accuracy: 0.878, AUC: 0.952
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7f750c175c90&gt;
+&lt;matplotlib.legend.Legend at 0x7f7b44113ee0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -576,8 +576,8 @@ BLR — Accuracy: 0.878, AUC: 0.952
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN Student-T — Accuracy: 0.930, AUC: 0.987
-BNN Normal    — Accuracy: 0.930, AUC: 0.981
+BNN Student-T — Accuracy: 0.960, AUC: 0.991
+BNN Normal    — Accuracy: 0.916, AUC: 0.975
 </pre></div></div>
 </div>
 <section id="FeaturesConfig:-Categorical-Embeddings">
@@ -634,16 +634,16 @@ BNN Normal    — Accuracy: 0.930, AUC: 0.981
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 First 5 training samples (x1, x2, region_index):
-[[-1.2788967  -0.76799974  0.        ]
- [ 1.35608398 -0.800977    2.        ]
- [ 0.19835752 -1.32787418  1.        ]
- [ 0.29752152 -0.84842924  1.        ]
- [ 0.18967121 -0.80256075  1.        ]]
+[[ 1.46952902 -0.15471412  2.        ]
+ [ 0.48137026 -1.207667    1.        ]
+ [-1.67884738 -0.32330739  0.        ]
+ [-0.3683215   0.04100326  1.        ]
+ [-0.6508155   0.73311686  0.        ]]
 
 Region distribution:
   left: 159
-  center: 183
-  right: 158
+  center: 187
+  right: 154
 </pre></div></div>
 </div>
 </section>
@@ -731,7 +731,7 @@ Total BNN input dim : 6
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN with embeddings — Accuracy: 0.938, AUC: 0.988
+BNN with embeddings — Accuracy: 0.956, AUC: 0.992
 </pre></div></div>
 </div>
 </section>
@@ -799,14 +799,14 @@ BNN with embeddings — Accuracy: 0.938, AUC: 0.988
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Learned embedding means (mu) for each &#39;region&#39; category:
-  left    : [0.115]
-  center  : [-0.045]
-  right   : [-0.204]
+  left    : [0.177]
+  center  : [0.05]
+  right   : [-0.186]
 
 Learned embedding std-devs (sigma) for each &#39;region&#39; category:
-  left    : [0.83]
-  center  : [0.779]
-  right   : [0.873]
+  left    : [0.425]
+  center  : [0.311]
+  right   : [0.669]
 </pre></div></div>
 </div>
 </section>

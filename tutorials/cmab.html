@@ -147,16 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-0.14077628 -0.03323694  0.93859333 -0.48337038 -0.75379381]
- [-0.08156008  0.64780794  0.16046798  0.99219932 -0.12008573]
- [-0.95418127 -0.30782342  0.48969272 -0.5932156   0.83717956]
- [ 0.57963058 -0.21624101  0.61089987 -0.83382741 -0.67690054]
- [ 0.95573154  0.12934648  0.34423694 -0.10895166 -0.62826387]
- [-0.3891387   0.93991835  0.8939779  -0.64980669 -0.90648678]
- [ 0.2862322   0.42507152 -0.91384487 -0.95995997 -0.05605696]
- [-0.61630658  0.36813546 -0.5779627   0.20817694  0.86860938]
- [-0.48822238 -0.9548769   0.09906524 -0.91460788  0.14668372]
- [ 0.73723577  0.61824517 -0.70845412 -0.39989631 -0.96346696]]
+[[ 0.57721501 -0.10491495  0.32741551 -0.64445469  0.59615259]
+ [ 0.80096156  0.30799961 -0.11300114 -0.38609507 -0.01894877]
+ [ 0.68199918 -0.7524287   0.4108654   0.82683007  0.01918578]
+ [ 0.02820283 -0.18025311  0.12685239 -0.40028207 -0.54182886]
+ [-0.05421174 -0.12169021 -0.38969847  0.00909368 -0.10272883]
+ [-0.99113276  0.04352721  0.22339235  0.94559409 -0.02681423]
+ [ 0.20475381 -0.9097193  -0.7052359   0.88276448  0.48553881]
+ [-0.37192289  0.33167246 -0.23457425 -0.90863326  0.62528002]
+ [ 0.2682564  -0.41391854  0.4441127  -0.79089207 -0.99060307]
+ [-0.04413392  0.86481794 -0.87721351  0.35099491 -0.54559669]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -216,7 +216,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -235,7 +235,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 0, 1, 0, 1, 0, 1, 0, 1, 1]
+Simulated rewards: [1, 0, 1, 0, 1, 1, 1, 0, 1, 0]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
