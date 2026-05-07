@@ -165,7 +165,7 @@ class classproperty(property):
 
 
 _DE_PARAMS = {
-    "maxiter": 100,  # Ensure minimum iterations for convergence
+    "maxiter": 1000,  # Match scipy's default; nonlinear constraints require more iterations
     "popsize": 15,  # Population size multiplier (total pop = popsize * len(bounds))
     "atol": 1e-6,  # Relaxed tolerance for boundary convergence
     "tol": 1e-6,  # Relaxed tolerance for boundary convergence
@@ -225,7 +225,6 @@ def maximize_by_quantity(
     de_params = {
         "func": lambda x: -quantity_score_func(x),  # Minimize negative = maximize
         "bounds": bounds,
-        "maxiter": max(100, n_trials // 10),  # Ensure minimum iterations for convergence
         **_DE_PARAMS,
     }
     de_params["maxiter"] = max(de_params["maxiter"], n_trials // maxiter_factor)
