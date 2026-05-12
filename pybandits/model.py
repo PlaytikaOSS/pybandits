@@ -22,6 +22,7 @@
 
 import warnings
 from abc import ABC, abstractmethod
+from contextlib import ExitStack, nullcontext
 from copy import deepcopy
 from math import ceil
 from types import ModuleType
@@ -38,9 +39,12 @@ from numpy import sqrt
 from numpyro.distributions import Bernoulli as NumpyroBernoulli
 from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
+from numpyro.distributions import constraints
+from numpyro.distributions.transforms import biject_to
 from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
-from numpyro.infer.initialization import init_to_median
+from numpyro.infer.initialization import init_to_median, init_to_uniform, init_to_value
+from numpyro.infer.util import helpful_support_errors
 from scipy.special import erf
 from tqdm import trange
 from typing_extensions import Self
@@ -298,13 +302,13 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     ----------
     mu : Union[List[float], List[List[float]]]
         The mean values of the distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
-    sigma : Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
-        The scale (standard deviation) values of the distributions. Must be non-negative.
+    sigma : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+        The scale (standard deviation) values of the distributions. Must be strictly positive.
         Can be a 1D or 2D list.
     """
 
     mu: Union[List[float], List[List[float]]]
-    sigma: Union[List[NonNegativeFloat], List[List[NonNegativeFloat]]]
+    sigma: Union[List[PositiveFloat], List[List[PositiveFloat]]]
 
     _mu_array: np.ndarray = PrivateAttr()
     _sigma_array: np.ndarray = PrivateAttr()
@@ -1016,6 +1020,174 @@ class EarlyStopping(PyBanditsBaseModel):
         return self._no_improvement_count >= self.patience
 
 
+class ParameterizedScaleAutoNormal(AutoNormal):
+    """AutoNormal guide with per-site scale initialization via a callable.
+
+    Extends :class:`~numpyro.infer.autoguide.AutoNormal` so that the initial
+    variational scale of every latent site can be set individually rather than
+    sharing a single global scalar.  All other behaviour (diagonal-normal
+    approximation, ``init_loc_fn``, plate handling, constrained-support
+    transforms) is inherited unchanged from the parent.
+
+    Two modes are supported:
+
+    * **Per-site** (``init_scale_fn`` provided): the callable is invoked once
+      per latent site and must return a value broadcast-compatible with that
+      site's shape.  ``init_scale`` is ignored in this mode.
+    * **Scalar fallback** (``init_scale_fn=None``): behaves identically to
+      :class:`~numpyro.infer.autoguide.AutoNormal` with the given scalar
+      ``init_scale``.
+
+    Parameters
+    ----------
+    model : callable
+        The NumPyro model whose posterior is being approximated.
+    prefix : str, optional
+        String prefix prepended to all variational parameter names, by default
+        ``"auto"``.
+    init_loc_fn : callable, optional
+        Per-site initialisation strategy for the location parameters; see
+        :mod:`numpyro.infer.initialization`.  Defaults to
+        :func:`~numpyro.infer.initialization.init_to_uniform`.
+    init_scale : float, optional
+        Global initial scale used when ``init_scale_fn`` is ``None``, by
+        default ``0.1``.
+    init_scale_fn : Optional[Callable[[str], Union[float, np.ndarray, jax.Array]]], optional
+        Callable with signature ``(site_name: str) -> scale`` where ``scale``
+        is a scalar or an array broadcast-compatible with the site's shape.
+        When provided, ``init_scale`` is ignored.  ``None`` (default) falls
+        back to the scalar ``init_scale``.
+    create_plates : callable, optional
+        Optional function that creates :func:`numpyro.plate` contexts; passed
+        directly to the parent ``AutoNormal.__init__``.
+
+    Raises
+    ------
+    ValueError
+        If ``init_scale_fn`` is provided but is not callable.
+
+    Examples
+    --------
+    Seed each BNN weight/bias site from the current posterior sigma stored in
+    ``model_params``::
+
+        site_sigmas = {
+            "weight_0": layer_params.weight.params["sigma"],
+            "bias_0":   layer_params.bias.params["sigma"],
+        }
+        guide = ParameterizedScaleAutoNormal(
+            numpyro_model,
+            init_loc_fn=init_to_value(values={"weight_0": w_mu, "bias_0": b_mu}),
+            init_scale_fn=lambda name: site_sigmas.get(name, fallback_sigma),
+        )
+    """
+
+    def __init__(
+        self,
+        model: Callable,
+        *,
+        prefix: str = "auto",
+        init_loc_fn: Callable = init_to_uniform,
+        init_scale: float = 0.1,
+        init_scale_fn: Optional[Callable[[str], Union[float, np.ndarray, jax.Array]]] = None,
+        create_plates: Optional[Callable] = None,
+    ) -> None:
+        if init_scale_fn is not None and not callable(init_scale_fn):
+            raise ValueError("init_scale_fn must be callable or None.")
+        self._init_scale_fn = init_scale_fn
+        super().__init__(
+            model,
+            prefix=prefix,
+            init_loc_fn=init_loc_fn,
+            init_scale=init_scale,
+            create_plates=create_plates,
+        )
+
+    def _get_site_init_scale(self, name: str, init_loc: jax.Array) -> jax.Array:
+        """Return the initial scale for ``name``, broadcast to match ``init_loc``.
+
+        Parameters
+        ----------
+        name : str
+            NumPyro site name.
+        init_loc : jax.Array
+            Initialised location array for this site; used only to determine
+            the required output shape.
+
+        Returns
+        -------
+        jax.Array
+            Scale array with the same shape as ``init_loc``.
+        """
+        if self._init_scale_fn is not None:
+            raw = self._init_scale_fn(name)
+            return jnp.broadcast_to(jnp.array(raw), jnp.shape(init_loc))
+        return jnp.full(jnp.shape(init_loc), self._init_scale)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Dict[str, jax.Array]:
+        """Sample the variational posterior and register variational parameters.
+
+        On the first call the prototype trace is built via
+        ``_setup_prototype``; subsequent calls reuse it.  For every unobserved
+        sample site a ``Normal(loc, scale)`` variational distribution is
+        registered via :func:`numpyro.param`.  The initial scale is provided
+        by :meth:`_get_site_init_scale`; for constrained sites the Normal is
+        wrapped in a :class:`~numpyro.distributions.TransformedDistribution`
+        using the site's bijection.
+
+        Parameters
+        ----------
+        *args : Any
+            Positional arguments forwarded to the model (used only during
+            prototype construction).
+        **kwargs : Any
+            Keyword arguments forwarded to the model (used only during
+            prototype construction).
+
+        Returns
+        -------
+        Dict[str, jax.Array]
+            Mapping from site name to the sampled value in the *constrained*
+            space.
+        """
+        if self.prototype_trace is None:
+            self._setup_prototype(*args, **kwargs)
+
+        plates = self._create_plates(*args, **kwargs)
+        result: Dict[str, jax.Array] = {}
+        for name, site in self.prototype_trace.items():
+            if site["type"] != "sample" or site["is_observed"]:
+                continue
+
+            event_dim = self._event_dims[name]
+            init_loc = self._init_locs[name]
+            with ExitStack() as stack:
+                for frame in site["cond_indep_stack"]:
+                    stack.enter_context(plates[frame.name])
+
+                site_loc = numpyro.param("{}_{}_loc".format(name, self.prefix), init_loc, event_dim=event_dim)
+                site_scale = numpyro.param(
+                    "{}_{}_scale".format(name, self.prefix),
+                    self._get_site_init_scale(name, init_loc),
+                    constraint=self.scale_constraint,
+                    event_dim=event_dim,
+                )
+
+                site_fn = npdist.Normal(site_loc, site_scale).to_event(event_dim)
+                if site["fn"].support is constraints.real or (
+                    isinstance(site["fn"].support, constraints.independent)
+                    and site["fn"].support.base_constraint is constraints.real
+                ):
+                    result[name] = numpyro.sample(name, site_fn)
+                else:
+                    with helpful_support_errors(site):
+                        transform = biject_to(site["fn"].support)
+                    guide_dist = npdist.TransformedDistribution(site_fn, transform)
+                    result[name] = numpyro.sample(name, guide_dist)
+
+        return result
+
+
 class BaseBayesianNeuralNetwork(Model, ABC):
     """Bayesian Neural Network model for binary classification.
 
@@ -1027,6 +1199,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     ----------
     Bayesian Learning for Neural Networks (Radford M. Neal, 1995)
     https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=db869fa192a3222ae4f2d766674a378e47013b1b
+
+    Weight Uncertainty in Neural Networks (Blundell, Cornebise, Kavukcuoglu, Wierstra, ICML 2015)
+    https://arxiv.org/abs/1505.05424
+
+    Variational Continual Learning (Nguyen, Li, Bui, Turner, ICLR 2018)
+    https://arxiv.org/abs/1710.10628
 
     Parameters
     ----------
@@ -1092,6 +1270,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
+    _min_sigma: ClassVar[float] = 1e-6
     _supported_optimizers: ClassVar[dict] = {
         "sgd": noptim.SGD,
         "momentum": noptim.Momentum,
@@ -1140,7 +1319,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     )
 
     _vi_method_config: ClassVar[dict] = {
-        "advi": {"guide": AutoNormal, "loss": TraceMeanField_ELBO},
+        "advi": {"guide": ParameterizedScaleAutoNormal, "loss": TraceMeanField_ELBO},
         "fullrank_advi": {"guide": AutoMultivariateNormal, "loss": Trace_ELBO},
     }
 
@@ -1555,9 +1734,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     embedding_matrices.append(emb)
 
             # Data plate with optional minibatching
-            with numpyro.plate("data", N, subsample_size=batch_size) as idx:
-                x_batch = x[idx] if batch_size is not None else x
-                y_batch = y[idx] if batch_size is not None else y
+            if batch_size is not None and batch_size < N:
+                plate_ctx = numpyro.plate("data", size=N, subsample_size=batch_size)
+            else:
+                plate_ctx = nullcontext()
+
+            with plate_ctx as idx:
+                x_batch = x[idx] if idx is not None else x
+                y_batch = y[idx] if idx is not None else y
 
                 # Build network input: numerical features + embedded categoricals
                 if has_embeddings:
@@ -1863,9 +2047,54 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             emb_var_name = self.get_embedding_var_name(i)
             emb_values = np.array(samples[emb_var_name])
             emb_mu = np.mean(emb_values, axis=0)
-            emb_sigma = np.std(emb_values, axis=0)
+            emb_sigma = np.maximum(np.std(emb_values, axis=0), self._min_sigma)
             updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
         self.model_params.embedding_params.embeddings = updated_embeddings
+
+    def _build_svi_guide_init(self) -> tuple:
+        """Build ``init_loc_fn`` and ``init_scale_fn`` for the SVI guide.
+
+        ``init_loc_fn`` is ``init_to_value`` seeded with the current model mu values, unless all
+        mu values are zero (cold start), in which case ``init_to_median`` is used instead.
+        ``init_scale_fn`` maps each site name to its current sigma array so the
+        :class:`ParameterizedScaleAutoNormal` guide starts with the correct per-parameter width.
+        Unknown site names (e.g. for fullrank_advi's scalar fallback) return the global avg sigma.
+
+        Returns
+        -------
+        tuple
+            ``(init_loc_fn, init_scale_fn)``
+        """
+        values: dict = {}
+        all_mus: list = []
+        all_sigmas: list = []
+        site_sigmas: dict = {}
+
+        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+            w_name, b_name = self.get_layer_params_name(layer_ind)
+            values[w_name] = jnp.array(layer_params.weight.params["mu"])
+            values[b_name] = jnp.array(layer_params.bias.params["mu"])
+            all_mus.append(layer_params.weight.params["mu"].ravel())
+            all_mus.append(layer_params.bias.params["mu"].ravel())
+            all_sigmas.append(layer_params.weight.params["sigma"].ravel())
+            all_sigmas.append(layer_params.bias.params["sigma"].ravel())
+            site_sigmas[w_name] = layer_params.weight.params["sigma"]
+            site_sigmas[b_name] = layer_params.bias.params["sigma"]
+
+        if self.model_params.embedding_params is not None:
+            for i, emb in enumerate(self.model_params.embedding_params.embeddings):
+                emb_name = self.get_embedding_var_name(i)
+                values[emb_name] = jnp.array(emb.params["mu"])
+                all_mus.append(emb.params["mu"].ravel())
+                all_sigmas.append(emb.params["sigma"].ravel())
+                site_sigmas[emb_name] = emb.params["sigma"]
+
+        all_mus_flat = np.concatenate(all_mus)
+        init_loc_fn = init_to_median if np.all(all_mus_flat == 0) else init_to_value(values=values)
+        avg_sigma = float(max(np.mean(np.concatenate(all_sigmas)), self._min_sigma))
+        site_sigmas = {name: np.maximum(sigma, self._min_sigma) for name, sigma in site_sigmas.items()}
+        init_scale_fn = lambda name: site_sigmas.get(name, avg_sigma)  # noqa: E731
+        return init_loc_fn, init_scale_fn
 
     def _run_svi_training_loop(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> tuple:
         """
@@ -1908,7 +2137,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
-        guide = method_config["guide"](_model, init_loc_fn=init_to_median)
+        init_loc_fn, init_scale_fn = self._build_svi_guide_init()
+        if vi_method == "advi":
+            guide = ParameterizedScaleAutoNormal(
+                _model,
+                init_loc_fn=init_loc_fn,
+                init_scale_fn=init_scale_fn,
+            )
+        else:
+            # fullrank_advi needs a scalar; use the avg sigma via the unknown-site fallback
+            guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale_fn(""))
         loss = method_config["loss"]()
         svi = SVI(_model, guide, self._obj_optimizer, loss=loss)
 
@@ -1986,10 +2224,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         tuple
             ``(site_mu, site_sigma)`` dicts mapping site name → array.
         """
-        # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (std)
+        # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (already-constrained std)
         site_mu = {k.removesuffix("_auto_loc"): v for k, v in params.items() if k.endswith("_auto_loc")}
         site_sigma = {
-            k.removesuffix("_auto_scale"): jax.nn.softplus(v) for k, v in params.items() if k.endswith("_auto_scale")
+            k.removesuffix("_auto_scale"): np.maximum(v, self._min_sigma)
+            for k, v in params.items()
+            if k.endswith("_auto_scale")
         }
         return site_mu, site_sigma
 
@@ -2120,9 +2360,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             b_values = np.array(samples[bias_layer_params_name])
 
             w_mu = np.mean(w_values, axis=0)
-            w_sigma = np.std(w_values, axis=0)
+            w_sigma = np.maximum(np.std(w_values, axis=0), self._min_sigma)
             b_mu = np.mean(b_values, axis=0)
-            b_sigma = np.std(b_values, axis=0)
+            b_sigma = np.maximum(np.std(b_values, axis=0), self._min_sigma)
 
             updated_layer_params = self._create_updated_layer_params(
                 w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias

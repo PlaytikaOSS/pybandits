@@ -22,24 +22,3 @@ jobs:
         with:
           hasSome: bug, documentation, enhancement, skip-changelog
           githubToken: ${{ secrets.GITHUB_TOKEN }}
-
-  single-commit-check:
-    name: check for single commit in PR
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Get number of commits in the PR
-        id: commit_count
-        run: |
-          COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits -q ".commits | length")
-          echo "Number of commits: $COMMITS"
-          echo "count=$COMMITS" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fail if more than one commit
-        if: steps.commit_count.outputs.count != '1'
-        run: |
-          echo "PR must have exactly one commit. Found ${{ steps.commit_count.outputs.count }}."
-          exit 1

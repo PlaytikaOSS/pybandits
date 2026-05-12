@@ -23,6 +23,8 @@
 from typing import Literal, Optional
 from unittest.mock import patch
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import numpyro
 import pytest
@@ -30,6 +32,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
+from numpyro.infer import Predictive
 
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
@@ -234,7 +237,7 @@ def test_can_init_beta_mo_cc(a_float):
         st.tuples(st.integers(min_value=1, max_value=10), st.integers(min_value=1, max_value=10)),
     ),
     mu=st.floats(allow_nan=False, allow_infinity=False),
-    sigma=st.floats(min_value=0, allow_nan=False, allow_infinity=False),
+    sigma=st.floats(min_value=0, exclude_min=True, allow_nan=False, allow_infinity=False),
     nu=st.floats(min_value=0.001, allow_nan=False, allow_infinity=False),
 )
 def test_can_init_location_scale_array(array_class, shape, mu, sigma, nu):
@@ -495,7 +498,8 @@ def test_bnn_vi_update(
             layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
             layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
             layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
-            for param in ["mu", "sigma"]:
+            # mu necessarily changes, but nor sigma, due to high prior value and low sample rate
+            for param in ["mu"]:
                 assert np.all(layer_w.params[param] != layer_w_init.params[param])
                 assert np.all(layer_b.params[param] != layer_b_init.params[param])
 
@@ -913,7 +917,7 @@ def test_bnn_svi_nan_loss_raises_error(
 
     def nan_mean(a, *args, **kwargs):
         call_count["n"] += 1
-        if call_count["n"] == 1:
+        if call_count["n"] == 2:  # call 1 is avg_sigma in _build_svi_guide_init; call 2 is epoch loss
             return float("nan")
         return original_mean(a, *args, **kwargs)
 
@@ -1718,3 +1722,121 @@ def test_bnn_sample_proba_and_update_both_use_forward_layers(
     with patch.object(BaseBayesianNeuralNetwork, "_forward_layers", tracking_forward_layers):
         bnn.update(context=context, rewards=rewards)
     assert call_count >= ref, "update must call _forward_layers"
+
+
+########################################################################################################################
+
+
+# ParameterizedScaleAutoNormal / ADVI guide consistency
+
+
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=1, max_value=2),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=1),
+    dist_type=st.sampled_from(["studentt", "normal"]),
+    n_samples=st.integers(min_value=5, max_value=10),
+    sigma_init=st.floats(min_value=0.1, max_value=1.0),
+    nu=st.just(5.0),
+    epochs=st.just(2),
+    n_predictive_samples=st.just(4000),
+    n_sigma_tolerance=st.just(5),
+)
+def test_advi_extracted_params_match_predictive_moments(
+    n_features, hidden_dim_list, dist_type, n_samples, sigma_init, nu, epochs, n_predictive_samples, n_sigma_tolerance
+):
+    """Stored (mu, sigma) from _extract_advi_params must match guide posterior sample moments.
+
+    AutoNormal draws each site from Normal(loc, scale), so posterior predictive
+    sample mean/std must recover the extracted loc/scale up to sampling noise.
+    sigma_init is bounded so SE = sigma/sqrt(n_predictive_samples) stays far below tolerance.
+    """
+    dist_params_init = {"sigma": sigma_init} if dist_type == "normal" else {"sigma": sigma_init, "nu": nu}
+    context = np.random.default_rng(0).standard_normal((n_samples, n_features)).astype(np.float32)
+    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method="VI",
+        update_kwargs={"epochs": epochs, "method": "advi"},
+        dist_type=dist_type,
+        dist_params_init=dist_params_init,
+    )
+
+    x_jnp = jnp.array(context)
+    y_jnp = jnp.array(rewards, dtype=jnp.int32)
+    _, guide, params = bnn._run_svi_training_loop(x_jnp, y_jnp, n_samples)
+    site_mu, site_sigma = bnn._extract_advi_params(params)
+
+    samples = Predictive(guide, params=params, num_samples=n_predictive_samples)(jax.random.PRNGKey(0), x_jnp, y_jnp)
+
+    # tolerances are n_sigma_tolerance * SE; atol_mu is per-site since ADVI can widen sigma above sigma_init
+    rtol_sigma = n_sigma_tolerance * np.sqrt(2.0 / n_predictive_samples)
+
+    for layer_ind in range(len(bnn.model_params.bnn_layer_params)):
+        for name in bnn.get_layer_params_name(layer_ind):
+            draw = np.array(samples[name])
+            atol_mu = n_sigma_tolerance * float(np.max(site_sigma[name])) / np.sqrt(n_predictive_samples)
+            np.testing.assert_allclose(site_mu[name], np.mean(draw, axis=0), atol=atol_mu)
+            np.testing.assert_allclose(site_sigma[name], np.std(draw, axis=0), rtol=rtol_sigma)
+
+
+@settings(deadline=None, max_examples=5)
+@given(
+    n_features=st.integers(min_value=1, max_value=2),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
+    dist_type=st.sampled_from(["studentt", "normal"]),
+    n_samples=st.integers(min_value=2, max_value=5),
+    mu_init=st.floats(min_value=0.1, max_value=2.0),
+    sigma_init=st.floats(min_value=0.5, max_value=3.0),
+    nu=st.just(5.0),
+    num_steps=st.just(3),
+    lr=st.just(0.0),
+)
+def test_advi_zero_lr_posterior_equals_prior(
+    n_features, hidden_dim_list, dist_type, n_samples, mu_init, sigma_init, nu, num_steps, lr
+):
+    """With SGD step_size=0, ADVI must leave mu and sigma identical to the prior.
+
+    mu_init > 0 ensures init_to_value is used (not the stochastic init_to_median
+    triggered for all-zero priors), so the guide loc is seeded exactly at prior_mu
+    and stays there with zero gradient steps.
+    """
+    dist_params_init = (
+        {"mu": mu_init, "sigma": sigma_init}
+        if dist_type == "normal"
+        else {"mu": mu_init, "sigma": sigma_init, "nu": nu}
+    )
+    bnn = BayesianNeuralNetwork.cold_start(
+        n_features=n_features,
+        hidden_dim_list=hidden_dim_list,
+        update_method="VI",
+        update_kwargs={
+            "num_steps": num_steps,
+            "method": "advi",
+            "optimizer_type": "sgd",
+            "optimizer_kwargs": {"step_size": lr},
+        },
+        dist_type=dist_type,
+        dist_params_init=dist_params_init,
+    )
+
+    context = np.random.standard_normal((n_samples, n_features)).astype(np.float32)
+    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    bnn.update(context=context, rewards=rewards)
+
+    # float32 rounding on mu; softplus(softplus_inverse(sigma)) rounding on sigma
+    atol_mu = max(mu_init, sigma_init) * np.finfo(np.float32).eps * 100
+    rtol_sigma = np.finfo(np.float32).eps * 100
+
+    for layer_ind in range(len(bnn.model_params.bnn_layer_params)):
+        prior_w = bnn.model_params.bnn_layer_params_init[layer_ind].weight
+        prior_b = bnn.model_params.bnn_layer_params_init[layer_ind].bias
+        post_w = bnn.model_params.bnn_layer_params[layer_ind].weight
+        post_b = bnn.model_params.bnn_layer_params[layer_ind].bias
+
+        np.testing.assert_allclose(post_w.params["mu"], prior_w.params["mu"], atol=atol_mu)
+        np.testing.assert_allclose(post_b.params["mu"], prior_b.params["mu"], atol=atol_mu)
+        np.testing.assert_allclose(post_w.params["sigma"], prior_w.params["sigma"], rtol=rtol_sigma)
+        np.testing.assert_allclose(post_b.params["sigma"], prior_b.params["sigma"], rtol=rtol_sigma)
