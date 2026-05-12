@@ -310,11 +310,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
         """
 
         valid_actions = self._get_valid_actions(forbidden_actions)
-        action_probabilities = {
-            action: model.sample_proba(**kwargs, rng=self._rng)
-            for action, model in self.actions.items()
-            if action in valid_actions
-        }
+        action_probabilities = self.actions_manager.sample_proba(
+            rng=self._rng, valid_action_ids=valid_actions, **kwargs
+        )
         # Handle standard actions for which the value is a (probability, weight) tuple
         actions_transformations = [[{key: proba} for proba in value] for key, value in action_probabilities.items()]
         action_probabilities = self._transform_nested_list(actions_transformations)

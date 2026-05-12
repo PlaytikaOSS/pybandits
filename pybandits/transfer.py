@@ -334,8 +334,8 @@ def _merge_mabs(
     state2 = _get_state_dict(mab2)
 
     # Extract actions
-    actions1 = state1["actions_manager"]["actions"]
-    actions2 = state2["actions_manager"]["actions"]
+    actions1 = state1["actions_manager"]["meta_model"]["actions"]
+    actions2 = state2["actions_manager"]["meta_model"]["actions"]
 
     # Count overlapping actions
     overlapping = set(actions1.keys()) & set(actions2.keys())
@@ -370,7 +370,7 @@ def _merge_mabs(
     # Create merged state using mab2 as base (provides all configuration)
     # Then replace actions with merged versions (which have learned state from mab1)
     merged_state = state2
-    merged_state["actions_manager"]["actions"] = merged_actions
+    merged_state["actions_manager"]["meta_model"]["actions"] = merged_actions
 
     # Merge actions_with_change sets (for adaptive windowing)
     actions_with_change_1 = set(state1["actions_manager"].get("actions_with_change", []))
@@ -565,8 +565,8 @@ def _expand_with_template_weights(
     current_state = _get_state_dict(current_cmab)
     template_state = _get_state_dict(template_cmab)
 
-    current_actions = current_state["actions_manager"]["actions"]
-    template_actions = template_state["actions_manager"]["actions"]
+    current_actions = current_state["actions_manager"]["meta_model"]["actions"]
+    template_actions = template_state["actions_manager"]["meta_model"]["actions"]
 
     # For each overlapping action, expand by appending template's new features
     for action_id in set(current_actions.keys()) & set(template_actions.keys()):

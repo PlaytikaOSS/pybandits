@@ -38,10 +38,29 @@ def sample_with_replacement(source: list, length: PositiveInt):
     return [random.choice(source) for _ in range(length)]
 
 
+def make_action_ids(n: int) -> Tuple[str, ...]:
+    """Stable, indexable action-id tuple of length ``n``: ('a0', 'a1', ...).
+
+    Used by tests that parametrize over action count and need predictable
+    keys without hard-coding strings at each call site.
+    """
+    return tuple(f"a{i}" for i in range(n))
+
+
 def make_binary_rewards(n: int, rate: float, rng: Optional[np.random.Generator] = None) -> List[int]:
     """Return a list of n binary rewards drawn from Bernoulli(rate)."""
     _rng = rng if rng is not None else np.random.default_rng()
     return _rng.binomial(1, rate, size=n).tolist()
+
+
+def make_context_matrix(n_samples: int, n_features: int, rng: Optional[np.random.Generator] = None) -> np.ndarray:
+    """Return a ``(n_samples, n_features)`` matrix of standard-normal context features.
+
+    Used by cmab tests to build per-batch context arrays without each test reaching
+    into ``np.random`` directly.
+    """
+    _rng = rng if rng is not None else np.random.default_rng()
+    return _rng.normal(size=(n_samples, n_features))
 
 
 def to_temporary_pickle(model: PyBanditsBaseModel):

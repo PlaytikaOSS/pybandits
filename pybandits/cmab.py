@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Union, cast
 
 import numpy as np
 from pydantic import validate_call
@@ -216,7 +216,16 @@ class BaseCmabBernoulli(BaseMab, ABC):
         state = super().update_old_state(state)
 
         # Migrate update_kwargs from old PyMC format to new NumPyro format
-        for action_id, action_state in state["actions_manager"]["actions"].items():
+        # Support both old format (actions_manager.actions) and current format (actions_manager.meta_model.actions).
+        actions_manager = cast(Dict, state["actions_manager"])
+        if "actions" in actions_manager:
+            actions_dict = cast(Dict, actions_manager["actions"])
+            _old_format = True
+        else:
+            actions_dict = cast(Dict, actions_manager["meta_model"]["actions"])
+            _old_format = False
+
+        for action_id, action_state in actions_dict.items():
             if "feature_config" not in action_state:  # v5.0.0 compatability
                 layer_params = action_state["model_params"]["bnn_layer_params"]
                 if not layer_params:
@@ -262,6 +271,9 @@ class BaseCmabBernoulli(BaseMab, ABC):
                     opt_kwargs = kwargs["optimizer_kwargs"]
                     if "learning_rate" in opt_kwargs:
                         opt_kwargs["step_size"] = opt_kwargs.pop("learning_rate")
+
+        if _old_format:
+            actions_manager["meta_model"] = {"actions": actions_manager.pop("actions")}
 
         return state
 

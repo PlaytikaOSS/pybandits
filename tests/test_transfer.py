@@ -911,8 +911,12 @@ class TestHiddenDimExpansion:
 
         current_state = json.loads(current.get_state()[1])
         result_state = json.loads(result.get_state()[1])
-        current_layers = current_state["actions_manager"]["actions"][_ACTION_ID]["model_params"]["bnn_layer_params"]
-        result_layers = result_state["actions_manager"]["actions"][_ACTION_ID]["model_params"]["bnn_layer_params"]
+        current_layers = current_state["actions_manager"]["meta_model"]["actions"][_ACTION_ID]["model_params"][
+            "bnn_layer_params"
+        ]
+        result_layers = result_state["actions_manager"]["meta_model"]["actions"][_ACTION_ID]["model_params"][
+            "bnn_layer_params"
+        ]
 
         assert len(current_layers) == len(result_layers), (
             f"Layer count changed after expansion: {len(current_layers)} -> {len(result_layers)}"
