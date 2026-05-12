@@ -22,7 +22,6 @@
 
 import functools
 import inspect
-import json
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
 from itertools import product
@@ -30,6 +29,16 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, 
 
 import numpy as np
 from numpy.typing import ArrayLike
+from pydantic import (
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveInt,
+    PrivateAttr,
+    field_serializer,
+    field_validator,
+    validate_call,
+)
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import beta
 from typing_extensions import Self
@@ -45,21 +54,6 @@ from pybandits.base import (
 )
 from pybandits.base_model import BaseModelCC, BaseModelSO
 from pybandits.model import BayesianNeuralNetwork, Beta, Model
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    Field,
-    NonNegativeFloat,
-    NonNegativeInt,
-    PositiveInt,
-    PrivateAttr,
-    field_validator,
-    pydantic_version,
-    validate_call,
-)
-
-if pydantic_version == PYDANTIC_VERSION_2:
-    from pydantic import field_serializer
 
 
 class QuantitativeModel(BaseModelSO, ABC):
@@ -217,23 +211,9 @@ class QuantitativeModelCC(BaseModelCC, ABC):
                 return cls._deserialize_function(value)
         return value
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        def dict(self, **kwargs):
-            d = super().dict(**kwargs)
-            # Handle cost field serialization for CC models
-            if "cost" in d:
-                d["cost"] = self.serialize_cost(d["cost"])
-            return d
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @field_serializer("cost")
-        def encode_cost(self, value):
-            return self.serialize_cost(value).encode("ascii")
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    @field_serializer("cost")
+    def encode_cost(self, value):
+        return self.serialize_cost(value).encode("ascii")
 
     @field_validator("cost", mode="before")
     @classmethod
@@ -422,24 +402,9 @@ class BaseZooming(QuantitativeModel, ABC):
     _n_initial_segments: ClassVar = 4
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("sub_actions",)
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        def dict(self, **kwargs):
-            d = super().dict(**kwargs)
-            # Convert tuple keys to strings for serialization
-            d["sub_actions"] = {str(k): v for k, v in d["sub_actions"].items()}
-            return d
-
-        def json(self, **kwargs) -> str:
-            d = self.dict()
-            # Convert tuple keys to strings for serialization
-            return json.dumps(d, **kwargs)
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-
-        @field_serializer("sub_actions")
-        def serialize_sub_actions(self, value):
-            return {str(k): v for k, v in value.items()}
+    @field_serializer("sub_actions")
+    def serialize_sub_actions(self, value):
+        return {str(k): v for k, v in value.items()}
 
     @field_validator("sub_actions", mode="before")
     @classmethod

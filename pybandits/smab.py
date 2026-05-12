@@ -23,6 +23,8 @@
 from abc import ABC
 from typing import List, Optional, Set, Union
 
+from pydantic import PositiveInt, validate_call
+
 from pybandits.actions_manager import (
     SmabActionsManager,
     SmabActionsManagerCC,
@@ -37,7 +39,6 @@ from pybandits.base import (
 )
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBeta
-from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
 from pybandits.quantitative_model import BaseZooming
 from pybandits.strategy import (
     BestActionIdentificationBandit,

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pybandits"
-version = "6.1.0"
+version = "7.0.0"
 description = "Python Multi-Armed Bandit Library"
 authors = [
     "Dario d'Andrea <dariod@playtika.com>",
@@ -32,7 +32,7 @@ numpy = [
     { version = ">=1.25", python = ">=3.9,<3.12" },
     { version = ">=1.26", python = "3.12.*" },
 ]
-pydantic = ">=1.10,<3"
+pydantic = "^2.0"
 scipy = [
     { version = "^1.9", python = ">=3.9,<3.12" },
     { version = "^1.11", python = "3.12.*" },

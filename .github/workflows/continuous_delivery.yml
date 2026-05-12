@@ -12,7 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: [ "3.9", "3.10", "3.11", "3.12" ]
-        pydantic-version: [ "1.10.*", "2.*" ]
 
     steps:
       - name: Checkout repository
@@ -31,26 +30,18 @@ jobs:
             curl -sSL https://install.python-poetry.org | python3 -
           fi
           export PATH="$HOME/.poetry/bin:$PATH"
-      - name: Backup pyproject.toml
-        run: cp pyproject.toml pyproject.toml.bak
-      - name: Change pydantic version
-        run: |
-          poetry add pydantic@${{ matrix.pydantic-version }} --lock
       - name: Cache Poetry virtualenv and dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pypoetry
             ~/.local/share/pypoetry/virtualenvs
-          key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ matrix.pydantic-version }}-${{ hashFiles('poetry.lock') }}
+          key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ matrix.pydantic-version }}-
+            ${{ runner.os }}-poetry-${{ matrix.python-version }}-
       - name: Install project dependencies with Poetry
         run: |
           poetry install --all-extras
-      - name: Restore pyproject.toml
-        run: |
-          mv pyproject.toml.bak pyproject.toml
       - name: Style check
         run: |
           # run pre-commit hooks
@@ -68,8 +59,8 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
-          flags: py${{ matrix.python-version }}-pydantic${{ matrix.pydantic-version == '1.10.*' && 'v1' || 'v2' }}
-          name: coverage-report-py${{ matrix.python-version }}-pydantic${{ matrix.pydantic-version == '1.10.*' && 'v1' || 'v2' }}
+          flags: py${{ matrix.python-version }}
+          name: coverage-report-py${{ matrix.python-version }}
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Extract version from pyproject.toml
@@ -86,14 +77,14 @@ jobs:
             echo "VERSION_CHANGED=true" >> $GITHUB_ENV
           fi
       - name: Create a Git tag
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions"
           git tag "${{ env.PACKAGE_VERSION }}"
           git push origin "${{ env.PACKAGE_VERSION }}"
       - name: Publish Draft Release
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -118,7 +109,7 @@ jobs:
               core.setFailed(`Draft release named "Draft" not found.`);
             };
       - name: Build and publish to pypi
-        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' && matrix.pydantic-version == '2.*' }}
+        if: ${{ env.VERSION_CHANGED == 'true' && matrix.python-version == '3.10' }}
         run: |
           poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
           poetry publish --build

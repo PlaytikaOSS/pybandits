@@ -24,6 +24,7 @@ from abc import ABC
 from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
+from pydantic import validate_call
 
 from pybandits.actions_manager import (
     CmabActionsManager,
@@ -47,7 +48,6 @@ from pybandits.model import (
     BaseBayesianNeuralNetworkMO,
     FeaturesConfig,
 )
-from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
@@ -224,7 +224,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
                 # weight.mu is List[List[float]]; outer length == input_dim == n_features for numerical-only models
                 n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name]["mu"])
                 fc = FeaturesConfig(n_features=n_features, categorical_features_configs=[])
-                action_state["feature_config"] = fc.apply_version_adjusted_method("model_dump", "dict")
+                action_state["feature_config"] = fc.model_dump()
 
             if "update_kwargs" in action_state and action_state["update_kwargs"] is not None:  # v6.0.0 compatability
                 kwargs = action_state["update_kwargs"]

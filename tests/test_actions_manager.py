@@ -28,18 +28,13 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import ValidationError
 from pytest_mock.plugin import MockerFixture
 
 import pybandits
 from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
 from pybandits.base import ACTION_IDS_PREFIX, QUANTITATIVE_ACTION_IDS_PREFIX, ActionId, BinaryReward
 from pybandits.model import BayesianNeuralNetwork, Beta, BetaMO
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    ValidationError,
-    pydantic_version,
-)
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, Zooming
 from tests.utils import mock_update
 
@@ -124,14 +119,8 @@ def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monke
         captured_memory_kwargs.update(kwargs)
 
     # Mock validation methods to capture kwargs
-    if pydantic_version == PYDANTIC_VERSION_1:
-        manager.__dict__["_validate_update_params"] = validate_params
-        manager.__dict__["_validate_params_lengths"] = validate_lengths
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        monkeymodule.setattr(manager, "_validate_update_params", validate_params)
-        monkeymodule.setattr(manager, "_validate_params_lengths", validate_lengths)
-    else:
-        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+    monkeymodule.setattr(manager, "_validate_update_params", validate_params)
+    monkeymodule.setattr(manager, "_validate_params_lengths", validate_lengths)
 
     manager.update(actions=action_list, rewards=rewards, **all_kwargs)
 
@@ -788,12 +777,7 @@ def test_hypothesis_memory_trim(n_actions: int, trials_per_action: int, monkeymo
             np.array([[trials_per_action]]),  # trials
         )
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        manager.__dict__["_extract_current_stats_for_action"] = mock_extract_current_stats_for_action
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        monkeymodule.setattr(manager, "_extract_current_stats_for_action", mock_extract_current_stats_for_action)
-    else:
-        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+    monkeymodule.setattr(manager, "_extract_current_stats_for_action", mock_extract_current_stats_for_action)
 
     total_trials = n_actions * trials_per_action
     actions_memory = [f"action{i}" for _ in range(trials_per_action) for i in range(n_actions)]
@@ -852,12 +836,7 @@ def test_actions_with_change_detection_scenarios(monkeymodule):
         changes = {"action1": 15, "action2": 25, "action3": manager._no_change_point}
         return changes[action_id]
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        manager.__dict__["_get_last_change_point_for_action"] = mock_multiple_changes
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        monkeymodule.setattr(manager, "_get_last_change_point_for_action", mock_multiple_changes)
-    else:
-        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+    monkeymodule.setattr(manager, "_get_last_change_point_for_action", mock_multiple_changes)
 
     manager.update(actions=["action1"], rewards=[1], actions_memory=initial_actions, rewards_memory=initial_rewards)
 
@@ -866,14 +845,7 @@ def test_actions_with_change_detection_scenarios(monkeymodule):
     assert manager.actions_with_change == expected_changes
 
     # Scenario 2: No changes detected - create a new manager to avoid state interference
-    if pydantic_version == PYDANTIC_VERSION_1:
-        manager.__dict__["_get_last_change_point_for_action"] = lambda *args, **kwargs: manager._no_change_point
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        monkeymodule.setattr(
-            manager, "_get_last_change_point_for_action", lambda *args, **kwargs: manager._no_change_point
-        )
-    else:
-        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+    monkeymodule.setattr(manager, "_get_last_change_point_for_action", lambda *args, **kwargs: manager._no_change_point)
 
     manager.update(
         actions=["action1"],
@@ -905,12 +877,7 @@ def test_actions_with_change_hypothesis(change_point_indices, monkeymodule):
             return change_point
         return manager._no_change_point
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        manager.__dict__["_get_last_change_point_for_action"] = mock_change_detection
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        monkeymodule.setattr(manager, "_get_last_change_point_for_action", mock_change_detection)
-    else:
-        raise ValueError(f"Unsupported Pydantic version: {pydantic_version}")
+    monkeymodule.setattr(manager, "_get_last_change_point_for_action", mock_change_detection)
 
     manager.update(actions=["action0"], rewards=[1], actions_memory=initial_actions, rewards_memory=initial_rewards)
 

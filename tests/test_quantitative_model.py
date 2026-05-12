@@ -30,11 +30,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
+from pydantic import NonNegativeFloat
 
 import pybandits
 from pybandits.base import BinaryReward, QuantitativeProbability, UnifiedProbability
 from pybandits.model import Beta
-from pybandits.pydantic_version_compatibility import NonNegativeFloat
 from pybandits.quantitative_model import (
     BaseZooming,
     QuantitativeBayesianNeuralNetwork,
@@ -544,7 +544,7 @@ def test_cost_serialization_deserialization(cost_function):
 
     # Create model with the test callable as cost
     model = ZoomingCC.cold_start(cost=cost_function)
-    serialized = model.apply_version_adjusted_method("model_dump_json", "json")
+    serialized = model.model_dump_json()
     serialized_dict = json.loads(serialized)
 
     assert "cost" in serialized_dict
@@ -554,5 +554,5 @@ def test_cost_serialization_deserialization(cost_function):
     # Check callable was properly restored
     assert callable(deserialized_model.cost)
 
-    reserialized = deserialized_model.apply_version_adjusted_method("model_dump_json", "json")
+    reserialized = deserialized_model.model_dump_json()
     assert reserialized == serialized

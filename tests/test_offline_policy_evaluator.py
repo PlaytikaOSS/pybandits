@@ -28,11 +28,10 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
-import pydantic
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import PositiveInt
+from pydantic import PositiveInt, ValidationError
 from pytest_mock import MockerFixture
 from sklearn.preprocessing import MinMaxScaler
 
@@ -41,12 +40,6 @@ from pybandits import offline_policy_estimator
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator, _FunctionEstimator
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    ValidationError,
-    pydantic_version,
-)
 from pybandits.smab import (
     SmabBernoulli,
     SmabBernoulliCC,
@@ -393,13 +386,7 @@ def test_initialization_when_xgboost_not_available(
 ) -> None:
     """Test that other model types still work when XGBoost is not available."""
     with patch.dict(sys.modules, {"xgboost": None}):
-        if pydantic_version == PYDANTIC_VERSION_1:
-            pydantic.class_validators._FUNCS.clear()
-            importlib.reload(pybandits.offline_policy_evaluator)
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            importlib.reload(pybandits.offline_policy_evaluator)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        importlib.reload(pybandits.offline_policy_evaluator)
 
         assert pybandits.offline_policy_evaluator._XGBOOST_AVAILABLE is False
         assert pybandits.offline_policy_evaluator.XGBClassifier is None

@@ -27,11 +27,11 @@ import numpy as np
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
+from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
 from pybandits.base import ActionId, BaseModel, Probability, UnifiedActionId
 from pybandits.model import Beta, BetaCC, BetaMOCC
-from pybandits.pydantic_version_compatibility import ValidationError
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.strategy import (
     BaseStrategy,

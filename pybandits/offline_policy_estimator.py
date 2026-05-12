@@ -30,16 +30,16 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, ClassVar, Dict, Optional, Tuple, Type
 
 import numpy as np
-from scipy.stats import bootstrap
-
-from pybandits.base import Float01, PyBanditsBaseModel
-from pybandits.pydantic_version_compatibility import (
+from pydantic import (
     NonNegativeFloat,
     PositiveFloat,
     PositiveInt,
     PrivateAttr,
     validate_call,
 )
+from scipy.stats import bootstrap
+
+from pybandits.base import Float01, PyBanditsBaseModel
 
 
 class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):

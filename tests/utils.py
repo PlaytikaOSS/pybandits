@@ -6,13 +6,11 @@ from typing import Any, List, Tuple, get_args
 
 import numpy as np
 from bokeh.core.serialization import Serializable
+from pydantic import PositiveInt
 
 from pybandits.base import PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel
 from pybandits.model import BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BnnLayerParams, UpdateMethods
-from pybandits.pydantic_version_compatibility import (
-    PositiveInt,
-)
 from pybandits.quantitative_model import BaseQuantitativeBayesianNeuralNetwork, QuantitativeModel
 
 literal_update_methods = get_args(UpdateMethods)

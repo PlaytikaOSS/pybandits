@@ -26,11 +26,11 @@ from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Typ
 
 import numpy as np
 from loguru import logger
+from pydantic import PrivateAttr, field_validator, validate_call
 from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel
-from pybandits.pydantic_version_compatibility import PrivateAttr, field_validator, validate_call
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.utils import OptimizationFailedError, maximize_by_quantity
 
