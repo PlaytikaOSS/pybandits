@@ -45,15 +45,8 @@ from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
 from numpyro.infer.initialization import init_to_median, init_to_uniform, init_to_value
 from numpyro.infer.util import helpful_support_errors
-from scipy.special import erf
-from tqdm import trange
-from typing_extensions import Self
-
-from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
-from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
+from pydantic import (
+    ConfigDict,
     Field,
     NonNegativeFloat,
     NonNegativeInt,
@@ -63,9 +56,14 @@ from pybandits.pydantic_version_compatibility import (
     conlist,
     field_validator,
     model_validator,
-    pydantic_version,
     validate_call,
 )
+from scipy.special import erf
+from tqdm import trange
+from typing_extensions import Self
+
+from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
+from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
 
 _Array = Union[np.ndarray, jax.Array]
 
@@ -141,12 +139,7 @@ class ModelMO(BaseModelMO, ABC):
         The list of models for each objective.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        models: conlist(Model, min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        models: conlist(Model, min_length=1)
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    models: conlist(Model, min_length=1)
 
 
 class BaseBeta(Model, ABC):
@@ -240,12 +233,7 @@ class BaseBetaMO(ModelMO, ABC):
         List of Beta distributions.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        models: conlist(Beta, min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        models: conlist(Beta, min_length=1)
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    models: conlist(Beta, min_length=1)
 
     @classmethod
     def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> "BaseBetaMO":
@@ -352,14 +340,9 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
             return self
 
         # Convert to dict, update with new parameters, and validate to create new instance
-        updated_dict = self.apply_version_adjusted_method("model_dump", "dict")
+        updated_dict = self.model_dump()
         updated_dict.update(kwargs)
-        if pydantic_version == PYDANTIC_VERSION_1:
-            return self.__class__(**updated_dict)
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            return self.__class__.model_validate(updated_dict)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        return self.__class__.model_validate(updated_dict)
 
     def _draw(
         self, params: Dict[str, np.ndarray], rng: np.random.Generator, size: Optional[Tuple[int, ...]] = None
@@ -1330,8 +1313,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     _early_stopping_callback: Optional[EarlyStopping] = PrivateAttr(None)
     _update_kwargs: Dict[str, Any] = PrivateAttr(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("model_params",)
     _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ("update_method",)
@@ -2561,12 +2543,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         The list of Bayesian Neural Network models for each objective.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        models: conlist(BayesianNeuralNetwork, min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        models: conlist(BayesianNeuralNetwork, min_length=1)
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    models: conlist(BayesianNeuralNetwork, min_length=1)
 
     def model_post_init(self, __context: Any) -> None:
         """

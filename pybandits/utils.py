@@ -38,9 +38,8 @@ except ImportError:
     get_ipython = None  # type: ignore
 
 
+from pydantic import PositiveInt, validate_call
 from scipy.optimize import NonlinearConstraint, differential_evolution
-
-from pybandits.pydantic_version_compatibility import PositiveInt, validate_call
 
 
 class OptimizationFailedError(Exception):

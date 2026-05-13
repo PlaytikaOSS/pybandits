@@ -30,6 +30,9 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import (
+    ValidationError,
+)
 from pydantic.dataclasses import dataclass
 from pydantic.types import PositiveInt
 from pytest import MonkeyPatch
@@ -54,9 +57,6 @@ from pybandits.model import (
     BayesianNeuralNetworkMOCC,
     StudentTArray,
     UpdateMethods,
-)
-from pybandits.pydantic_version_compatibility import (
-    ValidationError,
 )
 from pybandits.quantitative_model import (
     BaseQuantitativeBayesianNeuralNetwork,

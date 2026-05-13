@@ -21,7 +21,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
-        pydantic-version: [ "1.10.*", "2.*" ]
 
     steps:
       - name: Checkout repository
@@ -41,7 +40,6 @@ jobs:
           export PATH="$HOME/.poetry/bin:$PATH"
       - name: Install project dependencies with Poetry
         run: |
-          poetry add pydantic@${{ matrix.pydantic-version }}
           poetry install --all-extras
       - name: Style check
         run: |
@@ -59,6 +57,6 @@ jobs:
         if: ${{ matrix.python-version == '3.10' }}
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-py${{ matrix.python-version }}-pydantic${{ matrix.pydantic-version == '1.10.*' && 'v1' || 'v2' }}
+          name: coverage-report-py${{ matrix.python-version }}
           path: htmlcov/
           retention-days: 30

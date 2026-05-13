@@ -53,13 +53,7 @@ try:
 except ImportError:
     _XGBOOST_AVAILABLE = False
     XGBClassifier = None  # type: ignore
-from typing_extensions import Self
-
-from pybandits import offline_policy_estimator
-from pybandits.base import ActionId, Float01, PyBanditsBaseModel
-from pybandits.mab import BaseMab
-from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
-from pybandits.pydantic_version_compatibility import (
+from pydantic import (
     NonNegativeInt,
     PositiveInt,
     PrivateAttr,
@@ -67,6 +61,12 @@ from pybandits.pydantic_version_compatibility import (
     model_validator,
     validate_call,
 )
+from typing_extensions import Self
+
+from pybandits import offline_policy_estimator
+from pybandits.base import ActionId, Float01, PyBanditsBaseModel
+from pybandits.mab import BaseMab
+from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
 from pybandits.utils import (
     extract_argument_names_from_function,
     get_non_abstract_classes,

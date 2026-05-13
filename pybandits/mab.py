@@ -30,6 +30,11 @@ from typing import Any, ClassVar, Dict, List, Optional, Set, Union, get_origin
 
 import numpy as np
 from packaging import version
+from pydantic import (
+    NonNegativeInt,
+    PrivateAttr,
+    validate_call,
+)
 
 from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
@@ -52,11 +57,6 @@ from pybandits.base import (
 )
 from pybandits.base_model import BaseModel
 from pybandits.model import Model, ModelMO
-from pybandits.pydantic_version_compatibility import (
-    NonNegativeInt,
-    PrivateAttr,
-    validate_call,
-)
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.strategy import BaseStrategy
 from pybandits.utils import extract_argument_names_from_function
@@ -339,7 +339,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The internal state of the model (actions, scores, etc.).
         """
         model_name = self.__class__.__name__
-        state = self.apply_version_adjusted_method("model_dump_json", "json")
+        state = self.model_dump_json()
         return model_name, state
 
     @validate_call
