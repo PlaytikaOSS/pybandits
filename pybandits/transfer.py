@@ -31,12 +31,12 @@ import json
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from loguru import logger
+from pydantic import validate_call
 
 from pybandits.base_model import BaseModelMO, BaseModelSO
 from pybandits.cmab import BaseCmabBernoulli
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBayesianNeuralNetwork
-from pybandits.pydantic_version_compatibility import validate_call
 from pybandits.quantitative_model import QuantitativeModel
 
 

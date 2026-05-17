@@ -33,6 +33,7 @@ from hypothesis import strategies as st
 from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
 from numpyro.infer import Predictive
+from pydantic import ValidationError
 
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
@@ -53,7 +54,6 @@ from pybandits.model import (
     StudentTArray,
     UpdateMethods,
 )
-from pybandits.pydantic_version_compatibility import ValidationError
 
 ########################################################################################################################
 

@@ -22,11 +22,19 @@
 
 import warnings
 from abc import ABC, abstractmethod
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type, TypeVar, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
+from pydantic import (
+    ConfigDict,
+    Field,
+    NonNegativeInt,
+    NonPositiveInt,
+    field_validator,
+    validate_call,
+)
 
 from pybandits.base import (
     ACTION_IDS_PREFIX,
@@ -52,17 +60,6 @@ from pybandits.model import (
     BetaMOCC,
     Model,
     ModelMO,
-)
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    Field,
-    GenericModel,
-    NonNegativeInt,
-    NonPositiveInt,
-    field_validator,
-    pydantic_version,
-    validate_call,
 )
 from pybandits.quantitative_model import (
     BaseQuantitativeBayesianNeuralNetwork,
@@ -102,16 +99,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     _memory_parameters_suffix: ClassVar[str] = "_memory"
     actions_with_change: Set[Tuple[ActionId, NonNegativeInt]] = Field(default_factory=set)
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        class Config:
-            arbitrary_types_allowed = True
-            json_encoders = {deque: list}
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        model_config = {"arbitrary_types_allowed": True, "json_encoders": {deque: list}}
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator("actions", mode="after")
     @classmethod
@@ -829,7 +817,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
 SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BaseBetaMO, BaseZooming])
 
 
-class SmabActionsManager(ActionsManager, GenericModel, Generic[SmabModelType]):
+class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
     """
     Manages actions and their associated models for sMAB models.
     The class allows to account for non-stationarity by providing an adaptive window scheme for action update.
@@ -936,7 +924,7 @@ CmabModelType = TypeVar(
 )
 
 
-class CmabActionsManager(ActionsManager, GenericModel, Generic[CmabModelType]):
+class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
     """
     Manages actions and their associated models for cMAB models.
     The class allows to account for non-stationarity by providing an adaptive window scheme for action update.

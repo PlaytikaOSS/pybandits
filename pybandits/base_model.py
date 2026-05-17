@@ -25,6 +25,13 @@ from typing import Callable, ClassVar, List, Tuple, Union
 
 import numpy as np
 from numpy.random import Generator
+from pydantic import (
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveInt,
+    conlist,
+    validate_call,
+)
 
 from pybandits.base import (
     BinaryReward,
@@ -36,16 +43,6 @@ from pybandits.base import (
     QuantitativeMOProbability,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
-)
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
-    NonNegativeFloat,
-    NonNegativeInt,
-    PositiveInt,
-    conlist,
-    pydantic_version,
-    validate_call,
 )
 
 
@@ -219,12 +216,7 @@ class BaseModelMO(BaseModel, ABC):
         The list of models for each objective.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-        models: conlist(BaseModelSO, min_items=1)
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        models: conlist(BaseModelSO, min_length=1)
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    models: conlist(BaseModelSO, min_length=1)
 
     def sample_proba(self, rng: Generator, **kwargs) -> Union[List[MOProbability], List[QuantitativeMOProbability]]:
         """

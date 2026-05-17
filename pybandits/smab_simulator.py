@@ -25,9 +25,9 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from pydantic import Field, model_validator
 
 from pybandits.base import ActionId, BinaryReward, Probability, UnifiedActionId
-from pybandits.pydantic_version_compatibility import Field, model_validator
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.simulator import Simulator
 from pybandits.smab import BaseSmabBernoulli

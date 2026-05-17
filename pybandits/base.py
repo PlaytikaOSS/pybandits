@@ -25,9 +25,7 @@ from typing import (
     Callable,
     Dict,
     List,
-    Mapping,
     NewType,
-    Optional,
     Tuple,
     Union,
     _GenericAlias,
@@ -36,18 +34,14 @@ from typing import (
 )
 
 import numpy as np
-from typing_extensions import Self
-
-from pybandits.pydantic_version_compatibility import (
-    PYDANTIC_VERSION_1,
-    PYDANTIC_VERSION_2,
+from pydantic import (
     BaseModel,
+    ConfigDict,
     confloat,
     conint,
     constr,
-    pydantic_version,
 )
-from pybandits.utils import classproperty
+from typing_extensions import Self
 
 ActionId = NewType("ActionId", constr(min_length=1))
 QuantitativeActionId = Tuple[ActionId, Tuple[float, ...]]
@@ -114,23 +108,7 @@ class PyBanditsBaseModel(BaseModel):
     BaseModel of the PyBandits library.
     """
 
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        class Config:
-            extra = "forbid"
-
-        def __init__(self, **data):
-            super(PyBanditsBaseModel, self).__init__(**data)
-            self.model_post_init(None)
-
-        def model_post_init(self, __context: Any) -> None:
-            pass
-
-    elif pydantic_version == PYDANTIC_VERSION_2:
-        model_config = {"extra": "forbid"}
-
-    else:
-        raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+    model_config = ConfigDict(extra="forbid")
 
     def _validate_params_lengths(
         self,
@@ -154,27 +132,7 @@ class PyBanditsBaseModel(BaseModel):
         """Compare equality based on serializable fields only, excluding private attributes."""
         if type(self) is not type(other):
             return False
-        return self.apply_version_adjusted_method("model_dump", "dict") == other.apply_version_adjusted_method(
-            "model_dump", "dict"
-        )
-
-    def apply_version_adjusted_method(self, v2_method_name: str, v1_method_name: str, **kwargs) -> Any:
-        """
-        Apply the method with the given name, adjusting for the pydantic version.
-
-        Parameters
-        ----------
-        v2_method_name : str
-            The method name for pydantic v2.
-        v1_method_name : str
-            The method name for pydantic v1.
-        """
-        if pydantic_version == PYDANTIC_VERSION_1:
-            return getattr(self, v1_method_name)(**kwargs)
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            return getattr(self, v2_method_name)(**kwargs)
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        return self.model_dump() == other.model_dump()
 
     def _with_argument(self, argument_name: str, argument_value: Any) -> Self:
         """
@@ -192,10 +150,7 @@ class PyBanditsBaseModel(BaseModel):
         mutated_strategy: PyBanditsBaseModel
             The mutated model.
         """
-        mutated_strategy = self.apply_version_adjusted_method(
-            "model_copy", "copy", update={argument_name: argument_value}
-        )
-        return mutated_strategy
+        return self.model_copy(update={argument_name: argument_value})
 
     @classmethod
     def _get_value_with_default(cls, key: str, values: Dict[str, Any]) -> Any:
@@ -203,14 +158,9 @@ class PyBanditsBaseModel(BaseModel):
 
     @classmethod
     def _get_field_type(cls, key: str) -> Any:
-        if pydantic_version == PYDANTIC_VERSION_1:
-            annotation = cls.model_fields[key].type_
-        elif pydantic_version == PYDANTIC_VERSION_2:
-            annotation = cls.model_fields[key].annotation
-            if isinstance(annotation, _GenericAlias) and get_origin(annotation) is dict:
-                annotation = get_args(annotation)[1]  # refer to the type of the Dict values
-        else:
-            raise ValueError(f"Unsupported pydantic version: {pydantic_version}")
+        annotation = cls.model_fields[key].annotation
+        if isinstance(annotation, _GenericAlias) and get_origin(annotation) is dict:
+            annotation = get_args(annotation)[1]  # refer to the type of the Dict values
         if get_origin(annotation) is Union:
             annotation = get_args(annotation)
         return annotation
@@ -236,60 +186,3 @@ class PyBanditsBaseModel(BaseModel):
             The original value if not None, otherwise the field's default value.
         """
         return v if v is not None else cls.model_fields[field_name].default
-
-    if pydantic_version == PYDANTIC_VERSION_1:
-
-        @classproperty
-        def model_fields(cls) -> Dict[str, Any]:
-            """
-            Get the model fields.
-
-            Returns
-            -------
-            List[str]
-                The model fields.
-            """
-            return cls.__fields__
-
-        def model_copy(self, *, update: Optional[Mapping[str, Any]] = None, deep: bool = False) -> Self:
-            """
-            Create a new instance of the model with the same quantities.
-
-            Parameters
-            ----------
-            update : Mapping[str, Any], optional
-                The quantities to update, by default None
-
-            deep : bool, optional
-                Whether to copy the quantities deeply, by default False
-
-            Returns
-            -------
-            Self
-                The new instance of the model.
-            """
-            return self.copy(update=update, deep=deep)
-
-        @classmethod
-        def model_validate_json(
-            cls,
-            json_data: Union[str, bytes, bytearray],
-        ) -> Self:
-            """
-            Validate a PyBandits BaseModel model instance.
-
-            Parameters
-            ----------
-            json_data : str
-                JSON string of the object to validate.
-
-            Raises
-            ------
-                ValidationError: If the object could not be validated.
-
-            Returns
-            -------
-            Self
-                The validated model instance.
-            """
-            return cls.parse_raw(json_data)

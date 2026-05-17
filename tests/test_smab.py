@@ -28,6 +28,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import PositiveInt, ValidationError
 from pydantic.dataclasses import dataclass
 
 import pybandits
@@ -35,7 +36,6 @@ from pybandits.actions_manager import SmabModelType
 from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.base_model import BaseModel
 from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
-from pybandits.pydantic_version_compatibility import PositiveInt, ValidationError
 from pybandits.quantitative_model import QuantitativeModel, Zooming, ZoomingCC
 from pybandits.smab import (
     BaseSmabBernoulli,
