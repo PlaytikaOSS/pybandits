@@ -147,26 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[-8.18125403e-01  4.09624313e-01  7.07602654e-01 -4.71781068e-01
-  -6.00911067e-01]
- [-5.06162678e-01 -1.59921798e-01 -5.31528304e-01 -1.54958413e-04
-  -7.98551544e-02]
- [-4.35720734e-01 -2.21034143e-01  1.89347958e-01  5.50346353e-01
-   1.46017519e-01]
- [-3.32089871e-01 -5.34941107e-01  3.66131145e-01 -4.89046495e-01
-  -1.95161653e-02]
- [-5.91605122e-01  2.83161429e-03 -2.07889276e-02 -3.86875502e-01
-   2.36247500e-01]
- [ 4.63574294e-01  1.97235909e-01 -8.83439479e-01 -3.42466545e-01
-  -5.68418700e-01]
- [-8.61885720e-01 -2.39958631e-01  8.29015122e-01 -7.22029327e-01
-  -6.30991866e-01]
- [-7.28111550e-01 -6.98856984e-01 -9.72726270e-02 -6.41501176e-01
-   7.85598365e-01]
- [ 9.41502904e-01  5.36868894e-01 -3.95789164e-01 -2.75522217e-01
-   7.48041890e-01]
- [-4.60022001e-01 -8.61810553e-01  6.69726574e-01 -9.91834449e-01
-  -5.97383635e-01]]
+[[-0.75594465 -0.86242827  0.592238   -0.32730253 -0.29224895]
+ [-0.00743609  0.74994935  0.29038837 -0.0536619  -0.38761236]
+ [ 0.42483142 -0.8101959   0.97866046  0.96714006 -0.45507855]
+ [ 0.10693065 -0.33143575  0.95193123  0.33155827  0.1115043 ]
+ [-0.59611822  0.41735215 -0.31214098  0.62919195 -0.81407983]
+ [-0.36781556 -0.22151545 -0.39409079  0.05750017 -0.03233095]
+ [-0.90995906  0.79138048 -0.54580982  0.18984568 -0.37711134]
+ [ 0.35362079 -0.36997502 -0.96769027 -0.48262173  0.13158198]
+ [ 0.68015415 -0.3242628   0.6072383  -0.73690562 -0.75011489]
+ [ 0.76455046 -0.43671443 -0.64610819  0.85102377  0.21621518]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -226,7 +216,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -245,7 +235,7 @@ Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 1, 0, 0, 0, 0, 0, 1, 1, 1]
+Simulated rewards: [0, 1, 0, 1, 1, 0, 0, 1, 1, 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>

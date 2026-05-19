@@ -371,33 +371,33 @@ epsilon: 1.0
   <tbody>
     <tr>
       <th>0</th>
-      <td>0.164468</td>
-      <td>0.896265</td>
-      <td>0.200671</td>
+      <td>0.371142</td>
+      <td>0.701919</td>
+      <td>0.041423</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.187473</td>
-      <td>0.756551</td>
-      <td>0.768197</td>
+      <td>0.212419</td>
+      <td>0.685529</td>
+      <td>0.301060</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.987895</td>
-      <td>0.726176</td>
-      <td>0.632536</td>
+      <td>0.098289</td>
+      <td>0.952830</td>
+      <td>0.322900</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>0.373430</td>
-      <td>0.767460</td>
-      <td>0.795063</td>
+      <td>0.518162</td>
+      <td>0.842680</td>
+      <td>0.566690</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>0.881303</td>
-      <td>0.867474</td>
-      <td>0.777945</td>
+      <td>0.661269</td>
+      <td>0.870901</td>
+      <td>0.691732</td>
     </tr>
   </tbody>
 </table>
@@ -456,7 +456,7 @@ epsilon: 1.0
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 0 batches. Avg regret: 0.5110597735620902
+Completed 0 batches. Avg regret: 0.5119231742590746
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -472,7 +472,7 @@ Completed 0 batches. Avg regret: 0.5110597735620902
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 1 batches. Avg regret: 0.5866652883026396
+Completed 1 batches. Avg regret: 0.5690015484650357
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -488,7 +488,7 @@ Completed 1 batches. Avg regret: 0.5866652883026396
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 2 batches. Avg regret: 0.5906471500236798
+Completed 2 batches. Avg regret: 0.5975985379845193
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -504,7 +504,7 @@ Completed 2 batches. Avg regret: 0.5906471500236798
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 3 batches. Avg regret: 0.6102902033004294
+Completed 3 batches. Avg regret: 0.5899410549253667
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -520,7 +520,7 @@ Completed 3 batches. Avg regret: 0.6102902033004294
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 4 batches. Avg regret: 0.5965585276683046
+Completed 4 batches. Avg regret: 0.5933430726939064
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -536,7 +536,7 @@ Completed 4 batches. Avg regret: 0.5965585276683046
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Completed 5 batches. Avg regret: 0.598064722311672
+Completed 5 batches. Avg regret: 0.6004163096555932
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -807,16 +807,16 @@ Completed 5 batches. Avg regret: 0.598064722311672
 
 Test 1: High feature 1, low feature 2
 Context: [1. 0. 0.]
-Chosen Action: action_2
-Chosen Quantity: 0.13365581817433383
-Action Probabilities: 0.999999694097773
-Optimal Quantity: 0.75
-Expected Reward: (0, np.float64(0.5))
+Chosen Action: action_1
+Chosen Quantity: 1.312343123061055e-09
+Action Probabilities: 0.9999968842523465
+Optimal Quantity: 0.25
+Expected Reward: (1, np.float64(0.75))
 
 Test 2: Low feature 1, high feature 2
 Context: [0. 1. 0.]
 Chosen Action: action_1
-Chosen Quantity: 0.4015527280938523
+Chosen Quantity: 0.17006960134977595
 Action Probabilities: 0.999999694097773
 Optimal Quantity: 0.25
 Expected Reward: (0, np.float64(0.5))
@@ -824,17 +824,17 @@ Expected Reward: (0, np.float64(0.5))
 Test 3: High feature 1 and 2
 Context: [1. 1. 0.]
 Chosen Action: action_2
-Chosen Quantity: 0.04363818900483561
+Chosen Quantity: 8.996531575267142e-08
 Action Probabilities: 0.999999694097773
 Optimal Quantity: 0.75
 Expected Reward: (1, np.float64(0.75))
 
 Test 4: Low feature 1 and 2
 Context: [0. 0. 0.]
-Chosen Action: action_2
-Chosen Quantity: 0.9999999900443421
-Action Probabilities: 0.9996756306594232
-Optimal Quantity: 0.75
+Chosen Action: action_1
+Chosen Quantity: 1.2849067598796893e-07
+Action Probabilities: 0.999999694097773
+Optimal Quantity: 0.25
 Expected Reward: (0, np.float64(0.5))
 </pre></div></div>
 </div>
@@ -853,10 +853,10 @@ Expected Reward: (0, np.float64(0.5))
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 {&#39;Context&#39;: array([0., 0., 0.]),
- &#39;Chosen Action&#39;: &#39;action_2&#39;,
- &#39;Chosen Quantity&#39;: np.float64(0.9999999900443421),
- &#39;Action Probabilities&#39;: np.float64(0.9996756306594232),
- &#39;Optimal Quantity&#39;: 0.75,
+ &#39;Chosen Action&#39;: &#39;action_1&#39;,
+ &#39;Chosen Quantity&#39;: np.float64(1.2849067598796893e-07),
+ &#39;Action Probabilities&#39;: np.float64(0.999999694097773),
+ &#39;Optimal Quantity&#39;: 0.25,
  &#39;Expected Reward&#39;: (0, np.float64(0.5))}
 </pre></div></div>
 </div>
