@@ -317,6 +317,144 @@ def test_can_init_bayesian_neural_network(n_features, hidden_dim_list):
         assert bnn.model_params == model_params
 
 
+class TestBiasScale:
+    """Test suite for the ``bias_scale`` cold-start parameter of the BNN."""
+
+    @staticmethod
+    def _dist_params(dist_type: Literal["studentt", "normal"], sigma: float, nu: float) -> dict:
+        params = {"mu": 0.0, "sigma": sigma}
+        if dist_type == "studentt":
+            params["nu"] = nu
+        return params
+
+    @settings(deadline=500)
+    @given(
+        bias_scale=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+        dist_type=st.sampled_from(["studentt", "normal"]),
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    )
+    def test_bias_scale_overrides_bias_sigma_only(
+        self,
+        bias_scale: float,
+        sigma: float,
+        nu: float,
+        dist_type: Literal["studentt", "normal"],
+        n_features: int,
+        hidden_dim_list: list,
+    ) -> None:
+        """``bias_scale`` sets the bias prior sigma on every layer while weight priors keep ``sigma``."""
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            dist_type=dist_type,
+            dist_params_init=self._dist_params(dist_type, sigma, nu),
+            bias_scale=bias_scale,
+        )
+        assert len(bnn.model_params.bnn_layer_params) == len(hidden_dim_list) + 1
+        for layer_params in bnn.model_params.bnn_layer_params:
+            np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_scale)
+            np.testing.assert_allclose(layer_params.weight.params["sigma"], sigma)
+
+    @settings(deadline=500)
+    @given(
+        sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+        dist_type=st.sampled_from(["studentt", "normal"]),
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+        random_seed=st.integers(min_value=0, max_value=2**16),
+    )
+    def test_bias_scale_none_matches_default(
+        self,
+        sigma: float,
+        nu: float,
+        dist_type: Literal["studentt", "normal"],
+        n_features: int,
+        hidden_dim_list: list,
+        random_seed: int,
+    ) -> None:
+        """Passing ``bias_scale=None`` produces the same ``model_params`` as omitting it."""
+        kwargs = dict(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            dist_type=dist_type,
+            dist_params_init=self._dist_params(dist_type, sigma, nu),
+            random_seed=random_seed,
+        )
+        bnn_default = BayesianNeuralNetwork.cold_start(**kwargs)
+        bnn_none = BayesianNeuralNetwork.cold_start(bias_scale=None, **kwargs)
+        assert bnn_default.model_params == bnn_none.model_params
+
+    @settings(deadline=500)
+    @given(
+        bias_scale=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+        dist_type=st.sampled_from(["studentt", "normal"]),
+        n_objectives=st.integers(min_value=1, max_value=3),
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    )
+    def test_bias_scale_propagates_through_mo_cold_start(
+        self,
+        bias_scale: float,
+        sigma: float,
+        nu: float,
+        dist_type: Literal["studentt", "normal"],
+        n_objectives: int,
+        n_features: int,
+        hidden_dim_list: list,
+    ) -> None:
+        """``bias_scale`` is forwarded to each per-objective BNN in the MO variant."""
+        mo_bnn = BayesianNeuralNetworkMO.cold_start(
+            n_objectives=n_objectives,
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            dist_type=dist_type,
+            dist_params=self._dist_params(dist_type, sigma, nu),
+            bias_scale=bias_scale,
+        )
+        assert len(mo_bnn.models) == n_objectives
+        for model in mo_bnn.models:
+            for layer_params in model.model_params.bnn_layer_params:
+                np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_scale)
+
+    @settings(deadline=500)
+    @given(
+        bias_scale=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+        dist_type=st.sampled_from(["studentt", "normal"]),
+        n_features=st.integers(min_value=1, max_value=5),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    )
+    def test_bias_scale_independent_of_layerwise_scaling(
+        self,
+        bias_scale: float,
+        sigma: float,
+        nu: float,
+        dist_type: Literal["studentt", "normal"],
+        n_features: int,
+        hidden_dim_list: list,
+    ) -> None:
+        """``bias_scale`` applies verbatim to bias sigma even when ``use_layerwise_scaling`` shrinks weight sigma."""
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            dist_type=dist_type,
+            dist_params_init=self._dist_params(dist_type, sigma, nu),
+            use_layerwise_scaling=True,
+            bias_scale=bias_scale,
+        )
+        fan_ins = [n_features] + hidden_dim_list
+        for layer_params, fan_in in zip(bnn.model_params.bnn_layer_params, fan_ins):
+            np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_scale)
+            np.testing.assert_allclose(layer_params.weight.params["sigma"], sigma / np.sqrt(fan_in))
+
+
 @settings(deadline=500)
 @given(
     n_samples=st.integers(min_value=1, max_value=1000),
