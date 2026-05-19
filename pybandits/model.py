@@ -1407,6 +1407,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         hidden_dim_list: Optional[List[PositiveInt]],
         use_layerwise_scaling: bool = False,
         dist_class: type[BaseLocationScaleArray] = StudentTArray,
+        bias_scale: Optional[PositiveFloat] = None,
         **dist_params_init,
     ) -> BnnParams:
         """
@@ -1426,6 +1427,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Whether to use layerwise scaling in the network (default is False).
         dist_class : type
             The distribution class to use for weights, biases, and embeddings, by default ``StudentTArray``.
+        bias_scale : Optional[PositiveFloat]
+            If provided, overrides ``sigma`` from ``dist_params_init`` for all layers' bias priors.
+            Applied to every layer's bias (including the output layer's logit bias), leaving weight priors unchanged.
+            Default is None (use ``sigma`` from ``dist_params_init``).
         **dist_params_init : dict, optional
             Additional parameters for initializing the distribution of weights and biases.
 
@@ -1450,7 +1455,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             w_param = dist_class.cold_start(
                 shape=(input_dim, output_dim), use_layerwise_scaling=use_layerwise_scaling, **dist_params_init
             )
-            b_param = dist_class.cold_start(shape=output_dim, **dist_params_init)
+            b_dist_params_init = dist_params_init if bias_scale is None else {**dist_params_init, "sigma": bias_scale}
+            b_param = dist_class.cold_start(shape=output_dim, **b_dist_params_init)
             layer_params_init.append(BnnLayerParams(weight=w_param, bias=b_param))
 
         if feature_config.categorical_features_configs:
@@ -2404,6 +2410,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
+        bias_scale: Optional[PositiveFloat] = None,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
         random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
@@ -2435,6 +2442,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Whether to use layerwise scaling in the network (default is False).
             When applied, the sigma is scaled by the square root of the input dimension.
             This is useful to enable smoother convergence with Gaussian Process-like behavior.
+        bias_scale : Optional[PositiveFloat]
+            If provided, overrides ``sigma`` from ``dist_params_init`` for all layers' bias priors,
+            leaving weight priors untouched. Useful to restrain the prior on the output-layer logit
+            (which otherwise pushes mass towards p=0 / p=1 after sigmoid at cold start). Default is None.
         categorical_features : Optional[Dict[int, int]], optional
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
@@ -2475,6 +2486,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             hidden_dim_list=hidden_dim_list,
             use_layerwise_scaling=use_layerwise_scaling,
             dist_class=dist_class,
+            bias_scale=bias_scale,
             **dist_params_init,
         )
         return cls(
@@ -2593,6 +2605,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
+        bias_scale: Optional[PositiveFloat] = None,
         **kwargs,
     ) -> Self:
         """
@@ -2620,6 +2633,9 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Whether to use residual connections in the network (default is False).
         use_layerwise_scaling : bool
             Whether to use layerwise scaling in the network (default is False).
+        bias_scale : Optional[PositiveFloat]
+            If provided, overrides ``sigma`` from ``dist_params`` for all layers' bias priors,
+            leaving weight priors untouched. Default is None.
         **kwargs
             Additional keyword arguments.
 
@@ -2640,6 +2656,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 activation=activation,
                 use_residual_connections=use_residual_connections,
                 use_layerwise_scaling=use_layerwise_scaling,
+                bias_scale=bias_scale,
             )
             for _ in range(n_objectives)
         ]
