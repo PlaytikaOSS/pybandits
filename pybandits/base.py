@@ -47,6 +47,7 @@ ActionId = NewType("ActionId", constr(min_length=1))
 QuantitativeActionId = Tuple[ActionId, Tuple[float, ...]]
 UnifiedActionId = Union[ActionId, QuantitativeActionId]
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
+PositiveFloat01 = NewType("PositiveFloat01", confloat(gt=0, le=1))
 Probability = NewType("Probability", Float01)
 PositiveProbability = NewType("PositiveProbability", confloat(gt=0, le=1))
 ProbabilityWeight = Tuple[Probability, float]

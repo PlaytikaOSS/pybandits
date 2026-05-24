@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from typing import Dict, List, Optional, Set, Tuple, Union
+from unittest.mock import MagicMock
 
 import hypothesis.strategies as st
 import numpy as np
@@ -29,9 +30,10 @@ from hypothesis import given
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
-from pybandits.base import ActionId, BinaryReward, Float01, Probability, UnifiedActionId
+from pybandits.base import ActionId, BinaryReward, Float01, PositiveFloat01, Probability, UnifiedActionId
 from pybandits.mab import BaseMab
 from pybandits.model import Beta, BetaCC
+from pybandits.quantitative_model import Zooming
 from pybandits.strategy import ClassicBandit
 from tests.test_actions_manager import REFERENCE_DELTA, DummyActionsManager
 
@@ -177,6 +179,132 @@ def test_adaptive_window_without_epsilon_fails(adaptive_window_size, epsilon):
 ########################################################################################################################
 
 
+_EPSILON: Float01 = 0.1
+_DEFAULT_FRACTION: PositiveFloat01 = 0.5
+_MIX_FRACTION: PositiveFloat01 = 0.3
+_MIX_TOLERANCE: float = 0.03
+_N_DRAWS: int = 4_000
+_N_REPEATS: int = 20
+
+
+class TestDefaultActionFraction:
+    """Tests for BaseMab.default_action_fraction mixed epsilon-greedy behavior."""
+
+    @pytest.mark.parametrize("fraction", [0.3, 0.5, 0.7])
+    def test_requires_epsilon(self, fraction: float, epsilon=None):
+        """default_action_fraction is rejected when epsilon is not set, for any valid fraction."""
+        with pytest.raises(AttributeError, match=r"default_action_fraction requires epsilon to be defined\."):
+            DummyMab(
+                actions={"a1": Beta(), "a2": Beta()},
+                strategy=ClassicBandit(),
+                epsilon=epsilon,
+                default_action_fraction=fraction,
+            )
+
+    @pytest.mark.parametrize("fraction", [0.3, 0.5, 0.7])
+    def test_requires_default_action(self, fraction: float, epsilon=_EPSILON):
+        """default_action_fraction is rejected when default_action is not set, for any valid fraction."""
+        with pytest.raises(AttributeError, match=r"default_action_fraction requires default_action to be defined\."):
+            DummyMab(
+                actions={"a1": Beta(), "a2": Beta()},
+                strategy=ClassicBandit(),
+                epsilon=epsilon,
+                default_action=None,
+                default_action_fraction=fraction,
+            )
+
+    def test_zero_fraction_is_invalid(self, epsilon=_EPSILON):
+        """default_action_fraction=0.0 must be rejected — equivalent to having no default_action."""
+        with pytest.raises(ValidationError):
+            DummyMab(
+                actions={"a1": Beta(), "a2": Beta()},
+                strategy=ClassicBandit(),
+                epsilon=epsilon,
+                default_action="a1",
+                default_action_fraction=0.0,
+            )
+
+    @pytest.mark.parametrize("fraction", [None, 1.0])
+    def test_always_returns_default_action(
+        self,
+        p: Dict[ActionId, Probability],
+        fraction: Optional[float],
+        epsilon=1.0,
+    ):
+        """When fraction is None or 1.0, exploration must always return default_action.
+
+        epsilon=1.0 guarantees the explore branch always fires.
+        fraction=None always picks default; fraction=1.0 makes _rng.binomial(1, 1.0) always return 1.
+        """
+        mab = DummyMab(
+            actions={"a1": Beta(), "a2": Beta()},
+            strategy=ClassicBandit(),
+            epsilon=epsilon,
+            default_action="a1",
+            default_action_fraction=fraction,
+        )
+        for _ in range(_N_REPEATS):
+            assert mab._select_epsilon_greedy_action(p) == "a1"
+
+    def test_mix_distribution(self, p: Dict[ActionId, Probability], epsilon=1.0):
+        """Empirical share of default_action under explore must approximate default_action_fraction.
+
+        epsilon=1.0 always fires the explore branch. A seeded real rng is used for the fraction
+        Bernoulli while integers is stubbed to always return the non-default arm index, isolating
+        the fraction draw as the sole source of variance in the default_action share.
+        """
+        mab = DummyMab(
+            actions={"a1": Beta(), "a2": Beta()},
+            strategy=ClassicBandit(),
+            epsilon=epsilon,  # always explore
+            default_action="a1",
+            default_action_fraction=_MIX_FRACTION,
+        )
+        # Replace _rng with a mock: binomial delegates to a seeded real generator for realistic
+        # fraction sampling; integers always returns 1 (index of "a2") so the random branch never
+        # accidentally picks "a1", keeping the empirical share unconfounded.
+        real_rng = np.random.default_rng(42)
+        mock_rng = MagicMock()
+        mock_rng.binomial.side_effect = real_rng.binomial
+        mock_rng.integers.return_value = 1
+        mab._rng = mock_rng
+
+        selections = [mab._select_epsilon_greedy_action(p) for _ in range(_N_DRAWS)]
+        default_share = sum(1 for s in selections if s == "a1") / _N_DRAWS
+        assert "a1" in selections and "a2" in selections
+        assert abs(default_share - _MIX_FRACTION) < _MIX_TOLERANCE
+
+    def test_quantitative_random_branch(self, epsilon=1.0):
+        """When the random branch fires for a quantitative model, the result is (action_id, quantity_tuple)."""
+        actions = {"a1": Zooming.cold_start(), "a2": Zooming.cold_start()}
+        mab = DummyMab(
+            actions=actions,
+            strategy=ClassicBandit(),
+            epsilon=epsilon,
+            default_action=("a1", (0.5,)),
+            default_action_fraction=_DEFAULT_FRACTION,
+        )
+        # Replace _rng with a mock: binomial returns [1, 0] so epsilon fires (explore) but the
+        # fraction check fails (random branch). integers picks "a2" (index 1). random supplies
+        # the quantity tuple for the quantitative action.
+        mock_rng = MagicMock()
+        mock_rng.binomial.side_effect = [1, 0]
+        mock_rng.integers.return_value = 1
+        mock_rng.random.return_value = np.array([0.5])
+        mab._rng = mock_rng
+
+        p_quant = {"a1": 0.5, "a2": 0.5}
+        selected = mab._select_epsilon_greedy_action(p_quant)
+
+        assert isinstance(selected, tuple)
+        assert selected[0] == "a2"
+        assert isinstance(selected[1], tuple)
+        assert len(selected[1]) == actions["a2"].dimension
+
+
+########################################################################################################################
+
+
 # MAB model_post_init validation tests
 
 
@@ -208,39 +336,31 @@ def test_mab_model_post_init_default_action_validation():
         DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=None, default_action="action1")
 
 
-def test_mab_model_post_init_invalid_default_action(epsilon=0.1):
+def test_mab_model_post_init_invalid_default_action(epsilon=_EPSILON):
     """Test model_post_init validation for invalid default action."""
     actions = {"action1": Beta(), "action2": Beta()}
 
-    # Test case: default_action is not in the actions set - should raise AttributeError
     with pytest.raises(AttributeError, match="The default action must be valid action defined in the actions set."):
         DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action="invalid_action")
 
 
-def test_mab_model_post_init_quantitative_default_action_validation(epsilon=0.1):
+def test_mab_model_post_init_quantitative_default_action_validation(epsilon=_EPSILON):
     """Test model_post_init validation for quantitative default action requirements."""
-
-    # Test case: quantitative default action (tuple) with standard (non-quantitative) actions
-    # should fail the quantitative model validation
     actions = {"action1": Beta(), "action2": Beta()}
 
     with pytest.raises(AttributeError, match="Quantitative default action requires a quantitative action model."):
         DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action=("action1", (0.5, 0.5)))
 
 
-def test_mab_model_post_init_standard_default_action_validation(epsilon=0.1):
+def test_mab_model_post_init_standard_default_action_validation(epsilon=_EPSILON):
     """Test model_post_init validation for standard default action requirements."""
-    from pybandits.quantitative_model import Zooming
-
-    # Create quantitative actions
     actions = {"action1": Zooming.cold_start(), "action2": Zooming.cold_start()}
 
-    # Test case: standard default action (string) with quantitative model - should raise AttributeError
     with pytest.raises(AttributeError, match="Standard default action requires a standard action model."):
         DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action="action1")
 
 
-def test_mab_model_post_init_valid_configurations(epsilon=0.1):
+def test_mab_model_post_init_valid_configurations(epsilon=_EPSILON):
     """Test model_post_init validation with valid configurations."""
     actions = {"action1": Beta(), "action2": Beta()}
 
@@ -251,7 +371,7 @@ def test_mab_model_post_init_valid_configurations(epsilon=0.1):
 
     # Valid case 2: Epsilon with valid default action
     mab = DummyMab(actions=actions, strategy=ClassicBandit(), epsilon=epsilon, default_action="action1")
-    assert mab.epsilon == 0.1
+    assert mab.epsilon == epsilon
     assert mab.default_action == "action1"
 
     # Valid case 3: Epsilon without default action and delta (adaptive window)
