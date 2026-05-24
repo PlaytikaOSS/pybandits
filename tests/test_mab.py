@@ -225,7 +225,12 @@ class TestDefaultActionFraction:
             )
 
     @pytest.mark.parametrize("fraction", [None, 1.0])
-    def test_always_returns_default_action(self, p: Dict[ActionId, Probability], fraction: Optional[float], epsilon=1.0,):
+    def test_always_returns_default_action(
+        self,
+        p: Dict[ActionId, Probability],
+        fraction: Optional[float],
+        epsilon=1.0,
+    ):
         """When fraction is None or 1.0, exploration must always return default_action.
 
         epsilon=1.0 guarantees the explore branch always fires.
