@@ -2,7 +2,7 @@ import json
 import pickle
 import random
 from tempfile import NamedTemporaryFile
-from typing import Any, List, Tuple, get_args
+from typing import Any, List, Optional, Tuple, get_args
 
 import numpy as np
 from bokeh.core.serialization import Serializable
@@ -36,6 +36,12 @@ class _EvalArray:
 
 def sample_with_replacement(source: list, length: PositiveInt):
     return [random.choice(source) for _ in range(length)]
+
+
+def make_binary_rewards(n: int, rate: float, rng: Optional[np.random.Generator] = None) -> List[int]:
+    """Return a list of n binary rewards drawn from Bernoulli(rate)."""
+    _rng = rng if rng is not None else np.random.default_rng()
+    return _rng.binomial(1, rate, size=n).tolist()
 
 
 def to_temporary_pickle(model: PyBanditsBaseModel):

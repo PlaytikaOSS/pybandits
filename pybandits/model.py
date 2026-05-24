@@ -1253,7 +1253,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
-    _min_sigma: ClassVar[float] = 1e-6
+    _numerical_eps: ClassVar[float] = 1e-6
     _supported_optimizers: ClassVar[dict] = {
         "sgd": noptim.SGD,
         "momentum": noptim.Momentum,
@@ -1280,6 +1280,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
     random_seed: Optional[NonNegativeInt] = None
+    calibrate_output_bias: bool = False
+    bias_calibrated: bool = False
 
     _rng_key: Any = PrivateAttr(default=None)
 
@@ -1327,6 +1329,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 f"Invalid activation function: {v}. Supported activations are: {list(cls._jax_activations.keys())}"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_bias_calibrated(self) -> "BaseBayesianNeuralNetwork":
+        if self.bias_calibrated and not self.calibrate_output_bias:
+            raise ValueError("bias_calibrated=True requires calibrate_output_bias=True.")
+        return self
 
     @classmethod
     def get_embedding_var_name(cls, feat_index: int) -> str:
@@ -1407,7 +1415,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         hidden_dim_list: Optional[List[PositiveInt]],
         use_layerwise_scaling: bool = False,
         dist_class: type[BaseLocationScaleArray] = StudentTArray,
-        bias_scale: Optional[PositiveFloat] = None,
+        bias_std: Optional[PositiveFloat] = None,
         **dist_params_init,
     ) -> BnnParams:
         """
@@ -1427,7 +1435,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Whether to use layerwise scaling in the network (default is False).
         dist_class : type
             The distribution class to use for weights, biases, and embeddings, by default ``StudentTArray``.
-        bias_scale : Optional[PositiveFloat]
+        bias_std : Optional[PositiveFloat]
             If provided, overrides ``sigma`` from ``dist_params_init`` for all layers' bias priors.
             Applied to every layer's bias (including the output layer's logit bias), leaving weight priors unchanged.
             Default is None (use ``sigma`` from ``dist_params_init``).
@@ -1455,7 +1463,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             w_param = dist_class.cold_start(
                 shape=(input_dim, output_dim), use_layerwise_scaling=use_layerwise_scaling, **dist_params_init
             )
-            b_dist_params_init = dist_params_init if bias_scale is None else {**dist_params_init, "sigma": bias_scale}
+            b_dist_params_init = dist_params_init if bias_std is None else {**dist_params_init, "sigma": bias_std}
             b_param = dist_class.cold_start(shape=output_dim, **b_dist_params_init)
             layer_params_init.append(BnnLayerParams(weight=w_param, bias=b_param))
 
@@ -1755,7 +1763,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 # Final output processing
                 logit = numpyro.deterministic(
                     self._logit_var_name,
-                    jnp.clip(linear_transform.squeeze(-1), -_LOGIT_CLIPPING_THRESHOLD, _LOGIT_CLIPPING_THRESHOLD),
+                    linear_transform.squeeze(-1),
                 )
                 numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
 
@@ -2035,7 +2043,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             emb_var_name = self.get_embedding_var_name(i)
             emb_values = np.array(samples[emb_var_name])
             emb_mu = np.mean(emb_values, axis=0)
-            emb_sigma = np.maximum(np.std(emb_values, axis=0), self._min_sigma)
+            emb_sigma = np.maximum(np.std(emb_values, axis=0), self._numerical_eps)
             updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
         self.model_params.embedding_params.embeddings = updated_embeddings
 
@@ -2079,8 +2087,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         all_mus_flat = np.concatenate(all_mus)
         init_loc_fn = init_to_median if np.all(all_mus_flat == 0) else init_to_value(values=values)
-        avg_sigma = float(max(np.mean(np.concatenate(all_sigmas)), self._min_sigma))
-        site_sigmas = {name: np.maximum(sigma, self._min_sigma) for name, sigma in site_sigmas.items()}
+        avg_sigma = float(max(np.mean(np.concatenate(all_sigmas)), self._numerical_eps))
+        site_sigmas = {name: np.maximum(sigma, self._numerical_eps) for name, sigma in site_sigmas.items()}
         init_scale_fn = lambda name: site_sigmas.get(name, avg_sigma)  # noqa: E731
         return init_loc_fn, init_scale_fn
 
@@ -2215,7 +2223,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # AutoNormal stores per-site: {name}_auto_loc (mean) and {name}_auto_scale (already-constrained std)
         site_mu = {k.removesuffix("_auto_loc"): v for k, v in params.items() if k.endswith("_auto_loc")}
         site_sigma = {
-            k.removesuffix("_auto_scale"): np.maximum(v, self._min_sigma)
+            k.removesuffix("_auto_scale"): np.maximum(v, self._numerical_eps)
             for k, v in params.items()
             if k.endswith("_auto_scale")
         }
@@ -2348,9 +2356,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             b_values = np.array(samples[bias_layer_params_name])
 
             w_mu = np.mean(w_values, axis=0)
-            w_sigma = np.maximum(np.std(w_values, axis=0), self._min_sigma)
+            w_sigma = np.maximum(np.std(w_values, axis=0), self._numerical_eps)
             b_mu = np.mean(b_values, axis=0)
-            b_sigma = np.maximum(np.std(b_values, axis=0), self._min_sigma)
+            b_sigma = np.maximum(np.std(b_values, axis=0), self._numerical_eps)
 
             updated_layer_params = self._create_updated_layer_params(
                 w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
@@ -2387,6 +2395,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         y_jnp = jnp.array(np.array(rewards, dtype=np.int32), dtype=jnp.int32)
         n_samples = _context.shape[0]
 
+        if self.calibrate_output_bias:
+            self._calibrate_output_bias(rewards)
+
         if self.update_method == "VI":
             updated_layer_params_list = self._extract_vi_params(x_jnp, y_jnp, n_samples)
 
@@ -2410,9 +2421,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
-        bias_scale: Optional[PositiveFloat] = None,
+        bias_std: Optional[PositiveFloat] = None,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
         random_seed: Optional[NonNegativeInt] = None,
+        calibrate_output_bias: bool = False,
         **kwargs,
     ) -> Self:
         """
@@ -2442,10 +2454,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Whether to use layerwise scaling in the network (default is False).
             When applied, the sigma is scaled by the square root of the input dimension.
             This is useful to enable smoother convergence with Gaussian Process-like behavior.
-        bias_scale : Optional[PositiveFloat]
+        bias_std : Optional[PositiveFloat]
             If provided, overrides ``sigma`` from ``dist_params_init`` for all layers' bias priors,
             leaving weight priors untouched. Useful to restrain the prior on the output-layer logit
             (which otherwise pushes mass towards p=0 / p=1 after sigmoid at cold start). Default is None.
+        calibrate_output_bias : bool
+            If True, the output-layer bias mu is set to ``logit(empirical_reward_rate)`` on the very first
+            ``update()`` call, before VI/MCMC training begins. This replaces the cold-start prior mean
+            (logit 0 ≈ 50 % reward rate) with a data-driven intercept, preventing optimistic over-exploration
+            of arms that have accumulated little data. The calibration fires only once per arm lifetime
+            (or after a ``_reset()``). Default is False.
         categorical_features : Optional[Dict[int, int]], optional
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
@@ -2486,7 +2504,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             hidden_dim_list=hidden_dim_list,
             use_layerwise_scaling=use_layerwise_scaling,
             dist_class=dist_class,
-            bias_scale=bias_scale,
+            bias_std=bias_std,
             **dist_params_init,
         )
         return cls(
@@ -2497,8 +2515,44 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             use_residual_connections=use_residual_connections,
             feature_config=feature_config,
             random_seed=random_seed,
+            calibrate_output_bias=calibrate_output_bias,
             **kwargs,
         )
+
+    def _calibrate_output_bias(self, rewards: List[BinaryReward]) -> None:
+        """Set the output-layer bias mu to ``logit(empirical_reward_rate)`` on the first update call.
+
+        Replaces the cold-start prior mean (logit 0 ≈ 50 % reward rate) with a data-driven intercept
+        derived from the observed reward rate in ``rewards``.  This prevents the model from
+        over-exploring arms that have accumulated little data but whose prior pushes predicted
+        probability toward 0.5, making them appear more rewarding than they actually are.
+
+        The calibration fires exactly once per arm lifetime (or after a ``_reset()`` call).
+        Subsequent calls are no-ops guarded by the ``bias_calibrated`` flag.
+
+        Parameters
+        ----------
+        rewards : List[BinaryReward]
+            Binary rewards (0/1) observed in the current update batch.  The empirical reward rate
+            (mean of ``rewards``) is clipped to ``[_numerical_eps, 1 - _numerical_eps]`` before
+            the logit transform to avoid ``log(0)`` / ``log(inf)`` instability.
+
+        Notes
+        -----
+        - The sigma of the output-layer bias prior is left unchanged; only ``mu`` is updated.
+        - This method is called from ``_update`` before VI/MCMC training begins, so the
+          calibrated intercept serves as the warm-start location for the variational guide.
+        - The clipping bounds use ``_numerical_eps`` to stay safely away from the degenerate logit values at 0 and 1.
+        """
+        if self.bias_calibrated or len(rewards) == 0:
+            return
+        reward_rate = float(np.clip(np.mean(rewards), self._numerical_eps, 1 - self._numerical_eps))
+        intercept = float(np.log(reward_rate / (1 - reward_rate)))
+        output_layer = self.model_params.bnn_layer_params[-1]
+        new_mu = np.full(output_layer.bias.shape, intercept)
+        new_bias = output_layer.bias.with_dist_parameters(mu=new_mu.tolist())
+        self.model_params.bnn_layer_params[-1] = BnnLayerParams(weight=output_layer.weight, bias=new_bias)
+        self.bias_calibrated = True
 
     def _reset(self):
         """
@@ -2507,6 +2561,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.model_params.bnn_layer_params = deepcopy(self.model_params.bnn_layer_params_init)
         if self.model_params.embedding_params is not None:
             self.model_params.embedding_params.embeddings = deepcopy(self.model_params.embedding_params.embeddings_init)
+        self.bias_calibrated = False
 
 
 class BayesianNeuralNetwork(BaseBayesianNeuralNetwork):
@@ -2605,7 +2660,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
-        bias_scale: Optional[PositiveFloat] = None,
+        bias_std: Optional[PositiveFloat] = None,
         **kwargs,
     ) -> Self:
         """
@@ -2633,7 +2688,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Whether to use residual connections in the network (default is False).
         use_layerwise_scaling : bool
             Whether to use layerwise scaling in the network (default is False).
-        bias_scale : Optional[PositiveFloat]
+        bias_std : Optional[PositiveFloat]
             If provided, overrides ``sigma`` from ``dist_params`` for all layers' bias priors,
             leaving weight priors untouched. Default is None.
         **kwargs
@@ -2656,7 +2711,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 activation=activation,
                 use_residual_connections=use_residual_connections,
                 use_layerwise_scaling=use_layerwise_scaling,
-                bias_scale=bias_scale,
+                bias_std=bias_std,
             )
             for _ in range(n_objectives)
         ]

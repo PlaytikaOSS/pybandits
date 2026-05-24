@@ -34,6 +34,7 @@ from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
 from numpyro.infer import Predictive
 from pydantic import ValidationError
+from utils import make_binary_rewards
 
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
@@ -54,6 +55,29 @@ from pybandits.model import (
     StudentTArray,
     UpdateMethods,
 )
+
+
+@pytest.fixture(scope="module")
+def make_bnn():
+    """Factory fixture: returns a callable that builds a BayesianNeuralNetwork via cold_start."""
+
+    def _factory(
+        n_features: int, hidden_dim_list: list[int], calibrate_output_bias: bool = True
+    ) -> BayesianNeuralNetwork:
+        return BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            calibrate_output_bias=calibrate_output_bias,
+        )
+
+    return _factory
+
+
+@pytest.fixture(scope="module")
+def calibration_bnn(make_bnn) -> BayesianNeuralNetwork:
+    """Single BNN instance for calibration tests; call ``_reset()`` before each use to restore fresh state."""
+    return make_bnn(n_features=2, hidden_dim_list=[4])
+
 
 ########################################################################################################################
 
@@ -317,8 +341,8 @@ def test_can_init_bayesian_neural_network(n_features, hidden_dim_list):
         assert bnn.model_params == model_params
 
 
-class TestBiasScale:
-    """Test suite for the ``bias_scale`` cold-start parameter of the BNN."""
+class TestBiasStd:
+    """Test suite for the ``bias_std`` cold-start parameter of the BNN."""
 
     @staticmethod
     def _dist_params(dist_type: Literal["studentt", "normal"], sigma: float, nu: float) -> dict:
@@ -329,33 +353,33 @@ class TestBiasScale:
 
     @settings(deadline=500)
     @given(
-        bias_scale=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        bias_std=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
         sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
         nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
         dist_type=st.sampled_from(["studentt", "normal"]),
         n_features=st.integers(min_value=1, max_value=3),
         hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     )
-    def test_bias_scale_overrides_bias_sigma_only(
+    def test_bias_std_overrides_bias_sigma_only(
         self,
-        bias_scale: float,
+        bias_std: float,
         sigma: float,
         nu: float,
         dist_type: Literal["studentt", "normal"],
         n_features: int,
         hidden_dim_list: list,
     ) -> None:
-        """``bias_scale`` sets the bias prior sigma on every layer while weight priors keep ``sigma``."""
+        """``bias_std`` sets the bias prior sigma on every layer while weight priors keep ``sigma``."""
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
             dist_type=dist_type,
             dist_params_init=self._dist_params(dist_type, sigma, nu),
-            bias_scale=bias_scale,
+            bias_std=bias_std,
         )
         assert len(bnn.model_params.bnn_layer_params) == len(hidden_dim_list) + 1
         for layer_params in bnn.model_params.bnn_layer_params:
-            np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_scale)
+            np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_std)
             np.testing.assert_allclose(layer_params.weight.params["sigma"], sigma)
 
     @settings(deadline=500)
@@ -367,7 +391,7 @@ class TestBiasScale:
         hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
         random_seed=st.integers(min_value=0, max_value=2**16),
     )
-    def test_bias_scale_none_matches_default(
+    def test_bias_std_none_matches_default(
         self,
         sigma: float,
         nu: float,
@@ -376,7 +400,7 @@ class TestBiasScale:
         hidden_dim_list: list,
         random_seed: int,
     ) -> None:
-        """Passing ``bias_scale=None`` produces the same ``model_params`` as omitting it."""
+        """Passing ``bias_std=None`` produces the same ``model_params`` as omitting it."""
         kwargs = dict(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
@@ -385,12 +409,12 @@ class TestBiasScale:
             random_seed=random_seed,
         )
         bnn_default = BayesianNeuralNetwork.cold_start(**kwargs)
-        bnn_none = BayesianNeuralNetwork.cold_start(bias_scale=None, **kwargs)
+        bnn_none = BayesianNeuralNetwork.cold_start(bias_std=None, **kwargs)
         assert bnn_default.model_params == bnn_none.model_params
 
     @settings(deadline=500)
     @given(
-        bias_scale=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        bias_std=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
         sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
         nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
         dist_type=st.sampled_from(["studentt", "normal"]),
@@ -398,9 +422,9 @@ class TestBiasScale:
         n_features=st.integers(min_value=1, max_value=3),
         hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     )
-    def test_bias_scale_propagates_through_mo_cold_start(
+    def test_bias_std_propagates_through_mo_cold_start(
         self,
-        bias_scale: float,
+        bias_std: float,
         sigma: float,
         nu: float,
         dist_type: Literal["studentt", "normal"],
@@ -408,51 +432,174 @@ class TestBiasScale:
         n_features: int,
         hidden_dim_list: list,
     ) -> None:
-        """``bias_scale`` is forwarded to each per-objective BNN in the MO variant."""
+        """``bias_std`` is forwarded to each per-objective BNN in the MO variant."""
         mo_bnn = BayesianNeuralNetworkMO.cold_start(
             n_objectives=n_objectives,
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
             dist_type=dist_type,
             dist_params=self._dist_params(dist_type, sigma, nu),
-            bias_scale=bias_scale,
+            bias_std=bias_std,
         )
         assert len(mo_bnn.models) == n_objectives
         for model in mo_bnn.models:
             for layer_params in model.model_params.bnn_layer_params:
-                np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_scale)
+                np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_std)
 
     @settings(deadline=500)
     @given(
-        bias_scale=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
+        bias_std=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
         sigma=st.floats(min_value=1e-3, max_value=10.0, allow_nan=False, allow_infinity=False),
         nu=st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False),
         dist_type=st.sampled_from(["studentt", "normal"]),
         n_features=st.integers(min_value=1, max_value=5),
         hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     )
-    def test_bias_scale_independent_of_layerwise_scaling(
+    def test_bias_std_independent_of_layerwise_scaling(
         self,
-        bias_scale: float,
+        bias_std: float,
         sigma: float,
         nu: float,
         dist_type: Literal["studentt", "normal"],
         n_features: int,
         hidden_dim_list: list,
     ) -> None:
-        """``bias_scale`` applies verbatim to bias sigma even when ``use_layerwise_scaling`` shrinks weight sigma."""
+        """``bias_std`` applies verbatim to bias sigma even when ``use_layerwise_scaling`` shrinks weight sigma."""
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
             dist_type=dist_type,
             dist_params_init=self._dist_params(dist_type, sigma, nu),
             use_layerwise_scaling=True,
-            bias_scale=bias_scale,
+            bias_std=bias_std,
         )
         fan_ins = [n_features] + hidden_dim_list
         for layer_params, fan_in in zip(bnn.model_params.bnn_layer_params, fan_ins):
-            np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_scale)
+            np.testing.assert_allclose(layer_params.bias.params["sigma"], bias_std)
             np.testing.assert_allclose(layer_params.weight.params["sigma"], sigma / np.sqrt(fan_in))
+
+
+class TestCalibrateOutputBias:
+    """Test suite for ``calibrate_output_bias`` and the ``bias_calibrated`` flag on the BNN."""
+
+    @pytest.mark.parametrize(
+        "calibrate_output_bias, bias_calibrated, should_raise",
+        [
+            (False, True, True),
+            (True, True, False),
+            (True, False, False),
+        ],
+    )
+    def test_validator_bias_calibrated_consistency(
+        self, calibrate_output_bias: bool, bias_calibrated: bool, should_raise: bool, n_features: int = 2
+    ) -> None:
+        """Validator rejects bias_calibrated=True when calibrate_output_bias=False; allows all other combos."""
+        fc = FeaturesConfig(n_features=n_features)
+        model_params = BayesianNeuralNetwork.create_model_params(fc, [])
+        kwargs = dict(
+            model_params=model_params,
+            feature_config=fc,
+            calibrate_output_bias=calibrate_output_bias,
+            bias_calibrated=bias_calibrated,
+        )
+        if should_raise:
+            with pytest.raises(ValidationError):
+                BayesianNeuralNetwork(**kwargs)
+        else:
+            BayesianNeuralNetwork(**kwargs)
+
+    @given(
+        n_rewards=st.integers(min_value=5, max_value=50),
+        reward_rate=st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
+        rtol=st.just(1e-5),
+    )
+    def test_output_bias_mu_set_to_logit_of_reward_rate(
+        self, calibration_bnn: BayesianNeuralNetwork, n_rewards: int, reward_rate: float, rtol
+    ) -> None:
+        """After ``_calibrate_output_bias``, the output-layer bias mu equals ``logit(empirical_reward_rate)``."""
+        calibration_bnn._reset()
+        rewards = make_binary_rewards(n_rewards, reward_rate)
+        calibration_bnn._calibrate_output_bias(rewards)
+
+        eps = BaseBayesianNeuralNetwork._numerical_eps
+        empirical_rate = float(np.clip(np.mean(rewards), eps, 1 - eps))
+        expected_intercept = float(np.log(empirical_rate / (1 - empirical_rate)))
+        np.testing.assert_allclose(
+            np.array(calibration_bnn.model_params.bnn_layer_params[-1].bias.params["mu"]),
+            expected_intercept,
+            rtol=rtol,
+        )
+
+    @given(
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+        n_rewards=st.integers(min_value=5, max_value=50),
+        reward_rate=st.floats(min_value=0.05, max_value=0.95, allow_nan=False),
+    )
+    def test_calibration_fires_only_once(
+        self, make_bnn, n_features: int, hidden_dim_list: list[int], n_rewards: int, reward_rate: float
+    ) -> None:
+        """A second call to ``_calibrate_output_bias`` is a no-op (bias_calibrated guard)."""
+        bnn = make_bnn(n_features, hidden_dim_list)
+        rewards = make_binary_rewards(n_rewards, reward_rate)
+
+        bnn._calibrate_output_bias(rewards)
+        mu_after_first = list(bnn.model_params.bnn_layer_params[-1].bias.params["mu"])
+
+        bnn._calibrate_output_bias([1 - r for r in rewards])
+        assert list(bnn.model_params.bnn_layer_params[-1].bias.params["mu"]) == mu_after_first
+
+    @given(
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+        rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=5, max_size=50),
+    )
+    def test_calibration_flag_lifecycle(
+        self, make_bnn, n_features: int, hidden_dim_list: list[int], rewards: list[int]
+    ) -> None:
+        """``bias_calibrated`` is set by ``_calibrate_output_bias`` and cleared by ``_reset``."""
+        bnn = make_bnn(n_features, hidden_dim_list)
+        bnn._calibrate_output_bias(rewards)
+        assert bnn.bias_calibrated is True
+        bnn._reset()
+        assert bnn.bias_calibrated is False
+
+    @given(
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+        rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=5, max_size=50),
+    )
+    def test_calibration_only_mutates_output_layer_bias_mu(
+        self, make_bnn, n_features: int, hidden_dim_list: list[int], rewards: list[int]
+    ) -> None:
+        """Calibration touches only output-layer bias mu; all sigmas and hidden-layer mus are unchanged."""
+        bnn = make_bnn(n_features, hidden_dim_list)
+        output_sigma_before = list(bnn.model_params.bnn_layer_params[-1].bias.params["sigma"])
+        hidden_mus_before = [list(layer.bias.params["mu"]) for layer in bnn.model_params.bnn_layer_params[:-1]]
+
+        bnn._calibrate_output_bias(rewards)
+
+        assert list(bnn.model_params.bnn_layer_params[-1].bias.params["sigma"]) == output_sigma_before
+        assert [list(layer.bias.params["mu"]) for layer in bnn.model_params.bnn_layer_params[:-1]] == hidden_mus_before
+
+    @pytest.mark.parametrize("constant_reward", [0, 1])
+    @given(
+        n_features=st.integers(min_value=1, max_value=3),
+        hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+        n_rewards=st.integers(min_value=5, max_value=50),
+    )
+    def test_constant_rewards_clip_to_finite_logit(
+        self,
+        make_bnn,
+        constant_reward: int,
+        n_features: int,
+        hidden_dim_list: list[int],
+        n_rewards: int,
+    ) -> None:
+        """All-identical rewards clip to eps / 1-eps, keeping the logit finite."""
+        bnn = make_bnn(n_features, hidden_dim_list)
+        bnn._calibrate_output_bias([constant_reward] * n_rewards)
+        assert all(np.isfinite(bnn.model_params.bnn_layer_params[-1].bias.params["mu"]))
 
 
 @settings(deadline=500)
