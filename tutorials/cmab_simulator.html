@@ -298,11 +298,11 @@
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:218: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-2026-05-19 13:40:19.672 | INFO     | pybandits.simulator:_print_results:530 - Simulation results (first 10 observations):
+2026-05-24 12:50:56.606 | INFO     | pybandits.simulator:_print_results:530 - Simulation results (first 10 observations):
 
-2026-05-19 13:40:19.694 | INFO     | pybandits.simulator:_print_results:531 - Count of actions selected by the bandit:
+2026-05-24 12:50:56.627 | INFO     | pybandits.simulator:_print_results:531 - Count of actions selected by the bandit:
 
-2026-05-19 13:40:19.697 | INFO     | pybandits.simulator:_print_results:532 - Observed proportion of positive rewards for each action:
+2026-05-24 12:50:56.630 | INFO     | pybandits.simulator:_print_results:532 - Observed proportion of positive rewards for each action:
 
 </pre></div></div>
 </div>
@@ -361,192 +361,192 @@
     <tr>
       <th>0</th>
       <th>0.0</th>
+      <td>9</td>
       <td>12</td>
-      <td>11</td>
+      <td>10</td>
+      <td>9</td>
       <td>12</td>
-      <td>12</td>
-      <td>11</td>
-      <td>12</td>
+      <td>10</td>
     </tr>
     <tr>
       <th>1</th>
       <th>0.0</th>
+      <td>11</td>
+      <td>15</td>
       <td>9</td>
-      <td>13</td>
-      <td>9</td>
-      <td>9</td>
-      <td>13</td>
+      <td>11</td>
+      <td>15</td>
       <td>9</td>
     </tr>
     <tr>
       <th>2</th>
       <th>0.0</th>
-      <td>10</td>
       <td>13</td>
+      <td>10</td>
       <td>11</td>
-      <td>10</td>
       <td>13</td>
+      <td>10</td>
       <td>11</td>
     </tr>
     <tr>
       <th>0</th>
       <th>1.0</th>
       <td>11</td>
-      <td>6</td>
-      <td>14</td>
+      <td>11</td>
+      <td>8</td>
+      <td>20</td>
       <td>23</td>
-      <td>17</td>
-      <td>26</td>
+      <td>18</td>
     </tr>
     <tr>
       <th>1</th>
       <th>1.0</th>
-      <td>14</td>
-      <td>11</td>
-      <td>11</td>
-      <td>23</td>
-      <td>24</td>
-      <td>20</td>
+      <td>8</td>
+      <td>12</td>
+      <td>17</td>
+      <td>19</td>
+      <td>27</td>
+      <td>26</td>
     </tr>
     <tr>
       <th>2</th>
       <th>1.0</th>
+      <td>16</td>
+      <td>7</td>
       <td>10</td>
-      <td>13</td>
-      <td>10</td>
-      <td>20</td>
-      <td>26</td>
+      <td>29</td>
+      <td>17</td>
       <td>21</td>
     </tr>
     <tr>
       <th>0</th>
       <th>2.0</th>
-      <td>11</td>
-      <td>7</td>
-      <td>10</td>
-      <td>34</td>
-      <td>24</td>
+      <td>12</td>
+      <td>8</td>
+      <td>18</td>
+      <td>32</td>
+      <td>31</td>
       <td>36</td>
     </tr>
     <tr>
       <th>1</th>
       <th>2.0</th>
-      <td>11</td>
-      <td>14</td>
-      <td>20</td>
-      <td>34</td>
-      <td>38</td>
-      <td>40</td>
+      <td>10</td>
+      <td>16</td>
+      <td>13</td>
+      <td>29</td>
+      <td>43</td>
+      <td>39</td>
     </tr>
     <tr>
       <th>2</th>
       <th>2.0</th>
-      <td>6</td>
       <td>9</td>
-      <td>12</td>
-      <td>26</td>
-      <td>35</td>
-      <td>33</td>
+      <td>6</td>
+      <td>8</td>
+      <td>38</td>
+      <td>23</td>
+      <td>29</td>
     </tr>
     <tr>
       <th>0</th>
       <th>3.0</th>
-      <td>13</td>
-      <td>15</td>
-      <td>12</td>
-      <td>47</td>
-      <td>39</td>
-      <td>48</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>3.0</th>
-      <td>10</td>
-      <td>7</td>
-      <td>7</td>
+      <td>11</td>
+      <td>11</td>
+      <td>8</td>
+      <td>43</td>
+      <td>42</td>
       <td>44</td>
-      <td>45</td>
-      <td>47</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>3.0</th>
+      <td>12</td>
+      <td>10</td>
+      <td>10</td>
+      <td>41</td>
+      <td>53</td>
+      <td>49</td>
     </tr>
     <tr>
       <th>2</th>
       <th>3.0</th>
       <td>13</td>
-      <td>15</td>
-      <td>8</td>
-      <td>39</td>
-      <td>50</td>
-      <td>41</td>
+      <td>12</td>
+      <td>13</td>
+      <td>51</td>
+      <td>35</td>
+      <td>42</td>
     </tr>
     <tr>
       <th>0</th>
+      <th>4.0</th>
+      <td>10</td>
+      <td>13</td>
+      <td>13</td>
+      <td>53</td>
+      <td>55</td>
+      <td>57</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>4.0</th>
+      <td>5</td>
+      <td>11</td>
+      <td>11</td>
+      <td>46</td>
+      <td>64</td>
+      <td>60</td>
+    </tr>
+    <tr>
+      <th>2</th>
       <th>4.0</th>
       <td>13</td>
-      <td>8</td>
       <td>10</td>
-      <td>60</td>
-      <td>47</td>
-      <td>58</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>4.0</th>
-      <td>12</td>
-      <td>11</td>
-      <td>8</td>
+      <td>14</td>
+      <td>64</td>
+      <td>45</td>
       <td>56</td>
-      <td>56</td>
-      <td>55</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>4.0</th>
-      <td>11</td>
-      <td>11</td>
-      <td>16</td>
-      <td>50</td>
-      <td>61</td>
-      <td>57</td>
     </tr>
     <tr>
       <th>0</th>
       <th>total</th>
-      <td>60</td>
-      <td>47</td>
-      <td>58</td>
-      <td>60</td>
-      <td>47</td>
-      <td>58</td>
+      <td>53</td>
+      <td>55</td>
+      <td>57</td>
+      <td>53</td>
+      <td>55</td>
+      <td>57</td>
     </tr>
     <tr>
       <th>1</th>
       <th>total</th>
-      <td>56</td>
-      <td>56</td>
-      <td>55</td>
-      <td>56</td>
-      <td>56</td>
-      <td>55</td>
+      <td>46</td>
+      <td>64</td>
+      <td>60</td>
+      <td>46</td>
+      <td>64</td>
+      <td>60</td>
     </tr>
     <tr>
       <th>2</th>
       <th>total</th>
-      <td>50</td>
-      <td>61</td>
-      <td>57</td>
-      <td>50</td>
-      <td>61</td>
-      <td>57</td>
+      <td>64</td>
+      <td>45</td>
+      <td>56</td>
+      <td>64</td>
+      <td>45</td>
+      <td>56</td>
     </tr>
     <tr>
       <th>total</th>
       <th>total</th>
-      <td>166</td>
+      <td>163</td>
       <td>164</td>
-      <td>170</td>
-      <td>166</td>
+      <td>173</td>
+      <td>163</td>
       <td>164</td>
-      <td>170</td>
+      <td>173</td>
     </tr>
   </tbody>
 </table>
@@ -596,41 +596,41 @@
     <tr>
       <th rowspan="3" valign="top">a1</th>
       <th>0</th>
-      <td>0.416667</td>
+      <td>0.716981</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.5</td>
+      <td>0.23913</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.3</td>
+      <td>0.4375</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a2</th>
       <th>0</th>
-      <td>0.404255</td>
+      <td>0.418182</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.714286</td>
+      <td>0.53125</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.065574</td>
+      <td>0.088889</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a3</th>
       <th>0</th>
-      <td>0.586207</td>
+      <td>0.754386</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.690909</td>
+      <td>0.75</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.070175</td>
+      <td>0.732143</td>
     </tr>
   </tbody>
 </table>
