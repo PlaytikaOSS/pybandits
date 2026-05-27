@@ -1036,6 +1036,265 @@ def test_cost_control_quantitative_action(
 
 
 ########################################################################################################################
+# Additional SingleObjectiveStrategy / ClassicBandit / CostControlBandit coverage
+
+
+class RejectAllStrategy(SingleObjectiveStrategy):
+    """Strategy that rejects every action, used to trigger the 'no actions passed' error."""
+
+    def get_prerequisites(self, p, actions, constraint_list):
+        return {}
+
+    def _verify_action(self, score: float, **kwargs) -> bool:
+        return False
+
+    def _verify_and_select_from_quantitative_action(self, score_func, model, constraint_list, **kwargs):
+        return None
+
+    def _select_from_refined_actions(self, refined_p, actions, constraint=None):
+        return list(refined_p.keys())[0]
+
+
+@pytest.mark.parametrize(
+    "p,actions",
+    [
+        ({}, {}),
+        ({}, {"a1": BetaCC(cost=DEFAULT_COST)}),
+        ({"a1": DEFAULT_PROBABILITY}, {}),
+    ],
+    ids=["both_empty", "only_p_empty", "only_actions_empty"],
+)
+def test_refine_p_empty_inputs(p: Dict[str, float], actions: Dict) -> None:
+    """Test refine_p returns {} when p or actions is empty."""
+    strategy = ConcreteSingleObjectiveStrategy()
+    assert strategy.refine_p(p, actions, None) == {}
+
+
+@given(
+    p_values=st.lists(
+        st.floats(min_value=0, max_value=1, allow_nan=False, allow_infinity=False),
+        min_size=1,
+        max_size=5,
+    )
+)
+def test_refine_p_all_actions_filtered_raises(p_values: List[float]) -> None:
+    """Test refine_p raises ValueError when all actions are rejected by the strategy."""
+    strategy = RejectAllStrategy()
+    p = {f"a{i}": v for i, v in enumerate(p_values)}
+    actions = {aid: BetaCC(cost=DEFAULT_COST) for aid in p}
+    with pytest.raises(ValueError, match="No actions met the criteria"):
+        strategy.refine_p(p, actions, None)
+
+
+@given(dimension=st.integers(min_value=1, max_value=5))
+def test_classic_bandit_optimization_failure(dimension: int) -> None:
+    """Test ClassicBandit returns None when maximize_by_quantity raises OptimizationFailedError."""
+    from pybandits.utils import OptimizationFailedError
+
+    bandit = ClassicBandit()
+    model = create_mock_quantitative_model(dimension=dimension)
+    with patch("pybandits.strategy.maximize_by_quantity", side_effect=OptimizationFailedError("test")):
+        result = bandit._verify_and_select_from_quantitative_action(sum, model, None)
+    assert result is None
+
+
+def test_classic_bandit_select_from_empty_refined_p() -> None:
+    """Test ClassicBandit raises ValueError when refined_p is empty."""
+    bandit = ClassicBandit()
+    with pytest.raises(ValueError, match="Cannot select action from empty"):
+        bandit._select_from_refined_actions({}, {})
+
+
+@given(
+    subsidy_factor=st.floats(min_value=0, max_value=1, allow_nan=False, allow_infinity=False),
+    best_value=st.floats(min_value=0.01, max_value=1, allow_nan=False, allow_infinity=False),
+)
+def test_cost_control_quantitative_with_existing_constraint_list(subsidy_factor: float, best_value: float) -> None:
+    """Test CostControlBandit appends cost-control constraint to an existing constraint_list."""
+    c = CostControlBandit(subsidy_factor=subsidy_factor)
+    model = create_mock_quantitative_model(dimension=DEFAULT_DIMENSION)
+    constraint_list = [lambda x: float(x[0])]
+    with patch(
+        "pybandits.strategy.maximize_by_quantity",
+        return_value=np.full(DEFAULT_DIMENSION, DEFAULT_PROBABILITY),
+    ) as mock_max:
+        c._verify_and_select_from_quantitative_action(
+            lambda x: float(sum(x)), model, constraint_list, best_value=best_value
+        )
+    assert len(mock_max.call_args[0][2]) == 2
+
+
+def test_approximate_pareto_front_empty_p() -> None:
+    """Test _get_approximate_pareto_front returns [] for empty p."""
+    m = MultiObjectiveBandit()
+    assert m._get_approximate_pareto_front({}, {}) == []
+
+
+########################################################################################################################
+# _solve_nc_subproblem and _find_utopia_reference_point coverage
+
+# Anchor matrix and utopia shared across _solve_nc_subproblem tests: rows are f(x) at each
+# objective's optimum for f(x) = [x[0], 1-x[0]], giving anchors [1,0] and [0,1].
+_NC_ANCHOR_MATRIX = np.array([[1.0, 0.0], [0.0, 1.0]])
+_NC_UTOPIA = np.array([1.0, 1.0])
+
+
+@given(weight_primary=st.floats(min_value=0.01, max_value=0.99, allow_nan=False, allow_infinity=False))
+@settings(max_examples=5, deadline=None)
+def test_solve_nc_subproblem_runs_objective_function(weight_primary: float) -> None:
+    """Test _solve_nc_subproblem invokes objective_function via real optimization (covers the closure body)."""
+    m = MultiObjectiveBandit()
+
+    def func(x: np.ndarray) -> List[float]:
+        return [float(x[0]), float(1 - x[0])]
+
+    weight = np.array([weight_primary, 1.0 - weight_primary])
+    inner_model = MagicMock(spec=BaseModel)
+    inner_model.dimension = 1
+    model_mock = create_mock_quantitative_model(dimension=1)
+    model_mock.models = [inner_model, inner_model]
+
+    result = m._solve_nc_subproblem(func, _NC_ANCHOR_MATRIX, _NC_UTOPIA, weight, model_mock)
+    assert result is None or isinstance(result, np.ndarray)
+
+
+@given(weight_primary=st.floats(min_value=0.01, max_value=0.99, allow_nan=False, allow_infinity=False))
+@settings(max_examples=5)
+def test_solve_nc_subproblem_feasible_solution(weight_primary: float) -> None:
+    """Test _solve_nc_subproblem returns a solution when optimization succeeds and constraint is met."""
+    m = MultiObjectiveBandit()
+
+    def func(x: np.ndarray) -> List[float]:
+        return [float(x[0]), float(1 - x[0])]
+
+    expected = np.array([weight_primary])
+    weight = np.array([weight_primary, 1.0 - weight_primary])
+    model_mock = create_mock_quantitative_model(dimension=1)
+    model_mock.models = [Beta(), Beta()]
+
+    with patch(
+        "pybandits.strategy.ClassicBandit.verify_and_select_from_quantitative_action",
+        return_value=expected,
+    ) as mock_verify:
+        result = m._solve_nc_subproblem(func, _NC_ANCHOR_MATRIX, _NC_UTOPIA, weight, model_mock)
+
+    mock_verify.assert_called_once()
+    assert isinstance(result, np.ndarray)
+    assert np.allclose(result, expected)
+
+
+@given(far_out=st.floats(min_value=10.0, max_value=1000.0, allow_nan=False, allow_infinity=False))
+@settings(max_examples=5)
+def test_solve_nc_subproblem_infeasible_solution(far_out: float) -> None:
+    """Test _solve_nc_subproblem returns None when the solution is far outside the feasible region."""
+    m = MultiObjectiveBandit()
+
+    def func(x: np.ndarray) -> List[float]:
+        return [float(x[0]), float(1 - x[0])]
+
+    weight = np.array([DEFAULT_PROBABILITY, DEFAULT_PROBABILITY])
+    model_mock = create_mock_quantitative_model(dimension=1)
+    model_mock.models = [Beta(), Beta()]
+
+    with patch(
+        "pybandits.strategy.ClassicBandit.verify_and_select_from_quantitative_action",
+        return_value=np.array([-far_out]),
+    ):
+        result = m._solve_nc_subproblem(func, _NC_ANCHOR_MATRIX, _NC_UTOPIA, weight, model_mock)
+
+    assert result is None
+
+
+@given(weight_primary=st.floats(min_value=0.01, max_value=0.99, allow_nan=False, allow_infinity=False))
+@settings(max_examples=5)
+def test_solve_nc_subproblem_exception(weight_primary: float) -> None:
+    """Test _solve_nc_subproblem returns None when the inner optimization raises."""
+    m = MultiObjectiveBandit()
+
+    def func(x: np.ndarray) -> List[float]:
+        return [float(x[0]), float(1 - x[0])]
+
+    weight = np.array([weight_primary, 1.0 - weight_primary])
+    model_mock = create_mock_quantitative_model(dimension=1)
+    model_mock.models = [Beta(), Beta()]
+
+    with patch(
+        "pybandits.strategy.ClassicBandit.verify_and_select_from_quantitative_action",
+        side_effect=RuntimeError("optimization failed"),
+    ):
+        result = m._solve_nc_subproblem(func, _NC_ANCHOR_MATRIX, _NC_UTOPIA, weight, model_mock)
+
+    assert result is None
+
+
+@given(
+    anchors=st.lists(
+        st.lists(
+            st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+            min_size=2,
+            max_size=2,
+        ),
+        min_size=2,
+        max_size=2,
+    ),
+    weight_vals=st.lists(
+        st.floats(min_value=0.1, max_value=1.0, allow_nan=False, allow_infinity=False),
+        min_size=2,
+        max_size=2,
+    ),
+)
+@settings(max_examples=10)
+def test_find_utopia_reference_point_normal(anchors: List[List[float]], weight_vals: List[float]) -> None:
+    """Test _find_utopia_reference_point returns an array of the correct shape for generic inputs."""
+    transformed_anchors = np.array(anchors)
+    weight = np.array(weight_vals) / sum(weight_vals)
+    result = MultiObjectiveStrategy._find_utopia_reference_point(transformed_anchors, weight, 1e-10)
+    assert isinstance(result, np.ndarray)
+    assert len(result) == 2
+
+
+@pytest.mark.parametrize(
+    "transformed_anchors,weight",
+    [
+        # Anchors on x-axis → hyperplane normal is y-direction; weight=[1,0] → denominator≈0
+        (np.array([[1.0, 0.0], [-1.0, 0.0]]), np.array([1.0, 0.0])),
+    ],
+)
+def test_find_utopia_reference_point_zero_denominator(transformed_anchors: np.ndarray, weight: np.ndarray) -> None:
+    """Test _find_utopia_reference_point falls back to dot-product when denominator is near zero."""
+    result = MultiObjectiveStrategy._find_utopia_reference_point(transformed_anchors, weight, 1e-10)
+    assert isinstance(result, np.ndarray)
+    assert len(result) == 2
+
+
+@given(
+    anchors=st.lists(
+        st.lists(
+            st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+            min_size=2,
+            max_size=2,
+        ),
+        min_size=2,
+        max_size=2,
+    ),
+    weight_vals=st.lists(
+        st.floats(min_value=0.1, max_value=1.0, allow_nan=False, allow_infinity=False),
+        min_size=2,
+        max_size=2,
+    ),
+)
+@settings(max_examples=5)
+def test_find_utopia_reference_point_linalg_error(anchors: List[List[float]], weight_vals: List[float]) -> None:
+    """Test _find_utopia_reference_point falls back to dot-product on LinAlgError."""
+    transformed_anchors = np.array(anchors)
+    weight = np.array(weight_vals) / sum(weight_vals)
+    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD failed")):
+        result = MultiObjectiveStrategy._find_utopia_reference_point(transformed_anchors, weight, 1e-10)
+    assert isinstance(result, np.ndarray)
+    assert len(result) == 2
+
+
+########################################################################################################################
 # MultiObjectiveStrategy tests
 
 

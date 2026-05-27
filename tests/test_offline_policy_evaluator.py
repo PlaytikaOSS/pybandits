@@ -39,7 +39,7 @@ import pybandits
 from pybandits import offline_policy_estimator
 from pybandits.cmab import CmabBernoulli, CmabBernoulliCC, CmabBernoulliMO, CmabBernoulliMOCC
 from pybandits.offline_policy_estimator import BaseOfflinePolicyEstimator
-from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator, _FunctionEstimator
+from pybandits.offline_policy_evaluator import OfflinePolicyEvaluator, _FunctionEstimator, _mab_predict_serialized
 from pybandits.smab import (
     SmabBernoulli,
     SmabBernoulliCC,
@@ -462,3 +462,357 @@ def test_safe_cv_raises_on_single_sample_class(labels=(0, 0, 0, 0, 1)) -> None:
     """Test that _safe_cv raises ValueError when a class has fewer than 2 samples."""
     with pytest.raises(ValueError, match="insufficient for cross-validation"):
         _FunctionEstimator._safe_cv(np.array(labels))
+
+
+# ──────────────────────────────────────────────────────
+# Additional tests: grouped by class
+# ──────────────────────────────────────────────────────
+
+
+class TestFunctionEstimatorEdgeCases:
+    """Edge-case tests for _FunctionEstimator."""
+
+    @pytest.fixture(scope="module")
+    def base_estimator_kwargs(self) -> dict:
+        """Minimal construction kwargs for a non-multiclass _FunctionEstimator."""
+        return {
+            "estimator_type": "logreg",
+            "fast_fit": True,
+            "n_trials": 2,
+            "verbose": False,
+            "multi_action_prediction": False,
+        }
+
+    @pytest.mark.parametrize(
+        "estimator_type",
+        get_args(get_type_hints(_FunctionEstimator)["estimator_type"]),
+    )
+    def test_include_action_false_multi_action_true_raises(
+        self, estimator_type: str, base_estimator_kwargs: dict
+    ) -> None:
+        """include_action_in_features=False with multi_action_prediction=True raises ValidationError."""
+        with pytest.raises(ValidationError):
+            _FunctionEstimator(
+                **{
+                    **base_estimator_kwargs,
+                    "estimator_type": estimator_type,
+                    "multi_action_prediction": True,
+                    "include_action_in_features": False,
+                },
+            )
+
+    @given(n_features=st.integers(min_value=1, max_value=5))
+    @settings(max_examples=5, deadline=None)
+    def test_predict_before_fit_raises(self, n_features: int, base_estimator_kwargs: dict) -> None:
+        """Calling predict before fit raises AttributeError for any context shape."""
+        estimator = _FunctionEstimator(**base_estimator_kwargs)
+        n_rounds = n_features
+        with pytest.raises(AttributeError):
+            estimator.predict(
+                {
+                    "context": np.zeros((n_rounds, n_features)),
+                    "action_ids": np.array([f"a{i}" for i in range(n_rounds)]),
+                    "n_rounds": n_rounds,
+                    "unique_actions": [f"a{i}" for i in range(n_rounds)],
+                }
+            )
+
+    @given(
+        n_samples=st.integers(min_value=10, max_value=30),
+        n_features=st.integers(min_value=2, max_value=5),
+        n_actions=st.integers(min_value=2, max_value=4),
+    )
+    @settings(max_examples=5, deadline=None)
+    def test_predict_multiclass_path(
+        self, n_samples: int, n_features: int, n_actions: int, base_estimator_kwargs: dict
+    ) -> None:
+        """include_action_in_features=False exercises the multiclass probability extraction path."""
+        n_test = min(n_actions, n_samples)
+        unique_labels = [f"a{i}" for i in range(n_actions)]
+        label_to_int = {label: i for i, label in enumerate(unique_labels)}
+        actions = np.array([f"a{i % n_actions}" for i in range(n_samples)])
+        encoded = np.array([label_to_int[a] for a in actions])
+        context = np.random.rand(n_samples, n_features)
+
+        estimator = _FunctionEstimator(
+            **{**base_estimator_kwargs, "include_action_in_features": False, "calibrate": False},
+        )
+        estimator.fit(
+            X={"context": context, "action_ids": actions, "action": encoded, "n_rounds": n_samples},
+            y=encoded,
+        )
+        prediction = estimator.predict(
+            {
+                "context": context[:n_test],
+                "action_ids": actions[:n_test],
+                "action": encoded[:n_test],
+                "n_rounds": n_test,
+                "unique_actions": unique_labels,
+            }
+        )
+        assert prediction.shape == (n_test,)
+        assert np.all((prediction >= 0) & (prediction <= 1))
+
+
+class TestValidateLoggedData:
+    """Tests for OfflinePolicyEvaluator._validate_logged_data error paths."""
+
+    @pytest.fixture
+    def feature_names(self) -> dict:
+        """Column names used consistently by the evaluator and the DataFrame fixtures."""
+        return {"batch": "batch", "action": "action_id", "reward": "reward"}
+
+    @pytest.fixture
+    def base_evaluator(self, feature_names: dict) -> OfflinePolicyEvaluator:
+        """Standard evaluator configured with feature_names columns."""
+        return OfflinePolicyEvaluator(
+            split_prop=0.5,
+            propensity_score_model_type="empirical",
+            expected_reward_model_type="logreg",
+            importance_weights_model_type="logreg",
+            ope_estimators=None,
+            n_trials=2,
+            batch_feature=feature_names["batch"],
+            action_feature=feature_names["action"],
+            reward_feature=feature_names["reward"],
+        )
+
+    @pytest.fixture
+    def evaluator_with_true_reward(self, feature_names: dict) -> OfflinePolicyEvaluator:
+        """Evaluator that additionally expects a true_reward column."""
+        return OfflinePolicyEvaluator(
+            split_prop=0.5,
+            propensity_score_model_type="empirical",
+            expected_reward_model_type="logreg",
+            importance_weights_model_type="logreg",
+            ope_estimators=None,
+            n_trials=2,
+            batch_feature=feature_names["batch"],
+            action_feature=feature_names["action"],
+            reward_feature=feature_names["reward"],
+            true_reward_feature="true_reward",
+        )
+
+    @pytest.fixture
+    def evaluator_with_cost(self, feature_names: dict) -> OfflinePolicyEvaluator:
+        """Evaluator that additionally expects a cost_col column."""
+        return OfflinePolicyEvaluator(
+            split_prop=0.5,
+            propensity_score_model_type="empirical",
+            expected_reward_model_type="logreg",
+            importance_weights_model_type="logreg",
+            ope_estimators=None,
+            n_trials=2,
+            batch_feature=feature_names["batch"],
+            action_feature=feature_names["action"],
+            reward_feature=feature_names["reward"],
+            cost_feature="cost_col",
+        )
+
+    @pytest.fixture
+    def batch_wrong_type_df(self, feature_names: dict) -> pd.DataFrame:
+        """DataFrame whose batch column contains strings instead of ints."""
+        return pd.DataFrame(
+            {
+                feature_names["batch"]: ["x", "y"],
+                feature_names["action"]: ["a", "b"],
+                feature_names["reward"]: [1, 0],
+            }
+        )
+
+    @pytest.fixture
+    def missing_action_df(self, feature_names: dict) -> pd.DataFrame:
+        """DataFrame that is missing the action column."""
+        return pd.DataFrame(
+            {
+                feature_names["batch"]: [0, 1],
+                feature_names["reward"]: [1, 0],
+            }
+        )
+
+    @pytest.fixture
+    def missing_reward_df(self, feature_names: dict) -> pd.DataFrame:
+        """DataFrame that is missing the reward column."""
+        return pd.DataFrame(
+            {
+                feature_names["batch"]: [0, 1],
+                feature_names["action"]: ["a", "b"],
+            }
+        )
+
+    @pytest.fixture
+    def valid_base_df(self, feature_names: dict) -> pd.DataFrame:
+        """Minimal valid DataFrame that satisfies the base evaluator but lacks optional columns."""
+        return pd.DataFrame(
+            {
+                feature_names["batch"]: [0, 1],
+                feature_names["action"]: ["a", "b"],
+                feature_names["reward"]: [1, 0],
+            }
+        )
+
+    @pytest.mark.parametrize(
+        "evaluator_fixture, data_fixture, expected_exc",
+        [
+            ("base_evaluator", "batch_wrong_type_df", TypeError),
+            ("base_evaluator", "missing_action_df", AttributeError),
+            ("base_evaluator", "missing_reward_df", AttributeError),
+            ("evaluator_with_true_reward", "valid_base_df", AttributeError),
+            ("evaluator_with_cost", "valid_base_df", AttributeError),
+        ],
+    )
+    def test_validate_raises(
+        self,
+        evaluator_fixture: str,
+        data_fixture: str,
+        expected_exc: type,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        """_validate_logged_data raises the expected exception for each invalid input combination."""
+        evaluator = request.getfixturevalue(evaluator_fixture)
+        df = request.getfixturevalue(data_fixture)
+        with pytest.raises(expected_exc):
+            evaluator._validate_logged_data(df)
+
+
+class TestOfflinePolicyEvaluatorPipeline:
+    """Tests for OfflinePolicyEvaluator pipeline paths not covered by the integration tests."""
+
+    @pytest.fixture(scope="module")
+    def contextual_features(self, logged_data: pd.DataFrame) -> List[str]:
+        """All context_* column names present in logged_data."""
+        return [col for col in logged_data.columns if col.startswith("context_")]
+
+    @pytest.fixture(scope="module")
+    def first_reward_feature(self, logged_data: pd.DataFrame) -> str:
+        """The first reward_* column name in logged_data."""
+        return next(col for col in logged_data.columns if col.startswith("reward_"))
+
+    @pytest.fixture(scope="module")
+    def base_evaluator(self, logged_data: pd.DataFrame, first_reward_feature: str) -> OfflinePolicyEvaluator:
+        """Standard fast-fit evaluator using empirical propensity and logreg expected-reward."""
+        return OfflinePolicyEvaluator(
+            split_prop=0.5,
+            propensity_score_model_type="empirical",
+            expected_reward_model_type="logreg",
+            importance_weights_model_type="logreg",
+            ope_estimators=None,
+            n_trials=2,
+            fast_fit=True,
+            batch_feature="batch",
+            action_feature="action_id",
+            reward_feature=first_reward_feature,
+        )
+
+    @pytest.fixture(scope="module")
+    def dict_scaler_evaluator(
+        self, logged_data: pd.DataFrame, contextual_features: List[str], first_reward_feature: str
+    ) -> OfflinePolicyEvaluator:
+        """Evaluator configured with a per-feature dict scaler over contextual_features."""
+        return OfflinePolicyEvaluator(
+            split_prop=0.5,
+            propensity_score_model_type="empirical",
+            expected_reward_model_type="logreg",
+            importance_weights_model_type="logreg",
+            ope_estimators=None,
+            n_trials=2,
+            fast_fit=True,
+            batch_feature="batch",
+            action_feature="action_id",
+            reward_feature=first_reward_feature,
+            contextual_features=contextual_features,
+            scaler={feature: MinMaxScaler() for feature in contextual_features},
+        )
+
+    def test_extract_batches_with_dict_scaler(
+        self,
+        logged_data: pd.DataFrame,
+        dict_scaler_evaluator: OfflinePolicyEvaluator,
+        contextual_features: List[str],
+    ) -> None:
+        """_extract_batches applies a per-feature dict scaler and produces correct context shape."""
+        train_data, test_data = dict_scaler_evaluator._extract_batches(logged_data)
+        assert train_data["context"].shape[1] == len(contextual_features)
+        assert test_data["context"].shape[1] == len(contextual_features)
+
+    @given(n_mc=st.integers(min_value=1, max_value=3))
+    @settings(max_examples=3, deadline=None)
+    def test_estimate_policy_no_cores(
+        self, n_mc: int, logged_data: pd.DataFrame, base_evaluator: OfflinePolicyEvaluator
+    ) -> None:
+        """estimate_policy with n_cores=0 exercises the sequential (non-multiprocessing) path."""
+        unique_actions = set(logged_data["action_id"].unique())
+        mab = SmabBernoulli.cold_start(action_ids=unique_actions)
+        _, test_data = base_evaluator._extract_batches(logged_data)
+        estimated_policy = base_evaluator.estimate_policy(
+            mab=mab, test_data=test_data, n_mc_experiments=n_mc, n_cores=0
+        )
+        assert isinstance(estimated_policy, pd.DataFrame)
+        assert set(estimated_policy.columns) == unique_actions
+
+    @given(n_mc=st.integers(min_value=1, max_value=3))
+    @settings(max_examples=3, deadline=None)
+    def test_update_and_evaluate_with_test(
+        self, n_mc: int, logged_data: pd.DataFrame, base_evaluator: OfflinePolicyEvaluator
+    ) -> None:
+        """update_and_evaluate with with_test=True also updates the MAB on test-split data."""
+        unique_actions = set(logged_data["action_id"].unique())
+        mab = SmabBernoulli.cold_start(action_ids=unique_actions)
+        with TemporaryDirectory() as tmp_dir:
+            result = base_evaluator.update_and_evaluate(
+                mab=mab,
+                logged_data=logged_data,
+                with_test=True,
+                visualize=False,
+                n_mc_experiments=n_mc,
+                save_path=tmp_dir,
+            )
+        assert isinstance(result, pd.DataFrame)
+
+
+class TestMabPredictSerializedUtils:
+    """Tests for the module-level _mab_predict_serialized helper."""
+
+    @pytest.fixture(scope="module")
+    def serialized_smab(self, logged_data: pd.DataFrame) -> tuple:
+        """(class_name, state) for a fresh SmabBernoulli built from logged_data's action set."""
+        unique_actions = set(logged_data["action_id"].unique())
+        mab = SmabBernoulli.cold_start(action_ids=unique_actions)
+        return mab.get_state()
+
+    @given(suffix=st.text(alphabet=st.characters(whitelist_categories=["Lu", "Ll"]), min_size=3, max_size=10))
+    @settings(max_examples=5, deadline=None)
+    def test_class_not_found_raises(self, suffix: str) -> None:
+        """_mab_predict_serialized raises ValueError for any class name absent from pybandits modules."""
+        invalid_class_name = f"_TestNonExistent_{suffix}_"
+        with pytest.raises(ValueError, match="Could not find MAB class"):
+            _mab_predict_serialized(
+                mab_class_name=invalid_class_name,
+                mab_state="{}",
+                mab_data=2,
+                verbose=False,
+            )
+
+    def test_import_error_is_handled(self) -> None:
+        """ImportError during module import is caught and the function raises ValueError."""
+        with patch("importlib.import_module", side_effect=ImportError("mocked")):
+            with pytest.raises(ValueError, match="Could not find MAB class"):
+                _mab_predict_serialized(
+                    mab_class_name="SmabBernoulli",
+                    mab_state="{}",
+                    mab_data=2,
+                    verbose=False,
+                )
+
+    @given(n_samples=st.integers(min_value=1, max_value=20))
+    @settings(max_examples=5, deadline=None)
+    def test_verbose_logging(self, n_samples: int, serialized_smab: tuple) -> None:
+        """_mab_predict_serialized returns exactly n_samples actions when verbose=True."""
+        mab_class_name, mab_state = serialized_smab
+        actions = _mab_predict_serialized(
+            mab_class_name=mab_class_name,
+            mab_state=mab_state,
+            mab_data=n_samples,
+            verbose=True,
+        )
+        assert len(actions) == n_samples

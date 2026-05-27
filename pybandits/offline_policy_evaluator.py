@@ -721,24 +721,20 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 if self.scaler is not None:
                     if type(self.scaler) is dict:
                         if batch_idx == 0:
-                            x_scale = np.array(
-                                pd.concat(
-                                    [
-                                        self.scaler[feature].fit_transform(np.array(extracted_batch[[feature]]))
-                                        for feature in self.contextual_features
-                                    ],
-                                    axis=1,
-                                )
+                            x_scale = np.concatenate(
+                                [
+                                    self.scaler[feature].fit_transform(np.array(extracted_batch[[feature]]))
+                                    for feature in self.contextual_features
+                                ],
+                                axis=1,
                             )
                         else:
-                            x_scale = np.array(
-                                pd.concat(
-                                    [
-                                        self.scaler[feature].transform(np.array(extracted_batch[[feature]]))
-                                        for feature in self.contextual_features
-                                    ],
-                                    axis=1,
-                                )
+                            x_scale = np.concatenate(
+                                [
+                                    self.scaler[feature].transform(np.array(extracted_batch[[feature]]))
+                                    for feature in self.contextual_features
+                                ],
+                                axis=1,
                             )
                     else:
                         if batch_idx == 0:
