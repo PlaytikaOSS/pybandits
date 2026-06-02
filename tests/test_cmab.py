@@ -81,7 +81,7 @@ from tests.utils import (
 
 
 def _apply_update_method_to_state(state, update_method):
-    for model_state in state["actions_manager"]["actions"].values():
+    for model_state in state["actions_manager"]["meta_model"]["actions"].values():
         model_state["update_method"] = update_method
 
 
@@ -847,7 +847,7 @@ def test_cmab_from_old_state_missing_feature_config(
     _, state_json = cmab.get_state()
     state = json.loads(state_json)
     state.pop("version", None)
-    for action_state in state["actions_manager"]["actions"].values():
+    for action_state in state["actions_manager"]["meta_model"]["actions"].values():
         action_state.pop("feature_config", None)
 
     reconstructed = CmabClass.from_old_state(json.dumps(state))
@@ -933,7 +933,7 @@ def test_cmab_update_kwargs_migration(
     migrated = CmabBernoulli.update_old_state(state)
 
     for action_id in ("a1", "a2"):
-        actual_kwargs = migrated["actions_manager"]["actions"][action_id].get("update_kwargs")
+        actual_kwargs = migrated["actions_manager"]["meta_model"]["actions"][action_id].get("update_kwargs")
         assert actual_kwargs == expected_kwargs
 
 

@@ -22,27 +22,32 @@
 
 import math
 from collections import defaultdict
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 from pytest_mock.plugin import MockerFixture
 
 import pybandits
-from pybandits.actions_manager import ActionsManager, CmabActionsManager, SmabActionsManager
-from pybandits.base import ACTION_IDS_PREFIX, QUANTITATIVE_ACTION_IDS_PREFIX, ActionId, BinaryReward
+from pybandits.actions_manager import (
+    ActionsManager,
+    CmabActionsManager,
+    SmabActionsManager,
+)
+from pybandits.base import ActionId, BinaryReward
+from pybandits.meta_model import BaseMetaModel, PerActionMetaModel
 from pybandits.model import BayesianNeuralNetwork, Beta, BetaMO
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, Zooming
-from tests.utils import mock_update
+from tests.utils import make_action_ids, make_binary_rewards, make_context_matrix, mock_update
 
 REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
-    actions: Dict[ActionId, Union[Beta, BetaMO, Zooming]]
+    meta_model: PerActionMetaModel[Union[Beta, BetaMO, Zooming]]
 
     def _update_actions(
         self,
@@ -145,9 +150,8 @@ def test_update_with_valid_inputs(action_list=("action1", "action2", "action1"),
 
 
 def test_empty_actions_raises_error():
-    with pytest.raises(AttributeError) as exc_info:
+    with pytest.raises(AttributeError, match="At least one action should be defined"):
         DummyActionsManager(actions={})
-    assert str(exc_info.value) == "At least one action should be defined."
 
 
 def test_single_action_warning():
@@ -229,153 +233,6 @@ def test_change_detection(n_successes, n_failures, delta, reference):
     # Check that action1 is in the detected changes
     detected_actions = {action_id for action_id, _ in manager.actions_with_change}
     assert "action1" in detected_actions
-
-
-########################################################################################################################
-
-
-# ActionsManager._extract_action_specific_kwargs functionality tests
-
-
-def test_returns_empty_dict_when_no_action_specific_kwargs():
-    kwargs = {"param1": 1, "param2": 2}
-    result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == ({}, {})
-
-
-def test_processes_kwargs_with_non_dict_values():
-    kwargs = {
-        f"{ACTION_IDS_PREFIX}param1": "not_a_dict",
-    }
-    result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == ({}, {})
-
-
-def test_manages_kwargs_with_empty_dicts():
-    kwargs = {f"{ACTION_IDS_PREFIX}param1": {}, f"{ACTION_IDS_PREFIX}param2": {}}
-    result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == ({}, {})
-    assert kwargs == {}
-
-
-def test_extracts_action_specific_kwargs_with_valid_keys():
-    kwargs = {
-        f"{ACTION_IDS_PREFIX}param1": {"action1": 1, "action2": 2},
-        f"{ACTION_IDS_PREFIX}param2": {"action1": 3, "action2": 4},
-    }
-    expected_output = ({"action1": {"param1": 1, "param2": 3}, "action2": {"param1": 2, "param2": 4}}, {})
-    result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == expected_output
-    assert kwargs == {}
-
-
-def test_extracts_quantitative_action_specific_kwargs_with_valid_keys():
-    kwargs = {
-        f"{QUANTITATIVE_ACTION_IDS_PREFIX}param1": {"action1": 1, "action2": 2},
-        f"{QUANTITATIVE_ACTION_IDS_PREFIX}param2": {"action1": 3, "action2": 4},
-    }
-    expected_output = ({}, {"action1": {"param1": 1, "param2": 3}, "action2": {"param1": 2, "param2": 4}})
-    result = ActionsManager._extract_action_specific_kwargs(kwargs)
-    assert result == expected_output
-    assert kwargs == {}
-
-
-########################################################################################################################
-
-
-# ActionsManager._extract_action_model_class_and_attributes functionality tests
-class MockActionModel:
-    def __init__(self, param1, param2):
-        pass
-
-    @classmethod
-    def cold_start(cls):
-        pass
-
-
-def test_handles_empty_kwargs_gracefully(mocker: MockerFixture):
-    mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=[])
-    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
-    mocker.patch("pybandits.actions_manager.issubclass", return_value=True)
-
-    (
-        _,
-        _,
-        action_general_kwargs,
-        quantitative_action_general_kwargs,
-    ) = ActionsManager._extract_action_model_class_and_attributes({})
-
-    assert action_general_kwargs == {}
-    assert quantitative_action_general_kwargs is None
-
-    mocker.patch("pybandits.actions_manager.issubclass", side_effect=[False, True])
-    (
-        _,
-        _,
-        action_general_kwargs,
-        quantitative_action_general_kwargs,
-    ) = ActionsManager._extract_action_model_class_and_attributes({})
-    assert action_general_kwargs is None
-    assert quantitative_action_general_kwargs == {}
-
-
-def test_handles_kwargs_with_no_matching_action_model_attributes(mocker: MockerFixture):
-    mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=[])
-    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
-    mocker.patch("pybandits.actions_manager.issubclass", return_value=True)
-    kwargs = {"irrelevant_param": 1}
-    kwargs_copy = kwargs.copy()
-    (
-        _,
-        _,
-        action_general_kwargs,
-        quantitative_action_general_kwargs,
-    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs_copy)
-
-    assert action_general_kwargs == {}
-    assert quantitative_action_general_kwargs is None
-    assert kwargs == kwargs_copy
-
-    mocker.patch("pybandits.actions_manager.issubclass", side_effect=[False, True])
-    (
-        _,
-        _,
-        action_general_kwargs,
-        quantitative_action_general_kwargs,
-    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs_copy)
-
-    assert action_general_kwargs is None
-    assert quantitative_action_general_kwargs == {}
-    assert kwargs == kwargs_copy
-
-
-def test_extracts_action_model_class_and_attributes_with_valid_kwargs(mocker: MockerFixture):
-    mocker.patch("pybandits.utils.extract_argument_names_from_function", return_value=["param1", "param2"])
-    mocker.patch("pybandits.base.PyBanditsBaseModel._get_field_type", return_value=MockActionModel)
-
-    kwargs = {"param1": 1, "param2": 2}
-    with pytest.raises(TypeError):
-        ActionsManager._extract_action_model_class_and_attributes(kwargs.copy())
-
-    mocker.patch("pybandits.actions_manager.issubclass", return_value=True)
-    (
-        _,
-        _,
-        action_general_kwargs,
-        quantitative_action_general_kwargs,
-    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs.copy())
-    assert action_general_kwargs == kwargs
-    assert quantitative_action_general_kwargs is None
-
-    mocker.patch("pybandits.actions_manager.issubclass", side_effect=[False, True])
-    (
-        _,
-        _,
-        action_general_kwargs,
-        quantitative_action_general_kwargs,
-    ) = ActionsManager._extract_action_model_class_and_attributes(kwargs.copy())
-    assert action_general_kwargs is None
-    assert quantitative_action_general_kwargs == kwargs
 
 
 ########################################################################################################################
@@ -899,13 +756,12 @@ def test_actions_with_change_hypothesis(change_point_indices, monkeymodule):
             },
             20,
         ),
-        ({"action1": Beta(n_successes=7, n_failures=3)}, 8),
+        ({"action1": Beta(n_successes=7, n_failures=3), "action2": Beta()}, 8),
     ],
 )
 def test_get_expected_memory_length_with_base_model_so(actions, expected_len):
     """Test _get_expected_memory_length with BaseModelSO models."""
-    actual_length = ActionsManager._get_expected_memory_length(actions)
-    assert actual_length == expected_len
+    assert ActionsManager._get_expected_memory_length(actions) == expected_len
 
 
 @pytest.mark.parametrize(
@@ -922,41 +778,7 @@ def test_get_expected_memory_length_with_base_model_so(actions, expected_len):
 )
 def test_get_expected_memory_length_with_base_model_mo(actions, expected_len):
     """Test _get_expected_memory_length with BaseModelMO models."""
-    actual_length = ActionsManager._get_expected_memory_length(actions)
-    assert actual_length == expected_len
-
-
-@pytest.mark.parametrize(
-    "actions, error_type, error_msg",
-    [
-        ({}, AttributeError, "At least one action should be defined."),
-        ({"action1": object()}, ValueError, "Model type.*not supported."),
-    ],
-)
-def test_get_expected_memory_length_with_errors(actions, error_type, error_msg):
-    """Test _get_expected_memory_length with empty or unsupported actions."""
-    with pytest.raises(error_type, match=error_msg):
-        ActionsManager._get_expected_memory_length(actions)
-
-
-def test_get_expected_memory_length_with_mixed_model_types():
-    """Test _get_expected_memory_length with mixed model types uses first model type."""
-
-    # Create mixed model types - should use the first one (BaseModelSO)
-    beta1 = Beta(n_successes=2, n_failures=1)  # count = 3
-    beta2 = Beta(n_successes=1, n_failures=1)  # count = 2
-    beta_mo = BetaMO(models=[beta1, beta2])
-
-    actions = {
-        "action1": Beta(n_successes=3, n_failures=2),  # count = 5, BaseModelSO
-        "action2": beta_mo,  # BaseModelMO
-    }
-
-    # The method should use the first model type (BaseModelSO) for consistency
-    # But since BetaMO doesn't have a count attribute, this will raise an error
-    # This test demonstrates the limitation of mixed model types
-    with pytest.raises(AttributeError, match="'BetaMO' object has no attribute 'count'"):
-        ActionsManager._get_expected_memory_length(actions)
+    assert ActionsManager._get_expected_memory_length(actions) == expected_len
 
 
 ########################################################################################################################
@@ -1095,3 +917,118 @@ def test_update_adaptive_window_size_validation(
             manager.update(
                 actions=action_list, rewards=rewards, actions_memory=actions_memory, rewards_memory=rewards_memory
             )
+
+
+########################################################################################################################
+# ActionsManager <-> meta-model integration
+
+# Both managers (smab + cmab) share the same delegation contract; we parametrize over manager
+# kind via the ``manager_factory`` fixture below so each test verifies the contract for both
+# implementations from a single body.
+
+
+# Hypothesis strategies for cross-manager shape sweeps.
+_n_actions_strategy = st.integers(min_value=2, max_value=6)
+_n_features_strategy = st.integers(min_value=1, max_value=20)
+_batch_size_strategy = st.integers(min_value=1, max_value=10)
+
+
+@pytest.fixture(
+    params=[
+        pytest.param("smab", id="smab"),
+        pytest.param("cmab", id="cmab"),
+    ]
+)
+def manager_factory(request):
+    """Yield ``build(n_actions, n_features) -> (actions_dict, manager, ctx_builder)``.
+
+    ``ctx_builder(batch_size, rng) -> Optional[np.ndarray]`` is ``None`` for smab and
+    a context-matrix builder for cmab. Tests use it to compose batch inputs without
+    knowing the manager kind.
+    """
+    kind = request.param
+
+    def build(n_actions=2, n_features=3):
+        ids = make_action_ids(n_actions)
+        if kind == "cmab":
+            actions = {a: BayesianNeuralNetwork.cold_start(n_features=n_features) for a in ids}
+            manager = CmabActionsManager[BayesianNeuralNetwork](actions=actions)
+
+            def ctx_builder(batch_size, rng):
+                return make_context_matrix(batch_size, n_features, rng=rng)
+
+            return actions, manager, ctx_builder
+        actions = {a: Beta() for a in ids}
+        return actions, SmabActionsManager[Beta](actions=actions), None
+
+    build.kind = kind  # exposed so tests can branch on context-vs-no-context cleanly
+    return build
+
+
+@settings(deadline=None, max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(n_actions=_n_actions_strategy, n_features=_n_features_strategy)
+def test_manager_meta_model_wiring(manager_factory, n_actions, n_features):
+    """meta_model is owned by the manager; `actions` reads through to it without copying."""
+    actions, manager, _ = manager_factory(n_actions=n_actions, n_features=n_features)
+    assert isinstance(manager.meta_model, BaseMetaModel)
+    assert isinstance(manager.meta_model, PerActionMetaModel)
+    # meta_model is a regular Pydantic field; repeated reads return the same instance.
+    assert manager.meta_model is manager.meta_model
+    assert set(manager.meta_model.action_ids) == set(manager.actions.keys())
+    for action_id in actions:
+        assert manager.actions[action_id] is manager.meta_model.actions[action_id]
+
+
+@settings(deadline=None, max_examples=15, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(n_actions=_n_actions_strategy, batch_size=_batch_size_strategy, n_features=_n_features_strategy)
+def test_manager_update_delegates_to_meta_model(monkeypatch, rng, manager_factory, n_actions, batch_size, n_features):
+    """`ActionsManager.update` forwards actions/rewards/quantities/context to the meta-model."""
+    _, manager, ctx_builder = manager_factory(n_actions=n_actions, n_features=n_features)
+    action_ids = list(manager.actions.keys())
+    captured: List[Dict[str, Any]] = []
+    monkeypatch.setattr(PerActionMetaModel, "update", lambda self, **kw: captured.append(kw), raising=True)
+
+    sampled_actions = [action_ids[i % len(action_ids)] for i in range(batch_size)]
+    rewards = make_binary_rewards(batch_size, rate=0.5, rng=rng)
+    update_kwargs = {"actions": sampled_actions, "rewards": rewards, "quantities": None}
+    if ctx_builder is not None:
+        update_kwargs["context"] = ctx_builder(batch_size, rng)
+
+    manager.update(**update_kwargs)
+
+    assert len(captured) == 1
+    assert captured[0]["actions"] == sampled_actions
+    assert captured[0]["rewards"] == rewards
+    assert captured[0]["quantities"] is None
+    if ctx_builder is not None:
+        np.testing.assert_array_equal(captured[0]["context"], update_kwargs["context"])
+
+
+@settings(deadline=None, max_examples=15, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(n_actions=_n_actions_strategy, n_valid=st.integers(min_value=1, max_value=2), n_features=_n_features_strategy)
+def test_manager_sample_proba_delegates_to_meta_model(
+    monkeypatch, rng, manager_factory, n_actions, n_valid, n_features
+):
+    """`ActionsManager.sample_proba` forwards rng/valid_action_ids/**kwargs to the meta-model."""
+    assume(n_valid <= n_actions)
+    _, manager, ctx_builder = manager_factory(n_actions=n_actions, n_features=n_features)
+    valid_ids = set(list(manager.actions.keys())[:n_valid])
+    captured = {}
+
+    def spy(self, rng, valid_action_ids=None, **kwargs):
+        captured.update(rng=rng, valid_action_ids=valid_action_ids, kwargs=kwargs)
+        return {a: [0.5] for a in (valid_action_ids or self.actions.keys())}
+
+    monkeypatch.setattr(PerActionMetaModel, "sample_proba", spy, raising=True)
+
+    if ctx_builder is not None:
+        ctx = ctx_builder(1, rng)
+        result = manager.sample_proba(rng=rng, valid_action_ids=valid_ids, context=ctx)
+        np.testing.assert_array_equal(captured["kwargs"]["context"], ctx)
+    else:
+        result = manager.sample_proba(rng=rng, valid_action_ids=valid_ids, n_samples=3)
+        assert captured["kwargs"]["n_samples"] == 3
+
+    assert set(result.keys()) == valid_ids
+    assert captured["rng"] is rng
+    assert captured["valid_action_ids"] == valid_ids

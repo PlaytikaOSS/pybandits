@@ -313,7 +313,7 @@ def test_bad_initialization(
             action_ids[0]: BetaMO(models=[Beta() for _ in range(real_n_objectives)]),
             action_ids[1]: BetaMO(models=[Beta() for _ in range(real_n_objectives + 1)]),
         }
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValidationError):
             config.smab_class(actions=mo_actions_wrong)
 
 
