@@ -29,6 +29,7 @@ from pydantic import validate_call
 from pybandits.actions_manager import (
     CmabActionsManager,
     CmabActionsManagerCC,
+    CmabActionsManagerDP,
     CmabActionsManagerMO,
     CmabActionsManagerMOCC,
     CmabActionsManagerSO,
@@ -52,6 +53,7 @@ from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    DynamicPricingBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
     MultiObjectiveStrategy,
@@ -349,6 +351,34 @@ class CmabBernoulliCC(BaseCmabBernoulli):
 
     actions_manager: CmabActionsManagerCC
     strategy: CostControlBandit
+    _predict_with_proba: bool = True
+
+
+class CmabBernoulliDP(BaseCmabBernoulli):
+    """
+    Contextual Bernoulli Multi-Armed Bandit with Thompson Sampling, and Dynamic Pricing strategy.
+
+    The Cmab is extended to perform personalized price optimization. Each action is associated with a
+    predefined "price" (a scalar for discrete actions, or a callable mapping a quantity to a price for
+    quantitative actions). At prediction time, the action that maximizes the expected revenue
+    ``price * P(purchase | context)`` is recommended, where ``P(purchase | context)`` is the sampled
+    probability of a positive reward provided by the Bayesian posterior.
+
+    References
+    ----------
+    Nonparametric Pricing Analytics with Customer Covariates (Chen and Gallego, 2021)
+    https://arxiv.org/abs/1805.01136
+
+    Parameters
+    ----------
+    actions_manager: CmabActionsManagerDP
+        The manager for actions and their associated models.
+    strategy: DynamicPricingBandit
+        The strategy used to select actions.
+    """
+
+    actions_manager: CmabActionsManagerDP
+    strategy: DynamicPricingBandit
     _predict_with_proba: bool = True
 
 

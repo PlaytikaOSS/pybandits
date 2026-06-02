@@ -35,13 +35,14 @@ import pybandits
 from pybandits.actions_manager import SmabModelType
 from pybandits.base import ActionId, Float01, PositiveProbability
 from pybandits.base_model import BaseModel
-from pybandits.model import Beta, BetaCC, BetaMO, BetaMOCC
-from pybandits.quantitative_model import QuantitativeModel, Zooming, ZoomingCC
+from pybandits.model import Beta, BetaCC, BetaDP, BetaMO, BetaMOCC
+from pybandits.quantitative_model import QuantitativeModel, Zooming, ZoomingCC, ZoomingDP
 from pybandits.smab import (
     BaseSmabBernoulli,
     SmabBernoulli,
     SmabBernoulliBAI,
     SmabBernoulliCC,
+    SmabBernoulliDP,
     SmabBernoulliMO,
     SmabBernoulliMOCC,
 )
@@ -49,6 +50,7 @@ from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    DynamicPricingBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
@@ -61,7 +63,7 @@ def diff_strategy(draw):
 
 
 @st.composite
-def cost_strategy(draw, n_actions):
+def value_strategy(draw, n_actions):
     return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
@@ -75,8 +77,8 @@ def mock_update(models: List[SmabModelType], diff, monkeymodule, label=0):
                 mock_update(sub_models, diff, monkeymodule, label)
 
 
-def _quantitative_cost(x, cost):
-    return min(sum(x) ** cost, 1000)
+def _quantitative_callable(x, value):
+    return min(sum(x) ** value, 1000)
 
 
 @dataclass
@@ -86,7 +88,7 @@ class ModelTestConfig:
     model_types: List[Type[SmabModelType]]
 
     def _create_actions(
-        self, action_ids: List[str], costs: Optional[st.SearchStrategy], n_objectives: Optional[PositiveInt]
+        self, action_ids: List[str], values: Optional[st.SearchStrategy], n_objectives: Optional[PositiveInt]
     ) -> Dict[str, Any]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
@@ -94,20 +96,30 @@ class ModelTestConfig:
             model_types = [model_types[i] for i in indices]
         if all(model in [BetaCC, ZoomingCC, BetaMOCC] for model in model_types):
             # Generate random costs
-            costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
+            drawn_values = values.draw(value_strategy(n_actions=len(action_ids)))
             costs = [
-                cost if model_type in [BetaCC, BetaMOCC] else partial(_quantitative_cost, cost=cost)
-                for cost, model_type in zip(costs, model_types)
+                val if model_type in [BetaCC, BetaMOCC] else partial(_quantitative_callable, value=val)
+                for val, model_type in zip(drawn_values, model_types)
             ]
+            value_field = "cost"
+        elif all(model in [BetaDP, ZoomingDP] for model in model_types):
+            # Generate random prices
+            drawn_values = values.draw(value_strategy(n_actions=len(action_ids)))
+            costs = [
+                val if model_type == BetaDP else partial(_quantitative_callable, value=val)
+                for val, model_type in zip(drawn_values, model_types)
+            ]
+            value_field = "price"
         else:
             costs = None
+            value_field = None
 
         if n_objectives is None:
             if costs is not None:
                 return {
-                    action_id: model_type(cost=cost)
-                    if issubclass(model_type, BetaCC)
-                    else model_type.cold_start(dimension=1, cost=cost)  # ZoomingCC
+                    action_id: model_type(**{value_field: cost})
+                    if issubclass(model_type, (BetaCC, BetaDP))
+                    else model_type.cold_start(dimension=1, **{value_field: cost})  # ZoomingCC / ZoomingDP
                     for action_id, model_type, cost in zip(action_ids, model_types, costs)
                 }
             else:
@@ -134,7 +146,7 @@ class ModelTestConfig:
         action_ids: List[str],
         epsilon: Optional[Float01],
         delta: Optional[PositiveProbability],
-        costs: st.SearchStrategy,
+        values: st.SearchStrategy,
         n_objectives: st.SearchStrategy[PositiveInt],
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
@@ -144,7 +156,7 @@ class ModelTestConfig:
             if self.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]
             else None
         )
-        actions = self._create_actions(action_ids, costs, n_objectives)
+        actions = self._create_actions(action_ids, values, n_objectives)
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
             default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
@@ -182,6 +194,11 @@ TEST_CONFIGS = {
         CostControlBandit,
         [BetaCC, ZoomingCC],
     ),
+    "smab_dp": ModelTestConfig(
+        SmabBernoulliDP,
+        DynamicPricingBandit,
+        [BetaDP, ZoomingDP],
+    ),
     "smab_mo": ModelTestConfig(SmabBernoulliMO, MultiObjectiveBandit, [BetaMO]),
     "smab_mocc": ModelTestConfig(SmabBernoulliMOCC, MultiObjectiveCostControlBandit, [BetaMOCC]),
 }
@@ -200,7 +217,7 @@ TEST_CONFIGS = {
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -210,14 +227,14 @@ def test_cold_start(
     action_ids: List[str],
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     exploit_p,
     subsidy_factor,
 ):
     # Create SMAB instance
     smab, actions, kwargs = config.create_smab_and_actions(
-        action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor
+        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor
     )
 
     # Cold start comparison logic (modified for different model types)
@@ -234,6 +251,13 @@ def test_cold_start(
         cold_start_kwargs["quantitative_action_ids_cost"] = {
             action: model.cost for action, model in actions.items() if isinstance(model, ZoomingCC)
         }
+    if all(isinstance(model, (BetaDP, ZoomingDP)) for model in actions.values()):
+        cold_start_kwargs["action_ids_price"] = {
+            action: model.price for action, model in actions.items() if isinstance(model, BetaDP)
+        }
+        cold_start_kwargs["quantitative_action_ids_price"] = {
+            action: model.price for action, model in actions.items() if isinstance(model, ZoomingDP)
+        }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
     assert config.smab_class.cold_start(**cold_start_kwargs) == smab
@@ -244,7 +268,7 @@ def test_cold_start(
 @given(
     action_ids=st.lists(st.text(min_size=1), min_size=2, max_size=5, unique=True),
     n_objectives=st.data(),
-    costs=st.data(),
+    values=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
 )
@@ -252,12 +276,17 @@ def test_bad_initialization(
     config: ModelTestConfig,
     action_ids: List[str],
     n_objectives,
-    costs,
+    values,
     exploit_p,
     subsidy_factor,
 ):
     real_n_objectives = n_objectives.draw(st.integers(min_value=1, max_value=10))
-    kwargs = {"cost": 1.0} if config.smab_class in (SmabBernoulliCC, SmabBernoulliMOCC) else {}
+    if config.smab_class in (SmabBernoulliCC, SmabBernoulliMOCC):
+        kwargs = {"cost": 1.0}
+    elif config.smab_class == SmabBernoulliDP:
+        kwargs = {"price": 1.0}
+    else:
+        kwargs = {}
     if config.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]:
         kwargs["models"] = [Beta() for _ in range(real_n_objectives)]
 
@@ -289,7 +318,7 @@ def test_bad_initialization(
                 action_ids,
                 None,
                 None,
-                costs,
+                values,
                 n_objectives,
                 exploit_p.draw(st.sampled_from([-0.1, 1.1])),
                 subsidy_factor,
@@ -300,7 +329,7 @@ def test_bad_initialization(
                 action_ids,
                 None,
                 None,
-                costs,
+                values,
                 n_objectives,
                 exploit_p,
                 subsidy_factor.draw(st.sampled_from([-0.1, 1.1])),
@@ -331,7 +360,7 @@ def test_bad_initialization(
     n_samples=st.integers(min_value=1, max_value=100),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -343,7 +372,7 @@ def test_update(
     n_samples: int,
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     exploit_p,
     subsidy_factor,
@@ -351,7 +380,7 @@ def test_update(
 ):
     # Create SMAB instance
     smab, _, kwargs = config.create_smab_and_actions(
-        action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor
+        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor
     )
     batched_smab = deepcopy(smab)
     n_objectives = kwargs.get("n_objectives")
@@ -435,7 +464,7 @@ def test_update(
     n_samples=st.integers(min_value=1, max_value=100),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -447,7 +476,7 @@ def test_predict(
     n_samples: int,
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     exploit_p,
     subsidy_factor,
@@ -473,7 +502,9 @@ def test_predict(
         )
 
     # Create SMAB instance
-    smab = config.create_smab_and_actions(action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor)[0]
+    smab = config.create_smab_and_actions(action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor)[
+        0
+    ]
 
     # Test predictions with random forbidden actions
     forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
@@ -517,7 +548,7 @@ def test_predict(
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -528,7 +559,7 @@ def test_serialization(
     action_ids: List[str],
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     exploit_p,
     subsidy_factor,
@@ -536,7 +567,9 @@ def test_serialization(
     monkeymodule,
 ):
     # Create SMAB instance
-    smab = config.create_smab_and_actions(action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor)[0]
+    smab = config.create_smab_and_actions(action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor)[
+        0
+    ]
 
     pre_update_state = smab.get_state()
     mock_update(list(smab.actions.values()), diff, monkeymodule)
@@ -562,7 +595,7 @@ def test_serialization(
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -573,7 +606,7 @@ def test_pickling(
     action_ids: List[str],
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     exploit_p,
     subsidy_factor,
@@ -581,7 +614,9 @@ def test_pickling(
     monkeymodule,
 ):
     # Create SMAB instance
-    smab = config.create_smab_and_actions(action_ids, epsilon, delta, costs, n_objectives, exploit_p, subsidy_factor)[0]
+    smab = config.create_smab_and_actions(action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor)[
+        0
+    ]
     to_temporary_pickle(smab)
     mock_update(list(smab.actions.values()), diff, monkeymodule)
     to_temporary_pickle(smab)
