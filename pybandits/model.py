@@ -63,7 +63,14 @@ from scipy.special import erf
 from tqdm import trange
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
+from pybandits.base import (
+    BinaryReward,
+    MOProbability,
+    PositiveFloat01,
+    Probability,
+    ProbabilityWeight,
+    PyBanditsBaseModel,
+)
 from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
 
 _Array = Union[np.ndarray, jax.Array]
@@ -1257,6 +1264,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "restore_best_svi_state",
         "num_particles",
         "gradient_clip_norm",
+        "kl_annealing_fraction",
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
@@ -1365,8 +1373,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     )
 
     _vi_method_config: ClassVar[dict] = {
-        "advi": {"guide": ParameterizedScaleAutoNormal, "loss": TraceMeanField_ELBO},
-        "fullrank_advi": {"guide": AutoMultivariateNormal, "loss": Trace_ELBO},
+        "advi": {
+            "guide": ParameterizedScaleAutoNormal,
+            "loss": TraceMeanField_ELBO,
+        },  # assumes weights are independent; loss is the ELBO
+        "fullrank_advi": {
+            "guide": AutoMultivariateNormal,
+            "loss": Trace_ELBO,
+        },  # assumes weights are dependent, for full rank covariance matrix
     }
 
     _approx_history: np.ndarray = PrivateAttr(None)
@@ -1647,6 +1661,18 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     f"Invalid VI method: {vi_method}. Supported methods are: {list(self._vi_method_config.keys())}"
                 )
 
+            # Validate optional KL annealing fraction. Domain is (0, 1];
+            kl_annealing_fraction = self.update_kwargs.get("kl_annealing_fraction")
+            if kl_annealing_fraction is not None:
+                if isinstance(kl_annealing_fraction, bool) or not isinstance(kl_annealing_fraction, (int, float)):
+                    raise ValueError(
+                        f"Invalid kl_annealing_fraction: {kl_annealing_fraction!r}. Must be a float in (0, 1] or None."
+                    )
+                if not (0.0 < float(kl_annealing_fraction) <= 1.0):
+                    raise ValueError(
+                        f"Invalid kl_annealing_fraction: {kl_annealing_fraction}. Must lie in the half-open interval (0, 1]."
+                    )
+
         elif self.update_method == "MCMC":
             for param in self._vi_update_params:
                 if param in self.update_kwargs:
@@ -1756,27 +1782,39 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         Create a NumPyro model function for Bayesian Neural Network.
 
-        This method builds a NumPyro model function with the network architecture specified in model_params.
-        Data is passed as arguments to the returned model function. Minibatching is handled via numpyro.plate
-        with subsample_size.
+        Reads ``self.model_params.bnn_layer_params`` (the posteriors from the previous update
+        round) and feeds them to ``numpyro.sample`` as the priors for this round. The model
+        function is consumed by both the VI training loop (via ``svi.update``) and the MCMC
+        path (via ``mcmc.run``).
 
-        Numerical columns are passed through as-is. Categorical columns (identified by their
-        ``column_index`` in ``feature_config``) are modeled with Bayesian embedding matrices
-        sampled as NumPyro random variables.
+        Data is passed as arguments to the returned model function. Minibatching is handled via
+        ``numpyro.plate`` with ``subsample_size``. Numerical columns are passed through as-is;
+        categorical columns (identified by their ``column_index`` in ``feature_config``) are
+        modeled with Bayesian embedding matrices sampled as NumPyro random variables.
 
         Returns
         -------
         Callable
-            NumPyro model function with the specified neural network architecture
+            NumPyro model function ``model(x, y, kl_annealing_factor=1.0)``. The
+            ``kl_annealing_factor`` argument scales the prior (and embedding-prior) ``sample``
+            sites' log-probabilities; the likelihood ``out`` site sits outside the scale
+            context and is unaffected. The default ``1.0`` makes the scale a numerical no-op,
+            preserving the MCMC call path which passes only ``(x, y)``.
 
         Notes
         -----
         The model structure follows these steps:
-        1. For each layer, create weight and bias variables from prior distributions.
+
+        1. For each layer, create weight and bias variables from prior distributions
+           (current posteriors used as new priors).
         2. Sample embedding matrices for categorical features (if any).
         3. Apply linear transformations and activations through the layers.
-        4. Apply sigmoid activation at the output
+        4. Apply sigmoid activation at the output.
         5. Use Bernoulli likelihood for binary classification
+
+        Steps 1-2 happen inside ``numpyro.handlers.scale(scale=kl_annealing_factor)`` so that
+        the KL portion of the ELBO can be scheduled across training steps. Step 5 stays outside
+        that context so the likelihood term is not scaled.
         """
 
         batch_size = self._update_kwargs.get("batch_size")
@@ -1784,23 +1822,27 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
 
-        def model(x: jax.Array, y: jax.Array):
+        def model(x: jax.Array, y: jax.Array, kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0):
             n_samples = x.shape[0]
 
-            # Sample all weights (global parameters, outside plate)
+            # Sample all weights and embeddings (global parameters, outside plate).
+            # Wrapped in handlers.scale so the per-step KL annealing factor scales the
+            # prior-site log-probabilities; combined with the symmetric guide wrap in
+            # _run_svi_training_loop, this scales the full per-site KL contribution
+            # (log p - log q).
             weights_biases = []
-            for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-                weight_name, bias_name = self.get_layer_params_name(layer_ind)
-                w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
-                b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
-                weights_biases.append((w, b))
-
-            # Sample embedding matrices (global parameters, outside plate)
             embedding_matrices = []
-            if has_embeddings:
-                for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
-                    emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
-                    embedding_matrices.append(emb)
+            with numpyro.handlers.scale(scale=kl_annealing_factor):
+                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+                    weight_name, bias_name = self.get_layer_params_name(layer_ind)
+                    w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
+                    b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
+                    weights_biases.append((w, b))
+
+                if has_embeddings:
+                    for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
+                        emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
+                        embedding_matrices.append(emb)
 
             # Data plate with optional minibatching
             if batch_size is not None and batch_size < n_samples:
@@ -1838,7 +1880,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     self._logit_var_name,
                     linear_transform.squeeze(-1),
                 )
-                numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
+                numpyro.sample(
+                    "out", NumpyroBernoulli(logits=logit), obs=y_batch
+                )  # "The observed reward follows a Bernoulli distribution given the network output"
 
         return model
 
@@ -2165,9 +2209,57 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         init_scale_fn = lambda name: site_sigmas.get(name, avg_sigma)  # noqa: E731
         return init_loc_fn, init_scale_fn
 
+    def _build_kl_annealing_factors(self, epoch_steps_list: List[int]) -> List[jnp.ndarray]:
+        """Build the per-step KL annealing factor schedule, split into per-epoch chunks.
+
+        The factor ``β(step)`` multiplies the KL portion of the ELBO at each SVI step:
+
+        - Inactive (``kl_annealing_fraction is None``): every factor is ``1.0``, making the
+          ``handlers.scale`` wrap a numerical no-op. The same code path runs in both active
+          and inactive cases so there is no feature-gate branching in the training loop.
+        - Active: linear ramp ``β(step) = min(1, (step + 1) / W)`` where
+          ``W = max(1, ceil(kl_annealing_fraction * total_steps))``. The ``+1`` ensures
+          ``β(0) = 1/W > 0`` so the KL term is never fully switched off at the first step.
+          The effective domain is the half-open interval ``(0, 1]``, not ``[0, 1]``.
+
+        Parameters
+        ----------
+        epoch_steps_list : List[int]
+            Number of SVI steps per epoch. Their sum is the total number of training steps.
+
+        Returns
+        -------
+        List[jnp.ndarray]
+            One 1-D ``jnp.ndarray`` per epoch, fed as the ``xs`` argument of ``jax.lax.scan``
+            in the training loop. Each element holds the per-step factor for that epoch.
+        """
+        kl_annealing_fraction = self._update_kwargs.get("kl_annealing_fraction")
+        total_steps = int(sum(epoch_steps_list))
+
+        if kl_annealing_fraction is None:
+            factor_array = jnp.ones(total_steps)
+        else:
+            warmup_steps = max(1, ceil(float(kl_annealing_fraction) * total_steps))
+            factor_array = jnp.minimum(1.0, (jnp.arange(total_steps) + 1) / warmup_steps)
+
+        # Split into per-epoch slices using cumulative epoch boundaries.
+        split_points = np.cumsum(epoch_steps_list)[:-1].tolist()
+        return list(jnp.split(factor_array, split_points))
+
     def _run_svi_training_loop(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> tuple:
         """
-        Set up and run the SVI training loop, returning ``(svi, params)``.
+        Set up and run the SVI training loop (the per-update VI optimization), returning ``(svi, guide, params)``.
+
+        Each SVI step:
+        (1) samples weights from the GUIDE (current approximate posterior),
+        (2) runs the forward pass with those weights,
+        (3) computes ELBO =
+        ``log_likelihood(data | sampled_weights) - KL(guide || prior)`` — where the KL term
+        may be scaled by the per-step ``kl_annealing_factor`` when annealing is active,
+        (4) computes gradients of ``-ELBO`` w.r.t. the guide's mu/sigma,
+        (5) lets the optimizer update them.
+        All of (1)-(5) happen inside one ``svi.update()`` call, with
+        the loop body wrapped in ``jax.lax.scan`` for speed.
 
         Parameters
         ----------
@@ -2181,8 +2273,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Returns
         -------
         tuple
-            ``(svi, guide, params)`` where *svi* is the configured :class:`SVI` object,
-            *guide* is the fitted variational guide, and *params* are the final variational parameters.
+            ``(svi, guide, params)`` where *svi* is the configured :class:`SVI` object
+            (built against a scale-wrapped guide closure that is a numerical no-op when
+            ``kl_annealing_fraction`` is ``None``), *guide* is the underlying ``AutoGuide``
+            instance (returned unwrapped so that downstream ``guide.median(...)`` extraction
+            keeps working), and *params* are the final variational parameters.
         """
         if self._early_stopping_callback is not None:
             self._early_stopping_callback.reset()
@@ -2202,23 +2297,38 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             if not epoch_steps_list:
                 epoch_steps_list = [1]
 
+        # Build the per-step KL-annealing factor schedule for the entire run
+        epoch_factor_arrays = self._build_kl_annealing_factors(epoch_steps_list)
+
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
         method_config = self._vi_method_config[vi_method]
         init_loc_fn, init_scale_fn = self._build_svi_guide_init()
         if vi_method == "advi":
+            # Posterior initialization: mu=median of prior (per-site), sigma=per-site init_scale.
             guide = ParameterizedScaleAutoNormal(
                 _model,
                 init_loc_fn=init_loc_fn,
                 init_scale_fn=init_scale_fn,
             )
         else:
-            # fullrank_advi needs a scalar; use the avg sigma via the unknown-site fallback
+            # fullrank_advi needs a scalar init_scale; use the avg sigma via the unknown-site fallback.
             guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale_fn(""))
+
+        # Wrap the guide so the per-step kl_annealing_factor scales its sample sites
+        # symmetrically with the model's prior sites. Without this wrap, handlers.scale
+        # on the model alone would multiply log p(z) but leave log q(z) untouched, so the
+        # per-site KL contribution (log p - log q) would not scale uniformly. The closure
+        # is registered with SVI; the underlying `guide` is preserved for downstream
+        # `.median(...)` extraction.
+        def guide_with_scale(*args: Any, **kwargs: Any):
+            kl_annealing_factor = args[2] if len(args) > 2 else kwargs.get("kl_annealing_factor", 1.0)
+            with numpyro.handlers.scale(scale=kl_annealing_factor):
+                return guide(*args, **kwargs)
 
         num_particles = self._update_kwargs["num_particles"]
         loss = method_config["loss"](num_particles=num_particles)
-        svi = SVI(_model, guide, self._obj_optimizer, loss=loss)
+        svi = SVI(_model, guide_with_scale, self._obj_optimizer, loss=loss)
 
         # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
         # A Python for-loop leaks host-side dispatch/compilation metadata on
@@ -2226,20 +2336,27 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         # a fixed step count regardless of batch size or FP precision.
         # lax.scan compiles the loop body once and runs it entirely in XLA.
         self._rng_key, subkey = jax.random.split(self._rng_key)
-        svi_state = svi.init(subkey, x_jnp, y_jnp)
+        # Initialize the variational parameters (the mu/sigma values that will be optimized).
+        # The kl_annealing_factor=1.0 passed here is a no-op for init but matches the
+        # signature SVI will use during svi.update calls in the scan body.
+        svi_state = svi.init(subkey, x_jnp, y_jnp, 1.0)
 
         # Pass x/y as explicit JIT arguments (not closure captures) so JAX treats
         # them as abstract buffers rather than embedding them as XLA constants.
         # Closing over large arrays causes "Failed to allocate N bytes for new constant"
         # at compile time when the dataset is large.
-        def _run_epoch(state, x, y, n):
-            def _svi_body(s, _):
-                s, loss = svi.update(s, x, y)
+        # The per-step factor array is fed as the scan's `xs`; its length determines
+        # the number of scan iterations, so no `length=` or `static_argnums` is needed.
+        # `state` is a numpyro `SVIState`; annotated as `Any` to avoid pulling its private
+        # import path into the module-level surface.
+        def _run_epoch(state: Any, x: jax.Array, y: jax.Array, factors: jnp.ndarray) -> Tuple[Any, jax.Array]:
+            def _svi_body(s: Any, factor: Union[PositiveFloat01, jax.Array]) -> Tuple[Any, jax.Array]:
+                s, loss = svi.update(s, x, y, factor)
                 return s, loss
 
-            return jax.lax.scan(_svi_body, state, None, length=n)
+            return jax.lax.scan(_svi_body, state, factors)
 
-        _run_epoch = jax.jit(_run_epoch, static_argnums=(3,))
+        _run_epoch = jax.jit(_run_epoch)
 
         restore_best = self._update_kwargs.get("restore_best_svi_state", True)
         all_losses = []
@@ -2248,8 +2365,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
         try:
-            for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
-                svi_state, epoch_losses = _run_epoch(svi_state, x_jnp, y_jnp, epoch_steps)
+            for epoch_idx, epoch_factors in enumerate(epoch_factor_arrays):
+                svi_state, epoch_losses = _run_epoch(svi_state, x_jnp, y_jnp, epoch_factors)
 
                 epoch_np = np.array(epoch_losses)
                 epoch_loss = float(np.mean(epoch_np))
@@ -2485,7 +2602,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         else:
             raise ValueError("Invalid update method.")
 
-        self.model_params.bnn_layer_params = updated_layer_params_list
+        self.model_params.bnn_layer_params = (
+            updated_layer_params_list  # update the model_params with the new found posteriors
+        )
 
     @classmethod
     def cold_start(

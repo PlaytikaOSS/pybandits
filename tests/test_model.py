@@ -33,6 +33,7 @@ from hypothesis import strategies as st
 from numpyro.distributions import Normal as NumpyroNormal
 from numpyro.distributions import StudentT as NumpyroStudentT
 from numpyro.infer import Predictive
+from numpyro.infer.autoguide import AutoNormal
 from pydantic import ValidationError
 from utils import make_binary_rewards
 
@@ -1173,6 +1174,7 @@ def test_lr_scheduler_invalid_type_or_kwargs(
     num_particles=st.sampled_from((1, 2)),
     gradient_clip_norm=st.one_of(st.none(), st.floats(min_value=0.1, max_value=10.0)),
     lr_scheduler_type=st.sampled_from((None, "exponential_decay")),
+    kl_annealing_fraction=st.one_of(st.none(), st.floats(min_value=0.05, max_value=1.0)),
     num_steps=st.just(5),
     n_features=st.just(2),
     update_method=st.just("VI"),
@@ -1186,6 +1188,7 @@ def test_vi_training_options(
     num_particles: int,
     gradient_clip_norm: Optional[float],
     lr_scheduler_type: Optional[str],
+    kl_annealing_fraction: Optional[float],
     num_steps: int,
     n_features: int,
     update_method: UpdateMethods,
@@ -1193,7 +1196,7 @@ def test_vi_training_options(
     decay_rate: float,
     transition_steps_factor: int,
 ) -> None:
-    """Test that VI training options (num_particles, gradient_clip_norm, lr_scheduler) compose correctly."""
+    """Test that VI training options (num_particles, gradient_clip_norm, lr_scheduler, kl_annealing_fraction) compose correctly."""
     update_kwargs: dict = {
         "num_steps": num_steps,
         "optimizer_type": optimizer_type,
@@ -1207,6 +1210,8 @@ def test_vi_training_options(
             "transition_steps": num_steps // transition_steps_factor,
             "decay_rate": decay_rate,
         }
+    if kl_annealing_fraction is not None:
+        update_kwargs["kl_annealing_fraction"] = kl_annealing_fraction
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
@@ -1220,6 +1225,185 @@ def test_vi_training_options(
     assert len(result) == n_samples
     assert all(0 <= p[0] <= 1 for p in result), f"Probabilities out of [0,1]: {result}"
     assert all(np.isfinite(p[1]) for p in result), f"Non-finite weights: {result}"
+
+
+# ---------------------------------------------------------------------------
+# KL annealing
+# ---------------------------------------------------------------------------
+
+
+class TestKLAnnealing:
+    """Tests for the optional `kl_annealing_fraction` VI training kwarg.
+
+    The feature is implemented by wrapping the prior sample sites in
+    ``numpyro.handlers.scale(scale=kl_annealing_factor)`` and threading a per-step
+    factor array through ``svi.update``. These tests verify the handler-level
+    annotation (which is what the feature actually controls) via trace introspection,
+    plus the schedule formula at the helper level. The likelihood ``out`` site must
+    remain unscaled in every case.
+    """
+
+    @staticmethod
+    def _build_bnn(kl_annealing_fraction: Optional[float], num_steps: int = 4, n_features: int = 2):
+        update_kwargs: dict = {"num_steps": num_steps}
+        if kl_annealing_fraction is not None:
+            update_kwargs["kl_annealing_fraction"] = kl_annealing_fraction
+        return BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            update_method="VI",
+            update_kwargs=update_kwargs,
+        )
+
+    @pytest.mark.parametrize(
+        "epoch_steps_list",
+        [
+            [1],
+            [5],
+            [3, 3, 1],
+            [2, 2, 2, 2],
+        ],
+    )
+    def test_inactive_factor_array_is_all_ones(self, epoch_steps_list: list) -> None:
+        """With no kl_annealing_fraction the per-step factor schedule is a neutral all-ones array,
+        regardless of how the total steps are split into epochs."""
+        total_steps = sum(epoch_steps_list)
+        bnn = self._build_bnn(kl_annealing_fraction=None, num_steps=total_steps)
+        epoch_chunks = bnn._build_kl_annealing_factors(epoch_steps_list)
+        factor_array = np.concatenate([np.asarray(chunk) for chunk in epoch_chunks])
+        assert factor_array.shape == (total_steps,)
+        np.testing.assert_allclose(factor_array, np.ones(total_steps), rtol=0, atol=0)
+
+    @pytest.mark.parametrize(
+        "kl_annealing_fraction, epoch_steps_list",
+        [
+            (0.5, [10]),
+            (0.25, [4, 4, 4]),
+            (1.0, [5, 5]),
+            (0.1, [3, 3, 3, 1]),
+        ],
+    )
+    def test_active_factor_array_matches_linear_ramp_formula(
+        self, kl_annealing_fraction: float, epoch_steps_list: list
+    ) -> None:
+        """The active schedule is min(1, (step+1)/W) with W = max(1, ceil(fraction * total_steps))."""
+        total_steps = sum(epoch_steps_list)
+        bnn = self._build_bnn(kl_annealing_fraction=kl_annealing_fraction, num_steps=total_steps)
+        epoch_chunks = bnn._build_kl_annealing_factors(epoch_steps_list)
+        actual = np.concatenate([np.asarray(chunk) for chunk in epoch_chunks])
+
+        warmup_steps = max(1, int(np.ceil(kl_annealing_fraction * total_steps)))
+        # Match JAX's default float32 dtype so identity-level comparison stays exact.
+        expected = np.minimum(1.0, (np.arange(total_steps, dtype=np.float32) + 1.0) / warmup_steps)
+
+        assert actual.shape == (total_steps,)
+        assert actual.dtype == np.float32
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=0)
+        # Endpoint sanity: strictly positive at step 0, exactly 1.0 by the last warmup step.
+        assert actual[0] > 0.0
+        assert actual[warmup_steps - 1] == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("kl_annealing_factor", [1.0, 0.3])
+    @pytest.mark.parametrize("n_features, n_samples", [(1, 3), (3, 7)])
+    def test_model_trace_scale_annotation_on_priors_and_not_on_likelihood(
+        self, n_features: int, n_samples: int, kl_annealing_factor: float
+    ) -> None:
+        """Tracing the inner model surfaces handlers.scale on every prior sample site (weights, biases)
+        with the supplied factor, while the likelihood ``out`` site is left unscaled.
+
+        This is a pure-trace assertion: it does not run SVI, so it is deterministic and
+        independent of XLA layout. It tests the actual surface (handler-level scale annotation)
+        the feature controls.
+        """
+        bnn = self._build_bnn(kl_annealing_fraction=None, n_features=n_features)
+        model_fn = bnn._create_update_model()
+
+        x = jnp.asarray(np.random.rand(n_samples, n_features).astype(np.float32))
+        y = jnp.asarray(_make_random_rewards(n_samples), dtype=jnp.int32)
+
+        tr = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(x, y, kl_annealing_factor)
+
+        prior_site_names = [name for name in tr if name.startswith(("weight_", "bias_"))]
+        assert prior_site_names, "expected at least one prior site in the model trace"
+        for name in prior_site_names:
+            site = tr[name]
+            assert site["type"] == "sample"
+            assert site["scale"] == kl_annealing_factor, (
+                f"prior site {name!r} expected scale={kl_annealing_factor}, got {site['scale']!r}"
+            )
+
+        out_site = tr["out"]
+        assert out_site["type"] == "sample"
+        # The likelihood site must remain outside the scale context. handlers.scale leaves
+        # site["scale"] as None when no wrap is in effect.
+        assert out_site["scale"] is None, (
+            f"likelihood site expected scale=None (outside annealing context), got {out_site['scale']!r}"
+        )
+
+    @pytest.mark.parametrize("kl_annealing_factor", [0.1, 0.5, 1.0])
+    @pytest.mark.parametrize("n_features, n_samples", [(1, 3), (3, 7)])
+    def test_symmetric_guide_wrap_scales_guide_sample_sites(
+        self, n_features: int, n_samples: int, kl_annealing_factor: float
+    ) -> None:
+        """The guide wrap installed in `_run_svi_training_loop` must scale the guide's sample
+        sites symmetrically with the model's prior sites. Without it the per-site KL contribution
+        (log p - log q) would not scale uniformly. This test mirrors the closure built in
+        `_run_svi_training_loop` and traces it directly.
+
+        NOTE: `guide_with_scale` below is a **structural mirror** of the closure in
+        `BaseBayesianNeuralNetwork._run_svi_training_loop`. If you change the production
+        closure's signature, factor-extraction logic, or wrap location, update this test in
+        lockstep — otherwise the test silently keeps passing while production behavior drifts.
+        """
+        # The BNN's kl_annealing_fraction is irrelevant here: this test does not run SVI and
+        # never consults the schedule. The factor under test is fed directly to get_trace(...)
+        # via the kl_annealing_factor parameter below.
+        bnn = self._build_bnn(kl_annealing_fraction=None, n_features=n_features)
+        model_fn = bnn._create_update_model()
+
+        # Build a bare AutoNormal guide over the same model (matches the advi setup in
+        # `_run_svi_training_loop`) without relying on the per-site init_scale_fn details.
+        guide = AutoNormal(model_fn)
+
+        # Structural mirror of `_run_svi_training_loop`'s `guide_with_scale` closure.
+        def guide_with_scale(*args, **kwargs):
+            factor = args[2] if len(args) > 2 else kwargs.get("kl_annealing_factor", 1.0)
+            with numpyro.handlers.scale(scale=factor):
+                return guide(*args, **kwargs)
+
+        x = jnp.asarray(np.random.rand(n_samples, n_features).astype(np.float32))
+        y = jnp.asarray(_make_random_rewards(n_samples), dtype=jnp.int32)
+
+        tr = numpyro.handlers.trace(numpyro.handlers.seed(guide_with_scale, rng_seed=0)).get_trace(
+            x, y, kl_annealing_factor
+        )
+
+        guide_sample_sites = [name for name, site in tr.items() if site["type"] == "sample"]
+        assert guide_sample_sites, "expected at least one sample site in the guide trace"
+        for name in guide_sample_sites:
+            site = tr[name]
+            assert site["scale"] == kl_annealing_factor, (
+                f"guide site {name!r} expected scale={kl_annealing_factor}, got {site['scale']!r}"
+            )
+
+    @pytest.mark.parametrize("invalid_value", [0.0, -0.1, 1.5, "0.5", True])
+    def test_invalid_values_rejected_at_construction(self, invalid_value) -> None:
+        """`kl_annealing_fraction` must be a real number in the half-open interval (0, 1]."""
+        with pytest.raises(ValueError, match="kl_annealing_fraction"):
+            BayesianNeuralNetwork.cold_start(
+                n_features=2,
+                update_method="VI",
+                update_kwargs={"num_steps": 5, "kl_annealing_fraction": invalid_value},
+            )
+
+    def test_mcmc_rejects_kl_annealing_fraction_as_vi_only_kwarg(self) -> None:
+        """`kl_annealing_fraction` is a VI-only kwarg; passing it under MCMC must error
+        out via the existing VI-kwargs-on-MCMC guard in `_arrange_update_kwargs`."""
+        with pytest.raises(ValueError, match="kl_annealing_fraction"):
+            BayesianNeuralNetwork.cold_start(
+                n_features=2,
+                update_method="MCMC",
+                update_kwargs={"kl_annealing_fraction": 0.5},
+            )
 
 
 @given(
