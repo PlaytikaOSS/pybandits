@@ -58,6 +58,7 @@ from pybandits.model import (
     OptaxKind,
     StudentTArray,
     UpdateMethods,
+    _wrap_guide_with_kl_scale,
 )
 
 
@@ -1357,20 +1358,25 @@ class TestKLAnnealing:
             f"likelihood site expected scale=None (outside annealing context), got {out_site['scale']!r}"
         )
 
-    @pytest.mark.parametrize("kl_annealing_factor", [0.1, 0.5, 1.0])
-    @pytest.mark.parametrize("n_features, n_samples", [(1, 3), (3, 7)])
+    @settings(deadline=None, max_examples=5)
+    @given(
+        n_features=st.integers(min_value=1, max_value=5),
+        n_samples=st.integers(min_value=2, max_value=8),
+        kl_annealing_factor=st.floats(
+            min_value=0.0, max_value=1.0, exclude_min=True, allow_nan=False, allow_infinity=False
+        ),
+    )
     def test_symmetric_guide_wrap_scales_guide_sample_sites(
         self, n_features: int, n_samples: int, kl_annealing_factor: float
     ) -> None:
         """The guide wrap installed in `_run_svi_training_loop` must scale the guide's sample
         sites symmetrically with the model's prior sites. Without it the per-site KL contribution
-        (log p - log q) would not scale uniformly. This test mirrors the closure built in
-        `_run_svi_training_loop` and traces it directly.
+        (log p - log q) would not scale uniformly.
 
-        NOTE: `guide_with_scale` below is a **structural mirror** of the closure in
-        `BaseBayesianNeuralNetwork._run_svi_training_loop`. If you change the production
-        closure's signature, factor-extraction logic, or wrap location, update this test in
-        lockstep — otherwise the test silently keeps passing while production behavior drifts.
+        This traces the **production** wrapper (`_wrap_guide_with_kl_scale`) directly, so the
+        test cannot drift from `_run_svi_training_loop`'s behavior. The asserted `scale == factor`
+        identity holds for any factor in (0, 1], so the factor and the model shape are drawn from
+        Hypothesis strategies rather than a fixed grid.
         """
         # The BNN's kl_annealing_fraction is irrelevant here: this test does not run SVI and
         # never consults the schedule. The factor under test is fed directly to get_trace(...)
@@ -1379,19 +1385,15 @@ class TestKLAnnealing:
         model_fn = bnn._create_update_model()
 
         # Build a bare AutoNormal guide over the same model (matches the advi setup in
-        # `_run_svi_training_loop`) without relying on the per-site init_scale_fn details.
+        # `_run_svi_training_loop`) without relying on the per-site init_scale_fn details,
+        # then wrap it with the exact production helper.
         guide = AutoNormal(model_fn)
-
-        # Structural mirror of `_run_svi_training_loop`'s `guide_with_scale` closure.
-        def guide_with_scale(*args, **kwargs):
-            factor = args[2] if len(args) > 2 else kwargs.get("kl_annealing_factor", 1.0)
-            with numpyro.handlers.scale(scale=factor):
-                return guide(*args, **kwargs)
+        scaled_guide = _wrap_guide_with_kl_scale(guide)
 
         x = jnp.asarray(np.random.rand(n_samples, n_features).astype(np.float32))
         y = jnp.asarray(_make_random_rewards(n_samples), dtype=jnp.int32)
 
-        tr = numpyro.handlers.trace(numpyro.handlers.seed(guide_with_scale, rng_seed=0)).get_trace(
+        tr = numpyro.handlers.trace(numpyro.handlers.seed(scaled_guide, rng_seed=0)).get_trace(
             x, y, kl_annealing_factor
         )
 

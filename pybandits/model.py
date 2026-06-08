@@ -1208,6 +1208,39 @@ class ParameterizedScaleAutoNormal(AutoNormal):
         return result
 
 
+def _wrap_guide_with_kl_scale(guide: Callable) -> Callable:
+    """Wrap a guide so the per-step ``kl_annealing_factor`` scales its sample sites.
+
+    The returned closure registers a ``numpyro.handlers.scale`` context around the guide
+    so that ``log q(z)`` is scaled by the same factor the model applies to ``log p(z)``.
+    Without this, ``handlers.scale`` on the model alone would scale ``log p(z)`` but leave
+    ``log q(z)`` untouched, so the per-site KL contribution (``log p - log q``) would not
+    scale uniformly. The wrapper extracts the factor from the SVI call signature (the third
+    positional argument, or the ``kl_annealing_factor`` keyword), defaulting to ``1.0``.
+
+    Kept as a module-level helper (not an inline closure) so tests can bind to the exact
+    production wrapper instead of a hand-copied mirror that can silently drift.
+
+    Parameters
+    ----------
+    guide : Callable
+        The guide callable to wrap (e.g. an ``AutoNormal`` / ``ParameterizedScaleAutoNormal``
+        instance). It is preserved unmodified for downstream ``.median(...)`` extraction.
+
+    Returns
+    -------
+    Callable
+        A ``scaled_guide(*args, **kwargs)`` closure suitable for passing to ``SVI(...)``.
+    """
+
+    def scaled_guide(*args: Any, **kwargs: Any):
+        kl_annealing_factor = args[2] if len(args) > 2 else kwargs.get("kl_annealing_factor", 1.0)
+        with numpyro.handlers.scale(scale=kl_annealing_factor):
+            return guide(*args, **kwargs)
+
+    return scaled_guide
+
+
 class BaseBayesianNeuralNetwork(Model, ABC):
     """Bayesian Neural Network model for binary classification.
 
@@ -2344,19 +2377,15 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale_fn(""))
 
         # Wrap the guide so the per-step kl_annealing_factor scales its sample sites
-        # symmetrically with the model's prior sites. Without this wrap, handlers.scale
-        # on the model alone would multiply log p(z) but leave log q(z) untouched, so the
-        # per-site KL contribution (log p - log q) would not scale uniformly. The closure
-        # is registered with SVI; the underlying `guide` is preserved for downstream
-        # `.median(...)` extraction.
-        def guide_with_scale(*args: Any, **kwargs: Any):
-            kl_annealing_factor = args[2] if len(args) > 2 else kwargs.get("kl_annealing_factor", 1.0)
-            with numpyro.handlers.scale(scale=kl_annealing_factor):
-                return guide(*args, **kwargs)
+        # symmetrically with the model's prior sites. The wrapper is registered with SVI;
+        # the underlying `guide` is preserved for downstream `.median(...)` extraction.
+        # See `_wrap_guide_with_kl_scale` for the full rationale; it lives at module level
+        # so the test suite can trace the exact production wrapper instead of a copy.
+        scaled_guide = _wrap_guide_with_kl_scale(guide)
 
         num_particles = self._update_kwargs["num_particles"]
         loss = method_config["loss"](num_particles=num_particles)
-        svi = SVI(_model, guide_with_scale, self._obj_optimizer, loss=loss)
+        svi = SVI(_model, scaled_guide, self._obj_optimizer, loss=loss)
 
         # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
         # A Python for-loop leaks host-side dispatch/compilation metadata on
