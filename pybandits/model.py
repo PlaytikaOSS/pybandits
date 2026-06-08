@@ -19,7 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+import inspect
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import ExitStack, nullcontext
@@ -34,6 +34,7 @@ import numpy as np
 import numpyro
 import numpyro.distributions as npdist
 import numpyro.optim as noptim
+import optax
 from loguru import logger
 from numpy import sqrt
 from numpyro.distributions import Bernoulli as NumpyroBernoulli
@@ -70,6 +71,7 @@ _Array = Union[np.ndarray, jax.Array]
 UpdateMethods = Literal["VI", "MCMC"]
 VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
+OptaxKind = Literal["optimizer", "lr_scheduler"]
 
 _LOGIT_CLIPPING_THRESHOLD = 15
 
@@ -1017,12 +1019,12 @@ class EarlyStopping(PyBanditsBaseModel):
         """Check if training should stop based on loss convergence."""
         if self._previous_loss is not None:
             if self.diff_type == "relative":
-                change = (self._previous_loss - loss) / (abs(self._previous_loss) + self._epsilon)
+                change = abs((loss - self._previous_loss) / (abs(self._previous_loss) + self._epsilon))
             elif self.diff_type == "absolute":
-                change = self._previous_loss - loss
+                change = abs(loss - self._previous_loss)
             else:
                 raise ValueError(f"Unknown diff {self.diff_type}")
-            logger.info(str((loss, change, self._no_improvement_count)))
+
             if change < self.tolerance:
                 self._no_improvement_count += 1
             else:
@@ -1278,17 +1280,72 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         "batch_size",
         "early_stopping_kwargs",
         "epochs",
+        "lr_scheduler_type",
+        "lr_scheduler_kwargs",
+        "restore_best_svi_state",
+        "num_particles",
+        "gradient_clip_norm",
     ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
     _numerical_eps: ClassVar[float] = 1e-6
-    _supported_optimizers: ClassVar[dict] = {
-        "sgd": noptim.SGD,
-        "momentum": noptim.Momentum,
-        "adagrad": noptim.Adagrad,
-        "adam": noptim.Adam,
-        "clipped_adam": noptim.ClippedAdam,
+    _optax_return_types: ClassVar[dict] = {
+        "optimizer": optax.GradientTransformation,
+        "lr_scheduler": optax.Schedule,
     }
+    _optax_required_kwargs: ClassVar[dict] = {
+        "optimizer": "learning_rate",
+        "lr_scheduler": "init_value",
+    }
+
+    def _resolve_optax_fn(self, name: str, kind: OptaxKind) -> Any:
+        """Look up an optax function by name using getattr and validate its return type annotation
+        and required keyword argument.
+
+        Parameters
+        ----------
+        name : str
+            Name of the optax attribute (e.g. ``"adam"``, ``"exponential_decay"``).
+        kind : OptaxKind
+            Key into ``_optax_return_types`` (``"optimizer"`` or ``"lr_scheduler"``).
+
+        Returns
+        -------
+        Any
+            The callable found on the ``optax`` module.
+
+        Raises
+        ------
+        ValueError
+            If ``name`` is not a callable attribute of ``optax``, its return-type
+            annotation does not match the expected type for ``kind``, or its signature
+            does not accept the required keyword argument for ``kind``.
+        """
+        fn = getattr(optax, name, None)
+        if fn is None or not callable(fn):
+            raise ValueError(f"Invalid {kind}: '{name}' is not a callable attribute of optax.")
+        expected = self._optax_return_types[kind]
+        sig = inspect.signature(fn)
+        return_annotation = sig.return_annotation
+        if isinstance(expected, type) and not hasattr(expected, "__origin__"):
+            # e.g. GradientTransformation (plain class) — check via issubclass
+            valid = isinstance(return_annotation, type) and issubclass(return_annotation, expected)
+        else:
+            # e.g. optax.Schedule (parameterized generic) — check for equality
+            valid = return_annotation == expected
+        if not valid:
+            raise ValueError(
+                f"Invalid {kind}: '{name}' does not return {expected} (got return annotation: {return_annotation})."
+            )
+        required_kwarg = self._optax_required_kwargs[kind]
+        params = sig.parameters
+        has_required = required_kwarg in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        if not has_required:
+            raise ValueError(
+                f"Invalid {kind}: '{name}' does not accept the required keyword argument '{required_kwarg}'."
+            )
+        return fn
+
     _jax_activations: ClassVar[dict] = {
         "tanh": jax.nn.tanh,
         "relu": jax.nn.relu,
@@ -1320,7 +1377,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         optimizer_kwargs={"step_size": 0.01},
         batch_size=None,
         early_stopping_kwargs=None,
+        lr_scheduler_type=None,
+        lr_scheduler_kwargs=None,
         restore_best_svi_state=True,
+        num_particles=1,
+        gradient_clip_norm=None,
     )
 
     _default_mcmc_kwargs: ClassVar[dict] = dict(
@@ -1407,19 +1468,35 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return numerical_arr, cat_indices_dict
 
     def _get_obj_optimizer(self) -> Any:
-        """Build the optimizer from update_kwargs. Always returns an optimizer (uses default if not specified)."""
+        """Build an optax optimizer from update_kwargs, wrapped via ``optax_to_numpyro``.
+
+        Optionally chains a learning-rate schedule and/or gradient clipping.
+        """
         optimizer_type = self.update_kwargs["optimizer_type"]
-        if optimizer_type not in self._supported_optimizers:
-            raise ValueError(
-                f"Invalid optimizer type: {optimizer_type}. "
-                f"Supported optimizers are: {list(self._supported_optimizers.keys())}"
-            )
-        cls_ = self._supported_optimizers[optimizer_type]
-        optimizer_kwargs = self.update_kwargs.get("optimizer_kwargs", {})
+        optimizer_kwargs = dict(self.update_kwargs.get("optimizer_kwargs", {}))
+        lr_scheduler_type = self.update_kwargs.get("lr_scheduler_type")
+        lr_scheduler_kwargs = self.update_kwargs.get("lr_scheduler_kwargs") or {}
+        gradient_clip_norm = self.update_kwargs.get("gradient_clip_norm")
+
+        optimizer_fn = self._resolve_optax_fn(optimizer_type, "optimizer")
+
+        # Resolve learning rate (possibly a schedule)
+        learning_rate = optimizer_kwargs.pop("step_size", 0.01)
+        if lr_scheduler_type is not None:
+            scheduler_fn = self._resolve_optax_fn(lr_scheduler_type, "lr_scheduler")
+            try:
+                learning_rate = scheduler_fn(init_value=learning_rate, **lr_scheduler_kwargs)
+            except (TypeError, ValueError) as e:
+                raise e.__class__(f"Invalid lr_scheduler_kwargs: {lr_scheduler_kwargs}.\n{e}") from e
+
         try:
-            return cls_(**optimizer_kwargs)
+            base_optimizer = optimizer_fn(learning_rate=learning_rate, **optimizer_kwargs)
         except (TypeError, ValueError, KeyError) as e:
-            raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}")
+            raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}") from e
+
+        if gradient_clip_norm is not None:
+            return noptim.optax_to_numpyro(optax.chain(optax.clip_by_global_norm(gradient_clip_norm), base_optimizer))
+        return noptim.optax_to_numpyro(base_optimizer)
 
     def _get_early_stopping_callback(self) -> Optional[EarlyStopping]:
         early_stopping_kwargs = self.update_kwargs.get("early_stopping_kwargs", None)
@@ -1703,7 +1780,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return linear_transform
 
-    def create_update_model(self, batch_size: Optional[PositiveInt] = None) -> Callable:
+    def _create_update_model(self) -> Callable:
         """
         Create a NumPyro model function for Bayesian Neural Network.
 
@@ -1712,13 +1789,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         with subsample_size.
 
         Numerical columns are passed through as-is. Categorical columns (identified by their
-        ``column_index`` in ``feature_config``) are modelled with Bayesian embedding matrices
+        ``column_index`` in ``feature_config``) are modeled with Bayesian embedding matrices
         sampled as NumPyro random variables.
-
-        Parameters
-        ----------
-        batch_size : Optional[PositiveInt]
-            If provided, use minibatching with this batch size via numpyro.plate.
 
         Returns
         -------
@@ -1735,12 +1807,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         5. Use Bernoulli likelihood for binary classification
         """
 
+        batch_size = self._update_kwargs.get("batch_size")
         numerical_indices = self.feature_config.numerical_indices
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
 
         def model(x: jax.Array, y: jax.Array):
-            N = x.shape[0]
+            n_samples = x.shape[0]
 
             # Sample all weights (global parameters, outside plate)
             weights_biases = []
@@ -1758,8 +1831,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                     embedding_matrices.append(emb)
 
             # Data plate with optional minibatching
-            if batch_size is not None and batch_size < N:
-                plate_ctx = numpyro.plate("data", size=N, subsample_size=batch_size)
+            if batch_size is not None and batch_size < n_samples:
+                plate_ctx = numpyro.plate("data", size=n_samples, subsample_size=batch_size)
             else:
                 plate_ctx = nullcontext()
 
@@ -2141,10 +2214,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         if self._early_stopping_callback is not None:
             self._early_stopping_callback.reset()
-        batch_size = self._update_kwargs["batch_size"]
-        _model = self.create_update_model(batch_size=batch_size)
+        _model = self._create_update_model()
 
-        effective_batch_size = batch_size if batch_size is not None else n_samples
+        effective_batch_size = self._update_kwargs.get("batch_size") or n_samples
         steps_per_epoch = max(1, n_samples // effective_batch_size)
 
         if self._update_kwargs.get("epochs") is not None:
@@ -2171,7 +2243,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         else:
             # fullrank_advi needs a scalar; use the avg sigma via the unknown-site fallback
             guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale_fn(""))
-        loss = method_config["loss"]()
+
+        num_particles = self._update_kwargs["num_particles"]
+        loss = method_config["loss"](num_particles=num_particles)
         svi = SVI(_model, guide, self._obj_optimizer, loss=loss)
 
         # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
@@ -2182,14 +2256,18 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self._rng_key, subkey = jax.random.split(self._rng_key)
         svi_state = svi.init(subkey, x_jnp, y_jnp)
 
-        def _svi_body(state, _):
-            state, loss = svi.update(state, x_jnp, y_jnp)
-            return state, loss
+        # Pass x/y as explicit JIT arguments (not closure captures) so JAX treats
+        # them as abstract buffers rather than embedding them as XLA constants.
+        # Closing over large arrays causes "Failed to allocate N bytes for new constant"
+        # at compile time when the dataset is large.
+        def _run_epoch(state, x, y, n):
+            def _svi_body(s, _):
+                s, loss = svi.update(s, x, y)
+                return s, loss
 
-        _run_epoch = jax.jit(
-            lambda state, n: jax.lax.scan(_svi_body, state, None, length=n),
-            static_argnums=(1,),
-        )
+            return jax.lax.scan(_svi_body, state, None, length=n)
+
+        _run_epoch = jax.jit(_run_epoch, static_argnums=(3,))
 
         restore_best = self._update_kwargs.get("restore_best_svi_state", True)
         all_losses = []
@@ -2197,38 +2275,38 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         best_svi_state = svi_state
         pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
-        for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
-            svi_state, epoch_losses = _run_epoch(svi_state, epoch_steps)
+        try:
+            for epoch_idx, epoch_steps in enumerate(epoch_steps_list):
+                svi_state, epoch_losses = _run_epoch(svi_state, x_jnp, y_jnp, epoch_steps)
 
-            epoch_np = np.array(epoch_losses)
-            epoch_loss = float(np.mean(epoch_np))
-            all_losses.append(epoch_np)
-            pbar.update(1)
-            pbar.set_postfix(loss=f"{epoch_loss:.4f}")
+                epoch_np = np.array(epoch_losses)
+                epoch_loss = float(np.mean(epoch_np))
+                all_losses.append(epoch_np)
+                pbar.update(1)
+                pbar.set_postfix(loss=f"{epoch_loss:.4f}")
 
-            if np.isnan(epoch_loss):
-                pbar.close()
-                raise ValueError(
-                    f"SVI training diverged: loss is NaN at epoch {epoch_idx + 1}/{len(epoch_steps_list)}. "
-                    "Consider reducing the learning rate or checking your data for invalid values."
-                )
-
-            if restore_best and epoch_loss < best_loss:
-                best_loss = epoch_loss
-                best_svi_state = svi_state
-
-            if self._early_stopping_callback is not None:
-                if self._early_stopping_callback.should_stop(epoch_loss):
-                    logger.info(
-                        f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
-                        f"loss change below {self._early_stopping_callback.tolerance} "
-                        f"({self._early_stopping_callback.diff_type}) for "
-                        f"{self._early_stopping_callback.patience} consecutive epochs. "
-                        f"Best loss: {best_loss:.6f}, last loss: {epoch_loss:.6f}."
+                if np.isnan(epoch_loss):
+                    raise ValueError(
+                        f"SVI training diverged: loss is NaN at epoch {epoch_idx + 1}/{len(epoch_steps_list)}. "
+                        "Consider reducing the learning rate or checking your data for invalid values."
                     )
-                    break
 
-        pbar.close()
+                if restore_best and epoch_loss < best_loss:
+                    best_loss = epoch_loss
+                    best_svi_state = svi_state
+
+                if self._early_stopping_callback is not None:
+                    if self._early_stopping_callback.should_stop(epoch_loss):
+                        logger.info(
+                            f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
+                            f"loss change below {self._early_stopping_callback.tolerance} "
+                            f"({self._early_stopping_callback.diff_type}) for "
+                            f"{self._early_stopping_callback.patience} consecutive epochs. "
+                            f"Best loss: {best_loss:.6f}, last loss: {epoch_loss:.6f}."
+                        )
+                        break
+        finally:
+            pbar.close()
         self._approx_history = np.concatenate(all_losses) if all_losses else np.array([])
         final_state = best_svi_state if restore_best else svi_state
         params = svi.get_params(final_state)
@@ -2365,7 +2443,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         List
             Updated ``BnnLayerParams`` list (embeddings are updated in-place as a side-effect).
         """
-        _model = self.create_update_model()
+        _model = self._create_update_model()
         nuts_kwargs = self._update_kwargs["nuts"]
         # All top-level keys except 'nuts' are MCMC kwargs
         mcmc_kwargs = {k: v for k, v in self._update_kwargs.items() if k != "nuts"}
