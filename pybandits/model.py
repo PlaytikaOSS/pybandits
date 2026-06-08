@@ -63,7 +63,14 @@ from scipy.special import erf
 from tqdm import trange
 from typing_extensions import Self
 
-from pybandits.base import BinaryReward, PositiveFloat01, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
+from pybandits.base import (
+    BinaryReward,
+    MOProbability,
+    PositiveFloat01,
+    Probability,
+    ProbabilityWeight,
+    PyBanditsBaseModel,
+)
 from pybandits.base_model import BaseModelCC, BaseModelDP, BaseModelMO, BaseModelSO
 
 _Array = Union[np.ndarray, jax.Array]
