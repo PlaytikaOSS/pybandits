@@ -42,10 +42,12 @@ from pybandits.model import (
     BaseLocationScaleArray,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
     Beta,
     BetaCC,
+    BetaDP,
     BetaMO,
     BetaMOCC,
     CategoricalFeatureConfig,
@@ -145,6 +147,22 @@ def test_can_init_betaCC(a_float):
     else:
         b = BetaCC(cost=a_float)
         assert b.cost == a_float
+
+
+########################################################################################################################
+
+
+# BetaDP
+
+
+@given(st.floats())
+def test_can_init_betaDP(a_float):
+    if a_float < 0 or np.isnan(a_float):
+        with pytest.raises(ValidationError):
+            BetaDP(price=a_float)
+    else:
+        b = BetaDP(price=a_float)
+        assert b.price == a_float
 
 
 ########################################################################################################################
@@ -1196,7 +1214,7 @@ def test_vi_training_options(
     decay_rate: float,
     transition_steps_factor: int,
 ) -> None:
-    """Test that VI training options (num_particles, gradient_clip_norm, lr_scheduler, kl_annealing_fraction) compose correctly."""
+    """Test that VI training options (num_particles, gradient_clip_norm, lr_scheduler) compose correctly."""
     update_kwargs: dict = {
         "num_steps": num_steps,
         "optimizer_type": optimizer_type,
@@ -1683,9 +1701,10 @@ def test_can_init_bayesian_neural_network_cc(
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
     cost=st.floats(allow_nan=False, allow_infinity=False),
+    n_samples=st.integers(min_value=1, max_value=100),
 )
 def test_create_default_instance_bayesian_neural_network_cc(
-    rng, activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost
+    rng, activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, cost, n_samples
 ):
     dim_list = [n_features] + hidden_dim_list
     if any(layer_dim <= 0 for layer_dim in dim_list) or (cost < 0):
@@ -1723,10 +1742,113 @@ def test_create_default_instance_bayesian_neural_network_cc(
         assert bnn_cold_start.use_residual_connections == use_residual_connections
 
         # Test sample_proba works
-        context = np.random.uniform(low=-1.0, high=1.0, size=(5, n_features))
+        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
         prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context, rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
-        assert len(prob) == 5
+        assert len(prob) == n_samples
+        assert all([0 <= p <= 1 for p in prob])
+
+
+########################################################################################################################
+
+
+# BayesianNeuralNetworkDP
+@given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    price=st.floats(allow_nan=False, allow_infinity=False),
+)
+def test_can_init_bayesian_neural_network_dp(
+    activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, price
+):
+    # at least one beta must be specified
+    dim_list = [n_features] + hidden_dim_list
+    fc = FeaturesConfig(n_features=n_features)
+    if any(layer_dim <= 0 for layer_dim in dim_list) or (price < 0):
+        with pytest.raises((ValidationError, ValueError)):
+            model_params = BayesianNeuralNetwork.create_model_params(
+                fc, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+            )
+            BayesianNeuralNetworkDP(
+                model_params=model_params,
+                price=price,
+                activation=activation,
+                use_residual_connections=use_residual_connections,
+                feature_config=fc,
+            )
+    else:
+        model_params = BayesianNeuralNetwork.create_model_params(
+            fc, hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+        )
+        bnn = BayesianNeuralNetworkDP(
+            model_params=model_params,
+            price=price,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+            feature_config=fc,
+        )
+        assert bnn.model_params == model_params
+        assert bnn.price == price
+        assert bnn.activation == activation
+        assert bnn.use_residual_connections == use_residual_connections
+
+
+@given(
+    activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
+    use_residual_connections=st.booleans(),
+    use_layerwise_scaling=st.booleans(),
+    n_features=st.integers(min_value=1, max_value=3),
+    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+    price=st.floats(allow_nan=False, allow_infinity=False),
+    n_samples=st.integers(min_value=1, max_value=100),
+)
+def test_create_default_instance_bayesian_neural_network_dp(
+    rng, activation, use_residual_connections, use_layerwise_scaling, n_features, hidden_dim_list, price, n_samples
+):
+    dim_list = [n_features] + hidden_dim_list
+    if any(layer_dim <= 0 for layer_dim in dim_list) or (price < 0):
+        with pytest.raises((ValidationError, ValueError)):
+            BayesianNeuralNetworkDP.cold_start(
+                n_features=n_features,
+                hidden_dim_list=hidden_dim_list,
+                price=price,
+                activation=activation,
+                use_residual_connections=use_residual_connections,
+                use_layerwise_scaling=use_layerwise_scaling,
+            )
+    else:
+        bnn_cold_start = BayesianNeuralNetworkDP.cold_start(
+            n_features=n_features,
+            hidden_dim_list=hidden_dim_list,
+            price=price,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+            use_layerwise_scaling=use_layerwise_scaling,
+        )
+        fc = FeaturesConfig(n_features=n_features)
+        model_params = BayesianNeuralNetwork.create_model_params(
+            fc, hidden_dim_list=hidden_dim_list, use_layerwise_scaling=use_layerwise_scaling
+        )
+        bnn_init = BayesianNeuralNetworkDP(
+            model_params=model_params,
+            price=price,
+            activation=activation,
+            use_residual_connections=use_residual_connections,
+            feature_config=fc,
+        )
+        assert bnn_cold_start == bnn_init
+        assert bnn_cold_start.price == price
+        assert bnn_cold_start.activation == activation
+        assert bnn_cold_start.use_residual_connections == use_residual_connections
+
+        # Test sample_proba works
+        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+        prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context, rng=rng)
+        prob, weighted_sum = zip(*prob_and_weighted_sum)
+        assert len(prob) == n_samples
         assert all([0 <= p <= 1 for p in prob])
 
 

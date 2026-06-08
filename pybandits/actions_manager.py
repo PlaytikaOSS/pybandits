@@ -70,10 +70,12 @@ from pybandits.model import (
     BaseBetaMO,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
     Beta,
     BetaCC,
+    BetaDP,
     BetaMO,
     BetaMOCC,
     Model,
@@ -84,9 +86,11 @@ from pybandits.quantitative_model import (
     BaseZooming,
     QuantitativeBayesianNeuralNetwork,
     QuantitativeBayesianNeuralNetworkCC,
+    QuantitativeBayesianNeuralNetworkDP,
     QuantitativeModel,
     Zooming,
     ZoomingCC,
+    ZoomingDP,
 )
 
 SmabModelType = TypeVar("SmabModelType", bound=Union[BaseBeta, BaseBetaMO, BaseZooming])
@@ -926,10 +930,12 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
 # For pickling purposes
 SmabActionsManagerSO = SmabActionsManager[Union[Beta, Zooming]]
 SmabActionsManagerCC = SmabActionsManager[Union[BetaCC, ZoomingCC]]
+SmabActionsManagerDP = SmabActionsManager[Union[BetaDP, ZoomingDP]]
 SmabActionsManagerMO = SmabActionsManager[BetaMO]
 SmabActionsManagerMOCC = SmabActionsManager[BetaMOCC]
 
 CmabActionsManagerSO = CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]]
 CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC]]
+CmabActionsManagerDP = CmabActionsManager[Union[BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP]]
 CmabActionsManagerMO = CmabActionsManager[BayesianNeuralNetworkMO]
 CmabActionsManagerMOCC = CmabActionsManager[BayesianNeuralNetworkMOCC]

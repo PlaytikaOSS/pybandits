@@ -38,9 +38,12 @@ from pybandits.model import Beta
 from pybandits.quantitative_model import (
     BaseZooming,
     QuantitativeBayesianNeuralNetwork,
+    QuantitativeBayesianNeuralNetworkCC,
+    QuantitativeBayesianNeuralNetworkDP,
     Segment,
     Zooming,
     ZoomingCC,
+    ZoomingDP,
 )
 from tests.utils import mock_update
 
@@ -553,6 +556,110 @@ def test_cost_serialization_deserialization(cost_function):
     deserialized_model = ZoomingCC.model_validate_json(serialized)
     # Check callable was properly restored
     assert callable(deserialized_model.cost)
+
+    reserialized = deserialized_model.model_dump_json()
+    assert reserialized == serialized
+
+
+# QuantitativeModelDP tests via ZoomingDP
+
+
+def simple_price(value: float) -> float:
+    return value * 10
+
+
+def complex_price(value: Union[float, NonNegativeFloat], factor: float = 1.0) -> NonNegativeFloat:
+    return value * factor
+
+
+partial_price = functools.partial(complex_price, factor=2.5)
+
+
+@pytest.mark.parametrize(
+    "price_function",
+    [
+        simple_price,
+        complex_price,
+        partial_price,
+    ],
+)
+def test_price_serialization_deserialization(price_function):
+    """Test serialization and deserialization of price field with different callables."""
+
+    # Create model with the test callable as price
+    model = ZoomingDP.cold_start(price=price_function)
+    serialized = model.model_dump_json()
+    serialized_dict = json.loads(serialized)
+
+    assert "price" in serialized_dict
+    assert isinstance(serialized_dict["price"], str)
+
+    deserialized_model = ZoomingDP.model_validate_json(serialized)
+    # Check callable was properly restored
+    assert callable(deserialized_model.price)
+
+    reserialized = deserialized_model.model_dump_json()
+    assert reserialized == serialized
+
+
+########################################################################################################################
+
+
+# QuantitativeBayesianNeuralNetworkCC tests
+
+
+@pytest.mark.parametrize(
+    "cost_function",
+    [
+        simple_cost,
+        complex_cost,
+        partial_cost,
+    ],
+)
+def test_bnncc_cost_serialization_deserialization(cost_function):
+    """Test serialization and deserialization of cost field in BNNCC with different callables."""
+
+    # Create model with the test callable as cost
+    model = QuantitativeBayesianNeuralNetworkCC.cold_start(dimension=1, cost=cost_function)
+    serialized = model.model_dump_json()
+    serialized_dict = json.loads(serialized)
+
+    assert "cost" in serialized_dict
+    assert isinstance(serialized_dict["cost"], str)
+
+    deserialized_model = QuantitativeBayesianNeuralNetworkCC.model_validate_json(serialized)
+    # Check callable was properly restored
+    assert callable(deserialized_model.cost)
+
+    reserialized = deserialized_model.model_dump_json()
+    assert reserialized == serialized
+
+
+# QuantitativeBayesianNeuralNetworkDP tests
+
+
+@pytest.mark.parametrize(
+    "price_function",
+    [
+        simple_price,
+        complex_price,
+        partial_price,
+    ],
+)
+def test_bnndp_price_serialization_deserialization(price_function):
+    """Test serialization and deserialization of price field in BNNDP with different callables."""
+
+    # Create model with the test callable as price
+    model = QuantitativeBayesianNeuralNetworkDP.cold_start(dimension=1, price=price_function)
+    serialized = model.model_dump_json()
+    serialized_dict = json.loads(serialized)
+
+    assert "price" in serialized_dict
+    assert isinstance(serialized_dict["price"], str)
+
+    deserialized_model = QuantitativeBayesianNeuralNetworkDP.model_validate_json(serialized)
+    # Check callable was properly restored
+    assert callable(deserialized_model.price)
 
     reserialized = deserialized_model.model_dump_json()
     assert reserialized == serialized

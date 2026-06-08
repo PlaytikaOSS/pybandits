@@ -63,15 +63,8 @@ from scipy.special import erf
 from tqdm import trange
 from typing_extensions import Self
 
-from pybandits.base import (
-    BinaryReward,
-    MOProbability,
-    PositiveFloat01,
-    Probability,
-    ProbabilityWeight,
-    PyBanditsBaseModel,
-)
-from pybandits.base_model import BaseModelCC, BaseModelMO, BaseModelSO
+from pybandits.base import BinaryReward, PositiveFloat01, MOProbability, Probability, ProbabilityWeight, PyBanditsBaseModel
+from pybandits.base_model import BaseModelCC, BaseModelDP, BaseModelMO, BaseModelSO
 
 _Array = Union[np.ndarray, jax.Array]
 
@@ -136,6 +129,19 @@ class ModelCC(BaseModelCC, ABC):
     """
 
     cost: NonNegativeFloat
+
+
+class ModelDP(BaseModelDP, ABC):
+    """
+    Class to model action price.
+
+    Parameters
+    ----------
+    price: NonNegativeFloat
+        Price associated to the action.
+    """
+
+    price: NonNegativeFloat
 
 
 class ModelMO(BaseModelMO, ABC):
@@ -229,6 +235,21 @@ class BetaCC(BaseBeta, ModelCC):
         Counter of the number of failures.
     cost : NonNegativeFloat
         Cost associated to the Beta distribution.
+    """
+
+
+class BetaDP(BaseBeta, ModelDP):
+    """
+    Beta Distribution model for Bernoulli multi-armed bandits with dynamic pricing.
+
+    Parameters
+    ----------
+    n_successes : PositiveInt = 1
+        Counter of the number of successes.
+    n_failures : PositiveInt = 1
+        Counter of the number of failures.
+    price : NonNegativeFloat
+        Price associated to the Beta distribution.
     """
 
 
@@ -2788,6 +2809,33 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork, ModelCC):
         For VI, it contains both 'trace' and 'fit' settings.
     cost : NonNegativeFloat
         Cost associated to the Bayesian Neural Network model.
+
+    Notes
+    -----
+    - The model uses tanh activation for hidden layers and sigmoid activation for the output layer.
+    - The output layer is designed for binary classification tasks, with probabilities modeled
+      using a Bernoulli likelihood.
+    """
+
+
+class BayesianNeuralNetworkDP(BaseBayesianNeuralNetwork, ModelDP):
+    """Bayesian Neural Network model for binary classification with dynamic pricing.
+
+    This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
+    using PyMC for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
+    and Variational Inference (VI) methods for posterior inference.
+
+    Parameters
+    ----------
+    model_params : BnnParams
+        The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
+    update_method : str, optional
+        The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
+    update_kwargs : Optional[dict], optional
+        A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
+        For VI, it contains both 'trace' and 'fit' settings.
+    price : NonNegativeFloat
+        Price associated to the Bayesian Neural Network model.
 
     Notes
     -----

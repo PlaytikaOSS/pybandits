@@ -28,6 +28,7 @@ from pydantic import PositiveInt, validate_call
 from pybandits.actions_manager import (
     SmabActionsManager,
     SmabActionsManagerCC,
+    SmabActionsManagerDP,
     SmabActionsManagerMO,
     SmabActionsManagerMOCC,
     SmabActionsManagerSO,
@@ -44,6 +45,7 @@ from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    DynamicPricingBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
@@ -202,6 +204,33 @@ class SmabBernoulliCC(BaseSmabBernoulli):
 
     actions_manager: SmabActionsManagerCC
     strategy: CostControlBandit
+
+
+class SmabBernoulliDP(BaseSmabBernoulli):
+    """
+    Stochastic Bernoulli Multi-Armed Bandit with Thompson Sampling, and Dynamic Pricing strategy.
+
+    The sMAB is extended to perform price optimization. Each action is associated with a predefined
+    "price" (a scalar for discrete actions, or a callable mapping a quantity to a price for
+    quantitative actions). At prediction time, the action that maximizes the expected revenue
+    ``price * P(purchase)`` is recommended, where ``P(purchase)`` is the sampled probability of a
+    positive reward.
+
+    References
+    ----------
+    Nonparametric Pricing Analytics with Customer Covariates (Chen and Gallego, 2021)
+    https://arxiv.org/abs/1805.01136
+
+    Parameters
+    ----------
+    actions_manager: SmabActionsManagerDP
+        The manager for actions and their associated models.
+    strategy: DynamicPricingBandit
+        The strategy used to select actions.
+    """
+
+    actions_manager: SmabActionsManagerDP
+    strategy: DynamicPricingBandit
 
 
 class SmabBernoulliMO(BaseSmabBernoulli):

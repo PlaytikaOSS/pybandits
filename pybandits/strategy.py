@@ -22,7 +22,7 @@
 
 from abc import ABC, abstractmethod
 from random import random
-from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Type, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union
 
 import numpy as np
 from loguru import logger
@@ -30,7 +30,7 @@ from pydantic import PrivateAttr, field_validator, validate_call
 from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, PyBanditsBaseModel, UnifiedActionId
-from pybandits.base_model import BaseModel
+from pybandits.base_model import BaseModel, BaseModelDP
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.utils import OptimizationFailedError, maximize_by_quantity
 
@@ -424,6 +424,167 @@ class ClassicBandit(SingleObjectiveStrategy):
         if not refined_p:
             raise ValueError("Cannot select action from empty refined_p dictionary")
         best_unified_action = max(refined_p, key=refined_p.get)
+        return best_unified_action
+
+
+class DynamicPricingBandit(SingleObjectiveStrategy):
+    """
+    Dynamic pricing Thompson Sampling strategy for multi-armed bandits.
+
+    This strategy selects the action that maximizes the expected revenue, defined as the
+    product of the action ``price`` and its sampled probability of a positive reward
+    (i.e. purchase probability): ``revenue = price * P(purchase)``. Each action is associated
+    with a predefined ``price``: a scalar for discrete actions, or a callable mapping a quantity
+    vector to a price for quantitative (continuous price) actions. The probability of purchase is
+    provided by the Bayesian posterior, mirroring the demand estimate of the reference algorithm.
+
+    References
+    ----------
+    Revenue objective ``price * P(purchase)`` is inspired by the demand-times-price formulation in:
+    Nonparametric Pricing Analytics with Customer Covariates (Chen and Gallego, 2021)
+    https://arxiv.org/abs/1805.01136
+    """
+
+    def get_prerequisites(
+        self,
+        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
+        actions: Dict[ActionId, BaseModelDP],
+        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+    ) -> Dict[str, Any]:
+        """
+        Compute prerequisites for the dynamic pricing strategy.
+
+        Dynamic pricing requires no prerequisites: the revenue of each action is evaluated
+        directly during selection.
+
+        Parameters
+        ----------
+        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+            Dictionary mapping action IDs to probability functions or values.
+        actions : Dict[ActionId, BaseModel]
+            Dictionary mapping action IDs to their associated models.
+        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+            List of constraint functions (unused in dynamic pricing).
+
+        Returns
+        -------
+        Dict[str, Any]
+            Empty dictionary as no prerequisites are needed.
+        """
+        return {}
+
+    def _verify_action(self, score: float) -> bool:
+        """
+        Verify if an action should be considered for selection.
+
+        Dynamic pricing considers all actions; revenue is evaluated during selection.
+
+        Parameters
+        ----------
+        score : float
+            The probability or score of the action (unused).
+
+        Returns
+        -------
+        bool
+            Always True - all actions are considered.
+        """
+        return True
+
+    @staticmethod
+    def _revenue(model: BaseModelDP, quantity: Optional[np.ndarray], proba: float) -> float:
+        """
+        Compute expected revenue for an action.
+
+        Parameters
+        ----------
+        model : BaseModelDP
+            The action model providing the price (scalar or callable).
+        quantity : Optional[np.ndarray]
+            Quantity vector for quantitative actions; None for discrete actions.
+        proba : float
+            Purchase probability.
+
+        Returns
+        -------
+        float
+            ``price * proba``.
+        """
+        price = model.price(quantity) if callable(model.price) else model.price
+        return price * proba
+
+    def _verify_and_select_from_quantitative_action(
+        self,
+        score_func: Callable[[np.ndarray], float],
+        model: BaseModelDP,
+        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+    ) -> Optional[np.ndarray]:
+        """
+        Find the revenue-maximizing quantity for a quantitative action.
+
+        Maximizes ``price(quantity) * P(purchase | quantity)`` over the quantity space.
+
+        Parameters
+        ----------
+        score_func : Callable[[np.ndarray], float]
+            Function that computes the purchase probability given a quantity vector.
+        model : BaseModelDP
+            The model associated with this quantitative action (provides the ``price`` callable).
+        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+            List of constraint functions that quantity must satisfy.
+
+        Returns
+        -------
+        Optional[np.ndarray]
+            Optimal quantity vector that maximizes revenue, or None if optimization fails.
+        """
+        try:
+            return maximize_by_quantity(
+                lambda x: self._revenue(model, x, score_func(x)),
+                model.dimension,
+                constraint_list,
+            )
+        except OptimizationFailedError as e:
+            logger.warning(f"Optimization failed: {e}")
+            return None
+
+    def _select_from_refined_actions(
+        self,
+        refined_p: Dict[UnifiedActionId, float],
+        actions: Dict[ActionId, BaseModelDP],
+        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+    ) -> UnifiedActionId:
+        """
+        Select the action with the highest expected revenue.
+
+        Revenue is ``price * P(purchase)``, where the price is read from the action model
+        (a scalar for discrete actions, or ``price(quantity)`` for quantitative actions) and
+        the probability is the refined sampled value.
+
+        Parameters
+        ----------
+        refined_p : Dict[UnifiedActionId, float]
+            Dictionary of unified action IDs to their probability values.
+        actions : Dict[ActionId, BaseModelDP]
+            Dictionary mapping action IDs to their models (for price information).
+        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+            Optional constraint function (unused).
+
+        Returns
+        -------
+        UnifiedActionId
+            The action with the highest expected revenue.
+        """
+        if not refined_p:
+            raise ValueError("Cannot select action from empty refined_p dictionary")
+
+        def revenue(item: Tuple[UnifiedActionId, float]) -> float:
+            action, proba = item
+            model = actions[action[0]] if isinstance(action, tuple) else actions[action]
+            quantity = np.array(action[1]) if isinstance(action, tuple) else None
+            return self._revenue(model, quantity, proba)
+
+        best_unified_action = max(refined_p.items(), key=revenue)[0]
         return best_unified_action
 
 

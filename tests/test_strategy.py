@@ -20,7 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
+from math import comb
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -31,7 +32,7 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
 from pybandits.base import ActionId, BaseModel, Probability, UnifiedActionId
-from pybandits.model import Beta, BetaCC, BetaMOCC
+from pybandits.model import Beta, BetaCC, BetaDP, BetaMOCC
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.strategy import (
     BaseStrategy,
@@ -39,11 +40,13 @@ from pybandits.strategy import (
     ClassicBandit,
     CostControlBandit,
     CostControlStrategy,
+    DynamicPricingBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
     MultiObjectiveStrategy,
     SingleObjectiveStrategy,
 )
+from pybandits.utils import OptimizationFailedError
 from tests.test_quantitative_model import DummyZooming
 
 ########################################################################################################################
@@ -52,6 +55,7 @@ from tests.test_quantitative_model import DummyZooming
 
 # Test constants
 DEFAULT_COST = 10.0
+DEFAULT_PRICE = 10.0
 DEFAULT_DIMENSION = 2
 DEFAULT_PROBABILITY = 0.5
 DEFAULT_EXPLOIT_P = 0.5
@@ -106,6 +110,58 @@ def create_mock_quantitative_model(
     else:
         raise ValueError(f"Invalid model type: {mocked_model_type}")
     model.cost = MagicMock(return_value=cost_value)
+    return model
+
+
+class DummyQuantitativeModelDP(QuantitativeModel):
+    price: Optional[Callable[[np.ndarray], float]] = None
+    models: Optional[List[BaseModel]] = None
+
+    def reset(self) -> None:
+        pass
+
+    def sample_proba(self, **kwargs) -> None:
+        pass
+
+    def update(self, **kwargs) -> None:
+        pass
+
+    def _quantitative_update(self, **kwargs) -> None:
+        pass
+
+    def _reset(self) -> None:
+        pass
+
+
+def create_mock_quantitative_dp_model(
+    dimension: int = DEFAULT_DIMENSION,
+    price_value: float = DEFAULT_PRICE,
+    mocked_model_type: Literal["MagicMock", "DummyQuantitativeModelDP"] = "MagicMock",
+) -> QuantitativeModel:
+    """Create a mock quantitative model with a price attribute for testing.
+
+    Parameters
+    ----------
+    dimension : int
+        Dimension of the quantitative model.
+    price_value : float
+        Price value to return.
+    mocked_model_type : Literal["MagicMock", "DummyQuantitativeModelDP"]
+        The type of mock to create.
+
+    Returns
+    -------
+    QuantitativeModel
+        Mock quantitative model with a price attribute.
+    """
+    if mocked_model_type == "MagicMock":
+        model = MagicMock(spec=QuantitativeModel)
+        model.dimension = dimension
+    elif mocked_model_type == "DummyQuantitativeModelDP":
+        model = DummyQuantitativeModelDP(dimension=dimension)
+    else:
+        raise ValueError(f"Invalid model type: {mocked_model_type}")
+    model.price = MagicMock(return_value=price_value)
     return model
 
 
@@ -257,7 +313,7 @@ class ConcreteSingleObjectiveStrategy(SingleObjectiveStrategy):
         p: Dict[ActionId, Union[float, Callable]],
         actions: Dict[ActionId, BaseModel],
         constraint_list: Optional[List[Callable]],
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """Return empty prerequisites."""
         return {"test_value": 42}
 
@@ -526,6 +582,174 @@ def test_classic_bandit_mixed_actions(
             assert mock_maximize.call_count == n_quantitative, (
                 f"Expected {n_quantitative} calls but got {mock_maximize.call_count}"
             )
+
+
+########################################################################################################################
+# DynamicPricingBandit
+
+
+def test_can_init_dynamic_pricing():
+    """Test that DynamicPricingBandit can be initialized."""
+    bandit = DynamicPricingBandit()
+    assert isinstance(bandit, SingleObjectiveStrategy)
+    assert isinstance(bandit, BaseStrategy)
+
+
+@given(
+    st.lists(st.text(min_size=1, max_size=10), min_size=1, max_size=3, unique=True),
+    st.lists(st.floats(min_value=0, max_value=100, allow_infinity=False, allow_nan=False), min_size=1, max_size=3),
+)
+@settings(max_examples=10)
+def test_select_action_dp(a_list_str, a_list_float):
+    """Test DynamicPricingBandit select_action method.
+
+    Parameters
+    ----------
+    a_list_str : list
+        List of action IDs.
+    a_list_float : list
+        List of prices.
+    """
+    assume(len(a_list_str) == len(a_list_float))
+    a_list_float_0_1 = [float(i) / (sum(a_list_float) + 1) for i in a_list_float]
+
+    p = dict(zip(a_list_str, a_list_float_0_1))
+    a = dict(zip(a_list_str, [BetaDP(price=price) for price in a_list_float]))
+
+    d = DynamicPricingBandit()
+    result = d.select_action(p=p, actions=a)
+    assert result in p.keys()
+
+
+def test_dynamic_pricing_logic():
+    """Test DynamicPricingBandit selects the action with the highest revenue (price * probability)."""
+    actions_price = {"a1": 10, "a2": 30, "a3": 20, "a4": 10, "a5": 20}
+    p = {"a1": 0.1, "a2": 0.8, "a3": 0.6, "a4": 0.2, "a5": 0.65}
+
+    actions = {action_id: BetaDP(price=price) for action_id, price in actions_price.items()}
+
+    d = DynamicPricingBandit()
+    expected_action = max(p, key=lambda action_id: actions_price[action_id] * p[action_id])
+    assert d.select_action(p=p, actions=actions) == expected_action
+
+
+def test_dynamic_pricing_logic_callable_price_and_proba():
+    """Test DynamicPricingBandit select_action when price and proba are callables.
+
+    Same revenue-maximization logic as test_dynamic_pricing_logic but with quantitative actions:
+    p maps to callable proba (probability given quantity vector) and actions use quantitative
+    models with callable price (price given quantity vector).
+    """
+    actions_price = {"a1": 10, "a2": 30, "a3": 20, "a4": 10, "a5": 20}
+    proba = {"a1": 0.1, "a2": 0.8, "a3": 0.6, "a4": 0.2, "a5": 0.65}
+    p = {action_id: (lambda x, v=prob: v) for action_id, prob in proba.items()}
+    actions = {
+        action_id: create_mock_quantitative_dp_model(
+            dimension=2, price_value=price, mocked_model_type="DummyQuantitativeModelDP"
+        )
+        for action_id, price in actions_price.items()
+    }
+
+    d = DynamicPricingBandit()
+    result = d.select_action(p=p, actions=actions)
+    expected_action = max(proba, key=lambda action_id: actions_price[action_id] * proba[action_id])
+    assert result[0] == expected_action
+    assert all(0 <= quantity <= 1 for quantity in result[1])
+
+
+def test_dynamic_pricing_get_prerequisites(prob_a1: float = 0.5, prob_a2: float = 0.8, prob_a3: float = 0.3):
+    """Test DynamicPricingBandit get_prerequisites returns an empty dictionary.
+
+    Parameters
+    ----------
+    prob_a1 : float
+        Probability for action a1.
+    prob_a2 : float
+        Probability for action a2.
+    prob_a3 : float
+        Probability for action a3.
+    """
+    d = DynamicPricingBandit()
+
+    p = {"a1": prob_a1, "a2": prob_a2, "a3": prob_a3}
+    actions = {aid: BetaDP(price=DEFAULT_PRICE) for aid in p.keys()}
+
+    assert d.get_prerequisites(p, actions, None) == {}
+
+
+@pytest.mark.parametrize("score", [0.0, 0.5, 1.0])
+def test_dynamic_pricing_verify_action(score: float):
+    """Test DynamicPricingBandit considers all standard actions.
+
+    Parameters
+    ----------
+    score : float
+        Score to verify.
+    """
+    d = DynamicPricingBandit()
+    assert d._verify_action(score) is True
+
+
+@patch("pybandits.strategy.maximize_by_quantity")
+def test_dynamic_pricing_quantitative_action(
+    mock_maximize: MagicMock,
+    return_value: np.ndarray = np.array([0.3, 0.7]),
+    dimension: int = 2,
+    price_multiplier: float = 10.0,
+    probability: float = 0.4,
+    quantity: np.ndarray = np.array([0.3, 0.7]),
+):
+    """Test DynamicPricingBandit with quantitative actions optimizes revenue.
+
+    Parameters
+    ----------
+    mock_maximize : MagicMock
+        Mock for maximize_by_quantity function.
+    return_value : np.ndarray
+        Return value for mock maximize function.
+    dimension : int
+        Dimension of the quantitative model.
+    price_multiplier : float
+        Multiplier for price calculation.
+    probability : float
+        Constant purchase probability returned by the score function.
+    quantity : np.ndarray
+        Quantity at which to evaluate the optimized objective.
+    """
+    mock_maximize.return_value = return_value
+
+    d = DynamicPricingBandit()
+
+    model = create_mock_quantitative_dp_model(dimension=dimension)
+    model.price = MagicMock(side_effect=lambda x: np.sum(x) * price_multiplier)
+
+    def score_func(x: np.ndarray) -> float:
+        return probability
+
+    result = d._verify_and_select_from_quantitative_action(score_func, model, None)
+
+    assert result is not None
+    assert np.allclose(result, return_value, atol=1e-6)
+    mock_maximize.assert_called_once()
+    # The maximized objective must be revenue = price(quantity) * probability(quantity)
+    objective = mock_maximize.call_args[0][0]
+    assert objective(quantity) == pytest.approx(model.price(quantity) * score_func(quantity))
+
+
+@pytest.mark.parametrize("dimension", [1, 2])
+def test_dynamic_pricing_optimization_failure(dimension: int):
+    """Test DynamicPricingBandit returns None when maximize_by_quantity raises OptimizationFailedError.
+
+    Parameters
+    ----------
+    dimension : int
+        Dimension of the quantitative model.
+    """
+
+    model = create_mock_quantitative_dp_model(dimension=dimension)
+    d = DynamicPricingBandit()
+    with patch("pybandits.strategy.maximize_by_quantity", side_effect=OptimizationFailedError("test")):
+        assert d._verify_and_select_from_quantitative_action(sum, model, None) is None
 
 
 ########################################################################################################################
@@ -1089,7 +1313,6 @@ def test_refine_p_all_actions_filtered_raises(p_values: List[float]) -> None:
 @given(dimension=st.integers(min_value=1, max_value=5))
 def test_classic_bandit_optimization_failure(dimension: int) -> None:
     """Test ClassicBandit returns None when maximize_by_quantity raises OptimizationFailedError."""
-    from pybandits.utils import OptimizationFailedError
 
     bandit = ClassicBandit()
     model = create_mock_quantitative_model(dimension=dimension)
@@ -1528,7 +1751,6 @@ def test_das_dennis_weights(n_objectives: int, n_divisions: int):
     assert weights.shape[1] == n_objectives
 
     # Check approximate number of weights (combinatorial formula)
-    from math import comb
 
     expected_count = comb(n_divisions + n_objectives - 1, n_objectives - 1)
     assert len(weights) == expected_count

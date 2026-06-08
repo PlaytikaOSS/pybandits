@@ -269,3 +269,16 @@ class BaseModelCC(PyBanditsBaseModel, ABC):
     """
 
     cost: Union[NonNegativeFloat, Callable[[Union[float, np.ndarray]], NonNegativeFloat]]
+
+
+class BaseModelDP(PyBanditsBaseModel, ABC):
+    """
+    Class to model action price.
+
+    Parameters
+    ----------
+    price: Union[NonNegativeFloat, Callable[[Union[float, np.ndarray]], NonNegativeFloat]]
+        Price associated to the action.
+    """
+
+    price: Union[NonNegativeFloat, Callable[[Union[float, np.ndarray]], NonNegativeFloat]]
