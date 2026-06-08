@@ -35,6 +35,7 @@ from pydantic import (
     PrivateAttr,
     validate_call,
 )
+from typing_extensions import Self
 
 from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
@@ -516,6 +517,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return get_origin(attribute_type) or attribute_type
 
     @classmethod
+    @validate_call
     def cold_start(
         cls,
         epsilon: Optional[Float01] = None,
@@ -523,7 +525,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         default_action_fraction: Optional[PositiveFloat01] = None,
         random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
-    ) -> "BaseMab":
+    ) -> Self:
         """
         Factory method to create a Multi-Armed Bandit with Thompson Sampling, with default
         parameters.

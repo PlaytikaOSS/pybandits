@@ -1602,7 +1602,7 @@ def test_bnn_svi_nan_loss_raises_error(
     context = np.random.uniform(size=(n_samples, n_features))
     rewards = _make_random_rewards(n_samples)
 
-    with patch("pybandits.model.np.mean", nan_mean):
+    with patch("pybandits.model.bnn.network.np.mean", nan_mean):
         with pytest.raises(ValueError, match="SVI training diverged.*NaN"):
             bnn.update(context=context, rewards=rewards)
 
