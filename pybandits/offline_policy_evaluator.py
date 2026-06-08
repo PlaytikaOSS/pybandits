@@ -54,6 +54,7 @@ except ImportError:
     _XGBOOST_AVAILABLE = False
     XGBClassifier = None  # type: ignore
 from pydantic import (
+    NonNegativeFloat,
     NonNegativeInt,
     PositiveInt,
     PrivateAttr,
@@ -509,8 +510,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         Column name for reward as available in logged_data
     contextual_features : Optional[List[str]]
         Column names for contextual features as available in logged_data
-    cost_feature : Optional[str]
-        Column name for cost as available in logged_data; used for bandit with cost control
+    action_ids_price : Optional[Dict[ActionId, NonNegativeFloat]]
+        Per-action price used to estimate revenue (price * P(purchase)). If not provided, the
+        price is read from each action model's ``price`` attribute (``BaseModelDP``). When neither
+        is available, revenue objectives are not produced.
+    action_ids_cost : Optional[Dict[ActionId, NonNegativeFloat]]
+        Per-action cost. If not provided, the cost is read from each action model's ``cost``
+        attribute (``ModelCC``). Collected symmetrically with price for downstream profit analysis.
     group_feature : Optional[str]
         Column name for group definition feature as available in logged_data; available from simulated data
         to define samples with similar contextual profile
@@ -544,7 +550,8 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
     action_feature: str
     reward_feature: Union[str, List[str]]
     contextual_features: Optional[List[str]] = None
-    cost_feature: Optional[str] = None
+    action_ids_price: Optional[Dict[ActionId, NonNegativeFloat]] = None
+    action_ids_cost: Optional[Dict[ActionId, NonNegativeFloat]] = None
     group_feature: Optional[str] = None
     true_reward_feature: Optional[Union[str, List[str]]] = None
     propensity_score_feature: Optional[str] = None
@@ -671,7 +678,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ):
             raise AttributeError("True reward feature missing from logged data.")
         for feature_name, feature_value in [
-            ("cost_feature", self.cost_feature),
             ("group_feature", self.group_feature),
             ("propensity_score_feature", self.propensity_score_feature),
         ]:
@@ -709,12 +715,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             if batch_idx == 0:
                 self._action_one_hot_encoder.fit(np.array(unique_actions).reshape((-1, 1)))
             reward = extracted_batch[self.reward_feature].values
-
-            # if cost control bandit
-            if self.cost_feature is not None:
-                cost = extracted_batch[self.cost_feature].values
-            else:
-                cost = None
 
             # if contextual information required
             if self.contextual_features is not None:
@@ -779,7 +779,6 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
                 "context": x_scale,  # the matrix of features i.e. context
                 "data": policy_information,  # data array with informative features
                 "ground_truth": ground_truth,  # true reward probability for each action and samples, list of list
-                "cost": cost,  # samples' action cost for bandit with cost control
             }
             if batch_idx == 0:
                 train_data = data_batch
@@ -1106,6 +1105,51 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         return estimated_policy
 
+    @staticmethod
+    def _resolve_action_values(
+        mab: BaseMab,
+        unique_actions: List[ActionId],
+        attr_name: str,
+        override: Optional[Dict[ActionId, NonNegativeFloat]],
+    ) -> Optional[np.ndarray]:
+        """
+        Resolve a per-action scalar value (e.g. ``price`` or ``cost``) aligned to ``unique_actions``.
+
+        For each action the value is taken from ``override`` when provided, otherwise from the
+        corresponding action model attribute (e.g. ``BaseModelDP.price``, ``ModelCC.cost``).
+
+        Parameters
+        ----------
+        mab : BaseMab
+            Multi-armed bandit whose action models may carry the attribute.
+        unique_actions : List[ActionId]
+            Actions in the column order of ``estimated_policy`` / ``expected_reward``.
+        attr_name : str
+            Name of the action-model attribute to read (``"price"`` or ``"cost"``).
+        override : Optional[Dict[ActionId, NonNegativeFloat]]
+            Explicit per-action values that take precedence over the action-model attribute.
+
+        Returns
+        -------
+        Optional[np.ndarray]
+            Array of shape (n_actions,) aligned to ``unique_actions``, or None when no value is
+            resolvable for any action.
+        """
+        values = [
+            override[action]
+            if override is not None and action in override
+            else getattr(mab.actions.get(action), attr_name, None)
+            for action in unique_actions
+        ]
+        if all(value is None for value in values):
+            return None
+        missing = [action for action, value in zip(unique_actions, values) if value is None]
+        if missing:
+            raise ValueError(f"{attr_name} could not be resolved for actions: {missing}")
+        if any(callable(value) for value in values):
+            raise ValueError(f"Callable {attr_name} (quantitative actions) is not supported for revenue OPE.")
+        return np.asarray(values, dtype=float)
+
     def _evaluate(
         self,
         mab: BaseMab,
@@ -1169,36 +1213,53 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         if self._check_argument_required_by_estimators("expected_importance_weight", self.ope_estimators):
             kwargs["expected_importance_weight"] = self._estimate_importance_weight(mab, train_data, test_data)
 
+        # Per-action price for revenue estimation (None when no price is available -> no revenue objective).
+        # Cost is resolved symmetrically and kept for downstream profit analysis (not used in the v1 metric).
+        price_by_action = self._resolve_action_values(mab, test_data["unique_actions"], "price", self.action_ids_price)
+        test_data["cost"] = self._resolve_action_values(mab, test_data["unique_actions"], "cost", self.action_ids_cost)
+        reward_required = self._check_argument_required_by_estimators("reward", self.ope_estimators)
+        expected_reward_required = self._check_argument_required_by_estimators("expected_reward", self.ope_estimators)
+
         # Instantiate class to conduct OPE by multiple estimators simultaneously
-        multi_objective_estimated_policy_value_df = pd.DataFrame()
         results = {"value": [], "lower": [], "upper": [], "std": [], "estimator": [], "objective": []}
         for reward_feature in self.reward_feature:
             if self.verbose:
                 logger.info(f"Offline Policy Evaluation for {reward_feature}.")
 
-            if self._check_argument_required_by_estimators("reward", self.ope_estimators):
-                kwargs["reward"] = test_data["reward"][:, self.reward_feature.index(reward_feature)]
-            if self._check_argument_required_by_estimators("expected_reward", self.ope_estimators):
-                kwargs["expected_reward"] = estimated_expected_reward[reward_feature]
+            raw_reward = test_data["reward"][:, self.reward_feature.index(reward_feature)]
+            expected_reward = estimated_expected_reward[reward_feature] if expected_reward_required else None
 
-            # Summarize policy values and their confidence intervals estimated by OPE estimators
-            for ope_estimator in self.ope_estimators:
-                if self.verbose:
-                    logger.info(f"Running OPE estimator '{ope_estimator.name}' for reward '{reward_feature}'.")
-                estimated_policy_value, low, high, std = ope_estimator.estimate_policy_value_with_confidence_interval(
-                    **kwargs,
+            # Base objective (e.g. conversion). Revenue = price * reward is added on top when prices are available:
+            # price enters per logged action on the observed reward and per candidate action on the expected reward.
+            objectives = [(reward_feature, raw_reward, expected_reward)]
+            if price_by_action is not None:
+                revenue_reward = (price_by_action[test_data["action"]] * raw_reward).astype(float)
+                revenue_expected_reward = (
+                    expected_reward * price_by_action[None, :] if expected_reward is not None else None
                 )
-                results["value"].append(estimated_policy_value)
-                results["lower"].append(low)
-                results["upper"].append(high)
-                results["std"].append(std)
-                results["estimator"].append(ope_estimator.name)
-                results["objective"].append(reward_feature)
+                objectives.append((f"{reward_feature}_revenue", revenue_reward, revenue_expected_reward))
 
-            multi_objective_estimated_policy_value_df = pd.concat(
-                [multi_objective_estimated_policy_value_df, pd.DataFrame.from_dict(results)],
-                axis=0,
-            )
+            for objective, objective_reward, objective_expected_reward in objectives:
+                if reward_required:
+                    kwargs["reward"] = objective_reward
+                if expected_reward_required:
+                    kwargs["expected_reward"] = objective_expected_reward
+
+                # Summarize policy values and their confidence intervals estimated by OPE estimators
+                for ope_estimator in self.ope_estimators:
+                    if self.verbose:
+                        logger.info(f"Running OPE estimator '{ope_estimator.name}' for objective '{objective}'.")
+                    estimated_policy_value, low, high, std = (
+                        ope_estimator.estimate_policy_value_with_confidence_interval(**kwargs)
+                    )
+                    results["value"].append(estimated_policy_value)
+                    results["lower"].append(low)
+                    results["upper"].append(high)
+                    results["std"].append(std)
+                    results["estimator"].append(ope_estimator.name)
+                    results["objective"].append(objective)
+
+        multi_objective_estimated_policy_value_df = pd.DataFrame.from_dict(results)
         kwargs.pop("estimated_policy", None)  # Release large (n_samples, n_actions) array after all estimators run
         if save_path:
             os.makedirs(save_path, exist_ok=True)

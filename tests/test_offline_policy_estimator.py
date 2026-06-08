@@ -60,10 +60,11 @@ def invalid_inputs(draw, n_samples: int = 10, n_actions: int = 2):
         action = draw(arrays(dtype=int, shape=(n_samples,), elements=st.integers(0, n_actions - 1)))
         assume(np.unique(action).size == n_actions)
         if bad_argument == "reward":
+            # reward may be int or float (e.g. revenue); only wrong ndim/length is invalid
             reward = draw(
                 st.one_of(
                     arrays(dtype=int, shape=(n_samples, 2), elements=st.integers(0, 1)),
-                    arrays(dtype=float, shape=(n_samples,), elements=st.floats(0, 1)),
+                    arrays(dtype=float, shape=(n_samples, 2), elements=st.floats(0, 1)),
                     arrays(
                         dtype=int,
                         shape=(n_samples - 1,),

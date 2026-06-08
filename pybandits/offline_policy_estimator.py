@@ -27,6 +27,7 @@ This module provides a complete set of estimators for OPE.
 """
 
 from abc import ABC, abstractmethod
+from numbers import Number
 from typing import Any, Callable, ClassVar, Dict, Optional, Tuple, Type
 
 import numpy as np
@@ -86,7 +87,10 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
             if array.shape[0] != n_samples:
                 raise ValueError(f"action and {name} must have the same length.")
             # Check dtype compatibility: use issubdtype for numpy dtypes
-            if dtype is float:
+            if dtype is Number:
+                if not (np.issubdtype(array.dtype, np.integer) or np.issubdtype(array.dtype, np.floating)):
+                    raise ValueError(f"{name} must be a numeric array")
+            elif dtype is float:
                 if not np.issubdtype(array.dtype, np.floating):
                     raise ValueError(f"{name} must be a {dtype} array")
             elif dtype is int:
@@ -122,7 +126,7 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
         n_samples = action.shape[0]
         n_actions = np.unique(action).shape[0]
 
-        for name, dtype in zip(["reward", "propensity_score", "expected_importance_weight"], [int, float, float]):
+        for name, dtype in zip(["reward", "propensity_score", "expected_importance_weight"], [Number, float, float]):
             cls._check_array(name, kwargs, 1, dtype, n_samples)
 
         for name in ["estimated_policy", "expected_reward"]:

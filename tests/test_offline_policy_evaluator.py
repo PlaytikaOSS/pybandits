@@ -237,6 +237,7 @@ def generate_random_bool() -> bool:
     context=st.booleans(),
     group_feature=st.sampled_from(["group", None]),
     cost_feature=st.sampled_from(["cost", None]),
+    price=st.booleans(),
     propensity_score_feature=st.just("propensity_score"),
     n_mc_experiments=st.just(2),
 )
@@ -254,6 +255,7 @@ def test_running_configuration(
     context: bool,
     group_feature: Optional[str],
     cost_feature: Optional[str],
+    price: bool,
     propensity_score_feature: Optional[str],
     n_mc_experiments: int,
     monkeymodule,
@@ -287,6 +289,10 @@ def test_running_configuration(
             action_id: logged_data["cost"][logged_data["action_id"] == action_id].iloc[0]
             for action_id in unique_actions
         }
+    # price is supplied via dict (mirrors action_ids_cost); enables the revenue objective
+    action_ids_price = (
+        {str(action_id): index + 1.0 for index, action_id in enumerate(unique_actions)} if price else None
+    )
     if context:
         if cost_feature:
             if type(reward_feature) is list:
@@ -334,14 +340,19 @@ def test_running_configuration(
         true_reward_feature=true_reward_feature,
         contextual_features=contextual_features,
         group_feature=group_feature,
-        cost_feature=cost_feature,
+        action_ids_cost=action_ids_cost if cost_feature else None,
+        action_ids_price=action_ids_price,
         propensity_score_feature=propensity_score_feature,
     )
     execution_func = evaluator.update_and_evaluate if update else evaluator.evaluate
     with TemporaryDirectory() as tmp_dir:
-        execution_func(
+        result = execution_func(
             mab=mab, logged_data=logged_data, visualize=visualize, n_mc_experiments=n_mc_experiments, save_path=tmp_dir
         )
+    if price:
+        objectives = set(result["objective"])
+        reward_features = reward_feature if isinstance(reward_feature, list) else [reward_feature]
+        assert all(f"{reward}_revenue" in objectives for reward in reward_features)
 
 
 @pytest.mark.usefixtures("logged_data")
@@ -363,7 +374,6 @@ def test_running_configuration(
     reward_feature=st.sampled_from(["reward_0", ["reward_0", "reward_1"]]),
     context=st.booleans(),
     group_feature=st.sampled_from(["group", None]),
-    cost_feature=st.sampled_from(["cost", None]),
     propensity_score_feature=st.just("propensity_score"),
     ope_estimators=st.just(None),
 )
@@ -379,7 +389,6 @@ def test_initialization_when_xgboost_not_available(
     reward_feature: Union[str, List[str]],
     context: bool,
     group_feature: Optional[str],
-    cost_feature: Optional[str],
     propensity_score_feature: Optional[str],
     ope_estimators: Optional[List[BaseOfflinePolicyEstimator]],
     monkeymodule,
@@ -431,7 +440,6 @@ def test_initialization_when_xgboost_not_available(
                     if context
                     else None,
                     group_feature=group_feature,
-                    cost_feature=cost_feature,
                     propensity_score_feature=propensity_score_feature,
                 )
         else:
@@ -452,7 +460,6 @@ def test_initialization_when_xgboost_not_available(
                 true_reward_feature=true_reward_feature,
                 contextual_features=contextual_features,
                 group_feature=group_feature,
-                cost_feature=cost_feature,
                 propensity_score_feature=propensity_score_feature,
             )
             assert evaluator is not None
@@ -594,22 +601,6 @@ class TestValidateLoggedData:
         )
 
     @pytest.fixture
-    def evaluator_with_cost(self, feature_names: dict) -> OfflinePolicyEvaluator:
-        """Evaluator that additionally expects a cost_col column."""
-        return OfflinePolicyEvaluator(
-            split_prop=0.5,
-            propensity_score_model_type="empirical",
-            expected_reward_model_type="logreg",
-            importance_weights_model_type="logreg",
-            ope_estimators=None,
-            n_trials=2,
-            batch_feature=feature_names["batch"],
-            action_feature=feature_names["action"],
-            reward_feature=feature_names["reward"],
-            cost_feature="cost_col",
-        )
-
-    @pytest.fixture
     def batch_wrong_type_df(self, feature_names: dict) -> pd.DataFrame:
         """DataFrame whose batch column contains strings instead of ints."""
         return pd.DataFrame(
@@ -658,7 +649,6 @@ class TestValidateLoggedData:
             ("base_evaluator", "missing_action_df", AttributeError),
             ("base_evaluator", "missing_reward_df", AttributeError),
             ("evaluator_with_true_reward", "valid_base_df", AttributeError),
-            ("evaluator_with_cost", "valid_base_df", AttributeError),
         ],
     )
     def test_validate_raises(
@@ -768,6 +758,24 @@ class TestOfflinePolicyEvaluatorPipeline:
                 save_path=tmp_dir,
             )
         assert isinstance(result, pd.DataFrame)
+
+    @given(n_mc=st.integers(min_value=1, max_value=3))
+    @settings(max_examples=3, deadline=None)
+    def test_revenue_objective_unit_price_matches_conversion(
+        self, n_mc: int, logged_data: pd.DataFrame, base_evaluator: OfflinePolicyEvaluator, first_reward_feature: str
+    ) -> None:
+        """With unit prices, every estimator's *_revenue objective value equals its conversion value."""
+        unique_actions = set(logged_data["action_id"].unique())
+        mab = SmabBernoulli.cold_start(action_ids=unique_actions)
+        evaluator = base_evaluator.model_copy(update={"action_ids_price": {a: 1.0 for a in unique_actions}})
+        with TemporaryDirectory() as tmp_dir:
+            result = evaluator.update_and_evaluate(
+                mab=mab, logged_data=logged_data, visualize=False, n_mc_experiments=n_mc, save_path=tmp_dir
+            )
+        revenue = result[result["objective"] == f"{first_reward_feature}_revenue"].set_index("estimator")["value"]
+        conversion = result[result["objective"] == first_reward_feature].set_index("estimator")["value"]
+        assert not revenue.empty
+        pd.testing.assert_series_equal(revenue.sort_index(), conversion.sort_index(), check_names=False)
 
 
 class TestMabPredictSerializedUtils:
