@@ -68,10 +68,12 @@ from pybandits.base_model import BaseModel
 from pybandits.model import (
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
     Beta,
     BetaCC,
+    BetaDP,
     BetaMO,
     BetaMOCC,
     Model,
@@ -80,9 +82,11 @@ from pybandits.model import (
 from pybandits.quantitative_model import (
     QuantitativeBayesianNeuralNetwork,
     QuantitativeBayesianNeuralNetworkCC,
+    QuantitativeBayesianNeuralNetworkDP,
     QuantitativeModel,
     Zooming,
     ZoomingCC,
+    ZoomingDP,
 )
 from pybandits.utils import classproperty, extract_argument_names_from_function
 
@@ -502,10 +506,12 @@ class CmabPerActionMetaModel(PerActionMetaModel[ActionModelType], Generic[Action
 # that attribute accessible on this module.
 PerActionMetaModelSmabSO = PerActionMetaModel[Union[Beta, Zooming]]
 PerActionMetaModelSmabCC = PerActionMetaModel[Union[BetaCC, ZoomingCC]]
+PerActionMetaModelSmabDP = PerActionMetaModel[Union[BetaDP, ZoomingDP]]
 PerActionMetaModelSmabMO = PerActionMetaModel[BetaMO]
 PerActionMetaModelSmabMOCC = PerActionMetaModel[BetaMOCC]
 
 PerActionMetaModelCmabSO = CmabPerActionMetaModel[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]]
 PerActionMetaModelCmabCC = CmabPerActionMetaModel[Union[BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC]]
+PerActionMetaModelCmabDP = CmabPerActionMetaModel[Union[BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP]]
 PerActionMetaModelCmabMO = CmabPerActionMetaModel[BayesianNeuralNetworkMO]
 PerActionMetaModelCmabMOCC = CmabPerActionMetaModel[BayesianNeuralNetworkMOCC]

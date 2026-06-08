@@ -52,7 +52,7 @@ from pybandits.base import (
     QuantitativeProbabilityWeight,
     QuantitativeWeight,
 )
-from pybandits.base_model import BaseModelCC, BaseModelSO
+from pybandits.base_model import BaseModelCC, BaseModelDP, BaseModelSO
 from pybandits.model import BayesianNeuralNetwork, Beta, Model
 
 
@@ -128,17 +128,17 @@ class QuantitativeModel(BaseModelSO, ABC):
         """
 
 
-class QuantitativeModelCC(BaseModelCC, ABC):
+class CallableFieldSerde(PyBanditsBaseModel, ABC):
     """
-    Class to model quantitative action cost.
+    Mixin providing (de)serialization for a model field that holds a named callable.
 
-    Parameters
-    ----------
-    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
-        Cost associated to the Beta distribution.
+    Pydantic cannot serialize a function directly, so this mixin serializes a named
+    (non-lambda) function to its source code and reconstructs it on deserialization.
+    Concrete models declare their own field-specific ``field_serializer`` /
+    ``field_validator`` hooks that delegate to :meth:`_serialize_callable` /
+    :meth:`_deserialize_callable` (see :class:`QuantitativeModelCC` for ``cost`` and
+    :class:`QuantitativeModelDP` for ``price``).
     """
-
-    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
 
     @staticmethod
     def _serialize_function(func: Callable) -> str:
@@ -186,18 +186,18 @@ class QuantitativeModelCC(BaseModelCC, ABC):
         return eval(func_name)
 
     @staticmethod
-    def serialize_cost(cost_value) -> str:
-        """Serialize cost value to string representation."""
-        if isinstance(cost_value, functools.partial):
-            return f"functools.partial({QuantitativeModelCC._serialize_function(cost_value.func)}, {cost_value.args}, {cost_value.keywords})"
-        elif callable(cost_value):
-            return QuantitativeModelCC._serialize_function(cost_value)
+    def _serialize_callable(value) -> str:
+        """Serialize a callable value to its string representation."""
+        if isinstance(value, functools.partial):
+            return f"functools.partial({CallableFieldSerde._serialize_function(value.func)}, {value.args}, {value.keywords})"
+        elif callable(value):
+            return CallableFieldSerde._serialize_function(value)
         else:
-            raise ValueError(f"Unrecognized cost for serialization: {cost_value}")
+            raise ValueError(f"Unrecognized callable for serialization: {value}")
 
     @classmethod
-    def deserialize_cost(cls, value):
-        """Deserialize cost from string representation if needed."""
+    def _deserialize_callable(cls, value):
+        """Deserialize a callable from its string representation if needed."""
         if isinstance(value, str):
             if value.startswith("functools.partial"):
                 inner_func_split = "(".join(value.split("(")[1:]).split(",")
@@ -211,9 +211,22 @@ class QuantitativeModelCC(BaseModelCC, ABC):
                 return cls._deserialize_function(value)
         return value
 
+
+class QuantitativeModelCC(CallableFieldSerde, BaseModelCC, ABC):
+    """
+    Class to model quantitative action cost.
+
+    Parameters
+    ----------
+    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+        Cost associated to the Beta distribution.
+    """
+
+    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+
     @field_serializer("cost")
     def encode_cost(self, value):
-        return self.serialize_cost(value).encode("ascii")
+        return self._serialize_callable(value).encode("ascii")
 
     @field_validator("cost", mode="before")
     @classmethod
@@ -221,7 +234,32 @@ class QuantitativeModelCC(BaseModelCC, ABC):
         """
         Deserialize cost from string representation if needed.
         """
-        return cls.deserialize_cost(value)
+        return cls._deserialize_callable(value)
+
+
+class QuantitativeModelDP(CallableFieldSerde, BaseModelDP, ABC):
+    """
+    Class to model quantitative action price.
+
+    Parameters
+    ----------
+    price: Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+        Price associated to the Beta distribution.
+    """
+
+    price: Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+
+    @field_serializer("price")
+    def encode_price(self, value):
+        return self._serialize_callable(value).encode("ascii")
+
+    @field_validator("price", mode="before")
+    @classmethod
+    def validate_price(cls, value):
+        """
+        Deserialize price from string representation if needed.
+        """
+        return cls._deserialize_callable(value)
 
 
 class Segment(PyBanditsBaseModel):
@@ -842,6 +880,32 @@ class ZoomingCC(BaseZooming, QuantitativeModelCC):
     """
 
 
+class ZoomingDP(BaseZooming, QuantitativeModelDP):
+    """
+    Zooming model for sMAB with dynamic pricing.
+
+    Parameters
+    ----------
+    dimension: PositiveInt
+        Number of parameters of the model.
+    comparison_threshold: Float01
+        Comparison threshold.
+    segment_update_factor: Float01
+        Segment update factor. If the number of samples in a segment is more than the average number of samples in all
+        segments by this factor, the segment is considered interesting. If the number of samples in a segment is less
+        than the average number of samples in all segments by this factor, the segment is considered a nuisance.
+        Interest segments can be split, while nuisance segments can be merged.
+    n_comparison_points: PositiveInt
+        Number of comparison points.
+    n_max_segments: PositiveInt
+        Maximum number of segments.
+    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+        Mapping of segments to Beta models.
+    price: Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+        Price associated to the Beta distribution.
+    """
+
+
 class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     """
     A Bayesian Neural Network based QuantitativeModel.
@@ -1151,5 +1215,38 @@ class QuantitativeBayesianNeuralNetworkCC(BaseQuantitativeBayesianNeuralNetwork,
     ...     dimension=1,
     ...     hidden_dim_list=[4],
     ...     cost=lambda x: x * 0.1  # Linear cost function
+    ... )
+    """
+
+
+class QuantitativeBayesianNeuralNetworkDP(BaseQuantitativeBayesianNeuralNetwork, QuantitativeModelDP):
+    """
+    A Bayesian Neural Network based QuantitativeModel with dynamic pricing.
+
+    This class extends QuantitativeBayesianNeuralNetwork with dynamic pricing functionality,
+    allowing the model to incorporate price considerations when making decisions.
+
+    Parameters
+    ----------
+    dimension : PositiveInt
+        Number of quantity dimensions (input features for the BNN).
+    bnn : BayesianNeuralNetwork
+        The underlying Bayesian Neural Network model.
+    hidden_dim_list : Optional[List[PositiveInt]]
+        List of hidden layer dimensions for the BNN. None means no hidden layers.
+    update_method : str
+        The method used for posterior inference, either "MCMC" or "VI".
+    update_kwargs : Optional[dict]
+        Additional keyword arguments for the update method.
+    price : Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+        Price function that takes a quantity value or array and returns the associated price.
+
+    Examples
+    --------
+    >>> # Create a cold start model with dynamic pricing
+    >>> model = QuantitativeBayesianNeuralNetworkDP.cold_start(
+    ...     dimension=1,
+    ...     hidden_dim_list=[4],
+    ...     price=lambda x: x * 10.0  # Linear price function
     ... )
     """

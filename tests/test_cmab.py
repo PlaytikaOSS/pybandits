@@ -45,6 +45,7 @@ from pybandits.cmab import (
     CmabBernoulli,
     CmabBernoulliBAI,
     CmabBernoulliCC,
+    CmabBernoulliDP,
     CmabBernoulliMO,
     CmabBernoulliMOCC,
 )
@@ -53,6 +54,7 @@ from pybandits.model import (
     BaseBayesianNeuralNetworkMO,
     BayesianNeuralNetwork,
     BayesianNeuralNetworkCC,
+    BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
     StudentTArray,
@@ -62,12 +64,14 @@ from pybandits.quantitative_model import (
     BaseQuantitativeBayesianNeuralNetwork,
     QuantitativeBayesianNeuralNetwork,
     QuantitativeBayesianNeuralNetworkCC,
+    QuantitativeBayesianNeuralNetworkDP,
     QuantitativeModel,
 )
 from pybandits.strategy import (
     BestActionIdentificationBandit,
     ClassicBandit,
     CostControlBandit,
+    DynamicPricingBandit,
     MultiObjectiveBandit,
     MultiObjectiveCostControlBandit,
 )
@@ -91,7 +95,7 @@ def diff_strategy(draw):
 
 
 @st.composite
-def cost_strategy(draw, n_actions):
+def value_strategy(draw, n_actions):
     return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
@@ -142,8 +146,8 @@ def mock_student_t_array(
     return label
 
 
-def _quantitative_cost(x, cost):
-    return min(sum(x) ** cost, 1000)
+def _quantitative_callable(x, value):
+    return min(sum(x) ** value, 1000)
 
 
 @dataclass
@@ -162,7 +166,7 @@ class ModelTestConfig:
     def _create_actions(
         self,
         action_ids: List[str],
-        costs: Optional[st.SearchStrategy],
+        values: Optional[st.SearchStrategy],
         n_features: PositiveInt,
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
@@ -177,15 +181,25 @@ class ModelTestConfig:
             for model in model_types
         ):
             # Generate random costs
-            costs = costs.draw(cost_strategy(n_actions=len(action_ids)))
+            drawn_values = values.draw(value_strategy(n_actions=len(action_ids)))
             costs = [
-                cost
+                val
                 if model_type in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC]
-                else partial(_quantitative_cost, cost=cost)
-                for cost, model_type in zip(costs, model_types)
+                else partial(_quantitative_callable, value=val)
+                for val, model_type in zip(drawn_values, model_types)
             ]
+            value_field = "cost"
+        elif all(model in [BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP] for model in model_types):
+            # Generate random prices
+            drawn_values = values.draw(value_strategy(n_actions=len(action_ids)))
+            costs = [
+                val if model_type == BayesianNeuralNetworkDP else partial(_quantitative_callable, value=val)
+                for val, model_type in zip(drawn_values, model_types)
+            ]
+            value_field = "price"
         else:
             costs = None
+            value_field = None
 
         model_cold_start_kwargs = dict(update_method=update_method)
         base_model_cold_start_kwargs = dict(hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs)
@@ -195,20 +209,20 @@ class ModelTestConfig:
             # Single-objective models
             if costs is not None:
                 for action_id, model_type, cost in zip(action_ids, model_types, costs):
-                    if issubclass(model_type, BayesianNeuralNetworkCC):
+                    if issubclass(model_type, (BayesianNeuralNetworkCC, BayesianNeuralNetworkDP)):
                         result[action_id] = model_type.cold_start(
                             n_features=n_features,
                             hidden_dim_list=hidden_dim_list,
-                            cost=cost,
+                            **{value_field: cost},
                             **model_cold_start_kwargs,
                         )
                     else:
-                        # QuantitativeBayesianNeuralNetworkCC
+                        # QuantitativeBayesianNeuralNetworkCC / QuantitativeBayesianNeuralNetworkDP
                         result[action_id] = model_type.cold_start(
                             dimension=1,
                             n_features=n_features,
                             base_model_cold_start_kwargs=base_model_cold_start_kwargs,
-                            cost=cost,
+                            **{value_field: cost},
                         )
             else:
                 for action_id, model_type in zip(action_ids, model_types):
@@ -251,7 +265,7 @@ class ModelTestConfig:
         action_ids: List[str],
         epsilon: Optional[Float01],
         delta: Optional[PositiveProbability],
-        costs: st.SearchStrategy,
+        values: st.SearchStrategy,
         n_objectives: st.SearchStrategy[PositiveInt],
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
@@ -265,7 +279,7 @@ class ModelTestConfig:
             else None
         )
         actions, base_model_cold_start_kwargs = self._create_actions(
-            action_ids, costs, n_features, hidden_dim_list, update_method, n_objectives
+            action_ids, values, n_features, hidden_dim_list, update_method, n_objectives
         )
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
@@ -313,6 +327,11 @@ TEST_CONFIGS = {
         CostControlBandit,
         [BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC],
     ),
+    "cmab_dp": ModelTestConfig(
+        CmabBernoulliDP,
+        DynamicPricingBandit,
+        [BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP],
+    ),
     "cmab_mo": ModelTestConfig(
         CmabBernoulliMO,
         MultiObjectiveBandit,
@@ -339,7 +358,7 @@ TEST_CONFIGS = {
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
@@ -352,7 +371,7 @@ def test_cold_start(
     action_ids: List[str],
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     n_features,
     hidden_dim_list,
@@ -365,7 +384,7 @@ def test_cold_start(
         action_ids,
         epsilon,
         delta,
-        costs,
+        values,
         n_objectives,
         exploit_p,
         subsidy_factor,
@@ -399,6 +418,17 @@ def test_cold_start(
             for action, model in actions.items()
             if isinstance(model, QuantitativeBayesianNeuralNetworkCC)
         }
+    if all(
+        isinstance(model, (BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP)) for model in actions.values()
+    ):
+        cold_start_kwargs["action_ids_price"] = {
+            action: model.price for action, model in actions.items() if isinstance(model, BayesianNeuralNetworkDP)
+        }
+        cold_start_kwargs["quantitative_action_ids_price"] = {
+            action: model.price
+            for action, model in actions.items()
+            if isinstance(model, QuantitativeBayesianNeuralNetworkDP)
+        }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
     assert config.cmab_class.cold_start(**cold_start_kwargs) == cmab
@@ -410,7 +440,7 @@ def test_cold_start(
     action_ids=st.lists(st.text(min_size=1), min_size=2, max_size=5, unique=True),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
@@ -421,7 +451,7 @@ def test_bad_initialization(
     action_ids: List[str],
     n_features: int,
     hidden_dim_list: List[PositiveInt],
-    costs,
+    values,
     n_objectives,
     exploit_p,
     subsidy_factor,
@@ -429,7 +459,12 @@ def test_bad_initialization(
 ):
     """Test various invalid initialization scenarios for CMAB models"""
     real_n_objectives = n_objectives.draw(st.integers(min_value=1, max_value=10))
-    kwargs = {"cost": 1} if config.cmab_class in (CmabBernoulliCC, CmabBernoulliMOCC) else {}
+    if config.cmab_class in (CmabBernoulliCC, CmabBernoulliMOCC):
+        kwargs = {"cost": 1}
+    elif config.cmab_class == CmabBernoulliDP:
+        kwargs = {"price": 1}
+    else:
+        kwargs = {}
     kwargs["n_features"] = n_features
     kwargs["hidden_dim_list"] = hidden_dim_list
     if config.cmab_class in [CmabBernoulliMO, CmabBernoulliMOCC]:
@@ -502,7 +537,7 @@ def test_bad_initialization(
                 action_ids,
                 None,
                 None,
-                costs,
+                values,
                 n_objectives,
                 exploit_p.draw(st.sampled_from([-0.1, 1.1])),
                 subsidy_factor,
@@ -516,7 +551,7 @@ def test_bad_initialization(
                 action_ids,
                 None,
                 None,
-                costs,
+                values,
                 n_objectives,
                 exploit_p,
                 subsidy_factor.draw(st.sampled_from([-0.1, 1.1])),
@@ -550,7 +585,7 @@ def test_bad_initialization(
     n_samples=st.integers(min_value=1, max_value=5),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
@@ -565,7 +600,7 @@ def test_update(
     n_samples: int,
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     n_features,
     hidden_dim_list,
@@ -579,7 +614,7 @@ def test_update(
         action_ids,
         epsilon,
         delta,
-        costs,
+        values,
         n_objectives,
         exploit_p,
         subsidy_factor,
@@ -644,7 +679,7 @@ def test_update(
     n_samples=st.integers(min_value=1, max_value=100),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
@@ -659,7 +694,7 @@ def test_predict(
     n_samples: int,
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     n_features,
     hidden_dim_list,
@@ -692,7 +727,7 @@ def test_predict(
         action_ids,
         epsilon,
         delta,
-        costs,
+        values,
         n_objectives,
         exploit_p,
         subsidy_factor,
@@ -754,7 +789,7 @@ def test_predict(
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
@@ -768,7 +803,7 @@ def test_serialization(
     action_ids: List[str],
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     n_features,
     hidden_dim_list,
@@ -783,7 +818,7 @@ def test_serialization(
         action_ids,
         epsilon,
         delta,
-        costs,
+        values,
         n_objectives,
         exploit_p,
         subsidy_factor,
@@ -950,7 +985,7 @@ def test_cmab_update_kwargs_migration(
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
-    costs=st.data(),
+    values=st.data(),
     n_objectives=st.data(),
     n_features=st.integers(min_value=1, max_value=5),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
@@ -964,7 +999,7 @@ def test_pickling(
     action_ids: List[str],
     epsilon: Optional[float],
     delta,
-    costs,
+    values,
     n_objectives,
     n_features,
     hidden_dim_list,
@@ -979,7 +1014,7 @@ def test_pickling(
         action_ids,
         epsilon,
         delta,
-        costs,
+        values,
         n_objectives,
         exploit_p,
         subsidy_factor,
