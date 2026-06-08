@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import inspect
+import numbers
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import ExitStack, nullcontext
@@ -1218,8 +1219,7 @@ def _wrap_guide_with_kl_scale(guide: Callable) -> Callable:
     scale uniformly. The wrapper extracts the factor from the SVI call signature (the third
     positional argument, or the ``kl_annealing_factor`` keyword), defaulting to ``1.0``.
 
-    Kept as a module-level helper (not an inline closure) so tests can bind to the exact
-    production wrapper instead of a hand-copied mirror that can silently drift.
+    Exposed at module level so tests can exercise the exact production wrapper.
 
     Parameters
     ----------
@@ -1725,7 +1725,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # Validate optional KL annealing fraction. Domain is (0, 1];
             kl_annealing_fraction = self.update_kwargs.get("kl_annealing_fraction")
             if kl_annealing_fraction is not None:
-                if isinstance(kl_annealing_fraction, bool) or not isinstance(kl_annealing_fraction, (int, float)):
+                # numbers.Real accepts NumPy real scalars (np.float32, np.int64, ...), which an
+                # untyped update_kwargs dict passes through uncoerced. bool is excluded explicitly
+                # because Python bool is itself a numbers.Real (np.bool_ is not, so it falls through).
+                if isinstance(kl_annealing_fraction, bool) or not isinstance(kl_annealing_fraction, numbers.Real):
                     raise ValueError(
                         f"Invalid kl_annealing_fraction: {kl_annealing_fraction!r}. Must be a float in (0, 1] or None."
                     )
@@ -2376,11 +2379,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # fullrank_advi needs a scalar init_scale; use the avg sigma via the unknown-site fallback.
             guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale_fn(""))
 
-        # Wrap the guide so the per-step kl_annealing_factor scales its sample sites
-        # symmetrically with the model's prior sites. The wrapper is registered with SVI;
-        # the underlying `guide` is preserved for downstream `.median(...)` extraction.
-        # See `_wrap_guide_with_kl_scale` for the full rationale; it lives at module level
-        # so the test suite can trace the exact production wrapper instead of a copy.
+        # Scale-wrap the guide for symmetric KL annealing; `guide` stays unwrapped for
+        # downstream `.median(...)` extraction. See `_wrap_guide_with_kl_scale`.
         scaled_guide = _wrap_guide_with_kl_scale(guide)
 
         num_particles = self._update_kwargs["num_particles"]

@@ -1288,6 +1288,11 @@ class TestKLAnnealing:
         total_steps = sum(epoch_steps_list)
         bnn = self._build_bnn(kl_annealing_fraction=None, num_steps=total_steps)
         epoch_chunks = bnn._build_kl_annealing_factors(epoch_steps_list)
+        # Assert the per-epoch split contract directly: one chunk per epoch, each chunk
+        # holding exactly that epoch's step count. The flattened check below cannot catch a
+        # regression that splits at the wrong boundaries (lax.scan consumes one chunk per epoch).
+        assert len(epoch_chunks) == len(epoch_steps_list)
+        assert [len(chunk) for chunk in epoch_chunks] == epoch_steps_list
         factor_array = np.concatenate([np.asarray(chunk) for chunk in epoch_chunks])
         assert factor_array.shape == (total_steps,)
         np.testing.assert_allclose(factor_array, np.ones(total_steps), rtol=0, atol=0)
@@ -1308,6 +1313,9 @@ class TestKLAnnealing:
         total_steps = sum(epoch_steps_list)
         bnn = self._build_bnn(kl_annealing_fraction=kl_annealing_fraction, num_steps=total_steps)
         epoch_chunks = bnn._build_kl_annealing_factors(epoch_steps_list)
+        # Assert the per-epoch split contract directly (see the inactive-schedule test)
+        assert len(epoch_chunks) == len(epoch_steps_list)
+        assert [len(chunk) for chunk in epoch_chunks] == epoch_steps_list
         actual = np.concatenate([np.asarray(chunk) for chunk in epoch_chunks])
 
         warmup_steps = max(1, int(np.ceil(kl_annealing_fraction * total_steps)))
@@ -1373,10 +1381,9 @@ class TestKLAnnealing:
         sites symmetrically with the model's prior sites. Without it the per-site KL contribution
         (log p - log q) would not scale uniformly.
 
-        This traces the **production** wrapper (`_wrap_guide_with_kl_scale`) directly, so the
-        test cannot drift from `_run_svi_training_loop`'s behavior. The asserted `scale == factor`
-        identity holds for any factor in (0, 1], so the factor and the model shape are drawn from
-        Hypothesis strategies rather than a fixed grid.
+        Traces the production wrapper (`_wrap_guide_with_kl_scale`) directly. The asserted
+        `scale == factor` identity holds for any factor in (0, 1], so the factor and model
+        shape are drawn from Hypothesis strategies.
         """
         # The BNN's kl_annealing_fraction is irrelevant here: this test does not run SVI and
         # never consults the schedule. The factor under test is fed directly to get_trace(...)
@@ -1405,24 +1412,46 @@ class TestKLAnnealing:
                 f"guide site {name!r} expected scale={kl_annealing_factor}, got {site['scale']!r}"
             )
 
-    @pytest.mark.parametrize("invalid_value", [0.0, -0.1, 1.5, "0.5", True])
-    def test_invalid_values_rejected_at_construction(self, invalid_value) -> None:
+    # invalid_value is the axis under test; n_features/num_steps are scaffolding, pinned via st.just.
+    # np.bool_(True) is included because np.bool_ is not a numbers.Real and must be rejected by the
+    # type guard (Python bool is a numbers.Real, hence the separate explicit bool exclusion).
+    @pytest.mark.parametrize("invalid_value", [0.0, -0.1, 1.5, "0.5", True, np.bool_(True)])
+    @given(n_features=st.just(2), num_steps=st.just(5))
+    def test_invalid_values_rejected_at_construction(self, invalid_value, n_features: int, num_steps: int) -> None:
         """`kl_annealing_fraction` must be a real number in the half-open interval (0, 1]."""
         with pytest.raises(ValueError, match="kl_annealing_fraction"):
             BayesianNeuralNetwork.cold_start(
-                n_features=2,
+                n_features=n_features,
                 update_method="VI",
-                update_kwargs={"num_steps": 5, "kl_annealing_fraction": invalid_value},
+                update_kwargs={"num_steps": num_steps, "kl_annealing_fraction": invalid_value},
             )
 
-    def test_mcmc_rejects_kl_annealing_fraction_as_vi_only_kwarg(self) -> None:
+    @given(
+        n_features=st.just(2),
+        valid_numpy_fraction=st.sampled_from([np.float64(0.5), np.float32(0.5), np.int64(1), np.int32(1)]),
+    )
+    def test_valid_numpy_scalar_fractions_accepted_at_construction(self, n_features: int, valid_numpy_fraction) -> None:
+        """A NumPy real scalar in (0, 1] is a valid `kl_annealing_fraction` and must construct."""
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            update_method="VI",
+            update_kwargs={"num_steps": 5, "kl_annealing_fraction": valid_numpy_fraction},
+        )
+        assert bnn is not None
+
+    @given(n_features=st.just(2), kl_annealing_fraction=st.just(0.5))
+    def test_mcmc_rejects_kl_annealing_fraction_as_vi_only_kwarg(
+        self, n_features: int, kl_annealing_fraction: float
+    ) -> None:
         """`kl_annealing_fraction` is a VI-only kwarg; passing it under MCMC must error
-        out via the existing VI-kwargs-on-MCMC guard in `_arrange_update_kwargs`."""
+        out via the existing VI-kwargs-on-MCMC guard in `_arrange_update_kwargs`. The guard
+        fires on the kwarg's presence, not its value, so the inputs are pinned via st.just.
+        """
         with pytest.raises(ValueError, match="kl_annealing_fraction"):
             BayesianNeuralNetwork.cold_start(
-                n_features=2,
+                n_features=n_features,
                 update_method="MCMC",
-                update_kwargs={"kl_annealing_fraction": 0.5},
+                update_kwargs={"kl_annealing_fraction": kl_annealing_fraction},
             )
 
 
