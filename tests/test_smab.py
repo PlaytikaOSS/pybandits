@@ -487,7 +487,7 @@ def test_predict(
         """Mock maximize_by_quantity to return a quick result."""
         return np.random.random(dimension)
 
-    monkeymodule.setattr(pybandits.strategy, "maximize_by_quantity", mock_maximize_by_quantity)
+    monkeymodule.setattr(pybandits.strategy.single_objective, "maximize_by_quantity", mock_maximize_by_quantity)
 
     if config.smab_class in (SmabBernoulliMO, SmabBernoulliMOCC):
 

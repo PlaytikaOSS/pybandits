@@ -573,7 +573,7 @@ def test_classic_bandit_mixed_actions(
             actions[action_id] = BetaCC(cost=DEFAULT_COST)
 
     # Patch where it's used (strategy module) not where it's defined (utils module)
-    with patch("pybandits.strategy.maximize_by_quantity") as mock_maximize:
+    with patch("pybandits.strategy.single_objective.maximize_by_quantity") as mock_maximize:
         mock_maximize.return_value = return_value
         result = bandit.select_action(p, actions)
 
@@ -690,7 +690,7 @@ def test_dynamic_pricing_verify_action(score: float):
     assert d._verify_action(score) is True
 
 
-@patch("pybandits.strategy.maximize_by_quantity")
+@patch("pybandits.strategy.single_objective.maximize_by_quantity")
 def test_dynamic_pricing_quantitative_action(
     mock_maximize: MagicMock,
     return_value: np.ndarray = np.array([0.3, 0.7]),
@@ -748,7 +748,7 @@ def test_dynamic_pricing_optimization_failure(dimension: int):
 
     model = create_mock_quantitative_dp_model(dimension=dimension)
     d = DynamicPricingBandit()
-    with patch("pybandits.strategy.maximize_by_quantity", side_effect=OptimizationFailedError("test")):
+    with patch("pybandits.strategy.single_objective.maximize_by_quantity", side_effect=OptimizationFailedError("test")):
         assert d._verify_and_select_from_quantitative_action(sum, model, None) is None
 
 
@@ -861,7 +861,7 @@ def test_bai_selection_logic(
         Mocked random value for selection control.
     """
     # Mock random to control selection
-    mocker.patch("pybandits.strategy.random", return_value=random_value)
+    mocker.patch("pybandits.strategy.single_objective.random", return_value=random_value)
 
     p = {"a1": prob_a1, "a2": prob_a2, "a3": prob_a3}
     actions = {action_id: BetaCC(cost=DEFAULT_COST) for action_id in p.keys()}
@@ -925,7 +925,7 @@ def test_bai_probabilistic_selection(
     b = BestActionIdentificationBandit(exploit_p=exploit_p)
 
     # Test that selection respects probability
-    with patch("pybandits.strategy.random") as mock_random:
+    with patch("pybandits.strategy.single_objective.random") as mock_random:
         # When random > exploit_p, should select second best
         mock_random.return_value = exploit_p + 0.01
         assert b.select_action(p=p, actions=actions) == expected_result1
@@ -1316,7 +1316,7 @@ def test_classic_bandit_optimization_failure(dimension: int) -> None:
 
     bandit = ClassicBandit()
     model = create_mock_quantitative_model(dimension=dimension)
-    with patch("pybandits.strategy.maximize_by_quantity", side_effect=OptimizationFailedError("test")):
+    with patch("pybandits.strategy.single_objective.maximize_by_quantity", side_effect=OptimizationFailedError("test")):
         result = bandit._verify_and_select_from_quantitative_action(sum, model, None)
     assert result is None
 
@@ -1338,7 +1338,7 @@ def test_cost_control_quantitative_with_existing_constraint_list(subsidy_factor:
     model = create_mock_quantitative_model(dimension=DEFAULT_DIMENSION)
     constraint_list = [lambda x: float(x[0])]
     with patch(
-        "pybandits.strategy.maximize_by_quantity",
+        "pybandits.strategy.single_objective.maximize_by_quantity",
         return_value=np.full(DEFAULT_DIMENSION, DEFAULT_PROBABILITY),
     ) as mock_max:
         c._verify_and_select_from_quantitative_action(
@@ -1953,7 +1953,7 @@ def test_strategy_integration(
     # Patch maximize_by_quantity in both utils and strategy modules to ensure all calls are mocked
     with (
         patch("pybandits.utils.maximize_by_quantity") as mock_maximize_utils,
-        patch("pybandits.strategy.maximize_by_quantity") as mock_maximize_strategy,
+        patch("pybandits.strategy.single_objective.maximize_by_quantity") as mock_maximize_strategy,
     ):
         mock_maximize_utils.return_value = mock_return_value
         mock_maximize_strategy.return_value = mock_return_value

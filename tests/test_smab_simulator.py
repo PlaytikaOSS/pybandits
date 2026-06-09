@@ -218,7 +218,7 @@ def test_smab_e2e_simulation_with_default_args(
         pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
     monkeymodule.setattr(
-        pybandits.strategy, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
     monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
 
@@ -289,7 +289,7 @@ def test_smab_e2e_simulation_with_non_default_args(
         pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
     monkeymodule.setattr(
-        pybandits.strategy, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
     )
     monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
 
