@@ -90,6 +90,8 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
         actions: Dict[ActionId, BaseModel],
         constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
+        rng: Optional[Any] = None,
     ) -> UnifiedActionId:
         """
         Select an action for single-objective optimization.
@@ -105,6 +107,11 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         constraint : Optional[Callable[[np.ndarray], bool]], default=None
             Optional constraint function that returns True if a quantity vector
             satisfies the constraints.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible) restricting a quantitative arm's quantity space.
+            Merged with ``constraint`` for the relevant arm during quantity optimization.
+        rng : Optional[Any], default=None
+            Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
         -------
@@ -113,7 +120,7 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
             (ActionId, quantity_vector) for quantitative actions.
         """
         constraint_list = [constraint] if constraint is not None else None
-        refined_p = self.refine_p(p, actions, constraint_list)
+        refined_p = self.refine_p(p, actions, constraint_list, forbidden_regions, rng=rng)
         best_unified_action = self._select_from_refined_actions(refined_p, actions, constraint)
         return best_unified_action
 
@@ -122,6 +129,8 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
         actions: Dict[ActionId, BaseModel],
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
+        rng: Optional[Any] = None,
     ) -> Dict[UnifiedActionId, float]:
         """
         Refine action probabilities by evaluating quantitative actions and filtering.
@@ -137,7 +146,13 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         actions : Dict[ActionId, BaseModel]
             Dictionary of actions and their associated models.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
-            List of constraint functions for quantitative actions.
+            List of (global) constraint functions for quantitative actions.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible). For each quantitative arm, its forbidden-region
+            constraints are appended to ``constraint_list`` so the optimizer avoids the forbidden quantity space.
+            An arm whose quantity space is fully forbidden fails optimization and is dropped from the result.
+        rng : Optional[Any], default=None
+            Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
         -------
@@ -146,13 +161,17 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         """
         if not p or not actions:
             return {}
-        prerequisites = self.get_prerequisites(p, actions, constraint_list)
+        prerequisites = self.get_prerequisites(p, actions, constraint_list, forbidden_regions)
         refined_p = {}
         for action, proba in p.items():
             model = actions[action]
             if callable(proba):  # Quantitative action
+                # Merge global constraints with this arm's forbidden-region constraints (fresh list per arm).
+                arm_constraints = list(constraint_list) if constraint_list else []
+                if forbidden_regions and action in forbidden_regions:
+                    arm_constraints.extend(forbidden_regions[action])
                 quantity = self._verify_and_select_from_quantitative_action(
-                    proba, model, constraint_list, **prerequisites
+                    proba, model, arm_constraints or None, rng=rng, **prerequisites
                 )
                 if quantity is not None:
                     proba_value = proba(quantity)
@@ -169,6 +188,7 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
         actions: Dict[ActionId, BaseModel],
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> Dict[str, Any]:
         """
         Compute prerequisites needed for strategy-specific action selection.
@@ -184,6 +204,9 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
             Dictionary mapping action IDs to their associated models.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions for quantitative actions.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible) so prerequisites are computed over the
+            feasible quantity space only.
 
         Returns
         -------
@@ -269,6 +292,7 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        rng: Optional[Any] = None,
     ) -> Optional[np.ndarray]:
         """
         Public interface for verifying and selecting from quantitative actions.
@@ -284,6 +308,8 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
             The model associated with this quantitative action.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions that quantity must satisfy.
+        rng : Optional[Any], default=None
+            Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
         -------
@@ -293,7 +319,9 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         p = {self._dummy_quantitative_action: score_func}
         actions = {self._dummy_quantitative_action: model}
         prerequisites = self.get_prerequisites(p, actions, constraint_list)
-        return self._verify_and_select_from_quantitative_action(score_func, model, constraint_list, **prerequisites)
+        return self._verify_and_select_from_quantitative_action(
+            score_func, model, constraint_list, rng=rng, **prerequisites
+        )
 
 
 class CostControlStrategy(PyBanditsBaseModel):

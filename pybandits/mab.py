@@ -26,7 +26,7 @@ import re
 from abc import ABC, abstractmethod
 from inspect import isclass
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Set, Union, get_origin
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Set, Tuple, Union, get_origin
 
 import numpy as np
 from packaging import version
@@ -43,6 +43,7 @@ from pybandits.base import (
     ActionRewardLikelihood,
     BinaryReward,
     Float01,
+    ForbiddenActions,
     MOProbability,
     MOProbabilityWeight,
     PositiveFloat01,
@@ -208,34 +209,108 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     ############################################# Method Input Validators ##############################################
 
-    def _get_valid_actions(self, forbidden_actions: Optional[Set[ActionId]]) -> Set[ActionId]:
+    @staticmethod
+    def _to_feasibility_constraint(region: Callable[[np.ndarray], float]) -> Callable[[np.ndarray], float]:
         """
-        Given a set of forbidden action IDs, return a set of valid action IDs.
+        Convert a forbidden-region margin into an optimizer feasibility constraint.
+
+        The optimizer (``maximize_by_quantity``) treats a constraint ``g`` as feasible when ``g(x) >= 0``.
+        A forbidden region uses the opposite, signed-margin convention (``region(x) > 0`` means forbidden), so the
+        feasibility constraint is simply the negation ``g(x) = -region(x)``. With this mapping, ``g(x) < 0``
+        consistently means "x is forbidden by this region", which the explore branch reuses for rejection sampling.
 
         Parameters
         ----------
-        forbidden_actions: Optional[Set[ActionId]]
-            The set of forbidden action IDs.
+        region: Callable[[np.ndarray], float]
+            The forbidden-region margin (``region(x) > 0`` => forbidden).
+
+        Returns
+        -------
+        Callable[[np.ndarray], float]
+            The feasibility constraint (``>= 0`` feasible).
+        """
+
+        def feasibility_constraint(x: np.ndarray) -> float:
+            return -float(region(x))
+
+        return feasibility_constraint
+
+    def _normalize_forbidden_actions(
+        self, forbidden_actions: Optional[ForbiddenActions]
+    ) -> Tuple[Set[ActionId], Dict[ActionId, List[Callable[[np.ndarray], float]]]]:
+        """
+        Normalize ``forbidden_actions`` into valid action IDs and per-arm region feasibility constraints.
+
+        Accepts both the legacy ``Set[ActionId]`` form (whole-arm blocking) and the generalized
+        ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` form, where a ``None`` value forbids
+        the whole arm and region callable(s) forbid part of a quantitative arm's quantity space.
+
+        Parameters
+        ----------
+        forbidden_actions: Optional[ForbiddenActions]
+            The whole-arm and/or per-arm region restrictions.
 
         Returns
         -------
         valid_actions: Set[ActionId]
-            The list of valid (i.e. not forbidden) action IDs.
+            Action IDs that remain selectable (region-forbidden arms stay valid; only their quantity space shrinks).
+        region_constraints: Dict[ActionId, List[Callable[[np.ndarray], float]]]
+            Per-arm feasibility constraints (``>= 0`` feasible) derived from the forbidden regions.
         """
+        action_ids = set(self.actions.keys())
+        whole_forbidden: Set[ActionId] = set()
+        region_constraints: Dict[ActionId, List[Callable[[np.ndarray], float]]] = {}
+
         if forbidden_actions is None:
             forbidden_actions = set()
-        action_ids = set(self.actions.keys())
-        if not all(a in action_ids for a in forbidden_actions):
-            raise ValueError("forbidden_actions contains invalid action IDs.")
-        valid_actions = action_ids - forbidden_actions
+        if isinstance(forbidden_actions, dict):
+            for action_id, regions in forbidden_actions.items():
+                if action_id not in action_ids:
+                    raise ValueError("forbidden_actions contains invalid action IDs.")
+                if regions is None:
+                    whole_forbidden.add(action_id)
+                    continue
+                if not isinstance(self.actions[action_id], QuantitativeModel):
+                    raise ValueError(
+                        f"Forbidden regions can only be specified for quantitative actions; '{action_id}' is not one."
+                    )
+                region_list = regions if isinstance(regions, list) else [regions]
+                region_constraints[action_id] = [self._to_feasibility_constraint(r) for r in region_list]
+        else:
+            if not all(a in action_ids for a in forbidden_actions):
+                raise ValueError("forbidden_actions contains invalid action IDs.")
+            whole_forbidden = set(forbidden_actions)
+
+        valid_actions = action_ids - whole_forbidden
         if len(valid_actions) == 0:
             raise ValueError("All actions are forbidden. You must allow at least 1 action.")
         if self.default_action:
             action_id = self.default_action[0] if isinstance(self.default_action, tuple) else self.default_action
             if action_id not in valid_actions:
                 raise ValueError("The default action is forbidden.")
+            # A quantitative default action must not point into one of its own forbidden regions.
+            if isinstance(self.default_action, tuple) and action_id in region_constraints:
+                point = np.array(self.default_action[1])
+                if any(constraint(point) < 0 for constraint in region_constraints[action_id]):
+                    raise ValueError("The default action is in a forbidden region.")
 
-        return valid_actions
+        return valid_actions, region_constraints
+
+    def _get_valid_actions(self, forbidden_actions: Optional[ForbiddenActions]) -> Set[ActionId]:
+        """
+        Given forbidden actions, return the set of valid (selectable) action IDs.
+
+        Parameters
+        ----------
+        forbidden_actions: Optional[ForbiddenActions]
+            The whole-arm and/or per-arm region restrictions.
+
+        Returns
+        -------
+        valid_actions: Set[ActionId]
+            The set of valid (i.e. not wholly forbidden) action IDs.
+        """
+        return self._normalize_forbidden_actions(forbidden_actions)[0]
 
     ####################################################################################################################
 
@@ -287,7 +362,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return [{k: v for d in single_action_dicts for k, v in d.items()} for single_action_dicts in zip(*lst)]
 
     def _get_action_probabilities(
-        self, forbidden_actions: Optional[Set[ActionId]] = None, **kwargs
+        self, valid_actions: Set[ActionId], **kwargs
     ) -> Union[
         List[Dict[ActionId, Union[Probability, QuantitativeProbability]]],
         List[Dict[ActionId, Union[ProbabilityWeight, QuantitativeProbabilityWeight]]],
@@ -299,10 +374,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        forbidden_actions : Optional[Set[ActionId]], default=None
-            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
-            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
-            Note that: actions = allowed_actions U forbidden_actions.
+        valid_actions : Set[ActionId]
+            The action IDs to sample. Wholly-forbidden arms are excluded by the caller; region-forbidden
+            quantitative arms remain valid here (their quantity space is restricted later, at selection time).
 
         Returns
         -------
@@ -310,7 +384,6 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The probability of getting a positive reward for each action.
         """
 
-        valid_actions = self._get_valid_actions(forbidden_actions)
         action_probabilities = self.actions_manager.sample_proba(
             rng=self._rng, valid_action_ids=valid_actions, **kwargs
         )
@@ -322,15 +395,17 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     @abstractmethod
     @validate_call
-    def predict(self, forbidden_actions: Optional[Set[ActionId]] = None) -> Predictions:
+    def predict(self, forbidden_actions: Optional[ForbiddenActions] = None) -> Predictions:
         """
         Predict actions.
 
         Parameters
         ----------
-        forbidden_actions : Optional[Set[ActionId]], default=None
-            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
-            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
+        forbidden_actions : Optional[ForbiddenActions], default=None
+            Actions to forbid. Either a ``Set[ActionId]`` of wholly-forbidden arms, or a
+            ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` where ``None`` forbids the whole arm
+            and region callable(s) forbid part of a quantitative arm's quantity space (``region(x) > 0`` => forbidden).
+            By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
@@ -357,11 +432,47 @@ class BaseMab(PyBanditsBaseModel, ABC):
         state = self.model_dump_json()
         return model_name, state
 
+    def _sample_allowed_quantity(
+        self,
+        action_id: ActionId,
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]],
+        max_tries: int = 100,
+    ) -> Optional[Tuple[float, ...]]:
+        """
+        Uniformly sample a quantity in ``[0, 1]^d`` that lies outside the arm's forbidden regions.
+
+        Used by the epsilon-greedy explore branch so a random quantitative action never lands in a
+        forbidden region. Sampling is by rejection; if no allowed point is found within ``max_tries``,
+        ``None`` is returned and the caller drops the arm from the explore candidate set.
+
+        Parameters
+        ----------
+        action_id: ActionId
+            The quantitative arm to sample a quantity for.
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]]
+            Per-arm feasibility constraints (``>= 0`` feasible); a point is forbidden where any constraint is ``< 0``.
+        max_tries: int, default=100
+            Maximum number of rejection-sampling attempts before giving up.
+
+        Returns
+        -------
+        Optional[Tuple[float, ...]]
+            An allowed quantity vector, or ``None`` if none was found within ``max_tries``.
+        """
+        dimension = self.actions[action_id].dimension
+        constraints = forbidden_regions.get(action_id) if forbidden_regions else None
+        for _ in range(max_tries):
+            candidate = self._rng.random(dimension)
+            if constraints is None or all(constraint(candidate) >= 0 for constraint in constraints):
+                return tuple(candidate)
+        return None
+
     @validate_call
     def _select_epsilon_greedy_action(
         self,
         p: ActionRewardLikelihood,
         actions: Optional[Dict[ActionId, BaseModel]] = None,
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> ActionId:
         """
         Wraps self.strategy.select_action function with epsilon-greedy strategy,
@@ -384,6 +495,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
             For MO strategy, the sampled probability is a list with elements corresponding to the objectives.
         actions: Optional[Dict[ActionId, Model]]
             The dictionary of actions and their associated Model.
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]]
+            Per-arm feasibility constraints restricting quantitative arms' quantity space. Honored by both the
+            strategy (exploit) and the random explore branch, so a forbidden region is never selected by any path.
 
         Returns
         -------
@@ -418,17 +532,35 @@ class BaseMab(PyBanditsBaseModel, ABC):
                 if use_default:
                     selected_action = self.default_action
                 else:
+                    # Randomly pick an arm; for a quantitative arm, rejection-sample a quantity outside its
+                    # forbidden regions. An arm whose quantity space is fully forbidden is dropped and re-picked.
                     _keys = list(p.keys())
-                    selected_action = _keys[self._rng.integers(len(_keys))]
-                    if isinstance(self.actions[selected_action], QuantitativeModel):
-                        selected_action = (
-                            selected_action,
-                            tuple(self._rng.random(self.actions[selected_action].dimension)),
+                    selected_action = None
+                    while _keys:
+                        idx = self._rng.integers(len(_keys))
+                        candidate_action = _keys[idx]
+                        if isinstance(self.actions[candidate_action], QuantitativeModel):
+                            quantity = self._sample_allowed_quantity(candidate_action, forbidden_regions)
+                            if quantity is None:
+                                _keys.pop(idx)
+                                continue
+                            selected_action = (candidate_action, quantity)
+                        else:
+                            selected_action = candidate_action
+                        break
+                    if selected_action is None:
+                        # Every candidate quantitative arm is fully region-forbidden; defer to the strategy.
+                        selected_action = self.strategy.select_action(
+                            p=p, actions=actions, forbidden_regions=forbidden_regions, rng=self._rng
                         )
             else:
-                selected_action = self.strategy.select_action(p=p, actions=actions)
+                selected_action = self.strategy.select_action(
+                    p=p, actions=actions, forbidden_regions=forbidden_regions, rng=self._rng
+                )
         else:
-            selected_action = self.strategy.select_action(p=p, actions=actions)
+            selected_action = self.strategy.select_action(
+                p=p, actions=actions, forbidden_regions=forbidden_regions, rng=self._rng
+            )
         return selected_action
 
     @classmethod

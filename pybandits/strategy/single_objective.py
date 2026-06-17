@@ -56,6 +56,7 @@ class ClassicBandit(SingleObjectiveStrategy):
         p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
         actions: Dict[ActionId, BaseModel],
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> Dict[str, Any]:
         """
         Compute prerequisites for classic bandit strategy.
@@ -71,6 +72,8 @@ class ClassicBandit(SingleObjectiveStrategy):
             Dictionary mapping action IDs to their associated models.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions (unused in classic bandit).
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (unused in classic bandit).
 
         Returns
         -------
@@ -102,6 +105,8 @@ class ClassicBandit(SingleObjectiveStrategy):
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        rng: Optional[Any] = None,
+        **kwargs,
     ) -> Optional[np.ndarray]:
         """
         Find optimal quantity for a quantitative action.
@@ -117,6 +122,8 @@ class ClassicBandit(SingleObjectiveStrategy):
             The model associated with this quantitative action.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions that quantity must satisfy.
+        rng : Optional[Any], default=None
+            Random generator passed to the optimizer for reproducibility.
 
         Returns
         -------
@@ -124,7 +131,7 @@ class ClassicBandit(SingleObjectiveStrategy):
             Optimal quantity vector that maximizes the score function, or None if optimization fails.
         """
         try:
-            return maximize_by_quantity(score_func, model.dimension, constraint_list)
+            return maximize_by_quantity(score_func, model.dimension, constraint_list, seed=rng)
         except OptimizationFailedError as e:
             logger.warning(f"Optimization failed: {e}")
             return None
@@ -184,6 +191,7 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
         p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
         actions: Dict[ActionId, BaseModelDP],
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> Dict[str, Any]:
         """
         Compute prerequisites for the dynamic pricing strategy.
@@ -199,6 +207,8 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
             Dictionary mapping action IDs to their associated models.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions (unused in dynamic pricing).
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (unused in dynamic pricing).
 
         Returns
         -------
@@ -252,6 +262,8 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
         score_func: Callable[[np.ndarray], float],
         model: BaseModelDP,
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        rng: Optional[Any] = None,
+        **kwargs,
     ) -> Optional[np.ndarray]:
         """
         Find the revenue-maximizing quantity for a quantitative action.
@@ -266,6 +278,8 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
             The model associated with this quantitative action (provides the ``price`` callable).
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions that quantity must satisfy.
+        rng : Optional[Any], default=None
+            Random generator passed to the optimizer for reproducibility.
 
         Returns
         -------
@@ -277,6 +291,7 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
                 lambda x: self._revenue(model, x, score_func(x)),
                 model.dimension,
                 constraint_list,
+                seed=rng,
             )
         except OptimizationFailedError as e:
             logger.warning(f"Optimization failed: {e}")
@@ -462,6 +477,7 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
         p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
         actions: Dict[ActionId, BaseModel],
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> Dict[str, Any]:
         """
         Compute the best available reward for defining the feasible action set.
@@ -477,6 +493,9 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
             Dictionary mapping action IDs to their associated models.
         constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
             List of constraint functions for quantitative actions.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible). Passed through so the reward threshold is
+            computed over the feasible quantity space, not the forbidden regions.
 
         Returns
         -------
@@ -484,8 +503,12 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
             Dictionary containing 'best_value': the maximum reward value.
         """
         classic_bandit = ClassicBandit()
+        # constraint_list holds the (single) global constraint from select_action; the per-arm forbidden
+        # regions are passed separately so best_value reflects only the feasible quantity space.
         constraint = constraint_list[0] if constraint_list else None
-        best_classic_unified_action = classic_bandit.select_action(p, actions, constraint)
+        best_classic_unified_action = classic_bandit.select_action(
+            p, actions, constraint, forbidden_regions=forbidden_regions
+        )
         best_value = (
             p[best_classic_unified_action]
             if isinstance(best_classic_unified_action, str)
@@ -562,6 +585,8 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
         model: BaseModel,
         constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
         best_value: float,
+        rng: Optional[Any] = None,
+        **kwargs,
     ) -> Optional[np.ndarray]:
         """
         Find the minimum-cost quantity that meets the reward threshold.
@@ -579,6 +604,8 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
             List of existing constraint functions.
         best_value : float
             The maximum reward across all actions.
+        rng : Optional[Any], default=None
+            Random generator passed to the optimizer for reproducibility.
 
         Returns
         -------
@@ -594,6 +621,6 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
         # successive quantitative actions (which would accumulate cost constraints).
         local_constraints = (constraint_list.copy() if constraint_list is not None else []) + [cost_control_constraint]
         try:
-            return maximize_by_quantity(lambda x: -model.cost(x), model.dimension, local_constraints)
+            return maximize_by_quantity(lambda x: -model.cost(x), model.dimension, local_constraints, seed=rng)
         except OptimizationFailedError:
             return None

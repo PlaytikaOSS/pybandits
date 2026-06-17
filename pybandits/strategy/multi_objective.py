@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Callable, ClassVar, Dict, Generator, List, Optional, Type, Union
+from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Type, Union
 
 import numpy as np
 from loguru import logger
@@ -56,6 +56,8 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         self,
         p: Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
         actions: Dict[ActionId, BaseModel],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
+        rng: Optional[Any] = None,
     ) -> UnifiedActionId:
         """
         Select an action from the Pareto front.
@@ -71,19 +73,24 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
             - Callable: Function that computes reward vector given quantity
         actions : Dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible) restricting a quantitative arm's quantity space.
+        rng : Optional[Any], default=None
+            Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
         -------
         UnifiedActionId
             A randomly selected action from the Pareto front.
         """
-        pareto_front = self._get_pareto_front(p=p, actions=actions)
+        pareto_front = self._get_pareto_front(p=p, actions=actions, forbidden_regions=forbidden_regions, rng=rng)
         return np.random.choice(pareto_front)
 
     def _get_feasible_solutions(
         self,
         p: Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
         actions: Dict[ActionId, BaseModel],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> Dict[UnifiedActionId, List[float]]:
         """
         Get feasible solutions for each objective.
@@ -126,7 +133,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
                     action_id: actions[action_id].models[i] for action_id in quantitative_actions.keys()
                 }
 
-                refined = self._objective_selector.refine_p(objective_p, objective_actions, None)
+                refined = self._objective_selector.refine_p(objective_p, objective_actions, None, forbidden_regions)
 
                 # Build multi-objective vectors from per-objective results
                 for unified_action_id in refined.keys():
@@ -138,7 +145,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         return feasible_solutions
 
     def _get_exact_pareto_front(
-        self, p: Dict[UnifiedActionId, List[float]], actions: Dict[ActionId, BaseModel]
+        self,
+        p: Dict[UnifiedActionId, List[float]],
+        actions: Dict[ActionId, BaseModel],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
     ) -> List[UnifiedActionId]:
         """
         Compute the exact Pareto front for discrete action sets.
@@ -158,7 +168,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         List[UnifiedActionId]
             List of Pareto-optimal action IDs.
         """
-        feasible_solutions = self._get_feasible_solutions(p, actions)
+        feasible_solutions = self._get_feasible_solutions(p, actions, forbidden_regions)
         # store non dominated actions
         pareto_front = []
 
@@ -196,6 +206,8 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         p: Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
         actions: Dict[ActionId, BaseModel],
         n_divisions: int = 10,
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
+        rng: Optional[Any] = None,
     ) -> List[UnifiedActionId]:
         """
         Approximate the Pareto front for continuous/quantitative actions.
@@ -212,6 +224,11 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         n_divisions : int, default=10
             Number of divisions for weight vector generation. Higher values
             provide better approximation but increase computation.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible) passed into the optimization for each
+            quantitative arm.
+        rng : Optional[Any], default=None
+            Random generator forwarded to the quantity optimizer for reproducibility.
 
         Returns
         -------
@@ -226,10 +243,28 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         for action_id, prob_or_func in p.items():
             if callable(prob_or_func):
+                # Forbidden regions for this arm (feasible where every constraint is >= 0). Passed into the
+                # optimization so anchor points and NC subproblems are solved within the feasible set, instead
+                # of generating an unconstrained front and filtering it afterwards.
+                arm_constraints = forbidden_regions.get(action_id) if forbidden_regions else None
                 # Quantitative action - find Pareto optimal input points
                 pareto_input_points = self._find_pareto_front_normal_constraint(
-                    prob_or_func, actions[action_id].dimension, n_objectives, n_divisions, actions[action_id]
+                    prob_or_func,
+                    actions[action_id].dimension,
+                    n_objectives,
+                    n_divisions,
+                    actions[action_id],
+                    arm_constraints,
+                    rng,
                 )
+                # Numerical-tolerance backstop: drop any point the optimizer still returned inside the
+                # forbidden region (a point is allowed only where every constraint is >= 0).
+                if arm_constraints is not None:
+                    pareto_input_points = [
+                        point
+                        for point in pareto_input_points
+                        if all(constraint(np.array(point)) >= 0 for constraint in arm_constraints)
+                    ]
                 approximate_p.update(
                     {(action_id, tuple(input_point)): prob_or_func(input_point) for input_point in pareto_input_points}
                 )
@@ -237,7 +272,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
                 # Standard action with fixed reward vector
                 approximate_p[action_id] = prob_or_func
 
-        return self._get_exact_pareto_front(approximate_p, actions)
+        return self._get_exact_pareto_front(approximate_p, actions, forbidden_regions)
 
     @validate_call
     def _find_pareto_front_normal_constraint(
@@ -247,6 +282,8 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         n_objectives: int,
         n_divisions: int,
         model: BaseModel,
+        constraints: Optional[List[Callable[[np.ndarray], float]]] = None,
+        rng: Optional[Any] = None,
     ) -> List[np.ndarray]:
         """
         Find Pareto front using Normal Constraint method with Das-Dennis weight generation for a single function.
@@ -266,6 +303,11 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
             Number of divisions for weight generation (controls approximation quality).
         model : BaseModel
             The model for this quantitative action.
+        constraints : Optional[List[Callable[[np.ndarray], float]]], default=None
+            Forbidden-region feasibility constraints (``>= 0`` feasible). Applied to both the anchor-point
+            optimization and every NC subproblem so the front is feasible by construction.
+        rng : Optional[Any], default=None
+            Random generator forwarded to the quantity optimizer for reproducibility.
 
         Returns
         -------
@@ -277,13 +319,17 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         The normalized normal constraint method for generating the Pareto frontier (Messac et al., 2003)
         https://ieeexplore.ieee.org/document/938649
         """
-        # Step 1: Find anchor points using optimization for each objective
+        # Step 1: Find anchor points using optimization for each objective, within the feasible set
         anchor_points = [
             self._objective_selector.verify_and_select_from_quantitative_action(
-                lambda x: func(x)[i], model.models[i], None
+                lambda x: func(x)[i], model.models[i], constraints or None, rng=rng
             )
             for i in range(n_objectives)
         ]
+        # A None anchor means an objective could not be optimized within the feasible set: the arm's whole
+        # quantity space is forbidden, so it has no feasible Pareto front and is dropped.
+        if any(anchor_point is None for anchor_point in anchor_points):
+            return []
         anchor_rewards = [func(anchor_point) for anchor_point in anchor_points]
 
         anchor_matrix = np.array(anchor_rewards)  # n_objectives x n_objectives
@@ -297,7 +343,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         utopia = np.max(anchor_matrix, axis=0)  # Ideal point
 
         for weight in weight_vectors:
-            solution = self._solve_nc_subproblem(func, anchor_matrix, utopia, weight, model)
+            solution = self._solve_nc_subproblem(func, anchor_matrix, utopia, weight, model, constraints, rng)
             if solution is not None:
                 nc_solutions.add(tuple(solution))
 
@@ -369,6 +415,8 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         utopia: np.ndarray,
         weight: np.ndarray,
         model: BaseModel,
+        arm_constraints: Optional[List[Callable[[np.ndarray], float]]] = None,
+        rng: Optional[Any] = None,
         epsilon: float = 1e-10,
     ) -> Optional[np.ndarray]:
         """
@@ -389,6 +437,11 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
             Weight vector determining the reference point and primary objective.
         model : BaseModel
             The model for constraint evaluation.
+        arm_constraints : Optional[List[Callable[[np.ndarray], float]]], default=None
+            Forbidden-region feasibility constraints (``>= 0`` feasible) appended to the NC boundaries so
+            the solution is feasible by construction.
+        rng : Optional[Any], default=None
+            Random generator forwarded to the quantity optimizer for reproducibility.
         epsilon : float, default=1e-10
             Numerical tolerance for constraint satisfaction.
 
@@ -409,9 +462,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         reference_point_transformed = self._find_utopia_reference_point(transformed_anchors, weight, epsilon)
         reference_point = reference_point_transformed + utopia  # Back to original coordinates
 
-        # Step #3: Create Normal Constraint boundaries using utopia geometry
-        constraint_normals = []
-        constraint_intercepts = []
+        # Step #3: Create Normal Constraint boundaries using utopia geometry.
+        # Each boundary is a float constraint feasible where >= 0 (the reference-point side), matching the
+        # convention the optimizer and forbidden regions use, so the NC subproblem is solved feasibly.
+        nc_constraints: List[Callable[[np.ndarray], float]] = []
 
         for i in range(n_objectives):
             if i != primary_obj:
@@ -424,36 +478,17 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
                     normal = normal_direction / np.linalg.norm(normal_direction)
                     intercept = np.dot(normal, anchor_matrix[i])
 
-                    constraint_normals.append(normal)
-                    constraint_intercepts.append(intercept)
+                    # Constraint: normal · f(x) - intercept >= 0
+                    # Geometric meaning: f(x) is on the reference point side of the boundary
+                    nc_constraints.append(
+                        lambda x, normal=normal, intercept=intercept: float(
+                            np.dot(normal, np.array(func(x))) - intercept
+                        )
+                    )
 
-        def reference_based_constraints(x: np.ndarray) -> bool:
-            """
-            Check if a point satisfies Normal Constraint boundaries.
-
-            Verifies that the function value at x lies on the correct side of all
-            constraint hyperplanes defined by the anchor points and reference point.
-
-            Parameters
-            ----------
-            x : np.ndarray
-                Input point to evaluate.
-
-            Returns
-            -------
-            bool
-                True if all constraints are satisfied, False otherwise.
-            """
-            rewards = np.array(func(x))
-
-            for normal, intercept in zip(constraint_normals, constraint_intercepts):
-                # Constraint: normal · f(x) >= intercept
-                # Geometric meaning: f(x) is on the reference point side of the boundary
-                constraint_value = np.dot(normal, rewards) - intercept
-
-                if constraint_value < -epsilon:  # Tolerance for numerical errors
-                    return False
-            return True
+        # Forbidden regions enter the optimization here so the solution is feasible by construction, rather
+        # than being generated freely and filtered afterwards.
+        constraints = nc_constraints + list(arm_constraints or [])
 
         def objective_function(x: np.ndarray) -> float:
             """
@@ -474,10 +509,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         # Solve the constrained optimization
         try:
             solution = self._objective_selector.verify_and_select_from_quantitative_action(
-                objective_function, model.models[primary_obj], reference_based_constraints
+                objective_function, model.models[primary_obj], constraints or None, rng=rng
             )
 
-            if reference_based_constraints(solution):
+            if solution is not None and all(constraint(solution) >= -epsilon for constraint in constraints):
                 return solution
             else:
                 return None
@@ -538,6 +573,8 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         self,
         p: Dict[ActionId, Union[List[float], List[Callable[[np.ndarray], float]]]],
         actions: Dict[ActionId, BaseModel],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
+        rng: Optional[Any] = None,
     ) -> List[UnifiedActionId]:
         """
         Compute the Pareto front, using exact or approximate methods as appropriate.
@@ -551,6 +588,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
             Dictionary mapping action IDs to reward vectors or functions.
         actions : Dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models.
+        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+            Per-arm feasibility constraints (``>= 0`` feasible) restricting a quantitative arm's quantity space.
+        rng : Optional[Any], default=None
+            Random generator forwarded to the quantity optimizer for reproducibility.
 
         Returns
         -------
@@ -559,9 +600,9 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         """
         includes_quantitative_actions = any(isinstance(actions[a], QuantitativeModel) for a in p.keys())
         return (
-            self._get_approximate_pareto_front(p, actions)
+            self._get_approximate_pareto_front(p, actions, forbidden_regions=forbidden_regions, rng=rng)
             if includes_quantitative_actions
-            else self._get_exact_pareto_front(p, actions)
+            else self._get_exact_pareto_front(p, actions, forbidden_regions)
         )
 
 

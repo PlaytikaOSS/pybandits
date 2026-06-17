@@ -66,6 +66,7 @@ from pybandits.quantitative_model import (
     QuantitativeBayesianNeuralNetworkCC,
     QuantitativeBayesianNeuralNetworkDP,
     QuantitativeModel,
+    Segment,
 )
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -711,11 +712,9 @@ def test_predict(
     diff,
     monkeymodule,
 ):
-    def mock_maximize_by_quantity(quantity_score_func, dimension, constraint=None, n_trials=10000):
+    def mock_maximize_by_quantity(quantity_score_func, dimension, constraint=None, n_trials=10000, **kwargs):
         """Mock maximize_by_quantity to return a quick result."""
         return np.random.random(dimension)
-
-    monkeymodule.setattr(pybandits.strategy.single_objective, "maximize_by_quantity", mock_maximize_by_quantity)
 
     if config.cmab_class in (CmabBernoulliMO, CmabBernoulliMOCC):
 
@@ -729,58 +728,59 @@ def test_predict(
             mock_find_pareto_front_normal_constraint,
         )
 
-    # Create CMAB instance
-    cmab = config.create_cmab_and_actions(
-        action_ids,
-        epsilon,
-        delta,
-        values,
-        n_objectives,
-        exploit_p,
-        subsidy_factor,
-        n_features,
-        hidden_dim_list,
-        update_method,
-    )[0]
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", mock_maximize_by_quantity):
+        # Create CMAB instance
+        cmab = config.create_cmab_and_actions(
+            action_ids,
+            epsilon,
+            delta,
+            values,
+            n_objectives,
+            exploit_p,
+            subsidy_factor,
+            n_features,
+            hidden_dim_list,
+            update_method,
+        )[0]
+        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
-    # Test predictions with random forbidden actions
-    forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
-    if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
-        forbidden.remove(cmab.default_action)
-    apply_mock_update(list(cmab.actions.values()))
-    best_actions, probs, weights = cmab.predict(context=context, forbidden_actions=forbidden)
-    assert len(best_actions) == n_samples
-    assert len(probs) == n_samples
-    assert len(weights) == n_samples
+        # Test predictions with random forbidden actions
+        forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
+        if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
+            forbidden.remove(cmab.default_action)
+        apply_mock_update(list(cmab.actions.values()))
+        best_actions, probs, weights = cmab.predict(context=context, forbidden_actions=forbidden)
+        assert len(best_actions) == n_samples
+        assert len(probs) == n_samples
+        assert len(weights) == n_samples
 
-    if forbidden:
-        # Check proper length of probabilities
-        for prob in probs:
-            action_keys = {action[0] if isinstance(action, tuple) else action for action in prob}
-            assert len(action_keys) == len(action_ids) - len(forbidden)
+        if forbidden:
+            # Check proper length of probabilities
+            for prob in probs:
+                action_keys = {action[0] if isinstance(action, tuple) else action for action in prob}
+                assert len(action_keys) == len(action_ids) - len(forbidden)
 
-        # Check best actions not in forbidden
-        for action in best_actions:
-            action_id = action[0] if isinstance(action, tuple) else action
-            assert action_id not in forbidden
-
-        # Check prob actions not in forbidden
-        for prob in probs:
-            for action in prob.keys():
+            # Check best actions not in forbidden
+            for action in best_actions:
                 action_id = action[0] if isinstance(action, tuple) else action
                 assert action_id not in forbidden
 
-        # Check weight actions not in forbidden
-        for weight in weights:
-            for action in weight.keys():
-                action_id = action[0] if isinstance(action, tuple) else action
-                assert action_id not in forbidden
+            # Check prob actions not in forbidden
+            for prob in probs:
+                for action in prob.keys():
+                    action_id = action[0] if isinstance(action, tuple) else action
+                    assert action_id not in forbidden
 
-    else:
-        for prob in probs:
-            action_keys = {action[0] if isinstance(action, tuple) else action for action in prob}
-            assert len(action_keys) == len(action_ids)
+            # Check weight actions not in forbidden
+            for weight in weights:
+                for action in weight.keys():
+                    action_id = action[0] if isinstance(action, tuple) else action
+                    assert action_id not in forbidden
+
+        else:
+            for prob in probs:
+                action_keys = {action[0] if isinstance(action, tuple) else action for action in prob}
+                assert len(action_keys) == len(action_ids)
 
 
 @settings(deadline=None)
@@ -1256,3 +1256,219 @@ def test_random_seed_propagates_to_bnn(
     assert actions1 == actions2
     assert probs1 == probs2
     assert ws1 == ws2
+
+
+########################################################################################################################
+# Region-aware forbidden_actions (forbidding part of a quantitative arm's hypercube) — CMAB edition
+
+# A forbidden region on a 1-D quantitative arm: float signed-margin convention, forbidden where region(x) > 0,
+# i.e. the upper half-interval x[0] > REGION_SPLIT is blocked.
+REGION_SPLIT = 0.5
+REGION_TOLERANCE = 1e-2
+EXPLORE_SAMPLES = 50
+HYPOTHESIS_EXPLOIT_SAMPLES = 5  # small enough to stay under hypothesis's default 200ms deadline
+EXPLORE_SEED = 123
+N_FEATURES = 2
+QUANTITATIVE_DIMENSION = 1
+QUANTITATIVE_ARM_ID = "q"
+DISCRETE_ARM_ID = "d"
+EPSILON_FULL_EXPLORE = 1.0  # forces the random explore branch on every step
+CONTEXT_LOW = -1.0
+CONTEXT_HIGH = 1.0
+ALLOWED_SEGMENT_LOW = 0.6
+ALLOWED_SEGMENT_HIGH = 1.0
+MAX_REJECTION_SAMPLES = 1000  # rejection-sampling budget for _constraint_aware_maximize
+
+
+def _forbid_upper_half(x: np.ndarray) -> float:
+    """Forbidden-region predicate: x[0] > REGION_SPLIT is forbidden (region(x) > 0 => forbidden)."""
+    return float(x[0]) - REGION_SPLIT
+
+
+def _always_forbidden(x: np.ndarray) -> float:
+    """Forbidden-region predicate that forbids the entire quantity space (margin always positive)."""
+    return 1.0
+
+
+def _constraint_aware_maximize(
+    quantity_score_func, dimension: int, constraint=None, n_trials: int = 10000, **kwargs
+) -> np.ndarray:
+    """Mock maximize_by_quantity: rejection-samples a feasible quantity; np.zeros fallback is unreachable."""
+    constraints = constraint or []
+    for _ in range(MAX_REJECTION_SAMPLES):
+        candidate = np.random.random(dimension)
+        if all(c(candidate) >= 0 for c in constraints):
+            return candidate
+    return np.zeros(dimension)
+
+
+def _quantitative_cmab(**kwargs) -> CmabBernoulli:
+    """Build a cMAB with one continuous (QuantitativeBayesianNeuralNetwork) arm and one BNN arm."""
+    return CmabBernoulli(
+        actions={
+            QUANTITATIVE_ARM_ID: QuantitativeBayesianNeuralNetwork.cold_start(
+                dimension=QUANTITATIVE_DIMENSION, n_features=N_FEATURES
+            ),
+            DISCRETE_ARM_ID: BayesianNeuralNetwork.cold_start(n_features=N_FEATURES),
+        },
+        **kwargs,
+    )
+
+
+def test_cmab_normalize_forbidden_actions_forms() -> None:
+    """_normalize_forbidden_actions handles the Set, dict-None (whole arm) and dict-region (partial) forms."""
+    cmab = _quantitative_cmab()
+
+    # Legacy Set form: whole-arm blocking, no region constraints.
+    valid, regions = cmab._normalize_forbidden_actions({DISCRETE_ARM_ID})
+    assert valid == {QUANTITATIVE_ARM_ID} and regions == {}
+
+    # dict with None value is equivalent to whole-arm blocking.
+    valid, regions = cmab._normalize_forbidden_actions({DISCRETE_ARM_ID: None})
+    assert valid == {QUANTITATIVE_ARM_ID} and regions == {}
+
+    # dict with a region keeps the arm valid (only its quantity space shrinks) and records its constraint.
+    valid, regions = cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
+    assert valid == {QUANTITATIVE_ARM_ID, DISCRETE_ARM_ID}
+    assert set(regions) == {QUANTITATIVE_ARM_ID} and len(regions[QUANTITATIVE_ARM_ID]) == 1
+
+
+def test_cmab_forbidden_region_rejected_on_discrete_arm() -> None:
+    """A forbidden region cannot be attached to a non-quantitative arm."""
+    cmab = _quantitative_cmab()
+    with pytest.raises(ValueError, match="quantitative"):
+        cmab._normalize_forbidden_actions({DISCRETE_ARM_ID: _forbid_upper_half})
+
+
+@settings(deadline=None)
+@given(
+    quantity=st.floats(min_value=REGION_SPLIT, max_value=1.0, exclude_min=True),
+    epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True),
+)
+def test_cmab_forbidden_region_default_action_in_region_raises(quantity: float, epsilon: float) -> None:
+    """Any quantitative default action strictly above REGION_SPLIT is rejected when the upper half is forbidden."""
+    cmab = _quantitative_cmab(
+        epsilon=epsilon,
+        default_action=(QUANTITATIVE_ARM_ID, (quantity,)),
+    )
+    with pytest.raises(ValueError, match="forbidden region"):
+        cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
+
+
+def test_cmab_sample_allowed_quantity_respects_and_exhausts_region() -> None:
+    """_sample_allowed_quantity returns a point outside the region, or None when the whole space is forbidden."""
+    cmab = _quantitative_cmab(random_seed=EXPLORE_SEED)
+    _, regions = cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
+
+    allowed = cmab._sample_allowed_quantity(QUANTITATIVE_ARM_ID, regions)
+    assert allowed is not None and allowed[0] <= REGION_SPLIT
+
+    # A region that forbids the entire cube yields no allowed point.
+    _, full_regions = cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _always_forbidden})
+    assert cmab._sample_allowed_quantity(QUANTITATIVE_ARM_ID, full_regions) is None
+
+
+def test_cmab_predict_explore_never_selects_forbidden_region(monkeypatch) -> None:
+    """With epsilon=1 (always explore), the random quantitative quantity always avoids the forbidden region."""
+    cmab = CmabBernoulli(
+        actions={
+            QUANTITATIVE_ARM_ID: QuantitativeBayesianNeuralNetwork.cold_start(
+                dimension=QUANTITATIVE_DIMENSION, n_features=N_FEATURES
+            )
+        },
+        epsilon=EPSILON_FULL_EXPLORE,
+        random_seed=EXPLORE_SEED,
+    )
+    apply_mock_update(list(cmab.actions.values()))
+    context = np.random.default_rng(EXPLORE_SEED).uniform(CONTEXT_LOW, CONTEXT_HIGH, size=(EXPLORE_SAMPLES, N_FEATURES))
+    monkeypatch.setattr(
+        pybandits.strategy.single_objective,
+        "maximize_by_quantity",
+        lambda quantity_score_func, dimension, constraint=None, n_trials=10000: np.random.random(dimension),
+    )
+
+    selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={QUANTITATIVE_ARM_ID: _forbid_upper_half})
+
+    assert all(isinstance(action, tuple) and action[0] == QUANTITATIVE_ARM_ID for action in selected_actions)
+    assert all(action[1][0] <= REGION_SPLIT + REGION_TOLERANCE for action in selected_actions)
+
+
+@given(
+    region_split=st.floats(min_value=0.1, max_value=0.9),
+    arm_id=st.just(QUANTITATIVE_ARM_ID),
+    dimension=st.just(QUANTITATIVE_DIMENSION),
+    n_features=st.just(N_FEATURES),
+    random_seed=st.just(EXPLORE_SEED),
+    n_samples=st.just(HYPOTHESIS_EXPLOIT_SAMPLES),
+    context_low=st.just(CONTEXT_LOW),
+    context_high=st.just(CONTEXT_HIGH),
+    tolerance=st.just(REGION_TOLERANCE),
+)
+def test_cmab_predict_exploit_respects_forbidden_region(
+    region_split: float,
+    arm_id: str,
+    dimension: int,
+    n_features: int,
+    random_seed: int,
+    n_samples: int,
+    context_low: float,
+    context_high: float,
+    tolerance: float,
+) -> None:
+    """Constrained optimizer stays below any forbidden boundary, not just the default split of 0.5."""
+
+    def forbid_above(x: np.ndarray) -> float:
+        return float(x[0]) - region_split
+
+    cmab = CmabBernoulli(
+        actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
+        random_seed=random_seed,
+    )
+    apply_mock_update(list(cmab.actions.values()))
+    context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
+
+    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", _constraint_aware_maximize):
+        selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: forbid_above})
+
+    assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
+    assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
+
+
+@given(
+    seg_lo=st.floats(min_value=0.05, max_value=0.45),
+    seg_hi=st.floats(min_value=0.55, max_value=0.95),
+    arm_id=st.just(QUANTITATIVE_ARM_ID),
+    dimension=st.just(QUANTITATIVE_DIMENSION),
+    n_features=st.just(N_FEATURES),
+    random_seed=st.just(EXPLORE_SEED),
+    n_samples=st.just(HYPOTHESIS_EXPLOIT_SAMPLES),
+    context_low=st.just(CONTEXT_LOW),
+    context_high=st.just(CONTEXT_HIGH),
+    tolerance=st.just(REGION_TOLERANCE),
+)
+def test_cmab_segment_forbidden_region_outside_end_to_end(
+    seg_lo: float,
+    seg_hi: float,
+    arm_id: str,
+    dimension: int,
+    n_features: int,
+    random_seed: int,
+    n_samples: int,
+    context_low: float,
+    context_high: float,
+    tolerance: float,
+) -> None:
+    """forbidden_region_outside keeps the exploited quantity inside any valid allowed segment."""
+    allowed = Segment(intervals=((seg_lo, seg_hi),))
+    cmab = CmabBernoulli(
+        actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
+        random_seed=random_seed,
+    )
+    apply_mock_update(list(cmab.actions.values()))
+    context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
+    region = allowed.forbidden_region_outside()
+
+    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", _constraint_aware_maximize):
+        selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: region})
+
+    assert all(seg_lo - tolerance <= action[1][0] <= seg_hi for action in selected_actions)
