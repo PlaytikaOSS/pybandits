@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import warnings
 from copy import deepcopy
 from typing import ClassVar, List, Literal, Optional, Union
 
@@ -34,6 +35,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from pybandits.base import (
+    PositiveFloat01,
     PyBanditsBaseModel,
 )
 from pybandits.model.bnn.priors import BaseLocationScaleArray, NormalArray, StudentTArray
@@ -280,3 +282,102 @@ class EarlyStopping(PyBanditsBaseModel):
                 self._no_improvement_count = 0
         self._previous_loss = loss
         return self._no_improvement_count >= self.patience
+
+
+class VIUpdateKwargs(PyBanditsBaseModel):
+    """Validated keyword arguments for a Variational Inference (VI) BNN update.
+
+    Replaces the previously untyped ``update_kwargs`` dict for ``update_method="VI"``.
+    Constrained fields validate the values that used to be checked by hand; the nested
+    ``optimizer_kwargs``, ``lr_scheduler_kwargs`` and ``early_stopping_kwargs`` dicts are
+    intentionally left as open dicts because they are passed through verbatim to optax /
+    the EarlyStopping monitor.
+
+    Parameters
+    ----------
+    num_steps : PositiveInt
+        Total number of SVI steps. Ignored when ``epochs`` is provided. Default 1000.
+    method : Literal["advi", "fullrank_advi"]
+        Variational family / guide. Default "advi".
+    optimizer_type : str
+        Name of the optax optimizer (resolved at construction). Default "sgd".
+    optimizer_kwargs : dict
+        Keyword arguments forwarded to the optax optimizer (e.g. ``step_size``).
+    batch_size : Optional[PositiveInt]
+        Mini-batch size; ``None`` uses the full dataset. Default None.
+    early_stopping_kwargs : Optional[dict]
+        Keyword arguments forwarded to ``EarlyStopping``; ``None`` disables it. Default None.
+    lr_scheduler_type : Optional[str]
+        Name of the optax learning-rate schedule, or ``None``. Default None.
+    lr_scheduler_kwargs : Optional[dict]
+        Keyword arguments forwarded to the optax schedule. Default None.
+    restore_best_svi_state : bool
+        Whether to restore the lowest-loss SVI state at the end of training. Default True.
+    num_particles : PositiveInt
+        Number of ELBO particles. Default 1.
+    gradient_clip_norm : Optional[PositiveFloat]
+        Global gradient-norm clipping threshold, or ``None`` to disable. Default None.
+    kl_annealing_fraction : Optional[PositiveFloat01]
+        Fraction of total steps over which the KL term is linearly warmed up; must lie in
+        the half-open interval (0, 1] or be ``None``. Default None.
+    epochs : Optional[PositiveInt]
+        Number of epochs; takes precedence over ``num_steps`` when provided. Default None.
+    """
+
+    num_steps: PositiveInt = 1000
+    method: Literal["advi", "fullrank_advi"] = "advi"
+    optimizer_type: str = "sgd"
+    optimizer_kwargs: dict = Field(default_factory=lambda: {"step_size": 0.01})
+    batch_size: Optional[PositiveInt] = None
+    early_stopping_kwargs: Optional[dict] = None
+    lr_scheduler_type: Optional[str] = None
+    lr_scheduler_kwargs: Optional[dict] = None
+    restore_best_svi_state: bool = True
+    num_particles: PositiveInt = 1
+    gradient_clip_norm: Optional[PositiveFloat] = None
+    kl_annealing_fraction: Optional[PositiveFloat01] = None
+    epochs: Optional[PositiveInt] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_epochs_and_num_steps(cls, data):
+        # Warn only when the user genuinely supplied both — epochs takes precedence over num_steps.
+        # Inspecting the raw input (rather than model_fields_set) avoids a spurious warning on
+        # round-trip, where model_dump() re-emits epochs=None alongside num_steps as explicit keys.
+        if isinstance(data, dict) and data.get("epochs") is not None and "num_steps" in data:
+            warnings.warn(
+                "Both 'epochs' and 'num_steps' specified in update_kwargs. "
+                "'epochs' takes precedence and 'num_steps' will be ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return data
+
+
+class MCMCUpdateKwargs(PyBanditsBaseModel):
+    """Validated keyword arguments for an MCMC (NUTS) BNN update.
+
+    Replaces the previously untyped ``update_kwargs`` dict for ``update_method="MCMC"``.
+    ``extra="forbid"`` (inherited from ``PyBanditsBaseModel``) rejects unknown keys, which
+    is what enforces that VI-only parameters cannot be passed under MCMC. The nested
+    ``nuts`` dict is forwarded verbatim to ``numpyro.infer.NUTS``.
+
+    Parameters
+    ----------
+    num_warmup : NonNegativeInt
+        Number of warmup (burn-in) steps. Default 500.
+    num_samples : PositiveInt
+        Number of posterior samples to draw. Default 1000.
+    num_chains : PositiveInt
+        Number of MCMC chains. Default 2.
+    progress_bar : bool
+        Whether to display the sampling progress bar. Default False.
+    nuts : dict
+        Keyword arguments forwarded to ``numpyro.infer.NUTS`` (e.g. ``target_accept_prob``).
+    """
+
+    num_warmup: NonNegativeInt = 500
+    num_samples: PositiveInt = 1000
+    num_chains: PositiveInt = 2
+    progress_bar: bool = False
+    nuts: dict = Field(default_factory=lambda: {"target_accept_prob": 0.95})

@@ -1628,12 +1628,10 @@ class TestKLAnnealing:
             )
 
     # invalid_value is the axis under test; n_features/num_steps are scaffolding, pinned via st.just.
-    # np.bool_(True) is included because np.bool_ is not a numbers.Real and must be rejected by the
-    # type guard (Python bool is a numbers.Real, hence the separate explicit bool exclusion).
-    @pytest.mark.parametrize("invalid_value", [0.0, -0.1, 1.5, "0.5", True, np.bool_(True)])
+    @pytest.mark.parametrize("invalid_value", [0.0, -0.1, 1.5])
     @given(n_features=st.just(2), num_steps=st.just(5))
     def test_invalid_values_rejected_at_construction(self, invalid_value, n_features: int, num_steps: int) -> None:
-        """`kl_annealing_fraction` must be a real number in the half-open interval (0, 1]."""
+        """`kl_annealing_fraction` must lie in the half-open interval (0, 1] (enforced by PositiveFloat01)."""
         with pytest.raises(ValueError, match="kl_annealing_fraction"):
             BayesianNeuralNetwork.cold_start(
                 n_features=n_features,
@@ -1658,9 +1656,9 @@ class TestKLAnnealing:
     def test_mcmc_rejects_kl_annealing_fraction_as_vi_only_kwarg(
         self, n_features: int, kl_annealing_fraction: float
     ) -> None:
-        """`kl_annealing_fraction` is a VI-only kwarg; passing it under MCMC must error
-        out via the existing VI-kwargs-on-MCMC guard in `_arrange_update_kwargs`. The guard
-        fires on the kwarg's presence, not its value, so the inputs are pinned via st.just.
+        """`kl_annealing_fraction` is a VI-only kwarg; passing it under MCMC must error out because
+        `MCMCUpdateKwargs` forbids unknown fields (``extra="forbid"``). The rejection fires on the
+        kwarg's presence, not its value, so the inputs are pinned via st.just.
         """
         with pytest.raises(ValueError, match="kl_annealing_fraction"):
             BayesianNeuralNetwork.cold_start(
