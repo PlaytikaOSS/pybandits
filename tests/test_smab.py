@@ -88,12 +88,19 @@ class ModelTestConfig:
     model_types: List[Type[SmabModelType]]
 
     def _create_actions(
-        self, action_ids: List[str], values: Optional[st.SearchStrategy], n_objectives: Optional[PositiveInt]
-    ) -> Dict[str, Any]:
+        self,
+        action_ids: List[str],
+        values: Optional[st.SearchStrategy],
+        n_objectives: Optional[PositiveInt],
+        decay_factor: Optional[Float01] = None,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
             indices = np.random.randint(0, len(model_types), len(action_ids))
             model_types = [model_types[i] for i in indices]
+        base_model_cold_start_kwargs: Dict[str, Any] = {}
+        if decay_factor is not None:
+            base_model_cold_start_kwargs["decay_factor"] = decay_factor
         if all(model in [BetaCC, ZoomingCC, BetaMOCC] for model in model_types):
             # Generate random costs
             drawn_values = values.draw(value_strategy(n_actions=len(action_ids)))
@@ -117,29 +124,35 @@ class ModelTestConfig:
         if n_objectives is None:
             if costs is not None:
                 return {
-                    action_id: model_type(**{value_field: cost})
+                    action_id: model_type(decay_factor=decay_factor, **{value_field: cost})
                     if issubclass(model_type, (BetaCC, BetaDP))
-                    else model_type.cold_start(dimension=1, **{value_field: cost})  # ZoomingCC / ZoomingDP
+                    else model_type.cold_start(
+                        dimension=1, base_model_cold_start_kwargs=base_model_cold_start_kwargs, **{value_field: cost}
+                    )  # ZoomingCC / ZoomingDP
                     for action_id, model_type, cost in zip(action_ids, model_types, costs)
-                }
+                }, base_model_cold_start_kwargs
             else:
                 return {
-                    action_id: model_type()
+                    action_id: model_type(decay_factor=decay_factor)
                     if issubclass(model_type, Beta)
-                    else model_type.cold_start(dimension=1)  # Zooming
+                    else model_type.cold_start(
+                        dimension=1, base_model_cold_start_kwargs=base_model_cold_start_kwargs
+                    )  # Zooming
                     for action_id, model_type in zip(action_ids, model_types)
-                }
+                }, base_model_cold_start_kwargs
         else:
             if costs is not None:
                 return {
-                    action_id: model_type(models=[Beta()] * n_objectives, cost=cost)
+                    action_id: model_type(
+                        models=[Beta(decay_factor=decay_factor) for _ in range(n_objectives)], cost=cost
+                    )
                     for action_id, model_type, cost in zip(action_ids, model_types, costs)
-                }
+                }, base_model_cold_start_kwargs
             else:
                 return {
-                    action_id: model_type(models=[Beta()] * n_objectives)
+                    action_id: model_type(models=[Beta(decay_factor=decay_factor) for _ in range(n_objectives)])
                     for action_id, model_type in zip(action_ids, model_types)
-                }
+                }, base_model_cold_start_kwargs
 
     def create_smab_and_actions(
         self,
@@ -150,13 +163,14 @@ class ModelTestConfig:
         n_objectives: st.SearchStrategy[PositiveInt],
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
+        decay_factor: Optional[Float01] = None,
     ) -> Tuple[BaseSmabBernoulli, Dict[ActionId, SmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
             if self.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]
             else None
         )
-        actions = self._create_actions(action_ids, values, n_objectives)
+        actions, base_model_cold_start_kwargs = self._create_actions(action_ids, values, n_objectives, decay_factor)
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
             default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
@@ -183,6 +197,10 @@ class ModelTestConfig:
         # For cold start test
         if self.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]:
             kwargs["n_objectives"] = n_objectives
+        if any(isinstance(model, QuantitativeModel) for model in actions.values()):
+            kwargs["base_model_cold_start_kwargs"] = base_model_cold_start_kwargs
+        if decay_factor is not None:
+            kwargs["decay_factor"] = decay_factor
         return smab, actions, kwargs
 
 
@@ -221,6 +239,7 @@ TEST_CONFIGS = {
     n_objectives=st.data(),
     subsidy_factor=st.data(),
     exploit_p=st.data(),
+    decay_factor=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
 )
 def test_cold_start(
     config: ModelTestConfig,
@@ -231,10 +250,11 @@ def test_cold_start(
     n_objectives,
     exploit_p,
     subsidy_factor,
+    decay_factor: Optional[float],
 ):
     # Create SMAB instance
     smab, actions, kwargs = config.create_smab_and_actions(
-        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor
+        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor, decay_factor
     )
 
     # Cold start comparison logic (modified for different model types)

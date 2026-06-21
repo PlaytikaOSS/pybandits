@@ -1493,6 +1493,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if self.calibrate_output_bias:
             self._calibrate_output_bias(rewards)
 
+        # Forgetting: widen the current posterior (used as the prior for this fit) before re-fitting,
+        # so fresh data dominates old evidence. No-op on the first fit (no posterior to inflate yet),
+        # and no-op when decay_factor is None or 1.
+        is_first_fit = self.n_successes == self._prior_pseudo_count and self.n_failures == self._prior_pseudo_count
+        if not is_first_fit:
+            self._inflate_prior_variance()
+
         if self.update_method == "VI":
             updated_layer_params_list = self._extract_vi_params(x_jnp, y_jnp, n_samples)
 
@@ -1505,6 +1512,30 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         self.model_params.bnn_layer_params = (
             updated_layer_params_list  # update the model_params with the new found posteriors
         )
+
+    def _inflate_prior_variance(self):
+        """
+        Inflate the stored posterior variance before re-fitting, implementing per-update forgetting.
+        Every weight, bias, and embedding ``sigma`` is multiplied
+        by ``1 / decay_factor``, widening the prior consumed by the next VI/MCMC round so that fresh
+        data dominates old evidence. The means (``mu``) and the Student-t degrees of freedom (``nu``)
+        are left untouched. No-op when ``decay_factor`` is None or 1.
+        """
+        if self.decay_factor is None or self.decay_factor == 1:
+            return
+        inflation = 1.0 / self.decay_factor
+        for layer_params in self.model_params.bnn_layer_params:
+            layer_params.weight = layer_params.weight.with_dist_parameters(
+                sigma=(np.asarray(layer_params.weight.params["sigma"]) * inflation).tolist()
+            )
+            layer_params.bias = layer_params.bias.with_dist_parameters(
+                sigma=(np.asarray(layer_params.bias.params["sigma"]) * inflation).tolist()
+            )
+        if self.model_params.embedding_params is not None:
+            self.model_params.embedding_params.embeddings = [
+                emb.with_dist_parameters(sigma=(np.asarray(emb.params["sigma"]) * inflation).tolist())
+                for emb in self.model_params.embedding_params.embeddings
+            ]
 
     @classmethod
     @validate_call
@@ -1523,6 +1554,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
         random_seed: Optional[NonNegativeInt] = None,
         calibrate_output_bias: bool = False,
+        decay_factor: Optional[PositiveFloat01] = None,
         **kwargs,
     ) -> Self:
         """
@@ -1570,6 +1602,9 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.
             Pass an explicit integer for fully reproducible runs.
+        decay_factor : Optional[PositiveFloat01]
+            Per-update forgetting factor in (0, 1]. When set, the weight/bias/embedding posterior
+            variances are inflated by ``1 / decay_factor`` before each re-fit. Default is None.
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
@@ -1614,6 +1649,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             feature_config=feature_config,
             random_seed=random_seed,
             calibrate_output_bias=calibrate_output_bias,
+            decay_factor=decay_factor,
             **kwargs,
         )
 
@@ -1787,6 +1823,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
         bias_std: Optional[PositiveFloat] = None,
+        decay_factor: Optional[PositiveFloat01] = None,
         **kwargs,
     ) -> Self:
         """
@@ -1817,6 +1854,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         bias_std : Optional[PositiveFloat]
             If provided, overrides ``sigma`` from ``dist_params`` for all layers' bias priors,
             leaving weight priors untouched. Default is None.
+        decay_factor : Optional[PositiveFloat01]
+            Per-update forgetting factor forwarded to each per-objective BNN.
         **kwargs
             Additional keyword arguments.
 
@@ -1838,6 +1877,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 use_residual_connections=use_residual_connections,
                 use_layerwise_scaling=use_layerwise_scaling,
                 bias_std=bias_std,
+                decay_factor=decay_factor,
             )
             for _ in range(n_objectives)
         ]

@@ -545,7 +545,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
             Seed for the MAB's central numpy RNG (used for epsilon-greedy and Thompson sampling).
             Propagated automatically to BNN action models so the full pipeline is reproducible.
         kwargs : Dict[str, Any]
-            Additional parameters for the mab and for the action model.
+            Additional parameters for the mab and for the action model, e.g. ``decay_factor`` for
+            per-update forgetting in the action models.
 
         Returns
         -------

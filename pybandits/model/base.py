@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import List, Optional, Union
 
 import numpy as np
 from pydantic import (
@@ -30,6 +30,7 @@ from pydantic import (
 
 from pybandits.base import (
     MOProbability,
+    PositiveFloat01,
     Probability,
     ProbabilityWeight,
 )
@@ -46,7 +47,13 @@ class Model(BaseModelSO, ABC):
         Counter of the number of successes.
     n_failures: PositiveInt = 1
         Counter of the number of failures.
+    decay_factor: Optional[PositiveFloat01] = None
+        Per-update forgetting factor in (0, 1]. When set, historical evidence is discounted on each
+        update so the model adapts faster to non-stationary environments. None (default) and 1.0
+        preserve the standard, non-decaying behavior.
     """
+
+    decay_factor: Optional[PositiveFloat01] = None
 
     @abstractmethod
     def sample_proba(

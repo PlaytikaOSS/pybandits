@@ -171,6 +171,7 @@ class ModelTestConfig:
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
         n_objectives: Optional[PositiveInt] = None,
+        decay_factor: Optional[Float01] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
@@ -202,6 +203,8 @@ class ModelTestConfig:
             value_field = None
 
         model_cold_start_kwargs = dict(update_method=update_method)
+        if decay_factor is not None:
+            model_cold_start_kwargs["decay_factor"] = decay_factor
         base_model_cold_start_kwargs = dict(hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs)
 
         result: Dict[str, Any] = {}
@@ -272,6 +275,7 @@ class ModelTestConfig:
         n_features: PositiveInt,
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
+        decay_factor: Optional[Float01] = None,
     ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, CmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
@@ -279,7 +283,7 @@ class ModelTestConfig:
             else None
         )
         actions, base_model_cold_start_kwargs = self._create_actions(
-            action_ids, values, n_features, hidden_dim_list, update_method, n_objectives
+            action_ids, values, n_features, hidden_dim_list, update_method, n_objectives, decay_factor
         )
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
@@ -365,6 +369,7 @@ TEST_CONFIGS = {
     subsidy_factor=st.data(),
     exploit_p=st.data(),
     update_method=st.sampled_from(literal_update_methods),
+    decay_factor=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
 )
 def test_cold_start(
     config: ModelTestConfig,
@@ -378,6 +383,7 @@ def test_cold_start(
     exploit_p,
     subsidy_factor,
     update_method,
+    decay_factor: Optional[float],
 ):
     # Create CMAB instance
     cmab, actions, kwargs = config.create_cmab_and_actions(
@@ -391,6 +397,7 @@ def test_cold_start(
         n_features,
         hidden_dim_list,
         update_method,
+        decay_factor,
     )
 
     # Cold start comparison logic (modified for different model types)

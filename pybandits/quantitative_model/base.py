@@ -47,6 +47,12 @@ class QuantitativeModel(BaseModelSO, ABC):
     """
     Base class for quantitative models.
 
+    Each concrete model wraps an inner single-objective base model (e.g. a ``Beta`` per Zooming
+    segment, or a ``BayesianNeuralNetwork``). By convention, ``cold_start`` accepts
+    ``base_model_cold_start_kwargs``: a dict forwarded to that inner base model's constructor /
+    cold start (e.g. ``decay_factor``), since per-update behavior is an attribute of the base model
+    rather than the quantitative wrapper.
+
     Parameters
     ----------
     dimension: PositiveInt
