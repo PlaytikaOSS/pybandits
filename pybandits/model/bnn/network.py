@@ -510,7 +510,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_update_kwargs(cls, data):
+    def _coerce_update_kwargs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         """Coerce ``update_kwargs`` into the typed model matching ``update_method``.
 
         Accepts a raw dict (the public API, and the form stored in serialized state), ``None``
@@ -521,9 +521,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if not isinstance(data, dict):
             return data
         raw = data.get("update_kwargs")
-        if isinstance(raw, (VIUpdateKwargs, MCMCUpdateKwargs)):
-            return data
         update_method = data.get("update_method", cls.model_fields["update_method"].default)
+        if isinstance(raw, (VIUpdateKwargs, MCMCUpdateKwargs)):
+            expected = {"VI": VIUpdateKwargs, "MCMC": MCMCUpdateKwargs}.get(update_method)
+            if expected is None:
+                raise ValueError("Invalid update method.")
+            if not isinstance(raw, expected):
+                raise ValueError(
+                    f"update_kwargs type {type(raw).__name__} conflicts with update_method '{update_method}'."
+                )
+            return data
         raw = dict(raw) if raw else {}
         # Copy before mutating: during Union resolution pydantic feeds the same input dict to each
         # candidate member, so mutating it here would leak an injected update_kwargs into sibling

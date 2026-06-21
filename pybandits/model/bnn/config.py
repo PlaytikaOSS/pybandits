@@ -326,8 +326,8 @@ class VIUpdateKwargs(PyBanditsBaseModel):
 
     num_steps: PositiveInt = 1000
     method: Literal["advi", "fullrank_advi"] = "advi"
-    optimizer_type: str = "sgd"
-    optimizer_kwargs: dict = Field(default_factory=lambda: {"step_size": 0.01})
+    optimizer_type: str = "adam"
+    optimizer_kwargs: dict = Field(default_factory=lambda: {"step_size": 0.0003})
     batch_size: Optional[PositiveInt] = None
     early_stopping_kwargs: Optional[dict] = None
     lr_scheduler_type: Optional[str] = None

@@ -384,7 +384,7 @@ class TestEditModelOnTheFly:
         # Result should only have actions from new_mab with their configuration
         assert set(merged.actions.keys()) == action_ids2
         for action_id in action_ids2:
-            assert merged.actions[action_id].update_kwargs["num_steps"] == n_iterations
+            assert merged.actions[action_id].update_kwargs.num_steps == n_iterations
 
     @given(
         action_ids1=action_ids_strategy,
@@ -548,8 +548,8 @@ class TestIntegration:
 
         # Verify hyperparameters updated
         for action in tuned_mab.actions.values():
-            assert action.update_kwargs["num_steps"] == n_updated
-            assert action.update_kwargs["optimizer_kwargs"]["step_size"] == learning_rate
+            assert action.update_kwargs.num_steps == n_updated
+            assert action.update_kwargs.optimizer_kwargs["step_size"] == learning_rate
 
     @given(
         n_actions_per_exp=st.lists(st.integers(min_value=1, max_value=3), min_size=3, max_size=3),
@@ -658,7 +658,7 @@ class TestModelCompatibilityValidation:
         current = CmabBernoulli.cold_start(action_ids={_ACTION_ID}, **shared_kwargs, update_kwargs={"num_steps": 50})
         template = CmabBernoulli.cold_start(action_ids={_ACTION_ID}, **shared_kwargs, update_kwargs={"num_steps": 200})
         result = edit_model_on_the_fly(current, template)
-        assert result.actions[_ACTION_ID].update_kwargs["num_steps"] == 200
+        assert result.actions[_ACTION_ID].update_kwargs.num_steps == 200
 
     def test_transfer_beta_models_no_validation(self) -> None:
         """Test that Beta models skip structural validation."""
