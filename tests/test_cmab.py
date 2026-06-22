@@ -672,7 +672,7 @@ def test_update(
     )
     reward_data = reward_data.tolist()
     # Test updates with generated data
-    actions_to_update = sample_with_replacement(action_ids, n_samples)
+    actions_to_update = sample_with_replacement(action_ids, n_samples, rng=rng)
     # Generate quantities only if there are any QuantitativeModel actions
     # Handle multi-objective rewards for MO models
 
@@ -783,9 +783,13 @@ def test_predict(
         context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
         # Test predictions with random forbidden actions
-        forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
-        if cmab.default_action is not None and forbidden is not None and cmab.default_action in forbidden:
-            forbidden.remove(cmab.default_action)
+        forbidden = (
+            set(sample_with_replacement(action_ids, len(action_ids) // 2, rng=rng)) if len(action_ids) > 2 else None
+        )
+        if cmab.default_action is not None and forbidden is not None:
+            da_id = cmab.default_action[0] if isinstance(cmab.default_action, tuple) else cmab.default_action
+            if da_id in forbidden:
+                forbidden.discard(da_id)
         apply_mock_update(list(cmab.actions.values()))
         best_actions, probs, weights = cmab.predict(context=context, forbidden_actions=forbidden)
         assert len(best_actions) == n_samples

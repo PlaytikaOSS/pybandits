@@ -23,6 +23,10 @@
   > - {mod}`pybandits.offline_policy_evaluator`
   > - {mod}`pybandits.offline_policy_estimator`
 
+- `pybandits` provides utilities for cost-control bandit tuning and transfer learning.
+  > - {mod}`pybandits.subsidy_factor`
+  > - {mod}`pybandits.transfer`
+
 ## API
 
 Please visit the full [API](fullapi.md) for details.

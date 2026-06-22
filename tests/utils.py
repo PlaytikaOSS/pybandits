@@ -34,7 +34,11 @@ class _EvalArray:
         return self.array
 
 
-def sample_with_replacement(source: list, length: PositiveInt):
+def sample_with_replacement(source: list, length: PositiveInt, rng: Optional[np.random.Generator] = None) -> list:
+    if rng is not None:
+        # Use index-based sampling to avoid numpy converting special chars (e.g. '\x00' → '') during array storage.
+        indices = rng.integers(0, len(source), size=length)
+        return [source[int(i)] for i in indices]
     return [random.choice(source) for _ in range(length)]
 
 
