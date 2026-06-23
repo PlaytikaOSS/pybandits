@@ -20,19 +20,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC
-from typing import List
+from typing import ClassVar, List, Optional, Tuple
 
 import numpy as np
 from numpy import sqrt
 from pydantic import (
+    PositiveFloat,
     PositiveInt,
     conlist,
+    model_validator,
     validate_call,
 )
 from typing_extensions import Self
 
 from pybandits.base import (
     BinaryReward,
+    PositiveFloat01,
     Probability,
 )
 from pybandits.model.base import Model, ModelCC, ModelDP, ModelMO
@@ -48,29 +51,70 @@ class BaseBeta(Model, ABC):
         Counter of the number of successes.
     n_failures: PositiveInt = 1
         Counter of the number of failures.
+    decay_factor: Optional[PositiveFloat01] = None
+        Per-update forgetting factor in (0, 1] inherited from Model. When set, sampling is
+        driven by the effective (decayed) counts below instead of the raw n_successes/n_failures.
+    decayed_n_successes: Optional[PositiveFloat] = None
+        Effective number of successes after decay, used for sampling when decay_factor is set.
+        Seeded from n_successes on first use; None when decay is disabled.
+    decayed_n_failures: Optional[PositiveFloat] = None
+        Effective number of failures after decay, used for sampling when decay_factor is set.
+        Seeded from n_failures on first use; None when decay is disabled.
     """
+
+    decayed_n_successes: Optional[PositiveFloat] = None
+    decayed_n_failures: Optional[PositiveFloat] = None
+
+    # The effective decayed counts are learned state and must be transferred alongside the raw counts.
+    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("decayed_n_successes", "decayed_n_failures")
+
+    @model_validator(mode="after")
+    def _init_decayed_counts(self) -> Self:
+        """Seed the effective decayed counts from the raw counts when decay is enabled."""
+        if self.decay_factor is not None:
+            if self.decayed_n_successes is None:
+                self.decayed_n_successes = float(self.n_successes)
+            if self.decayed_n_failures is None:
+                self.decayed_n_failures = float(self.n_failures)
+        return self
 
     @property
     def std(self) -> float:
         """
         The corrected standard deviation (Bessel's correction) of the binary distribution of successes and failures.
         """
-        return sqrt((self.n_successes * self.n_failures) / (self.count * (self.count - 1)))
+        if self.decay_factor is not None:
+            n_s, n_f = self.decayed_n_successes, self.decayed_n_failures
+        else:
+            n_s, n_f = float(self.n_successes), float(self.n_failures)
+        total = n_s + n_f
+        return sqrt((n_s * n_f) / (total * (total - 1)))
 
     @validate_call
     def _update(self, rewards: List[BinaryReward]):
         """
-        Update n_successes and n_failures.
+        Update the effective decayed counts (the raw n_successes/n_failures are updated by BaseModelSO).
+
+        When decay_factor is set, historical evidence is discounted towards the Beta(1, 1) prior
+        before the new rewards are added: ``n <- 1 + decay_factor * (n - 1) + new``. This keeps the
+        effective counts at or above the prior, so the Beta posterior stays proper.
 
         Parameters
         ----------
         rewards: List[BinaryReward]
             A list of binary rewards.
         """
-        pass
+        if self.decay_factor is not None:
+            n_successes = sum(rewards)
+            n_failures = len(rewards) - n_successes
+            prior = self._prior_pseudo_count
+            self.decayed_n_successes = prior + self.decay_factor * (self.decayed_n_successes - prior) + n_successes
+            self.decayed_n_failures = prior + self.decay_factor * (self.decayed_n_failures - prior) + n_failures
 
     def _reset(self):
-        pass
+        if self.decay_factor is not None:
+            self.decayed_n_successes = float(self._prior_pseudo_count)
+            self.decayed_n_failures = float(self._prior_pseudo_count)
 
     def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Probability]:
         """
@@ -88,7 +132,11 @@ class BaseBeta(Model, ABC):
         prob: Probability
             Probability of getting a positive reward.
         """
-        return list(rng.beta(self.n_successes, self.n_failures, size=n_samples))
+        if self.decay_factor is not None:
+            n_successes, n_failures = self.decayed_n_successes, self.decayed_n_failures
+        else:
+            n_successes, n_failures = self.n_successes, self.n_failures
+        return list(rng.beta(n_successes, n_failures, size=n_samples))
 
 
 class Beta(BaseBeta):
@@ -148,7 +196,7 @@ class BaseBetaMO(ModelMO, ABC):
 
     @classmethod
     @validate_call
-    def cold_start(cls, n_objectives: PositiveInt, **kwargs) -> Self:
+    def cold_start(cls, n_objectives: PositiveInt, decay_factor: Optional[PositiveFloat01] = None, **kwargs) -> Self:
         """
         Utility function to create a BetaMO or child model with cost control,
         with default parameters.
@@ -157,6 +205,8 @@ class BaseBetaMO(ModelMO, ABC):
         ----------
         n_objectives : PositiveInt
             Number of objectives (models) to create.
+        decay_factor : Optional[PositiveFloat01]
+            Per-update forgetting factor forwarded to each per-objective Beta model.
         kwargs: Dict[str, Any]
             Additional arguments for the BaseBetaMO child model.
 
@@ -165,7 +215,7 @@ class BaseBetaMO(ModelMO, ABC):
         beta_mo: BetaMO
             The multi-objective Beta model.
         """
-        models = [Beta() for _ in range(n_objectives)]
+        models = [Beta(decay_factor=decay_factor) for _ in range(n_objectives)]
         beta_mo = cls(models=models, **kwargs)
         return beta_mo
 

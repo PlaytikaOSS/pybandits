@@ -26,7 +26,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union, get_args
 import numpy as np
 from numpy.typing import ArrayLike
 from pydantic import (
-    Field,
     NonNegativeInt,
     PositiveInt,
     validate_call,
@@ -69,7 +68,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         dimension: PositiveInt = 1,
         n_features: NonNegativeInt = 1,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
-        base_model_cold_start_kwargs: Optional[Dict[str, Any]] = Field(default_factory=dict),
+        base_model_cold_start_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Self:
         """
@@ -87,7 +86,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         base_model_cold_start_kwargs : Optional[Dict[str, Any]], optional
             Keyword arguments passed to BayesianNeuralNetwork.cold_start. May include e.g.
             hidden_dim_list, update_method, update_kwargs, dist_type, dist_params_init,
-            activation, use_residual_connections, use_layerwise_scaling. Default is None.
+            activation, use_residual_connections, use_layerwise_scaling, decay_factor. Default is None.
         **kwargs
             Additional keyword arguments for the QuantitativeBayesianNeuralNetwork constructor.
 
@@ -104,10 +103,11 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             if categorical_features
             else None
         )
+        base_model_cold_start_kwargs = dict(base_model_cold_start_kwargs or {})
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=dimension + n_features,
             categorical_features=bnn_categorical,
-            **(base_model_cold_start_kwargs or {}),
+            **base_model_cold_start_kwargs,
         )
 
         return cls(

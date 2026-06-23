@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Literal, Optional, get_args
+from typing import List, Literal, Optional, Tuple, get_args
 from unittest.mock import patch
 
 import jax
@@ -132,6 +132,221 @@ def test_beta_sample_proba(rng, n_samples=100):
     prob = b.sample_proba(n_samples=n_samples, rng=rng)
     assert len(prob) == n_samples
     assert all([p >= 0 and p <= 1 for p in prob])
+
+
+# Beta / BNN decay factor (temperature scaling)
+
+
+class TestBetaDecayFactor:
+    """Per-update forgetting (decay_factor) on the Beta model: raw counts stay pristine, sampling uses
+    the separate effective counts decayed towards the Beta(1, 1) prior."""
+
+    MIN_DECAY_FACTOR = 1e-3
+    MAX_DECAY_FACTOR = 1.0
+    NO_DECAY_FACTOR = 1.0
+    PRIOR = 1.0
+    MAX_COUNT = 1000
+    MAX_EMPTY_UPDATES = 30
+    N_SAMPLES = 50
+
+    counts = st.integers(min_value=1, max_value=MAX_COUNT)
+    diverging_counts = st.integers(min_value=2, max_value=MAX_COUNT)  # > prior, so decayed != raw
+    binary_rewards = st.lists(st.integers(min_value=0, max_value=1), min_size=1)
+    decay_factors = st.floats(min_value=MIN_DECAY_FACTOR, max_value=MAX_DECAY_FACTOR)
+    forgetting_decay_factors = st.floats(min_value=MIN_DECAY_FACTOR, max_value=MAX_DECAY_FACTOR, exclude_max=True)
+
+    @given(
+        decay_factor=st.one_of(st.none(), decay_factors),
+        n_successes=counts,
+        n_failures=counts,
+    )
+    def test_seeds_effective_counts_only_when_enabled(
+        self, decay_factor: Optional[float], n_successes: int, n_failures: int
+    ) -> None:
+        """Effective counts are seeded from the raw counts only when decay is enabled."""
+        b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
+        if decay_factor is None:
+            assert b.decayed_n_successes is None and b.decayed_n_failures is None
+        else:
+            assert b.decayed_n_successes == n_successes and b.decayed_n_failures == n_failures
+
+    @given(
+        rewards=binary_rewards,
+        decay_factor=decay_factors,
+        n_successes=counts,
+        n_failures=counts,
+        prior=st.just(PRIOR),
+    )
+    def test_update_keeps_raw_counts_and_decays_effective_counts(
+        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int, prior: float
+    ) -> None:
+        """Update accumulates raw counts unchanged and decays the effective counts towards the prior."""
+        b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
+        b.update(rewards=rewards)
+        new_successes = sum(rewards)
+        new_failures = len(rewards) - new_successes
+        assert b.n_successes == n_successes + new_successes
+        assert b.n_failures == n_failures + new_failures
+        assert b.decayed_n_successes == pytest.approx(prior + decay_factor * (n_successes - prior) + new_successes)
+        assert b.decayed_n_failures == pytest.approx(prior + decay_factor * (n_failures - prior) + new_failures)
+
+    @given(rewards=binary_rewards, decay_factor=st.just(NO_DECAY_FACTOR), n_successes=counts, n_failures=counts)
+    def test_factor_one_tracks_raw_counts(
+        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int
+    ) -> None:
+        """With decay_factor == 1 the effective counts equal the raw counts (no forgetting)."""
+        b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
+        b.update(rewards=rewards)
+        assert b.decayed_n_successes == b.n_successes
+        assert b.decayed_n_failures == b.n_failures
+
+    @given(
+        rewards=binary_rewards,
+        decay_factor=forgetting_decay_factors,
+        n_successes=diverging_counts,
+        n_failures=diverging_counts,
+        n_samples=st.just(N_SAMPLES),
+    )
+    def test_sampling_uses_effective_counts(
+        self, rng, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int, n_samples: int
+    ) -> None:
+        """Sampling draws from the effective counts, not the raw counts, when decay is enabled."""
+        b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
+        b.update(rewards=rewards)  # effective counts diverge from raw counts
+        state = rng.bit_generator.state
+        samples = b.sample_proba(n_samples=n_samples, rng=rng)
+        rng.bit_generator.state = state
+        from_effective = list(rng.beta(b.decayed_n_successes, b.decayed_n_failures, size=n_samples))
+        rng.bit_generator.state = state
+        from_raw = list(rng.beta(b.n_successes, b.n_failures, size=n_samples))
+        assert samples == from_effective
+        assert samples != from_raw
+
+    @given(
+        decay_factor=decay_factors,
+        count=counts,
+        n_updates=st.integers(min_value=1, max_value=MAX_EMPTY_UPDATES),
+        prior=st.just(PRIOR),
+    )
+    def test_empty_updates_decay_effective_counts_geometrically(
+        self, decay_factor: float, count: int, n_updates: int, prior: float
+    ) -> None:
+        """With no new data, the effective counts decay geometrically: prior + decay**k * (count - prior)."""
+        b = Beta(n_successes=count, n_failures=count, decay_factor=decay_factor)
+        for _ in range(n_updates):
+            b.update(rewards=[])
+        expected = prior + decay_factor**n_updates * (count - prior)
+        assert b.decayed_n_successes == pytest.approx(expected)
+        assert b.decayed_n_failures == pytest.approx(expected)
+
+    @given(
+        rewards=binary_rewards,
+        decay_factor=decay_factors,
+        n_successes=counts,
+        n_failures=counts,
+        prior=st.just(PRIOR),
+    )
+    def test_reset_restores_prior_effective_counts(
+        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int, prior: float
+    ) -> None:
+        """Resetting the model restores both the raw and effective counts to the prior."""
+        b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
+        b.update(rewards=rewards)
+        b.reset()
+        assert (b.n_successes, b.n_failures) == (int(prior), int(prior))
+        assert (b.decayed_n_successes, b.decayed_n_failures) == (prior, prior)
+
+    @given(rewards=binary_rewards, decay_factor=decay_factors, n_successes=counts, n_failures=counts)
+    def test_serialization_roundtrip(
+        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int
+    ) -> None:
+        """get_state/from_state preserves the decay factor and the (non-recomputable) effective counts."""
+        b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
+        b.update(rewards=rewards)
+        assert Beta.model_validate_json(b.model_dump_json()) == b
+
+    @given(n_successes=counts, n_failures=counts)
+    def test_state_without_decay_fields_loads_with_decay_disabled(self, n_successes: int, n_failures: int) -> None:
+        """A serialized state predating the decay feature loads with decay disabled."""
+        b = Beta.model_validate({"n_successes": n_successes, "n_failures": n_failures})
+        assert b.decay_factor is None
+        assert b.decayed_n_successes is None and b.decayed_n_failures is None
+
+    @given(
+        decay_factor=st.one_of(
+            st.floats(max_value=0), st.floats(min_value=MAX_DECAY_FACTOR, exclude_min=True), st.just(float("nan"))
+        )
+    )
+    def test_factor_out_of_range_raises(self, decay_factor: float) -> None:
+        """decay_factor must lie in (0, 1]."""
+        with pytest.raises(ValidationError):
+            Beta(decay_factor=decay_factor)
+
+
+class TestBnnDecayFactor:
+    """Per-update prior-variance inflation (decay_factor) on the BayesianNeuralNetwork: weight, bias, and
+    embedding sigmas are scaled by 1 / decay_factor before each re-fit, while means stay untouched.
+
+    These build a network per case, so they stay plain (no @given) with a single representative factor."""
+
+    DECAY_FACTOR = 0.5
+    N_FEATURES = 2
+    HIDDEN = (3,)
+    CAT_COLUMN = 0
+    CARDINALITY = 4
+
+    def test_inflates_weight_and_bias_variance(
+        self,
+        decay_factor: float = DECAY_FACTOR,
+        n_features: int = N_FEATURES,
+        hidden_dim_list: Tuple[int, ...] = HIDDEN,
+    ) -> None:
+        """Weight/bias sigma are scaled by 1 / decay_factor while the means (mu) are left unchanged."""
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features, hidden_dim_list=list(hidden_dim_list), decay_factor=decay_factor
+        )
+        before = [
+            (np.array(lp.weight.params["sigma"]), np.array(lp.bias.params["sigma"]), np.array(lp.weight.params["mu"]))
+            for lp in bnn.model_params.bnn_layer_params
+        ]
+        bnn._inflate_prior_variance()
+        for (w_sigma, b_sigma, w_mu), lp in zip(before, bnn.model_params.bnn_layer_params):
+            assert np.allclose(np.array(lp.weight.params["sigma"]), w_sigma / decay_factor)
+            assert np.allclose(np.array(lp.bias.params["sigma"]), b_sigma / decay_factor)
+            assert np.allclose(np.array(lp.weight.params["mu"]), w_mu)
+
+    def test_disabled_leaves_variance_unchanged(
+        self,
+        make_bnn,
+        n_features: int = N_FEATURES,
+        hidden_dim_list: Tuple[int, ...] = HIDDEN,
+    ) -> None:
+        """With decay disabled, _inflate_prior_variance is a no-op."""
+        bnn = make_bnn(n_features=n_features, hidden_dim_list=list(hidden_dim_list))
+        before = [np.array(lp.weight.params["sigma"]) for lp in bnn.model_params.bnn_layer_params]
+        bnn._inflate_prior_variance()
+        for w_sigma, lp in zip(before, bnn.model_params.bnn_layer_params):
+            assert np.allclose(np.array(lp.weight.params["sigma"]), w_sigma)
+
+    def test_inflates_embedding_variance(
+        self,
+        decay_factor: float = DECAY_FACTOR,
+        n_features: int = N_FEATURES,
+        hidden_dim_list: Tuple[int, ...] = HIDDEN,
+        cat_column: int = CAT_COLUMN,
+        cardinality: int = CARDINALITY,
+    ) -> None:
+        """Categorical-embedding sigma is scaled by 1 / decay_factor."""
+        bnn = BayesianNeuralNetwork.cold_start(
+            n_features=n_features,
+            hidden_dim_list=list(hidden_dim_list),
+            categorical_features={cat_column: cardinality},
+            decay_factor=decay_factor,
+        )
+        before = [np.array(emb.params["sigma"]) for emb in bnn.model_params.embedding_params.embeddings]
+        bnn._inflate_prior_variance()
+        for emb_sigma, emb in zip(before, bnn.model_params.embedding_params.embeddings):
+            assert np.allclose(np.array(emb.params["sigma"]), emb_sigma / decay_factor)
 
 
 ########################################################################################################################

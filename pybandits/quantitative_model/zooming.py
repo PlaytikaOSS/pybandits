@@ -28,8 +28,8 @@ from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from pydantic import (
+    Field,
     PositiveInt,
-    PrivateAttr,
     field_serializer,
     field_validator,
     validate_call,
@@ -45,7 +45,7 @@ from pybandits.base import (
     PyBanditsBaseModel,
     QuantitativeProbability,
 )
-from pybandits.model import Beta, Model
+from pybandits.model import Beta
 from pybandits.quantitative_model.base import QuantitativeModel, QuantitativeModelCC, QuantitativeModelDP
 
 
@@ -215,6 +215,9 @@ class BaseZooming(QuantitativeModel, ABC):
         Maximum number of segments.
     sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
         Mapping of segments to Beta models.
+    base_model: Beta
+        Template Beta model copied for every new segment. Carries the per-segment configuration
+        (e.g. ``decay_factor``); built from ``base_model_cold_start_kwargs`` at cold start.
     """
 
     dimension: PositiveInt
@@ -223,7 +226,7 @@ class BaseZooming(QuantitativeModel, ABC):
     n_comparison_points: PositiveInt = 1000
     n_max_segments: Optional[PositiveInt] = 32
     sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
-    _base_model: Model = PrivateAttr()
+    base_model: Beta = Field(default_factory=Beta)
     _n_initial_segments: ClassVar = 4
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("sub_actions",)
 
@@ -266,24 +269,17 @@ class BaseZooming(QuantitativeModel, ABC):
 
     def model_post_init(self, __context: Any) -> None:
         self._validate_segments()
-        self._init_base_model()
         segment_models_types = set(type(model) if model is not None else None for model in self.sub_actions.values())
         if None in segment_models_types:
             if len(segment_models_types) > 1:
                 raise ValueError("All segments must either have a model or miss a model.")
             self.sub_actions = dict(
-                zip(self.sub_actions, [self._base_model.model_copy(deep=True) for _ in range(len(self.sub_actions))])
+                zip(self.sub_actions, [self.base_model.model_copy(deep=True) for _ in range(len(self.sub_actions))])
             )
 
     @property
     def segmented_actions(self) -> Dict[Segment, Optional[Beta]]:
         return {Segment(intervals=segment): model for segment, model in self.sub_actions.items()}
-
-    def _init_base_model(self):
-        """
-        Initialize the base model.
-        """
-        self._base_model = Beta()
 
     @classmethod
     @validate_call
@@ -293,10 +289,16 @@ class BaseZooming(QuantitativeModel, ABC):
         comparison_threshold: Float01 = 0.1,
         n_comparison_points: PositiveInt = 1000,
         n_max_segments: Optional[PositiveInt] = 32,
+        base_model_cold_start_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Self:
         """
         Create a cold start model.
+
+        Parameters
+        ----------
+        base_model_cold_start_kwargs : Optional[Dict[str, Any]]
+            Keyword arguments forwarded to the per-segment Beta model (e.g. ``decay_factor``).
 
         Returns
         -------
@@ -310,6 +312,7 @@ class BaseZooming(QuantitativeModel, ABC):
             n_comparison_points=n_comparison_points,
             n_max_segments=n_max_segments,
             sub_actions=sub_actions,
+            base_model=Beta(**(base_model_cold_start_kwargs or {})),
             **kwargs,
         )
 
@@ -505,7 +508,7 @@ class BaseZooming(QuantitativeModel, ABC):
                     nuisance_segments.remove(segment)
                     nuisance_segments.remove(other_segment)
                     merged_segment = segment + other_segment
-                    self.sub_actions[merged_segment.intervals] = self._base_model.model_copy(deep=True)
+                    self.sub_actions[merged_segment.intervals] = self.base_model.model_copy(deep=True)
                     filtered_quantities, filtered_rewards = self._filter_by_segment(
                         [segment, other_segment], quantities, segments, rewards
                     )
@@ -542,8 +545,8 @@ class BaseZooming(QuantitativeModel, ABC):
             best_segment = interest_segments[i]
             del self.sub_actions[best_segment.intervals]
             sub_best_segments = best_segment.split()
-            self.sub_actions[sub_best_segments[0].intervals] = self._base_model.model_copy(deep=True)
-            self.sub_actions[sub_best_segments[1].intervals] = self._base_model.model_copy(deep=True)
+            self.sub_actions[sub_best_segments[0].intervals] = self.base_model.model_copy(deep=True)
+            self.sub_actions[sub_best_segments[1].intervals] = self.base_model.model_copy(deep=True)
             filtered_quantities, filtered_rewards = self._filter_by_segment(best_segment, quantities, segments, rewards)
             self._map_and_update_segment_models(filtered_quantities, filtered_rewards)
             i += 1
@@ -615,7 +618,7 @@ class BaseZooming(QuantitativeModel, ABC):
         self.sub_actions = dict(
             zip(
                 self._generate_initial_segments(self.dimension),
-                [self._base_model.model_copy(deep=True) for _ in range(self._n_initial_segments**self.dimension)],
+                [self.base_model.model_copy(deep=True) for _ in range(self._n_initial_segments**self.dimension)],
             )
         )
 

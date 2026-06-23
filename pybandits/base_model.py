@@ -106,8 +106,11 @@ class BaseModelSO(BaseModel, ABC):
         Counter of the number of failures.
     """
 
-    n_successes: PositiveInt = 1
-    n_failures: PositiveInt = 1
+    # Beta(1, 1) prior pseudo-count: the anchor that raw counts start from and that decay shrinks toward.
+    _prior_pseudo_count: ClassVar[int] = 1
+
+    n_successes: PositiveInt = _prior_pseudo_count
+    n_failures: PositiveInt = _prior_pseudo_count
 
     # --- Transfer learning keys (own contributions for this class) ---
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("n_successes", "n_failures")
@@ -181,8 +184,8 @@ class BaseModelSO(BaseModel, ABC):
         """
         Reset the model.
         """
-        self.n_successes = 1
-        self.n_failures = 1
+        self.n_successes = self._prior_pseudo_count
+        self.n_failures = self._prior_pseudo_count
         self._reset()
 
     @abstractmethod
