@@ -24,6 +24,7 @@
 
 import json
 import logging
+import math
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -1029,6 +1030,353 @@ class TestHiddenDimExpansion:
         )
         template = CmabBernoulli.cold_start(
             action_ids={"a2"}, n_features=_N_FEATURES, hidden_dim_list=new_hidden, strategy=ClassicBandit()
+        )
+        result = edit_model_on_the_fly(current, template)
+        assert set(result.actions.keys()) == {"a2"}
+
+
+class TestCategoricalFeatureExpansion:
+    """Tests for categorical feature embedding expansion via edit_model_on_the_fly."""
+
+    _CAT_COLUMN = 2  # a valid column index given _N_FEATURES = 5
+    _CAT_OLD_CARDINALITY = 5  # embedding_dim = ceil(5/4) = 2
+    _CAT_INCOMPATIBLE_CARDINALITY = 4  # embedding_dim = ceil(4/4) = 1 — different from old=5
+
+    @st.composite
+    def _compatible_grow_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int, int]:
+        """Draw (action_id, n_features, cat_col, old_cardinality, new_cardinality) with same embedding_dim."""
+        action_id = draw(single_action_id_strategy)
+        n_features = draw(st.integers(min_value=2, max_value=6))
+        cat_col = draw(st.integers(min_value=0, max_value=n_features - 1))
+        # Pick a dimension bin (divisor=4); draw old < new within that bin so embedding_dim is preserved
+        dim = draw(st.integers(min_value=1, max_value=3))
+        low, high = 4 * (dim - 1) + 1, 4 * dim
+        old_cardinality = draw(st.integers(min_value=low, max_value=high - 1))
+        new_cardinality = draw(st.integers(min_value=old_cardinality + 1, max_value=high))
+        return action_id, n_features, cat_col, old_cardinality, new_cardinality
+
+    @st.composite
+    def _add_cat_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int]:
+        """Draw (action_id, n_features, new_cat_col, new_cat_cardinality) for adding a new categorical."""
+        action_id = draw(single_action_id_strategy)
+        n_features = draw(st.integers(min_value=2, max_value=6))
+        new_cat_col = draw(st.integers(min_value=0, max_value=n_features - 1))
+        new_cat_cardinality = draw(st.integers(min_value=1, max_value=12))
+        return action_id, n_features, new_cat_col, new_cat_cardinality
+
+    @st.composite
+    def _incompatible_cardinality_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int, int]:
+        """Draw (action_id, n_features, cat_col, old_cardinality, new_cardinality) with DIFFERENT embedding_dims."""
+        action_id = draw(single_action_id_strategy)
+        n_features = draw(st.integers(min_value=2, max_value=6))
+        cat_col = draw(st.integers(min_value=0, max_value=n_features - 1))
+        dim_old = draw(st.integers(min_value=1, max_value=3))
+        dim_new = draw(st.integers(min_value=1, max_value=3).filter(lambda d: d != dim_old))
+        old_cardinality = draw(st.integers(min_value=4 * (dim_old - 1) + 1, max_value=4 * dim_old))
+        new_cardinality = draw(st.integers(min_value=4 * (dim_new - 1) + 1, max_value=4 * dim_new))
+        return action_id, n_features, cat_col, old_cardinality, new_cardinality
+
+    # ------------------------------------------------------------------
+    # Grow cardinality — same embedding_dim
+    # ------------------------------------------------------------------
+
+    @given(scenario=_compatible_grow_scenario())
+    def test_grow_cardinality_embedding_shape_correct_so(self, scenario: Tuple[str, int, int, int, int]) -> None:
+        """Grown cardinality produces an embedding of the correct shape for SO CMAB."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: new_cardinality},
+            strategy=ClassicBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
+        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        assert result_emb.shape == (new_cardinality, expected_dim)
+
+    @given(scenario=_compatible_grow_scenario(), n_objectives=n_objectives_strategy)
+    def test_grow_cardinality_embedding_shape_correct_mo(
+        self, scenario: Tuple[str, int, int, int, int], n_objectives: int
+    ) -> None:
+        """Grown cardinality produces an embedding of the correct shape for MO CMAB."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            categorical_features={cat_col: old_cardinality},
+            strategy=MultiObjectiveBandit(),
+        )
+        template = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            categorical_features={cat_col: new_cardinality},
+            strategy=MultiObjectiveBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        for obj_model in result.actions[action_id].models:
+            result_emb = obj_model.model_params.embedding_params.embeddings[0]
+            assert result_emb.shape == (new_cardinality, expected_dim)
+
+    @given(scenario=_compatible_grow_scenario())
+    def test_grow_cardinality_preserves_existing_rows(self, scenario: Tuple[str, int, int, int, int]) -> None:
+        """Embedding rows for existing categories are preserved unchanged after cardinality grows."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: new_cardinality},
+            strategy=ClassicBandit(),
+        )
+        current_emb = current.actions[action_id].model_params.embedding_params.embeddings[0]
+        result = edit_model_on_the_fly(current, template)
+        result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
+        assert result_emb.mu[:old_cardinality] == current_emb.mu
+        assert result_emb.sigma[:old_cardinality] == current_emb.sigma
+
+    @given(scenario=_compatible_grow_scenario())
+    def test_grow_cardinality_new_rows_from_template(self, scenario: Tuple[str, int, int, int, int]) -> None:
+        """Rows for new categories come from the template embedding."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: new_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template_emb = template.actions[action_id].model_params.embedding_params.embeddings[0]
+        result = edit_model_on_the_fly(current, template)
+        result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
+        assert result_emb.mu[old_cardinality:] == template_emb.mu[old_cardinality:]
+        assert result_emb.sigma[old_cardinality:] == template_emb.sigma[old_cardinality:]
+
+    @given(scenario=_compatible_grow_scenario())
+    def test_grow_cardinality_feature_config_updated(self, scenario: Tuple[str, int, int, int, int]) -> None:
+        """feature_config cardinality reflects the template's new cardinality."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: new_cardinality},
+            strategy=ClassicBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        cat_cfg = result.actions[action_id].feature_config.categorical_features_configs[0]
+        assert cat_cfg.cardinality == new_cardinality
+        assert cat_cfg.column_index == cat_col
+
+    # ------------------------------------------------------------------
+    # Add new categorical feature
+    # ------------------------------------------------------------------
+
+    @given(scenario=_add_cat_scenario())
+    def test_add_new_categorical_embedding_created_so(self, scenario: Tuple[str, int, int, int]) -> None:
+        """Adding a new categorical feature creates embedding_params where there were none for SO."""
+        action_id, n_features, new_cat_col, new_cat_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={new_cat_col: new_cat_cardinality},
+            strategy=ClassicBandit(),
+        )
+        assert current.actions[action_id].model_params.embedding_params is None
+        result = edit_model_on_the_fly(current, template)
+        assert result.actions[action_id].model_params.embedding_params is not None
+        assert len(result.actions[action_id].model_params.embedding_params.embeddings) == 1
+
+    @given(scenario=_add_cat_scenario(), n_objectives=n_objectives_strategy)
+    def test_add_new_categorical_embedding_created_mo(
+        self, scenario: Tuple[str, int, int, int], n_objectives: int
+    ) -> None:
+        """Adding a new categorical feature creates embedding_params for each objective in MO."""
+        action_id, n_features, new_cat_col, new_cat_cardinality = scenario
+        current = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            strategy=MultiObjectiveBandit(),
+        )
+        template = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            n_objectives=n_objectives,
+            categorical_features={new_cat_col: new_cat_cardinality},
+            strategy=MultiObjectiveBandit(),
+        )
+        for obj_model in current.actions[action_id].models:
+            assert obj_model.model_params.embedding_params is None
+        result = edit_model_on_the_fly(current, template)
+        for obj_model in result.actions[action_id].models:
+            assert obj_model.model_params.embedding_params is not None
+            assert len(obj_model.model_params.embedding_params.embeddings) == 1
+
+    @given(scenario=_add_cat_scenario())
+    def test_add_new_categorical_embedding_values_from_template(self, scenario: Tuple[str, int, int, int]) -> None:
+        """New categorical feature embedding values are copied exactly from the template."""
+        action_id, n_features, new_cat_col, new_cat_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={new_cat_col: new_cat_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template_emb = template.actions[action_id].model_params.embedding_params.embeddings[0]
+        result = edit_model_on_the_fly(current, template)
+        result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
+        assert result_emb.mu == template_emb.mu
+        assert result_emb.sigma == template_emb.sigma
+
+    @given(scenario=_add_cat_scenario())
+    def test_add_new_categorical_embedding_shape_correct(self, scenario: Tuple[str, int, int, int]) -> None:
+        """New categorical embedding has shape (cardinality, embedding_dim)."""
+        action_id, n_features, new_cat_col, new_cat_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={new_cat_col: new_cat_cardinality},
+            strategy=ClassicBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
+        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        assert result_emb.shape == (new_cat_cardinality, expected_dim)
+
+    @given(
+        action_id=single_action_id_strategy,
+        n_features=n_features_strategy,
+        new_cat_cardinality=st.integers(min_value=1, max_value=12),
+        extra_features=st.integers(min_value=1, max_value=4),
+    )
+    def test_add_new_categorical_with_extra_n_features(
+        self, action_id: str, n_features: int, new_cat_cardinality: int, extra_features: int
+    ) -> None:
+        """Adding a categorical when n_features also grows works: weight and embedding both expand."""
+        new_n_features = n_features + extra_features
+        new_cat_col = n_features  # first new column, valid index in the larger feature set
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=new_n_features,
+            categorical_features={new_cat_col: new_cat_cardinality},
+            strategy=ClassicBandit(),
+        )
+        result = edit_model_on_the_fly(current, template)
+        assert result.actions[action_id].input_dim == new_n_features
+        assert result.actions[action_id].model_params.embedding_params is not None
+        result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
+        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        assert result_emb.shape == (new_cat_cardinality, expected_dim)
+
+    # ------------------------------------------------------------------
+    # Error cases
+    # ------------------------------------------------------------------
+
+    @given(scenario=_incompatible_cardinality_scenario())
+    def test_embedding_dim_change_raises_value_error(self, scenario: Tuple[str, int, int, int, int]) -> None:
+        """Changing embedding_dim (incompatible cardinalities on the same column) raises ValueError."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: new_cardinality},
+            strategy=ClassicBandit(),
+        )
+        with pytest.raises(ValueError, match="embedding_dim"):
+            edit_model_on_the_fly(current, template)
+
+    @given(scenario=_incompatible_cardinality_scenario())
+    def test_embedding_dim_change_raises_value_error_mo(self, scenario: Tuple[str, int, int, int, int]) -> None:
+        """MO: changing embedding_dim on the same column raises ValueError through the MO loop."""
+        action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
+        current = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            n_objectives=2,
+            strategy=MultiObjectiveBandit(),
+        )
+        template = CmabBernoulliMO.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: new_cardinality},
+            n_objectives=2,
+            strategy=MultiObjectiveBandit(),
+        )
+        with pytest.raises(ValueError, match="embedding_dim"):
+            edit_model_on_the_fly(current, template)
+
+    def test_non_overlapping_action_no_embedding_expansion(
+        self,
+        action_id: str = _ACTION_ID,
+        n_features: int = _N_FEATURES,
+        cat_col: int = _CAT_COLUMN,
+        old_cardinality: int = _CAT_OLD_CARDINALITY,
+        incompatible_cardinality: int = _CAT_INCOMPATIBLE_CARDINALITY,
+    ) -> None:
+        """Incompatible categoricals on non-overlapping actions do not raise errors."""
+        current = CmabBernoulli.cold_start(
+            action_ids={action_id},
+            n_features=n_features,
+            categorical_features={cat_col: old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        template = CmabBernoulli.cold_start(
+            action_ids={"a2"},
+            n_features=n_features,
+            categorical_features={cat_col: incompatible_cardinality},
+            strategy=ClassicBandit(),
         )
         result = edit_model_on_the_fly(current, template)
         assert set(result.actions.keys()) == {"a2"}

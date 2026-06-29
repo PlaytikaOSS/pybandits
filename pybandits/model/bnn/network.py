@@ -1823,6 +1823,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
         bias_std: Optional[PositiveFloat] = None,
+        categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
         decay_factor: Optional[PositiveFloat01] = None,
         **kwargs,
     ) -> Self:
@@ -1854,6 +1855,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         bias_std : Optional[PositiveFloat]
             If provided, overrides ``sigma`` from ``dist_params`` for all layers' bias priors,
             leaving weight priors untouched. Default is None.
+        categorical_features : Optional[Dict[int, int]], optional
+            Categorical columns as ``{column_index: cardinality}``, forwarded to each per-objective BNN.
         decay_factor : Optional[PositiveFloat01]
             Per-update forgetting factor forwarded to each per-objective BNN.
         **kwargs
@@ -1877,6 +1880,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 use_residual_connections=use_residual_connections,
                 use_layerwise_scaling=use_layerwise_scaling,
                 bias_std=bias_std,
+                categorical_features=categorical_features,
                 decay_factor=decay_factor,
             )
             for _ in range(n_objectives)

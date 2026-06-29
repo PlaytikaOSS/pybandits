@@ -477,6 +477,107 @@ def _expand_bnn_weights(
             _sync_and_expand_dist_params(current_b, template_b)
 
 
+def _expand_embedding_params(
+    current_model_params: Dict[str, Any],
+    template_model_params: Dict[str, Any],
+    current_feature_config: Dict[str, Any],
+    template_feature_config: Dict[str, Any],
+    action_id: str,
+    obj_idx: Optional[int] = None,
+) -> None:
+    """Expand embedding parameters in-place to match template's categorical features.
+
+    Handles two scenarios:
+    1. New categorical feature (present in template, absent in current): embedding copied from template.
+    2. Grown cardinality with same embedding_dim: new category rows appended from template.
+
+    Raises ValueError if an existing categorical feature's ``embedding_dim`` changes, since that
+    alters the first dense-layer input width and requires retraining from scratch.
+
+    Parameters
+    ----------
+    current_model_params : Dict[str, Any]
+        Current action model_params dict, modified in-place.
+    template_model_params : Dict[str, Any]
+        Template action model_params dict.
+    current_feature_config : Dict[str, Any]
+        Current action feature_config dict.
+    template_feature_config : Dict[str, Any]
+        Template action feature_config dict.
+    action_id : str
+        Action ID for error messages.
+    obj_idx : Optional[int]
+        Objective index for MO models, or None for SO models.
+
+    Raises
+    ------
+    ValueError
+        If an existing categorical feature's embedding_dim changes.
+    """
+    template_cats = template_feature_config.get("categorical_features_configs", [])
+    if not template_cats:
+        # ponytail: clear stale embedding payloads so model_params stays consistent with the new feature_config
+        for outer_key in ("embedding_params", "embedding_params_init"):
+            current_model_params.pop(outer_key, None)
+        return
+
+    current_cats = current_feature_config.get("categorical_features_configs", [])
+    prefix = f" (objective {obj_idx})" if obj_idx is not None else ""
+
+    # column_index → (list_position, config) for current categorical features
+    current_cat_by_col = {cfg["column_index"]: (i, cfg) for i, cfg in enumerate(current_cats)}
+
+    # Validate: embedding_dim must not change for existing categorical features
+    for tpl_cfg in template_cats:
+        col_idx = tpl_cfg["column_index"]
+        if col_idx in current_cat_by_col:
+            _, cur_cfg = current_cat_by_col[col_idx]
+            if tpl_cfg["embedding_dim"] != cur_cfg["embedding_dim"]:
+                raise ValueError(
+                    f"Cannot change embedding_dim for categorical feature at column {col_idx} "
+                    f"in action '{action_id}'{prefix}: "
+                    f"{cur_cfg['embedding_dim']} -> {tpl_cfg['embedding_dim']}. "
+                    "Changing embedding_dim requires retraining from scratch."
+                )
+
+    # Expand both embedding_params and embedding_params_init (outer frozen copy)
+    for outer_key in ("embedding_params", "embedding_params_init"):
+        tpl_ep = template_model_params.get(outer_key)
+        if tpl_ep is None:
+            continue
+
+        # Capture original current embedding data before any writes
+        cur_ep = current_model_params.get(outer_key) or {}
+
+        for inner_key in ("embeddings", "embeddings_init"):
+            tpl_list = tpl_ep.get(inner_key, [])
+            cur_list = cur_ep.get(inner_key, [])
+
+            new_list = []
+            for tpl_idx, tpl_cfg in enumerate(template_cats):
+                col_idx = tpl_cfg["column_index"]
+                if tpl_idx >= len(tpl_list):
+                    continue
+                tpl_emb = tpl_list[tpl_idx]
+
+                if col_idx in current_cat_by_col:
+                    cur_pos, _ = current_cat_by_col[col_idx]
+                    if cur_pos < len(cur_list):
+                        # Existing categorical: expand cardinality rows if needed
+                        cur_emb = {k: v for k, v in cur_list[cur_pos].items()}
+                        _sync_and_expand_dist_params(cur_emb, tpl_emb)
+                        new_list.append(cur_emb)
+                    else:
+                        new_list.append({k: v for k, v in tpl_emb.items()})
+                else:
+                    # New categorical feature: copy embedding from template
+                    new_list.append({k: v for k, v in tpl_emb.items()})
+
+            if current_model_params.get(outer_key) is None:
+                current_model_params[outer_key] = {}
+            current_model_params[outer_key][inner_key] = new_list
+
+
 def _validate_hidden_dims(
     src_dims: List[int],
     tgt_dims: List[int],
@@ -583,11 +684,26 @@ def _expand_with_template_weights(
                     current_action["models"][model_idx]["model_params"],
                     template_action["models"][model_idx]["model_params"],
                 )
+                _expand_embedding_params(
+                    current_action["models"][model_idx]["model_params"],
+                    template_action["models"][model_idx]["model_params"],
+                    current_action["models"][model_idx]["feature_config"],
+                    template_action["models"][model_idx]["feature_config"],
+                    action_id,
+                    model_idx,
+                )
         elif isinstance(action_model, BaseBayesianNeuralNetwork):
             # Single-objective BNN
             _expand_bnn_weights(
                 current_action["model_params"],
                 template_action["model_params"],
+            )
+            _expand_embedding_params(
+                current_action["model_params"],
+                template_action["model_params"],
+                current_action["feature_config"],
+                template_action["feature_config"],
+                action_id,
             )
         else:
             raise TypeError(
@@ -637,8 +753,11 @@ def edit_model_on_the_fly(
     - More input features, same hidden dims: expands first-layer input rows from template
     - Same input features, larger hidden dims: expands all layers' output columns from template
     - Both more features and larger hidden dims: expands rows and columns simultaneously
+    - New categorical feature appended to feature vector: embedding copied from template
+    - Grown cardinality (same embedding_dim): new category rows appended to embedding from template
     - Fewer input features: raises ValueError (cannot reduce dimensions)
     - Smaller hidden dims: raises ValueError (cannot reduce hidden dimensions)
+    - Changed embedding_dim on existing categorical: raises ValueError (requires retraining)
 
     The resulting MAB will have:
     - Actions: All actions from new_mab
