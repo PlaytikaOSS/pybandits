@@ -68,12 +68,12 @@ class DummyActionsManager(ActionsManager):
 @given(
     data_len=st.integers(min_value=1, max_value=100),
 )
-def test_update_with_invalid_memory_delta_none(data_len):
+def test_update_with_invalid_memory_delta_none(data_len, rng):
     """Test update validation when delta is None but memory is provided"""
     actions = {"action1": Beta(), "action2": Beta()}
     manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
-    action_list = np.random.choice(["action1", "action2"], size=data_len).tolist()
-    rewards = np.random.randint(0, 2, size=data_len).tolist()
+    action_list = rng.choice(["action1", "action2"], size=data_len).tolist()
+    rewards = rng.integers(0, 2, size=data_len).tolist()
     with pytest.raises(ValueError):
         manager.update(actions=action_list, rewards=rewards, actions_memory=action_list, rewards_memory=rewards)
 
@@ -105,10 +105,10 @@ _UPDATE_RESERVED_PARAMS = {"actions", "rewards", "self", "quantities", "context"
         min_size=1,
     ),
 )
-def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monkeymodule):
+def test_update_kwargs_separation(data_len, regular_kwargs, memory_kwargs, monkeymodule, rng):
     """Test proper separation of regular and memory kwargs"""
-    action_list = np.random.choice(["action1", "action2"], size=data_len).tolist()
-    rewards = np.random.randint(0, 2, size=data_len).tolist()
+    action_list = rng.choice(["action1", "action2"], size=data_len).tolist()
+    rewards = rng.integers(0, 2, size=data_len).tolist()
     actions = {"action1": Beta(), "action2": Beta()}
     manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
     all_kwargs = {**regular_kwargs, **memory_kwargs}
@@ -328,9 +328,9 @@ def test_cmab_manager_update(context, context_memory, n_features, other_reward, 
 
 
 @given(st.integers(min_value=1, max_value=1000), st.integers(min_value=1, max_value=100))
-def test_check_context_matrix(n_samples, n_features):
+def test_check_context_matrix(rng, n_samples, n_features):
     # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
     CmabActionsManager._check_context_matrix(context=context)
 
     # raise an error for numpy arrays that cannot be cast to float
@@ -484,11 +484,11 @@ def test_slice_memory_empty_data():
 
 
 @given(data_len=st.integers(min_value=101, max_value=200), memory_len=st.integers(min_value=1, max_value=100))
-def test_slice_memory_maintains_last_elements(data_len, memory_len):
+def test_slice_memory_maintains_last_elements(data_len, memory_len, rng):
     actions = {"action1": Beta(), "action2": Beta()}
     manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
-    actions_backup = np.random.choice(list(actions.keys()), size=data_len).tolist()
-    rewards_backup = np.random.randint(0, 2, size=data_len).tolist()  # Use range to verify order preservation
+    actions_backup = rng.choice(list(actions.keys()), size=data_len).tolist()
+    rewards_backup = rng.integers(0, 2, size=data_len).tolist()  # Use range to verify order preservation
     context_backup = list(range(data_len))
     memory_kwargs = {"context_memory": context_backup.copy()}
 
@@ -509,7 +509,9 @@ def test_slice_memory_maintains_last_elements(data_len, memory_len):
 
 
 # ActionsManager._maybe_trim_memory functionality tests
-def test_memory_trim_when_too_long(mocker: MockerFixture, trials=(3, 3), successes=(2, 1), extra_len=5):
+def test_memory_trim_when_too_long(
+    mocker: MockerFixture, rng: np.random.Generator, trials=(3, 3), successes=(2, 1), extra_len=5
+):
     actions = {"action1": Beta(), "action2": Beta()}
     manager = DummyActionsManager(actions=actions, delta=REFERENCE_DELTA)
     # Mock _extract_current_stats_for_action to return known values
@@ -523,19 +525,17 @@ def test_memory_trim_when_too_long(mocker: MockerFixture, trials=(3, 3), success
     )
 
     actions_memory = (
-        np.random.choice(["action1", "action2"], size=extra_len).tolist()
-        + ["action1"] * trials[0]
-        + ["action2"] * trials[1]
+        rng.choice(["action1", "action2"], size=extra_len).tolist() + ["action1"] * trials[0] + ["action2"] * trials[1]
     )
     rewards_memory = (
-        np.random.randint(0, 2, size=extra_len).tolist()
+        rng.integers(0, 2, size=extra_len).tolist()
         + [1] * successes[0]
         + [0] * (trials[0] - successes[0])
         + [1] * successes[1]
         + [0] * (trials[1] - successes[1])
     )
     shuffled_indexes = list(range(-sum(trials), 0))
-    np.random.shuffle(shuffled_indexes)
+    rng.shuffle(shuffled_indexes)
     temp_actions = [actions_memory[i] for i in shuffled_indexes]
     temp_rewards = [rewards_memory[i] for i in shuffled_indexes]
     actions_memory[-sum(trials) :] = temp_actions
@@ -899,13 +899,13 @@ def actions(names=("action1", "action2")):
     ],
 )
 def test_update_adaptive_window_size_validation(
-    actions, delta, actions_memory, rewards_memory, expected_exception, expected_message
+    actions, delta, actions_memory, rewards_memory, expected_exception, expected_message, rng
 ):
     """Test update validation for adaptive window size scenarios."""
     manager = DummyActionsManager(actions=actions, delta=delta)
 
     action_list = list(actions.keys())
-    rewards = np.random.randint(0, 2, size=len(action_list)).tolist()
+    rewards = rng.integers(0, 2, size=len(action_list)).tolist()
 
     if expected_exception is AttributeError:
         with pytest.raises(expected_exception, match=expected_message):

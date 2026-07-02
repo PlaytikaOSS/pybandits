@@ -177,9 +177,9 @@ def test_sample_proba_returns_valid_probabilities(rng, n_samples=100, test_locat
     seeds=st.lists(st.integers(min_value=0, max_value=2**31 - 1), min_size=2, max_size=2, unique=True),
     n_locations=st.just(10),
 )
-def test_sample_proba_reproducible_with_same_rng(dimension, n_samples, seeds, n_locations):
+def test_sample_proba_reproducible_with_same_rng(rng, dimension, n_samples, seeds, n_locations):
     model = Zooming.cold_start(dimension=dimension, n_max_segments=None)
-    locations = [tuple([q] * dimension) for q in np.random.uniform(size=n_locations)]
+    locations = [tuple([q] * dimension) for q in rng.uniform(size=n_locations)]
 
     def draw(seed):
         functions = model.sample_proba(n_samples=n_samples, rng=np.random.default_rng(seed=seed))
@@ -305,10 +305,10 @@ def test_initializes_smab_zooming_model_correctly(dimension, n_max_segments):
     rewards=st.lists(st.integers(min_value=0, max_value=1), min_size=1, max_size=5),
     dimension=st.just(1),
 )
-def test_updates_smab_zooming_model_correctly(rewards, dimension):
+def test_updates_smab_zooming_model_correctly(rng, rewards, dimension):
     model = Zooming.cold_start(dimension=dimension)
     initial_segments = deepcopy(model.segmented_actions)
-    quantities = np.random.uniform(0, 1, size=len(rewards)).tolist()
+    quantities = rng.uniform(0, 1, size=len(rewards)).tolist()
     model.update(quantities=quantities, rewards=rewards)
     assert model.segmented_actions != initial_segments
 
@@ -419,7 +419,7 @@ def test_sample_proba_returns_valid_probabilities_cmab(
         context = np.array([[0], [1], [2], [0], [1]], dtype=np.float64)
     else:
         model = QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)
-        context = np.random.uniform(low=0, high=1, size=(5, 1))
+        context = rng.uniform(low=0, high=1, size=(5, 1))
 
     prob_functions = model.sample_proba(context=context, rng=rng)
     assert len(prob_functions) == len(context)

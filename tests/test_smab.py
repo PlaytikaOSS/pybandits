@@ -93,11 +93,12 @@ class ModelTestConfig:
         action_ids: List[str],
         values: Optional[st.SearchStrategy],
         n_objectives: Optional[PositiveInt],
+        rng: np.random.Generator,
         decay_factor: Optional[Float01] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
-            indices = np.random.randint(0, len(model_types), len(action_ids))
+            indices = rng.integers(0, len(model_types), len(action_ids))
             model_types = [model_types[i] for i in indices]
         base_model_cold_start_kwargs: Dict[str, Any] = {}
         if decay_factor is not None:
@@ -164,24 +165,36 @@ class ModelTestConfig:
         n_objectives: st.SearchStrategy[PositiveInt],
         exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
         subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
+        rng: np.random.Generator,
         decay_factor: Optional[Float01] = None,
+        default_action_fraction: Optional[Float01] = None,
+        limited_action_fraction: Optional[Float01] = None,
     ) -> Tuple[BaseSmabBernoulli, Dict[ActionId, SmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
             if self.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]
             else None
         )
-        actions, base_model_cold_start_kwargs = self._create_actions(action_ids, values, n_objectives, decay_factor)
+        actions, base_model_cold_start_kwargs = self._create_actions(
+            action_ids, values, n_objectives, rng, decay_factor
+        )
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
-            default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
+            default_action = (default_action, tuple(rng.random(actions[default_action].dimension)))
         epsilon = epsilon if not delta else 0.1
+        # default_action_fraction requires a default_action; limited_actions is derived from the
+        # action set (excluding default_action) exactly as default_action is derived from epsilon.
+        default_action_fraction = default_action_fraction if default_action else None
+        limited_actions = {action_ids[-1]} if limited_action_fraction is not None else None
         kwargs = {
             k: v
             for k, v in {
                 "epsilon": epsilon,
                 "default_action": default_action,
                 "delta": delta,
+                "default_action_fraction": default_action_fraction,
+                "limited_actions": limited_actions,
+                "limited_action_fraction": limited_action_fraction,
             }.items()
             if v is not None
         }
@@ -235,6 +248,8 @@ TEST_CONFIGS = {
         unique=True,
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -246,16 +261,29 @@ def test_cold_start(
     config: ModelTestConfig,
     action_ids: List[str],
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
     exploit_p,
     subsidy_factor,
     decay_factor: Optional[float],
+    rng: np.random.Generator,
 ):
     # Create SMAB instance
     smab, actions, kwargs = config.create_smab_and_actions(
-        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor, decay_factor
+        action_ids,
+        epsilon,
+        delta,
+        values,
+        n_objectives,
+        exploit_p,
+        subsidy_factor,
+        rng,
+        decay_factor,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
     )
 
     # Cold start comparison logic (modified for different model types)
@@ -281,6 +309,10 @@ def test_cold_start(
         }
     cold_start_kwargs.update(kwargs)  # Add exploit_p or subsidy_factor if needed
     cold_start_kwargs = {k: v for k, v in cold_start_kwargs.items() if v is not None}
+    # cold_start's default_action argument only accepts a discrete action id; a quantitative
+    # (tuple) default_action cannot be expressed through it, so skip the equivalence check there.
+    if isinstance(cold_start_kwargs.get("default_action"), tuple):
+        return
     assert config.smab_class.cold_start(**cold_start_kwargs) == smab
 
 
@@ -300,6 +332,7 @@ def test_bad_initialization(
     values,
     exploit_p,
     subsidy_factor,
+    rng: np.random.Generator,
 ):
     real_n_objectives = n_objectives.draw(st.integers(min_value=1, max_value=10))
     if config.smab_class in (SmabBernoulliCC, SmabBernoulliMOCC):
@@ -343,6 +376,7 @@ def test_bad_initialization(
                 n_objectives,
                 exploit_p.draw(st.sampled_from([-0.1, 1.1])),
                 subsidy_factor,
+                rng,
             )
     elif config.smab_class == SmabBernoulliCC:
         with pytest.raises(ValidationError):
@@ -354,6 +388,7 @@ def test_bad_initialization(
                 n_objectives,
                 exploit_p,
                 subsidy_factor.draw(st.sampled_from([-0.1, 1.1])),
+                rng,
             )
 
     # Test multi-objective specific cases
@@ -380,6 +415,8 @@ def test_bad_initialization(
     ),
     n_samples=st.integers(min_value=1, max_value=100),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -392,24 +429,27 @@ def test_update(
     action_ids: List[str],
     n_samples: int,
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
     exploit_p,
     subsidy_factor,
     memory_len,
+    rng: np.random.Generator,
 ):
     # Create SMAB instance
     smab, _, kwargs = config.create_smab_and_actions(
-        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor
+        action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor, rng
     )
     batched_smab = deepcopy(smab)
     n_objectives = kwargs.get("n_objectives")
     # Generate random rewards
     reward_data = (
-        np.random.choice([0, 1], size=(n_samples, n_objectives), replace=True)
+        rng.choice([0, 1], size=(n_samples, n_objectives), replace=True)
         if n_objectives
-        else np.random.choice([0, 1], size=n_samples, replace=True)
+        else rng.choice([0, 1], size=n_samples, replace=True)
     )
     reward_data = reward_data.tolist()
     # Test updates with generated data
@@ -417,7 +457,7 @@ def test_update(
         action_ids, n_samples
     )  # Generate quantities only if there are any QuantitativeModel actions
     if any(isinstance(model, QuantitativeModel) for model in smab.actions.values()):
-        quantity_data = np.random.random(size=n_samples).tolist()
+        quantity_data = rng.random(size=n_samples).tolist()
         quantity_data = [
             q if isinstance(smab.actions[action], QuantitativeModel) else None
             for q, action in zip(quantity_data, actions_to_update)
@@ -484,6 +524,8 @@ def test_update(
     ),
     n_samples=st.integers(min_value=1, max_value=100),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -496,6 +538,8 @@ def test_predict(
     action_ids: List[str],
     n_samples: int,
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -503,16 +547,17 @@ def test_predict(
     subsidy_factor,
     diff,
     monkeymodule,
+    rng: np.random.Generator,
 ):
     def mock_maximize_by_quantity(quantity_score_func, dimension, constraint=None, n_trials=10000, **kwargs):
         """Mock maximize_by_quantity to return a quick result."""
-        return np.random.random(dimension)
+        return rng.random(dimension)
 
     if config.smab_class in (SmabBernoulliMO, SmabBernoulliMOCC):
 
         def mock_find_pareto_front_normal_constraint(self, func, input_dim, n_objectives, n_divisions, model):
             """Mock _find_pareto_front_normal_constraint to return a quick result."""
-            return [np.random.random(input_dim) for _ in range(min(3, n_divisions))]
+            return [rng.random(input_dim) for _ in range(min(3, n_divisions))]
 
         monkeymodule.setattr(
             pybandits.strategy.MultiObjectiveStrategy,
@@ -523,7 +568,16 @@ def test_predict(
     with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", mock_maximize_by_quantity):
         # Create SMAB instance
         smab = config.create_smab_and_actions(
-            action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor
+            action_ids,
+            epsilon,
+            delta,
+            values,
+            n_objectives,
+            exploit_p,
+            subsidy_factor,
+            rng,
+            default_action_fraction=default_action_fraction,
+            limited_action_fraction=limited_action_fraction,
         )[0]
 
         # Test predictions with random forbidden actions
@@ -567,6 +621,8 @@ def test_predict(
         unique=True,
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -578,6 +634,8 @@ def test_serialization(
     config: ModelTestConfig,
     action_ids: List[str],
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -585,11 +643,21 @@ def test_serialization(
     subsidy_factor,
     diff,
     monkeymodule,
+    rng: np.random.Generator,
 ):
     # Create SMAB instance
-    smab = config.create_smab_and_actions(action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor)[
-        0
-    ]
+    smab = config.create_smab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        values,
+        n_objectives,
+        exploit_p,
+        subsidy_factor,
+        rng,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
+    )[0]
 
     pre_update_state = smab.get_state()
     mock_update(list(smab.actions.values()), diff, monkeymodule)
@@ -614,6 +682,8 @@ def test_serialization(
         unique=True,
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -625,6 +695,8 @@ def test_pickling(
     config: ModelTestConfig,
     action_ids: List[str],
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -632,11 +704,21 @@ def test_pickling(
     subsidy_factor,
     diff,
     monkeymodule,
+    rng: np.random.Generator,
 ):
     # Create SMAB instance
-    smab = config.create_smab_and_actions(action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor)[
-        0
-    ]
+    smab = config.create_smab_and_actions(
+        action_ids,
+        epsilon,
+        delta,
+        values,
+        n_objectives,
+        exploit_p,
+        subsidy_factor,
+        rng,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
+    )[0]
     to_temporary_pickle(smab)
     mock_update(list(smab.actions.values()), diff, monkeymodule)
     to_temporary_pickle(smab)
@@ -673,230 +755,266 @@ def test_smab_predict_raise_when_all_actions_forbidden():
 ########################################################################################################################
 # Region-aware forbidden_actions (forbidding part of a quantitative arm's hypercube)
 
-# A forbidden region on a 1-D quantitative arm: float signed-margin convention, forbidden where region(x) > 0,
-# i.e. the upper half-interval x[0] > REGION_SPLIT is blocked.
-REGION_SPLIT = 0.5
-REGION_TOLERANCE = 1e-2
-EXPLORE_SAMPLES = 50
-HYPOTHESIS_EXPLOIT_SAMPLES = 5  # small enough to stay under hypothesis's default 200ms deadline
-EXPLORE_SEED = 123
-QUANTITATIVE_DIMENSION = 1
-QUANTITATIVE_ARM_ID = "q"
-DISCRETE_ARM_ID = "d"
-EPSILON_FULL_EXPLORE = 1.0  # forces the random explore branch on every step
-ALLOWED_SEGMENT_LOW = 0.6
-ALLOWED_SEGMENT_HIGH = 1.0
-_MAX_REJECTION_SAMPLES = 1000
 
+class TestForbiddenRegions:
+    """Region-aware forbidden_actions: forbidding part of a quantitative arm's hypercube (sMAB edition)."""
 
-def _constraint_aware_maximize(
-    quantity_score_func, dimension: int, constraint=None, n_trials: int = 10000, **kwargs
-) -> np.ndarray:
-    """Mock maximize_by_quantity: rejection-samples a feasible quantity for hypothesis speed."""
-    constraints = constraint or []
-    for _ in range(_MAX_REJECTION_SAMPLES):
-        candidate = np.random.random(dimension)
-        if all(c(candidate) >= 0 for c in constraints):
-            return candidate
-    return np.random.random(dimension)
+    # A forbidden region on a 1-D quantitative arm follows the float signed-margin convention: forbidden where
+    # region(x) > 0, i.e. the upper half-interval x[0] > region_split is blocked.
+    region_split = 0.5
+    region_tolerance = 1e-2
+    explore_samples = 50
+    hypothesis_exploit_samples = 5  # small enough to stay under hypothesis's default 200ms deadline
+    explore_seed = 123
+    quantitative_dimension = 1
+    quantitative_arm_id = "q"
+    discrete_arm_id = "d"
+    epsilon_full_explore = 1.0  # forces the random explore branch on every step
+    allowed_segment_high = 1.0
+    max_rejection_samples = 1000
 
-
-def _forbid_upper_half(x: np.ndarray) -> float:
-    """Forbidden-region predicate: x[0] > REGION_SPLIT is forbidden (region(x) > 0 => forbidden)."""
-    return float(x[0]) - REGION_SPLIT
-
-
-def _always_forbidden(x: np.ndarray) -> float:
-    """Forbidden-region predicate that forbids the entire quantity space (margin always positive)."""
-    return 1.0
-
-
-def _quantitative_smab(**kwargs) -> SmabBernoulli:
-    """Build a sMAB with one continuous (Zooming) arm and one discrete (Beta) arm."""
-    return SmabBernoulli(
-        actions={
-            QUANTITATIVE_ARM_ID: Zooming.cold_start(dimension=QUANTITATIVE_DIMENSION),
-            DISCRETE_ARM_ID: Beta(),
-        },
+    def _constraint_aware_maximize(
+        self,
+        quantity_score_func,
+        dimension: int,
+        constraint=None,
+        n_trials: int = 10000,
+        max_rejection_samples: int = max_rejection_samples,
         **kwargs,
+    ) -> np.ndarray:
+        """Mock maximize_by_quantity: rejection-samples a feasible quantity for hypothesis speed."""
+        constraints = constraint or []
+        for _ in range(max_rejection_samples):
+            candidate = self._rng.random(dimension)
+            if all(c(candidate) >= 0 for c in constraints):
+                return candidate
+        return self._rng.random(dimension)
+
+    @staticmethod
+    def _forbid_upper_half(x: np.ndarray, split: float = region_split) -> float:
+        """Forbidden-region predicate: x[0] > split is forbidden (region(x) > 0 => forbidden)."""
+        return float(x[0]) - split
+
+    @staticmethod
+    def _always_forbidden(x: np.ndarray) -> float:
+        """Forbidden-region predicate that forbids the entire quantity space (margin always positive)."""
+        return 1.0
+
+    @pytest.fixture(scope="class")
+    def make_smab(self):
+        """Factory: builds a sMAB with one continuous (Zooming) arm and one discrete (Beta) arm."""
+
+        def _factory(**kwargs) -> SmabBernoulli:
+            return SmabBernoulli(
+                actions={
+                    self.quantitative_arm_id: Zooming.cold_start(dimension=self.quantitative_dimension),
+                    self.discrete_arm_id: Beta(),
+                },
+                **kwargs,
+            )
+
+        return _factory
+
+    def test_normalize_forbidden_actions_forms(
+        self,
+        make_smab,
+        quantitative_arm_id: str = quantitative_arm_id,
+        discrete_arm_id: str = discrete_arm_id,
+    ) -> None:
+        """_normalize_forbidden_actions handles the Set, dict-None (whole arm) and dict-region (partial) forms."""
+        smab = make_smab()
+
+        # Legacy Set form: whole-arm blocking, no region constraints.
+        valid, regions = smab._normalize_forbidden_actions({discrete_arm_id})
+        assert valid == {quantitative_arm_id} and regions == {}
+
+        # dict with None value is equivalent to whole-arm blocking.
+        valid, regions = smab._normalize_forbidden_actions({discrete_arm_id: None})
+        assert valid == {quantitative_arm_id} and regions == {}
+
+        # dict with a region keeps the arm valid (only its quantity space shrinks) and records its constraint.
+        valid, regions = smab._normalize_forbidden_actions({quantitative_arm_id: self._forbid_upper_half})
+        assert valid == {quantitative_arm_id, discrete_arm_id}
+        assert set(regions) == {quantitative_arm_id} and len(regions[quantitative_arm_id]) == 1
+
+    def test_region_rejected_on_discrete_arm(self, make_smab, discrete_arm_id: str = discrete_arm_id) -> None:
+        """A forbidden region cannot be attached to a non-quantitative arm."""
+        smab = make_smab()
+        with pytest.raises(ValueError, match="quantitative"):
+            smab._normalize_forbidden_actions({discrete_arm_id: self._forbid_upper_half})
+
+    @settings(deadline=None)
+    @given(
+        quantity=st.floats(min_value=region_split, max_value=1.0, exclude_min=True),
+        epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True),
+        arm_id=st.just(quantitative_arm_id),
     )
+    def test_default_action_in_region_raises(self, make_smab, quantity: float, epsilon: float, arm_id: str) -> None:
+        """Any quantitative default action strictly above region_split is rejected when the upper half is forbidden."""
+        smab = make_smab(epsilon=epsilon, default_action=(arm_id, (quantity,)))
+        with pytest.raises(ValueError, match="forbidden region"):
+            smab._normalize_forbidden_actions({arm_id: self._forbid_upper_half})
 
+    @settings(deadline=None)
+    @given(x0=st.floats(min_value=0.0, max_value=1.0), region_split=st.floats(min_value=0.1, max_value=0.9))
+    def test_to_feasibility_constraint_negates_margin(self, x0: float, region_split: float) -> None:
+        """Points above region_split are marked forbidden by the converted constraint; at/below are feasible."""
+        constraint = SmabBernoulli._to_feasibility_constraint(partial(self._forbid_upper_half, split=region_split))
+        point = np.array([x0])
+        # By contract: constraint(x) < 0 means forbidden; >= 0 means feasible.
+        if x0 > region_split:
+            assert constraint(point) < 0
+        else:
+            assert constraint(point) >= 0
 
-def test_smab_normalize_forbidden_actions_forms() -> None:
-    """_normalize_forbidden_actions handles the Set, dict-None (whole arm) and dict-region (partial) forms."""
-    smab = _quantitative_smab()
-
-    # Legacy Set form: whole-arm blocking, no region constraints.
-    valid, regions = smab._normalize_forbidden_actions({DISCRETE_ARM_ID})
-    assert valid == {QUANTITATIVE_ARM_ID} and regions == {}
-
-    # dict with None value is equivalent to whole-arm blocking.
-    valid, regions = smab._normalize_forbidden_actions({DISCRETE_ARM_ID: None})
-    assert valid == {QUANTITATIVE_ARM_ID} and regions == {}
-
-    # dict with a region keeps the arm valid (only its quantity space shrinks) and records its constraint.
-    valid, regions = smab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
-    assert valid == {QUANTITATIVE_ARM_ID, DISCRETE_ARM_ID}
-    assert set(regions) == {QUANTITATIVE_ARM_ID} and len(regions[QUANTITATIVE_ARM_ID]) == 1
-
-
-def test_smab_forbidden_region_rejected_on_discrete_arm() -> None:
-    """A forbidden region cannot be attached to a non-quantitative arm."""
-    smab = _quantitative_smab()
-    with pytest.raises(ValueError, match="quantitative"):
-        smab._normalize_forbidden_actions({DISCRETE_ARM_ID: _forbid_upper_half})
-
-
-@settings(deadline=None)
-@given(
-    quantity=st.floats(min_value=REGION_SPLIT, max_value=1.0, exclude_min=True),
-    epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True),
-)
-def test_smab_forbidden_region_default_action_in_region_raises(quantity: float, epsilon: float) -> None:
-    """Any quantitative default action strictly above REGION_SPLIT is rejected when the upper half is forbidden."""
-    smab = _quantitative_smab(
-        epsilon=epsilon,
-        default_action=(QUANTITATIVE_ARM_ID, (quantity,)),
+    @given(
+        region_split=st.floats(min_value=0.1, max_value=0.9),
+        arm_id=st.just(quantitative_arm_id),
+        random_seed=st.just(explore_seed),
     )
-    with pytest.raises(ValueError, match="forbidden region"):
-        smab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
+    def test_sample_allowed_quantity_respects_and_exhausts_region(
+        self,
+        make_smab,
+        region_split: float,
+        arm_id: str,
+        random_seed: int,
+    ) -> None:
+        """_sample_allowed_quantity returns a point outside the region, or None when the whole space is forbidden."""
+        smab = make_smab(random_seed=random_seed)
+        _, regions = smab._normalize_forbidden_actions({arm_id: partial(self._forbid_upper_half, split=region_split)})
 
+        allowed = smab._sample_allowed_quantity(arm_id, regions)
+        assert allowed is not None and allowed[0] <= region_split
 
-@settings(deadline=None)
-@given(x0=st.floats(min_value=0.0, max_value=1.0))
-def test_to_feasibility_constraint_negates_margin(x0: float) -> None:
-    """Points above REGION_SPLIT are marked forbidden by the converted constraint; at/below are feasible."""
-    constraint = SmabBernoulli._to_feasibility_constraint(_forbid_upper_half)
-    point = np.array([x0])
-    # By contract: constraint(x) < 0 means forbidden; >= 0 means feasible.
-    if x0 > REGION_SPLIT:
-        assert constraint(point) < 0
-    else:
-        assert constraint(point) >= 0
+        # A region that forbids the entire cube yields no allowed point.
+        _, full_regions = smab._normalize_forbidden_actions({arm_id: self._always_forbidden})
+        assert smab._sample_allowed_quantity(arm_id, full_regions) is None
 
+    def test_predict_explore_never_selects_forbidden_region(
+        self,
+        arm_id: str = quantitative_arm_id,
+        dimension: int = quantitative_dimension,
+        epsilon: float = epsilon_full_explore,
+        random_seed: int = explore_seed,
+        n_samples: int = explore_samples,
+        region_split: float = region_split,
+        tolerance: float = region_tolerance,
+    ) -> None:
+        """With epsilon=1 (always explore), the random quantitative quantity always avoids the forbidden region."""
+        smab = SmabBernoulli(
+            actions={arm_id: Zooming.cold_start(dimension=dimension)},
+            epsilon=epsilon,
+            random_seed=random_seed,
+        )
 
-def test_smab_sample_allowed_quantity_respects_and_exhausts_region() -> None:
-    """_sample_allowed_quantity returns a point outside the region, or None when the whole space is forbidden."""
-    smab = _quantitative_smab(random_seed=EXPLORE_SEED)
-    _, regions = smab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
+        selected_actions, _ = smab.predict(n_samples=n_samples, forbidden_actions={arm_id: self._forbid_upper_half})
 
-    allowed = smab._sample_allowed_quantity(QUANTITATIVE_ARM_ID, regions)
-    assert allowed is not None and allowed[0] <= REGION_SPLIT
+        assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
+        assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
 
-    # A region that forbids the entire cube yields no allowed point.
-    _, full_regions = smab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _always_forbidden})
-    assert smab._sample_allowed_quantity(QUANTITATIVE_ARM_ID, full_regions) is None
-
-
-def test_smab_predict_explore_never_selects_forbidden_region() -> None:
-    """With epsilon=1 (always explore), the random quantitative quantity always avoids the forbidden region."""
-    smab = SmabBernoulli(
-        actions={QUANTITATIVE_ARM_ID: Zooming.cold_start(dimension=QUANTITATIVE_DIMENSION)},
-        epsilon=EPSILON_FULL_EXPLORE,
-        random_seed=EXPLORE_SEED,
+    @given(
+        region_split=st.floats(min_value=0.1, max_value=0.9),
+        arm_id=st.just(quantitative_arm_id),
+        dimension=st.just(quantitative_dimension),
+        random_seed=st.just(explore_seed),
+        n_samples=st.just(hypothesis_exploit_samples),
+        tolerance=st.just(region_tolerance),
     )
+    def test_predict_exploit_respects_forbidden_region(
+        self,
+        region_split: float,
+        arm_id: str,
+        dimension: int,
+        random_seed: int,
+        n_samples: int,
+        tolerance: float,
+        rng: np.random.Generator,
+    ) -> None:
+        """Constrained optimizer stays below any forbidden boundary, not just the default split of 0.5."""
+        self._rng = rng
 
-    selected_actions, _ = smab.predict(
-        n_samples=EXPLORE_SAMPLES, forbidden_actions={QUANTITATIVE_ARM_ID: _forbid_upper_half}
+        def forbid_above(x: np.ndarray) -> float:
+            return float(x[0]) - region_split
+
+        smab = SmabBernoulli(
+            actions={arm_id: Zooming.cold_start(dimension=dimension)},
+            random_seed=random_seed,
+        )
+
+        with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", self._constraint_aware_maximize):
+            selected_actions, _ = smab.predict(n_samples=n_samples, forbidden_actions={arm_id: forbid_above})
+
+        assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
+        assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
+
+    @settings(deadline=None)
+    @given(
+        lo=st.floats(min_value=0.0, max_value=0.4),
+        hi=st.floats(min_value=0.6, max_value=1.0),
+        x=st.floats(min_value=0.0, max_value=1.0),
     )
+    def test_segment_region_outside_1d(self, lo: float, hi: float, x: float) -> None:
+        """forbidden_region_outside is non-positive inside [lo, hi] and positive outside (1-D)."""
+        region = Segment(intervals=((lo, hi),)).forbidden_region_outside()
+        point = np.array([x])
+        if lo <= x <= hi:
+            assert region(point) <= 0
+        else:
+            assert region(point) > 0
 
-    assert all(isinstance(action, tuple) and action[0] == QUANTITATIVE_ARM_ID for action in selected_actions)
-    assert all(action[1][0] <= REGION_SPLIT + REGION_TOLERANCE for action in selected_actions)
-
-
-@given(
-    region_split=st.floats(min_value=0.1, max_value=0.9),
-    arm_id=st.just(QUANTITATIVE_ARM_ID),
-    dimension=st.just(QUANTITATIVE_DIMENSION),
-    random_seed=st.just(EXPLORE_SEED),
-    n_samples=st.just(HYPOTHESIS_EXPLOIT_SAMPLES),
-    tolerance=st.just(REGION_TOLERANCE),
-)
-def test_smab_predict_exploit_respects_forbidden_region(
-    region_split: float,
-    arm_id: str,
-    dimension: int,
-    random_seed: int,
-    n_samples: int,
-    tolerance: float,
-) -> None:
-    """Constrained optimizer stays below any forbidden boundary, not just the default split of 0.5."""
-
-    def forbid_above(x: np.ndarray) -> float:
-        return float(x[0]) - region_split
-
-    smab = SmabBernoulli(
-        actions={arm_id: Zooming.cold_start(dimension=dimension)},
-        random_seed=random_seed,
+    @pytest.mark.parametrize(
+        "x0, x1, expected_forbidden",
+        [
+            (0.2, 0.7, False),  # inside [0, 0.5) x [0.5, 1.0] => allowed
+            (0.8, 0.7, True),  # x0=0.8 outside [0, 0.5) => forbidden
+        ],
     )
+    def test_segment_region_outside_2d(
+        self,
+        x0: float,
+        x1: float,
+        expected_forbidden: bool,
+        region_split: float = region_split,
+        segment_high: float = allowed_segment_high,
+    ) -> None:
+        """forbidden_region_outside extends to 2-D: a point outside any dimension's interval is forbidden."""
+        intervals = ((0.0, region_split), (region_split, segment_high))
+        region = Segment(intervals=intervals).forbidden_region_outside()
+        assert (region(np.array([x0, x1])) > 0) == expected_forbidden
 
-    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", _constraint_aware_maximize):
-        selected_actions, _ = smab.predict(n_samples=n_samples, forbidden_actions={arm_id: forbid_above})
-
-    assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
-    assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
-
-
-@settings(deadline=None)
-@given(
-    lo=st.floats(min_value=0.0, max_value=0.4),
-    hi=st.floats(min_value=0.6, max_value=1.0),
-    x=st.floats(min_value=0.0, max_value=1.0),
-)
-def test_segment_forbidden_region_outside_1d(lo: float, hi: float, x: float) -> None:
-    """forbidden_region_outside is non-positive inside [lo, hi] and positive outside (1-D)."""
-    region = Segment(intervals=((lo, hi),)).forbidden_region_outside()
-    point = np.array([x])
-    if lo <= x <= hi:
-        assert region(point) <= 0
-    else:
-        assert region(point) > 0
-
-
-@pytest.mark.parametrize(
-    "x0, x1, expected_forbidden",
-    [
-        (0.2, 0.7, False),  # inside [0, 0.5) x [0.5, 1.0] => allowed
-        (0.8, 0.7, True),  # x0=0.8 outside [0, 0.5) => forbidden
-    ],
-)
-def test_segment_forbidden_region_outside_2d(x0: float, x1: float, expected_forbidden: bool) -> None:
-    """forbidden_region_outside extends to 2-D: a point outside any dimension's interval is forbidden."""
-    intervals = ((0.0, REGION_SPLIT), (REGION_SPLIT, ALLOWED_SEGMENT_HIGH))
-    region = Segment(intervals=intervals).forbidden_region_outside()
-    assert (region(np.array([x0, x1])) > 0) == expected_forbidden
-
-
-@given(
-    seg_lo=st.floats(min_value=0.05, max_value=0.45),
-    seg_hi=st.floats(min_value=0.55, max_value=0.95),
-    arm_id=st.just(QUANTITATIVE_ARM_ID),
-    dimension=st.just(QUANTITATIVE_DIMENSION),
-    random_seed=st.just(EXPLORE_SEED),
-    n_samples=st.just(HYPOTHESIS_EXPLOIT_SAMPLES),
-    tolerance=st.just(REGION_TOLERANCE),
-)
-def test_segment_forbidden_region_outside_end_to_end(
-    seg_lo: float,
-    seg_hi: float,
-    arm_id: str,
-    dimension: int,
-    random_seed: int,
-    n_samples: int,
-    tolerance: float,
-) -> None:
-    """forbidden_region_outside keeps the exploited quantity inside any valid allowed segment."""
-    allowed = Segment(intervals=((seg_lo, seg_hi),))
-    smab = SmabBernoulli(
-        actions={arm_id: Zooming.cold_start(dimension=dimension)},
-        random_seed=random_seed,
+    @given(
+        seg_lo=st.floats(min_value=0.05, max_value=0.45),
+        seg_hi=st.floats(min_value=0.55, max_value=0.95),
+        arm_id=st.just(quantitative_arm_id),
+        dimension=st.just(quantitative_dimension),
+        random_seed=st.just(explore_seed),
+        n_samples=st.just(hypothesis_exploit_samples),
+        tolerance=st.just(region_tolerance),
     )
-    region = allowed.forbidden_region_outside()
+    def test_segment_region_outside_end_to_end(
+        self,
+        seg_lo: float,
+        seg_hi: float,
+        arm_id: str,
+        dimension: int,
+        random_seed: int,
+        n_samples: int,
+        tolerance: float,
+        rng: np.random.Generator,
+    ) -> None:
+        """forbidden_region_outside keeps the exploited quantity inside any valid allowed segment."""
+        self._rng = rng
+        allowed = Segment(intervals=((seg_lo, seg_hi),))
+        smab = SmabBernoulli(
+            actions={arm_id: Zooming.cold_start(dimension=dimension)},
+            random_seed=random_seed,
+        )
+        region = allowed.forbidden_region_outside()
 
-    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", _constraint_aware_maximize):
-        selected_actions, _ = smab.predict(n_samples=n_samples, forbidden_actions={arm_id: region})
+        with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", self._constraint_aware_maximize):
+            selected_actions, _ = smab.predict(n_samples=n_samples, forbidden_actions={arm_id: region})
 
-    assert all(seg_lo - tolerance <= action[1][0] <= seg_hi + tolerance for action in selected_actions)
+        assert all(seg_lo - tolerance <= action[1][0] <= seg_hi + tolerance for action in selected_actions)
 
 
 @given(st.text())

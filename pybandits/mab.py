@@ -105,6 +105,14 @@ class BaseMab(PyBanditsBaseModel, ABC):
             - `default_action_fraction = 1.0`: explore always returns `default_action` (same as omitting this field).
             - `None` (default): legacy behavior; explore returns `default_action` deterministically when set,
               otherwise a uniformly-random action.
+    limited_actions : Optional[Set[ActionId]], None if not specified.
+        A set of actions whose selection is throttled, e.g. newly-introduced arms that Thompson Sampling
+        would otherwise over-explore. On each selection they are allowed to compete only with probability
+        `limited_action_fraction`; otherwise they are masked out. Must be used together with
+        `limited_action_fraction`, must be a subset of the action set, and must not contain `default_action`.
+    limited_action_fraction : Optional[Float01], None if not specified.
+        Probability that the `limited_actions` are allowed to compete on a given selection (mirrors
+        `epsilon`: higher = more exploration). Only meaningful together with `limited_actions`.
     current_supported_version_th : ClassVar[str]
         The threshold of the supported version of PyBandits which don't require any changes to the state.
     strategy_kwargs : Dict[str, Any]
@@ -117,6 +125,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
     epsilon: Optional[Float01] = None
     default_action: Optional[UnifiedActionId] = None
     default_action_fraction: Optional[PositiveFloat01] = None
+    limited_actions: Optional[Set[ActionId]] = None
+    limited_action_fraction: Optional[Float01] = None
     version: Optional[str] = None
     random_seed: Optional[NonNegativeInt] = None
     _current_supported_version_th: ClassVar[str] = _get_pybandits_version()
@@ -125,8 +135,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def __init__(
         self,
         epsilon: Optional[Float01] = None,
-        default_action: Optional[ActionId] = None,
+        default_action: Optional[UnifiedActionId] = None,
         default_action_fraction: Optional[PositiveFloat01] = None,
+        limited_actions: Optional[Set[ActionId]] = None,
+        limited_action_fraction: Optional[Float01] = None,
         version: Optional[str] = None,
         random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
@@ -149,6 +161,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
             epsilon=epsilon,
             default_action=default_action,
             default_action_fraction=default_action_fraction,
+            limited_actions=limited_actions,
+            limited_action_fraction=limited_action_fraction,
             version=version,
             random_seed=random_seed,
         )
@@ -206,6 +220,13 @@ class BaseMab(PyBanditsBaseModel, ABC):
             and not isinstance(self.actions[self.default_action], (Model, ModelMO))
         ):
             raise AttributeError("Standard default action requires a standard action model.")
+        if bool(self.limited_actions) != (self.limited_action_fraction is not None):
+            raise AttributeError("limited_actions and limited_action_fraction must be defined together.")
+        if self.limited_actions:
+            if not self.limited_actions.issubset(self.actions):
+                raise AttributeError("limited_actions must be a subset of the action set.")
+            if self.default_action in self.limited_actions:
+                raise AttributeError("default_action must not be a limited action.")
 
     ############################################# Method Input Validators ##############################################
 
@@ -510,6 +531,11 @@ class BaseMab(PyBanditsBaseModel, ABC):
             If self.default_action is not present as a key in the probabilities dictionary.
         """
 
+        if self.limited_actions and not self._rng.binomial(1, self.limited_action_fraction):
+            masked = {k: v for k, v in p.items() if (k[0] if isinstance(k, tuple) else k) not in self.limited_actions}
+            if masked:  # never mask away the entire action set
+                p = masked
+
         if self.epsilon:
             if self.default_action:
                 if isinstance(self.default_action, tuple):
@@ -653,8 +679,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def cold_start(
         cls,
         epsilon: Optional[Float01] = None,
-        default_action: Optional[ActionId] = None,
+        default_action: Optional[UnifiedActionId] = None,
         default_action_fraction: Optional[PositiveFloat01] = None,
+        limited_actions: Optional[Set[ActionId]] = None,
+        limited_action_fraction: Optional[Float01] = None,
         random_seed: Optional[NonNegativeInt] = None,
         **kwargs,
     ) -> Self:
@@ -673,6 +701,14 @@ class BaseMab(PyBanditsBaseModel, ABC):
             Probability of picking `default_action` (vs a uniformly-random action) when the explore
             branch of epsilon-greedy fires. Requires both `epsilon` and `default_action` to be set.
             `1.0` always returns `default_action`; `None` (default) preserves legacy behavior.
+        limited_actions : Optional[Set[ActionId]]
+            Actions whose selection is throttled (e.g. newly-introduced arms). On each selection they
+            are allowed to compete only with probability `limited_action_fraction`. Requires
+            `limited_action_fraction`, must be a subset of the action set, and must not contain
+            `default_action`.
+        limited_action_fraction : Optional[Float01]
+            Probability that `limited_actions` are allowed to compete on a given selection (higher =
+            more exploration). Requires `limited_actions`.
         random_seed : Optional[NonNegativeInt]
             Seed for the MAB's central numpy RNG (used for epsilon-greedy and Thompson sampling).
             Propagated automatically to BNN action models so the full pipeline is reproducible.
@@ -690,6 +726,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
             epsilon=epsilon,
             default_action=default_action,
             default_action_fraction=default_action_fraction,
+            limited_actions=limited_actions,
+            limited_action_fraction=limited_action_fraction,
             random_seed=random_seed,
             **kwargs,
         )

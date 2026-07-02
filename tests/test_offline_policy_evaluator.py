@@ -51,21 +51,21 @@ from tests.utils import mock_update
 
 
 @pytest.fixture(scope="module")
-def logged_data(n_samples=10, n_actions=2, n_batches=3, n_rewards=2, n_groups=2, n_features=3):
+def logged_data(rng, n_samples=10, n_actions=2, n_batches=3, n_rewards=2, n_groups=2, n_features=3):
     unique_actions = [f"a{i}" for i in range(n_actions)]
-    action_ids = np.random.choice(unique_actions, n_samples * n_batches)
+    action_ids = rng.choice(unique_actions, n_samples * n_batches)
     batches = [i for i in range(n_batches) for _ in range(n_samples)]
-    rewards = [np.random.randint(2, size=(n_samples * n_batches)) for _ in range(n_rewards)]
-    action_true_rewards = {(a, r): np.random.rand() for a in unique_actions for r in range(n_rewards)}
+    rewards = [rng.integers(2, size=(n_samples * n_batches)) for _ in range(n_rewards)]
+    action_true_rewards = {(a, r): rng.random() for a in unique_actions for r in range(n_rewards)}
     true_rewards = [
         np.array([action_true_rewards[(a, r)] for a in action_ids]).reshape(n_samples * n_batches)
         for r in range(n_rewards)
     ]
-    groups = np.random.randint(n_groups, size=n_samples * n_batches)
-    action_costs = {action: np.random.rand() for action in unique_actions}
+    groups = rng.integers(n_groups, size=n_samples * n_batches)
+    action_costs = {action: rng.random() for action in unique_actions}
     costs = np.array([action_costs[a] for a in action_ids])
-    context = np.random.rand(n_samples * n_batches, n_features)
-    action_propensity_score = {action: np.random.rand() for action in unique_actions}
+    context = rng.random((n_samples * n_batches, n_features))
+    action_propensity_score = {action: rng.random() for action in unique_actions}
     propensity_score = np.array([action_propensity_score[a] for a in action_ids])
     return pd.DataFrame(
         {
@@ -524,7 +524,7 @@ class TestFunctionEstimatorEdgeCases:
     )
     @settings(max_examples=5, deadline=None)
     def test_predict_multiclass_path(
-        self, n_samples: int, n_features: int, n_actions: int, base_estimator_kwargs: dict
+        self, n_samples: int, n_features: int, n_actions: int, base_estimator_kwargs: dict, rng: np.random.Generator
     ) -> None:
         """include_action_in_features=False exercises the multiclass probability extraction path."""
         n_test = min(n_actions, n_samples)
@@ -532,7 +532,7 @@ class TestFunctionEstimatorEdgeCases:
         label_to_int = {label: i for i, label in enumerate(unique_labels)}
         actions = np.array([f"a{i % n_actions}" for i in range(n_samples)])
         encoded = np.array([label_to_int[a] for a in actions])
-        context = np.random.rand(n_samples, n_features)
+        context = rng.random((n_samples, n_features))
 
         estimator = _FunctionEstimator(
             **{**base_estimator_kwargs, "include_action_in_features": False, "calibrate": False},
