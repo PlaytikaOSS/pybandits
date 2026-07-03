@@ -20,8 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import inspect
-import numbers
-import warnings
 from abc import ABC
 from contextlib import nullcontext
 from copy import deepcopy
@@ -77,6 +75,8 @@ from pybandits.model.bnn.config import (
     EarlyStopping,
     EmbeddingParams,
     FeaturesConfig,
+    MCMCUpdateKwargs,
+    VIUpdateKwargs,
 )
 from pybandits.model.bnn.priors import BaseLocationScaleArray, NormalArray, StudentTArray
 
@@ -105,11 +105,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
     update_method : str, optional
         The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
-    update_kwargs : Optional[dict], optional
-        A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
-        For VI, it contains 'fit' settings and additional parameters like 'epochs', 'optimizer_type',
-        'optimizer_kwargs', 'batch_size', and 'early_stopping_kwargs'. The 'epochs' parameter specifies
-        the number of iterations for VI (maps to 'step_size' in numpyro's API).
+    update_kwargs : Optional[Union[VIUpdateKwargs, MCMCUpdateKwargs, dict]], optional
+        Keyword arguments for the update method. May be passed as a plain dict (validated and
+        coerced at construction) or as the matching typed model. When ``update_method="VI"`` it is
+        coerced to :class:`VIUpdateKwargs` (``num_steps``/``epochs``, ``method``, ``optimizer_type``,
+        ``optimizer_kwargs``, ``batch_size``, ``early_stopping_kwargs``, ``num_particles``,
+        ``gradient_clip_norm``, ``kl_annealing_fraction``, ...); when ``"MCMC"`` it is coerced to
+        :class:`MCMCUpdateKwargs` (``num_warmup``, ``num_samples``, ``num_chains``, ``progress_bar``,
+        ``nuts``). ``None`` uses the per-method defaults.
     activation : str, optional
         The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
     use_residual_connections : bool, optional
@@ -152,21 +155,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     weight_var_name: ClassVar[str] = "weight"
     bias_var_name: ClassVar[str] = "bias"
     _embedding_var_name: ClassVar[str] = "embedding"
-    _vi_update_params: ClassVar[list] = [
-        "num_steps",
-        "method",
-        "optimizer_type",
-        "optimizer_kwargs",
-        "batch_size",
-        "early_stopping_kwargs",
-        "epochs",
-        "lr_scheduler_type",
-        "lr_scheduler_kwargs",
-        "restore_best_svi_state",
-        "num_particles",
-        "gradient_clip_norm",
-        "kl_annealing_fraction",
-    ]
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _embedding_dim_divisor: ClassVar[int] = 4
     _numerical_eps: ClassVar[float] = 1e-6
@@ -241,7 +229,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     }
 
     update_method: UpdateMethods = "VI"
-    update_kwargs: Optional[dict] = None
+    update_kwargs: Optional[Union[VIUpdateKwargs, MCMCUpdateKwargs]] = None
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
@@ -250,28 +238,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     bias_calibrated: bool = False
 
     _rng_key: Any = PrivateAttr(default=None)
-
-    _default_vi_kwargs: ClassVar[dict] = dict(
-        num_steps=1000,
-        method="advi",
-        optimizer_type="sgd",
-        optimizer_kwargs={"step_size": 0.01},
-        batch_size=None,
-        early_stopping_kwargs=None,
-        lr_scheduler_type=None,
-        lr_scheduler_kwargs=None,
-        restore_best_svi_state=True,
-        num_particles=1,
-        gradient_clip_norm=None,
-    )
-
-    _default_mcmc_kwargs: ClassVar[dict] = dict(
-        num_warmup=500,
-        num_samples=1000,
-        num_chains=2,
-        progress_bar=False,
-        nuts=dict(target_accept_prob=0.95),
-    )
 
     _vi_method_config: ClassVar[dict] = {
         "advi": {
@@ -359,11 +325,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         Optionally chains a learning-rate schedule and/or gradient clipping.
         """
-        optimizer_type = self.update_kwargs["optimizer_type"]
-        optimizer_kwargs = dict(self.update_kwargs.get("optimizer_kwargs", {}))
-        lr_scheduler_type = self.update_kwargs.get("lr_scheduler_type")
-        lr_scheduler_kwargs = self.update_kwargs.get("lr_scheduler_kwargs") or {}
-        gradient_clip_norm = self.update_kwargs.get("gradient_clip_norm")
+        optimizer_type = self.update_kwargs.optimizer_type
+        optimizer_kwargs = dict(self.update_kwargs.optimizer_kwargs or {})
+        lr_scheduler_type = self.update_kwargs.lr_scheduler_type
+        lr_scheduler_kwargs = self.update_kwargs.lr_scheduler_kwargs or {}
+        gradient_clip_norm = self.update_kwargs.gradient_clip_norm
 
         optimizer_fn = self._resolve_optax_fn(optimizer_type, "optimizer")
 
@@ -386,7 +352,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return noptim.optax_to_numpyro(base_optimizer)
 
     def _get_early_stopping_callback(self) -> Optional[EarlyStopping]:
-        early_stopping_kwargs = self.update_kwargs.get("early_stopping_kwargs", None)
+        early_stopping_kwargs = self.update_kwargs.early_stopping_kwargs
         if early_stopping_kwargs is not None:
             try:
                 return EarlyStopping(**early_stopping_kwargs)
@@ -542,54 +508,41 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         return [layer.weight.shape[1] for layer in self.model_params.bnn_layer_params[:-1]]
 
-    def _arrange_update_kwargs(self):
-        if self.update_kwargs is None:
-            self.update_kwargs = dict()
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_update_kwargs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Coerce ``update_kwargs`` into the typed model matching ``update_method``.
 
-        if self.update_method == "VI":
-            # Warn if both epochs and num_steps are given — epochs takes precedence
-            if "epochs" in self.update_kwargs and "num_steps" in self.update_kwargs:
-                warnings.warn(
-                    "Both 'epochs' and 'num_steps' specified in update_kwargs. "
-                    "'epochs' takes precedence and 'num_steps' will be ignored.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-
-            self.update_kwargs = {**self._default_vi_kwargs, **self.update_kwargs}
-
-            # Validate VI method
-            vi_method = self.update_kwargs.get("method")
-            if vi_method not in self._vi_method_config:
+        Accepts a raw dict (the public API, and the form stored in serialized state), ``None``
+        (defaults), or an already-built ``VIUpdateKwargs``/``MCMCUpdateKwargs``. ``update_method``
+        is the single source of truth for which schema applies, so the kwargs themselves carry no
+        discriminator. All value validation and defaulting lives in the two typed models.
+        """
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("update_kwargs")
+        update_method = data.get("update_method", cls.model_fields["update_method"].default)
+        if isinstance(raw, (VIUpdateKwargs, MCMCUpdateKwargs)):
+            expected = {"VI": VIUpdateKwargs, "MCMC": MCMCUpdateKwargs}.get(update_method)
+            if expected is None:
+                raise ValueError("Invalid update method.")
+            if not isinstance(raw, expected):
                 raise ValueError(
-                    f"Invalid VI method: {vi_method}. Supported methods are: {list(self._vi_method_config.keys())}"
+                    f"update_kwargs type {type(raw).__name__} conflicts with update_method '{update_method}'."
                 )
-
-            # Validate optional KL annealing fraction. Domain is (0, 1];
-            kl_annealing_fraction = self.update_kwargs.get("kl_annealing_fraction")
-            if kl_annealing_fraction is not None:
-                # numbers.Real accepts NumPy real scalars (np.float32, np.int64, ...), which an
-                # untyped update_kwargs dict passes through uncoerced. bool is excluded explicitly
-                # because Python bool is itself a numbers.Real (np.bool_ is not, so it falls through).
-                if isinstance(kl_annealing_fraction, bool) or not isinstance(kl_annealing_fraction, numbers.Real):
-                    raise ValueError(
-                        f"Invalid kl_annealing_fraction: {kl_annealing_fraction!r}. Must be a float in (0, 1] or None."
-                    )
-                if not (0.0 < float(kl_annealing_fraction) <= 1.0):
-                    raise ValueError(
-                        f"Invalid kl_annealing_fraction: {kl_annealing_fraction}. Must lie in the half-open interval (0, 1]."
-                    )
-
-        elif self.update_method == "MCMC":
-            for param in self._vi_update_params:
-                if param in self.update_kwargs:
-                    raise ValueError(
-                        f"Invalid update MCMC parameter: {param}. {self._vi_update_params} are VI parameters."
-                    )
-
-            self.update_kwargs = {**self._default_mcmc_kwargs, **self.update_kwargs}
+            return data
+        raw = dict(raw) if raw else {}
+        # Copy before mutating: during Union resolution pydantic feeds the same input dict to each
+        # candidate member, so mutating it here would leak an injected update_kwargs into sibling
+        # models (e.g. QuantitativeBayesianNeuralNetwork, which has no such field).
+        data = {**data}
+        if update_method == "VI":
+            data["update_kwargs"] = VIUpdateKwargs(**raw)
+        elif update_method == "MCMC":
+            data["update_kwargs"] = MCMCUpdateKwargs(**raw)
         else:
             raise ValueError("Invalid update method.")
+        return data
 
     def _init_private_attrs(self) -> None:
         """Initialize private attributes that are derived from public fields.
@@ -612,9 +565,10 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
         Initialize activation function PrivateAttr based on the activation setting.
         """
-        self._arrange_update_kwargs()
+        # Flatten the validated kwargs model into a plain dict for the internal training code,
+        # which consumes the merged-with-defaults parameters by key (e.g. ``self._update_kwargs["method"]``).
+        self._update_kwargs = self.update_kwargs.model_dump()
         self._init_private_attrs()
-        self._update_kwargs = deepcopy(self.update_kwargs)
 
     def __getstate__(self) -> dict:
         """Exclude unpicklable private attributes (JAX functions, optimizer objects)."""
