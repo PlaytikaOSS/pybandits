@@ -26,6 +26,8 @@ from typing import (
     Dict,
     List,
     NewType,
+    Optional,
+    Set,
     Tuple,
     Union,
     _GenericAlias,
@@ -59,6 +61,20 @@ QuantitativeWeight = Callable[[np.ndarray], float]
 QuantitativeProbabilityWeight = Tuple[QuantitativeProbability, QuantitativeWeight]
 QuantitativeMOProbability = Callable[[np.ndarray], MOProbability]
 QuantitativeMOProbabilityWeight = Tuple[Callable[[np.ndarray], MOProbability], Callable[[np.ndarray], float]]
+
+# A forbidden region restricts a quantitative action's quantity space [0, 1]^d.
+# Signed-margin convention: forbidden(x) > 0 => x is forbidden, <= 0 => x is allowed. A float margin (not a bare
+# bool) is required so the optimizer has directional information and degrades gracefully near the boundary.
+ForbiddenRegion = Callable[[np.ndarray], float]
+# forbidden_actions generalizes whole-arm blocking to per-arm hypercube-region blocking:
+#   - Set[ActionId]: forbid whole arms (legacy form).
+#   - Dict[ActionId, None]: forbid the whole arm (equivalent to set membership).
+#   - Dict[ActionId, ForbiddenRegion | List[ForbiddenRegion]]: forbid region(s) of a quantitative arm
+#     (multiple regions are OR-combined: a quantity is forbidden if any region forbids it).
+ForbiddenActions = Union[
+    Set[ActionId],
+    Dict[ActionId, Optional[Union[ForbiddenRegion, List[ForbiddenRegion]]]],
+]
 
 UnifiedProbability = Union[Probability, QuantitativeProbability]
 UnifiedProbabilityWeight = Union[ProbabilityWeight, QuantitativeProbabilityWeight]

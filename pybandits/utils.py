@@ -23,7 +23,7 @@
 import inspect
 from abc import ABC
 from types import ModuleType
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 from bokeh.io import curdoc, output_file, output_notebook, save, show
@@ -182,6 +182,7 @@ def maximize_by_quantity(
     constraint: Optional[List[Callable[[np.ndarray], float]]] = None,
     n_trials: PositiveInt = 10000,
     maxiter_factor: PositiveInt = 10,
+    seed: Optional[Any] = None,
 ) -> np.ndarray:
     """
     Maximize the quantity score for the given function.
@@ -199,6 +200,9 @@ def maximize_by_quantity(
     maxiter_factor : PositiveInt, defaults to 10
         The factor to define maximum number of iterations for differential evolution.
         Relative to n_trials.
+    seed : Optional[Any], default=None
+        Seed for the differential evolution optimizer (passed directly to scipy). Accepts an int,
+        a ``numpy.random.Generator``, or ``None`` (uses global numpy random state).
 
     Returns
     -------
@@ -231,9 +235,15 @@ def maximize_by_quantity(
     # Only add constraints if they exist
     if constraints is not None:
         de_params["constraints"] = constraints
+    if seed is not None:
+        de_params["seed"] = seed
     result = differential_evolution(**de_params)
 
-    if result.success:
+    # differential_evolution flags success=False for any constraint violation > 0, so a solution sitting on the
+    # feasibility boundary is rejected over floating-point noise (e.g. MAXCV ~1e-9). When constraints are present,
+    # accept it if the violation is within the optimizer's own convergence tolerance (a genuine unconstrained
+    # convergence failure has no violation to inspect and still raises).
+    if result.success or (constraints is not None and result.constr_violation <= _DE_PARAMS["atol"]):
         return result.x
     else:
         raise OptimizationFailedError(result.message)

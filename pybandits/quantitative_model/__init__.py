@@ -33,9 +33,9 @@ from pybandits.quantitative_model.bnn import (
     QuantitativeBayesianNeuralNetworkCC,
     QuantitativeBayesianNeuralNetworkDP,
 )
+from pybandits.quantitative_model.segment import Segment
 from pybandits.quantitative_model.zooming import (
     BaseZooming,
-    Segment,
     Zooming,
     ZoomingCC,
     ZoomingDP,

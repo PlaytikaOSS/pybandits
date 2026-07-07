@@ -32,12 +32,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Poetry
         run: |
-          if [ "${{ matrix.python-version }}" == "3.9" ]; then
-            curl -sSL https://install.python-poetry.org | python3 - --version 2.2.1
-          else
-            curl -sSL https://install.python-poetry.org | python3 -
-          fi
-          export PATH="$HOME/.poetry/bin:$PATH"
+          curl -sSL https://install.python-poetry.org | python3 - --version 2.2.1
+          echo "${POETRY_HOME:-$HOME/.local}/bin" >> "$GITHUB_PATH"
       - name: Install project dependencies with Poetry
         run: |
           poetry install --all-extras

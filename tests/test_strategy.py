@@ -313,6 +313,7 @@ class ConcreteSingleObjectiveStrategy(SingleObjectiveStrategy):
         p: Dict[ActionId, Union[float, Callable]],
         actions: Dict[ActionId, BaseModel],
         constraint_list: Optional[List[Callable]],
+        forbidden_regions: Optional[Dict[ActionId, List[Callable]]] = None,
     ) -> Dict[str, Any]:
         """Return empty prerequisites."""
         return {"test_value": 42}
@@ -451,6 +452,52 @@ def test_single_objective_strategy_verify_and_select_public_method(
     assert result is not None
     assert isinstance(result, np.ndarray)
     assert len(result) == expected_result_length
+
+
+# A forbidden region restricts a 1-D quantitative arm to the lower half-interval. Expressed as an optimizer
+# feasibility constraint (>= 0 feasible): allowed where ``REGION_SPLIT - x[0] >= 0``, i.e. x[0] <= REGION_SPLIT.
+REGION_SPLIT = 0.5
+REGION_TOLERANCE = 1e-2
+QUANTITATIVE_DIMENSION = 1
+QUANTITATIVE_ARM_ID = "q"
+_ALWAYS_INFEASIBLE = -1.0  # feasibility constraint value that is always < 0 (always infeasible)
+
+
+def _allow_below_split(x: np.ndarray) -> float:
+    """Feasibility constraint allowing only x[0] <= REGION_SPLIT (so x[0] > REGION_SPLIT is forbidden)."""
+    return REGION_SPLIT - float(x[0])
+
+
+def _forbid_everything(x: np.ndarray) -> float:
+    """Feasibility constraint that forbids the entire quantity space (always infeasible)."""
+    return _ALWAYS_INFEASIBLE
+
+
+def test_refine_p_forbidden_region_steers_quantity_outside_box() -> None:
+    """refine_p keeps a region-forbidden quantitative arm but optimizes its quantity outside the forbidden region."""
+    strategy = ClassicBandit()
+    # Score increases with x[0] — unconstrained optimum is at x[0] = 1.0, inside the forbidden upper half.
+    p = {QUANTITATIVE_ARM_ID: lambda x: float(x[0])}
+    actions = {QUANTITATIVE_ARM_ID: create_mock_quantitative_model(dimension=QUANTITATIVE_DIMENSION)}
+
+    refined_p = strategy.refine_p(p, actions, None, {QUANTITATIVE_ARM_ID: [_allow_below_split]})
+
+    assert len(refined_p) == 1
+    (selected_action,) = refined_p.keys()
+    assert selected_action[0] == QUANTITATIVE_ARM_ID
+    # The optimizer must respect the forbidden region: the chosen quantity stays at/below the split.
+    assert selected_action[1][0] <= REGION_SPLIT + REGION_TOLERANCE
+
+
+def test_refine_p_fully_forbidden_region_drops_arm() -> None:
+    """A quantitative arm whose entire quantity space is forbidden fails optimization and is dropped."""
+    strategy = ClassicBandit()
+    p = {QUANTITATIVE_ARM_ID: lambda x: float(x[0])}
+    actions = {QUANTITATIVE_ARM_ID: create_mock_quantitative_model(dimension=QUANTITATIVE_DIMENSION)}
+
+    # The only action is fully forbidden, so refine_p ends up with no selectable action.
+    with pytest.raises(ValueError, match="No actions met the criteria"):
+        strategy.refine_p(p, actions, None, {QUANTITATIVE_ARM_ID: [_forbid_everything]})
 
 
 ########################################################################################################################
@@ -1266,7 +1313,7 @@ def test_cost_control_quantitative_action(
 class RejectAllStrategy(SingleObjectiveStrategy):
     """Strategy that rejects every action, used to trigger the 'no actions passed' error."""
 
-    def get_prerequisites(self, p, actions, constraint_list):
+    def get_prerequisites(self, p, actions, constraint_list, forbidden_regions=None):
         return {}
 
     def _verify_action(self, score: float, **kwargs) -> bool:

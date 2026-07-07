@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import List, Optional, Set, Union
+from typing import List, Optional, Union
 
 from pydantic import PositiveInt, validate_call
 
@@ -36,6 +36,7 @@ from pybandits.actions_manager import (
 from pybandits.base import (
     ActionId,
     BinaryReward,
+    ForbiddenActions,
     SmabPredictions,
 )
 from pybandits.mab import BaseMab
@@ -69,7 +70,7 @@ class BaseSmabBernoulli(BaseMab, ABC):
     def predict(
         self,
         n_samples: PositiveInt = 1,
-        forbidden_actions: Optional[Set[ActionId]] = None,
+        forbidden_actions: Optional[ForbiddenActions] = None,
     ) -> SmabPredictions:
         """
         Predict actions.
@@ -78,9 +79,11 @@ class BaseSmabBernoulli(BaseMab, ABC):
         ----------
         n_samples : PositiveInt, default=1
             Number of samples to predict.
-        forbidden_actions : Optional[Set[ActionId]], default=None
-            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
-            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
+        forbidden_actions : Optional[ForbiddenActions], default=None
+            Actions to forbid. Either a ``Set[ActionId]`` of wholly-forbidden arms, or a
+            ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` where ``None`` forbids the whole arm
+            and region callable(s) forbid part of a quantitative arm's quantity space (``region(x) > 0`` => forbidden).
+            By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
@@ -91,8 +94,12 @@ class BaseSmabBernoulli(BaseMab, ABC):
             The probabilities of getting a positive reward for each action.
         """
 
-        probs = self._get_action_probabilities(forbidden_actions=forbidden_actions, n_samples=n_samples)
-        selected_actions = [self._select_epsilon_greedy_action(p=prob, actions=self.actions) for prob in probs]
+        valid_actions, forbidden_regions = self._normalize_forbidden_actions(forbidden_actions)
+        probs = self._get_action_probabilities(valid_actions=valid_actions, n_samples=n_samples)
+        selected_actions = [
+            self._select_epsilon_greedy_action(p=prob, actions=self.actions, forbidden_regions=forbidden_regions)
+            for prob in probs
+        ]
 
         return selected_actions, probs
 

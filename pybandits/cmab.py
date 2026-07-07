@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Dict, List, Optional, Set, Union, cast
+from typing import Dict, List, Optional, Union, cast
 
 import numpy as np
 from pydantic import validate_call
@@ -39,6 +39,7 @@ from pybandits.base import (
     ActionId,
     BinaryReward,
     CmabPredictions,
+    ForbiddenActions,
     MOProbabilityWeight,
     ProbabilityWeight,
     Serializable,
@@ -100,7 +101,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
     def predict(
         self,
         context: np.ndarray,
-        forbidden_actions: Optional[Set[ActionId]] = None,
+        forbidden_actions: Optional[ForbiddenActions] = None,
     ) -> CmabPredictions:
         """
         Predict actions.
@@ -109,9 +110,11 @@ class BaseCmabBernoulli(BaseMab, ABC):
         ----------
         context: ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
-        forbidden_actions : Optional[Set[ActionId]], default=None
-            Set of forbidden actions. If specified, the model will discard the forbidden_actions and it will only
-            consider the remaining allowed_actions. By default, the model considers all actions as allowed_actions.
+        forbidden_actions : Optional[ForbiddenActions], default=None
+            Actions to forbid. Either a ``Set[ActionId]`` of wholly-forbidden arms, or a
+            ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` where ``None`` forbids the whole arm
+            and region callable(s) forbid part of a quantitative arm's quantity space (``region(x) > 0`` => forbidden).
+            By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
@@ -132,7 +135,8 @@ class BaseCmabBernoulli(BaseMab, ABC):
         # p = {'a1': ([0.5, 0.2, 0.3], [200, 100, 130]), 'a2': ([0.4, 0.5, 0.6], [180, 200, 230]), ...}
         #               |               |                           |               |
         #              prob             ws                          prob            ws
-        probs_weights = self._get_action_probabilities(forbidden_actions=forbidden_actions, context=context)
+        valid_actions, forbidden_regions = self._normalize_forbidden_actions(forbidden_actions)
+        probs_weights = self._get_action_probabilities(valid_actions=valid_actions, context=context)
 
         probs = [
             {a: self._extract_element_from_probability_weight(0, x) for a, x in prob_weight.items()}
@@ -147,7 +151,10 @@ class BaseCmabBernoulli(BaseMab, ABC):
         p_to_select_action = probs if self._predict_with_proba else weighted_sums
 
         # predict actions, probs, weighted_sums
-        selected_actions = [self._select_epsilon_greedy_action(p=p, actions=self.actions) for p in p_to_select_action]
+        selected_actions = [
+            self._select_epsilon_greedy_action(p=p, actions=self.actions, forbidden_regions=forbidden_regions)
+            for p in p_to_select_action
+        ]
 
         return selected_actions, probs, weighted_sums
 
