@@ -56,7 +56,7 @@
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab.html">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
-<li class="toctree-l2"><a class="reference internal" href="cmab_quant_bnn.html">Contextual Multi-Armed Bandit with BNN-Based Quantitative Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cmab_quant_bnn.html">Composing an Offer with a Contextual Bandit: Item Portions (that must sum to 1) + Price</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_simulator.html">sMAB Simulation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">cMAB Simulation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="bnn.html">Bayesian Neural Network</a></li>
@@ -298,11 +298,11 @@
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
 /home/runner/work/pybandits/pybandits/pybandits/simulator.py:218: RuntimeWarning: invalid value encountered in scalar divide
   return np.where(s &gt;= 0, 1 / (1 + np.exp(-s)), np.exp(s) / (1 + np.exp(s))).item()
-2026-07-03 12:35:36.313 | INFO     | pybandits.simulator:_print_results:530 - Simulation results (first 10 observations):
+2026-07-07 09:28:12.493 | INFO     | pybandits.simulator:_print_results:530 - Simulation results (first 10 observations):
 
-2026-07-03 12:35:36.335 | INFO     | pybandits.simulator:_print_results:531 - Count of actions selected by the bandit:
+2026-07-07 09:28:12.513 | INFO     | pybandits.simulator:_print_results:531 - Count of actions selected by the bandit:
 
-2026-07-03 12:35:36.338 | INFO     | pybandits.simulator:_print_results:532 - Observed proportion of positive rewards for each action:
+2026-07-07 09:28:12.516 | INFO     | pybandits.simulator:_print_results:532 - Observed proportion of positive rewards for each action:
 
 </pre></div></div>
 </div>
@@ -361,192 +361,192 @@
     <tr>
       <th>0</th>
       <th>0.0</th>
-      <td>11</td>
       <td>10</td>
-      <td>16</td>
       <td>11</td>
+      <td>8</td>
       <td>10</td>
-      <td>16</td>
+      <td>11</td>
+      <td>8</td>
     </tr>
     <tr>
       <th>1</th>
       <th>0.0</th>
-      <td>11</td>
-      <td>13</td>
-      <td>7</td>
-      <td>11</td>
-      <td>13</td>
-      <td>7</td>
+      <td>10</td>
+      <td>9</td>
+      <td>10</td>
+      <td>10</td>
+      <td>9</td>
+      <td>10</td>
     </tr>
     <tr>
       <th>2</th>
       <th>0.0</th>
-      <td>12</td>
-      <td>14</td>
-      <td>6</td>
-      <td>12</td>
-      <td>14</td>
-      <td>6</td>
+      <td>16</td>
+      <td>13</td>
+      <td>13</td>
+      <td>16</td>
+      <td>13</td>
+      <td>13</td>
     </tr>
     <tr>
       <th>0</th>
       <th>1.0</th>
       <td>13</td>
-      <td>11</td>
-      <td>5</td>
-      <td>24</td>
-      <td>21</td>
-      <td>21</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>1.0</th>
       <td>8</td>
       <td>10</td>
-      <td>17</td>
-      <td>19</td>
       <td>23</td>
-      <td>24</td>
+      <td>19</td>
+      <td>18</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>1.0</th>
+      <td>11</td>
+      <td>10</td>
+      <td>15</td>
+      <td>21</td>
+      <td>19</td>
+      <td>25</td>
     </tr>
     <tr>
       <th>2</th>
       <th>1.0</th>
-      <td>14</td>
+      <td>12</td>
       <td>8</td>
-      <td>14</td>
+      <td>13</td>
+      <td>28</td>
+      <td>21</td>
       <td>26</td>
-      <td>22</td>
-      <td>20</td>
     </tr>
     <tr>
       <th>0</th>
       <th>2.0</th>
-      <td>10</td>
-      <td>10</td>
-      <td>15</td>
-      <td>34</td>
-      <td>31</td>
-      <td>36</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <th>2.0</th>
-      <td>6</td>
       <td>11</td>
+      <td>13</td>
       <td>9</td>
-      <td>25</td>
       <td>34</td>
-      <td>33</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <th>2.0</th>
-      <td>20</td>
-      <td>10</td>
-      <td>9</td>
-      <td>46</td>
       <td>32</td>
-      <td>29</td>
-    </tr>
-    <tr>
-      <th>0</th>
-      <th>3.0</th>
-      <td>11</td>
-      <td>10</td>
-      <td>15</td>
-      <td>45</td>
-      <td>41</td>
-      <td>51</td>
+      <td>27</td>
     </tr>
     <tr>
       <th>1</th>
-      <th>3.0</th>
+      <th>2.0</th>
+      <td>13</td>
       <td>9</td>
-      <td>14</td>
-      <td>16</td>
+      <td>10</td>
       <td>34</td>
-      <td>48</td>
-      <td>49</td>
+      <td>28</td>
+      <td>35</td>
     </tr>
     <tr>
       <th>2</th>
-      <th>3.0</th>
-      <td>8</td>
-      <td>9</td>
-      <td>8</td>
-      <td>54</td>
-      <td>41</td>
+      <th>2.0</th>
+      <td>12</td>
+      <td>12</td>
+      <td>11</td>
+      <td>40</td>
+      <td>33</td>
       <td>37</td>
     </tr>
     <tr>
       <th>0</th>
+      <th>3.0</th>
+      <td>13</td>
+      <td>7</td>
+      <td>4</td>
+      <td>47</td>
+      <td>39</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <th>3.0</th>
+      <td>13</td>
+      <td>12</td>
+      <td>15</td>
+      <td>47</td>
+      <td>40</td>
+      <td>50</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <th>3.0</th>
+      <td>13</td>
+      <td>13</td>
+      <td>10</td>
+      <td>53</td>
+      <td>46</td>
+      <td>47</td>
+    </tr>
+    <tr>
+      <th>0</th>
       <th>4.0</th>
+      <td>19</td>
+      <td>17</td>
       <td>11</td>
-      <td>8</td>
-      <td>11</td>
+      <td>66</td>
       <td>56</td>
-      <td>49</td>
-      <td>62</td>
+      <td>42</td>
     </tr>
     <tr>
       <th>1</th>
       <th>4.0</th>
-      <td>12</td>
-      <td>9</td>
-      <td>15</td>
-      <td>46</td>
+      <td>4</td>
+      <td>17</td>
+      <td>10</td>
+      <td>51</td>
       <td>57</td>
-      <td>64</td>
+      <td>60</td>
     </tr>
     <tr>
       <th>2</th>
       <th>4.0</th>
-      <td>9</td>
-      <td>11</td>
-      <td>14</td>
-      <td>63</td>
-      <td>52</td>
-      <td>51</td>
+      <td>6</td>
+      <td>8</td>
+      <td>8</td>
+      <td>59</td>
+      <td>54</td>
+      <td>55</td>
     </tr>
     <tr>
       <th>0</th>
       <th>total</th>
+      <td>66</td>
       <td>56</td>
-      <td>49</td>
-      <td>62</td>
+      <td>42</td>
+      <td>66</td>
       <td>56</td>
-      <td>49</td>
-      <td>62</td>
+      <td>42</td>
     </tr>
     <tr>
       <th>1</th>
       <th>total</th>
-      <td>46</td>
+      <td>51</td>
       <td>57</td>
-      <td>64</td>
-      <td>46</td>
+      <td>60</td>
+      <td>51</td>
       <td>57</td>
-      <td>64</td>
+      <td>60</td>
     </tr>
     <tr>
       <th>2</th>
       <th>total</th>
-      <td>63</td>
-      <td>52</td>
-      <td>51</td>
-      <td>63</td>
-      <td>52</td>
-      <td>51</td>
+      <td>59</td>
+      <td>54</td>
+      <td>55</td>
+      <td>59</td>
+      <td>54</td>
+      <td>55</td>
     </tr>
     <tr>
       <th>total</th>
       <th>total</th>
-      <td>165</td>
-      <td>158</td>
-      <td>177</td>
-      <td>165</td>
-      <td>158</td>
-      <td>177</td>
+      <td>176</td>
+      <td>167</td>
+      <td>157</td>
+      <td>176</td>
+      <td>167</td>
+      <td>157</td>
     </tr>
   </tbody>
 </table>
@@ -596,41 +596,41 @@
     <tr>
       <th rowspan="3" valign="top">a1</th>
       <th>0</th>
-      <td>0.803571</td>
+      <td>0.409091</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.326087</td>
+      <td>0.764706</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.714286</td>
+      <td>0.220339</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a2</th>
       <th>0</th>
-      <td>0.653061</td>
+      <td>0.25</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.438596</td>
+      <td>0.578947</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.115385</td>
+      <td>0.5</td>
     </tr>
     <tr>
       <th rowspan="3" valign="top">a3</th>
       <th>0</th>
-      <td>0.887097</td>
+      <td>0.738095</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.234375</td>
+      <td>0.533333</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.45098</td>
+      <td>0.290909</td>
     </tr>
   </tbody>
 </table>

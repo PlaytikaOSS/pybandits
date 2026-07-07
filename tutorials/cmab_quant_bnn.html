@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Contextual Multi-Armed Bandit with BNN-Based Quantitative Model &mdash; PyBandits 1.0 documentation</title>
+  <title>Composing an Offer with a Contextual Bandit: Item Portions (that must sum to 1) + Price &mdash; PyBandits 1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -56,12 +56,18 @@
 <li class="toctree-l2"><a class="reference internal" href="smab.html">Stochastic Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cmab.html">Contextual Multi-Armed Bandit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="smab_zooming.html">Stochastic Multi-Armed Bandit with Zooming Model</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Contextual Multi-Armed Bandit with BNN-Based Quantitative Model</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#Setup">Setup</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Simulate-Environment">Simulate Environment</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Generate-Synthetic-Context-Data">Generate Synthetic Context Data</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Bandit-Training-Loop">Bandit Training Loop</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Testing-with-Specific-Contexts">Testing with Specific Contexts</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Composing an Offer with a Contextual Bandit: Item Portions (that must sum to 1) + Price</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#The-catch:-a-structural-equality-constraint">The catch: a structural equality constraint</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#The-offer-parameterization-and-its-constraint">The offer parameterization and its constraint</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Simulated-environment:-what-makes-a-customer-buy">Simulated environment: what makes a customer buy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Build-the-bandit">Build the bandit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Train-the-bandit">Train the bandit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Inspect-the-learned-policy">Inspect the learned policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Continued-example:-discrete-prices-as-separate-arms">Continued example: discrete prices as separate arms</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Train-the-multi-arm-bandit">Train the multi-arm bandit</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Inspect-the-learned-price-+-mix">Inspect the learned price + mix</a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#Conclusion">Conclusion</a></li>
 </ul>
 </li>
@@ -93,7 +99,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../tutorials.html">Tutorials</a></li>
-      <li class="breadcrumb-item active">Contextual Multi-Armed Bandit with BNN-Based Quantitative Model</li>
+      <li class="breadcrumb-item active">Composing an Offer with a Contextual Bandit: Item Portions (that must sum to 1) + Price</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/tutorials/cmab_quant_bnn.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -103,22 +109,25 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="Contextual-Multi-Armed-Bandit-with-BNN-Based-Quantitative-Model">
-<h1>Contextual Multi-Armed Bandit with BNN-Based Quantitative Model<a class="headerlink" href="#Contextual-Multi-Armed-Bandit-with-BNN-Based-Quantitative-Model" title="Link to this heading"></a></h1>
-<p>This notebook demonstrates the usage of a <strong>Bayesian Neural Network (BNN) based quantitative model</strong> for continuous action parameters with the contextual multi-armed bandit (CMAB) implementation in <code class="docutils literal notranslate"><span class="pre">pybandits</span></code>.</p>
-<p>The BNN quantitative model maps context features and a continuous action parameter (e.g., price, dosage, bid) to a reward distribution. A Bayesian Neural Network is used to model the relationship between context, the quantitative parameter, and the expected reward, providing uncertainty estimates that support exploration–exploitation. Unlike discrete-action CMABs, this approach lets you learn and optimize over continuous or fine-grained quantitative choices while conditioning on context.</p>
-<p><strong>Key aspects:</strong></p>
-<ul class="simple">
-<li><p><strong>Context + quantity</strong>: The model takes both contextual features and a scalar (or vector) quantitative parameter as input.</p></li>
-<li><p><strong>Uncertainty-aware</strong>: The BNN yields a posterior over rewards, which the bandit can use for Thompson sampling or similar strategies.</p></li>
-<li><p><strong>Flexible fitting</strong>: Supports variational inference (VI) or other Bayesian update methods for the BNN weights.</p></li>
-</ul>
+  <section id="Composing-an-Offer-with-a-Contextual-Bandit:-Item-Portions-(that-must-sum-to-1)-+-Price">
+<h1>Composing an Offer with a Contextual Bandit: Item Portions (that must sum to 1) + Price<a class="headerlink" href="#Composing-an-Offer-with-a-Contextual-Bandit:-Item-Portions-(that-must-sum-to-1)-+-Price" title="Link to this heading"></a></h1>
+<p>We run a store that sells a <strong>bundled offer</strong> made of three items. For every customer we must decide two things at once:</p>
+<ol class="arabic simple">
+<li><p><strong>The mix</strong> — what portion of the bundle each of the three items takes. The three portions must add up to <strong>1</strong> (it is a single bundle).</p></li>
+<li><p><strong>The price</strong> — a normalized price in <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]</span></code> for the whole offer.</p></li>
+</ol>
+<p>Both decisions are <em>continuous</em> and both depend on <strong>context</strong> (who the customer is). This is a job for a <strong>contextual multi-armed bandit with a BNN-based quantitative model</strong>: a Bayesian Neural Network maps <code class="docutils literal notranslate"><span class="pre">(context,</span> <span class="pre">offer</span> <span class="pre">parameters)</span> <span class="pre">-&gt;</span> <span class="pre">P(purchase)</span></code>, and Thompson sampling explores the continuous offer space while exploiting what it has learned.</p>
+<section id="The-catch:-a-structural-equality-constraint">
+<h2>The catch: a structural equality constraint<a class="headerlink" href="#The-catch:-a-structural-equality-constraint" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">portion_1</span> <span class="pre">+</span> <span class="pre">portion_2</span> <span class="pre">+</span> <span class="pre">portion_3</span> <span class="pre">=</span> <span class="pre">1</span></code> is an <strong>equality</strong> constraint. The quantitative optimizer in <code class="docutils literal notranslate"><span class="pre">pybandits</span></code> searches the hyper-cube <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]^d</span></code> and treats a constraint callable <code class="docutils literal notranslate"><span class="pre">g(x)</span></code> as feasible where <code class="docutils literal notranslate"><span class="pre">g(x)</span> <span class="pre">&gt;=</span> <span class="pre">0</span></code> — i.e. it supports <strong>inequalities</strong>, not exact equalities. An exact equality carves out a measure-zero surface that a differential-evolution optimizer has nothing to descend on.</p>
+<p>So we turn the equality into geometry the model and optimizer both like. The quantity vector is <code class="docutils literal notranslate"><span class="pre">[p_1,</span> <span class="pre">p_2,</span> <span class="pre">price]</span></code>: the first <code class="docutils literal notranslate"><span class="pre">N_ITEMS</span> <span class="pre">-</span> <span class="pre">1</span> <span class="pre">=</span> <span class="pre">2</span></code> coordinates <strong>are the item portions directly</strong> (so the BNN reasons in real portion space), and the last portion is the leftover <code class="docutils literal notranslate"><span class="pre">p_3</span> <span class="pre">=</span> <span class="pre">1</span> <span class="pre">-</span> <span class="pre">p_1</span> <span class="pre">-</span> <span class="pre">p_2</span></code>. Keeping every portion non-negative reduces to a single <strong>inequality</strong>, <code class="docutils literal notranslate"><span class="pre">p_1</span> <span class="pre">+</span> <span class="pre">p_2</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>, which we hand to the optimizer as a <em>forbidden region</em>. The feasible set is a triangle (half the cube) — a
+full-measure region, far friendlier than the measure-zero equality.</p>
+<p>This deliberately avoids two worse options: an exact equality on <code class="docutils literal notranslate"><span class="pre">[p_1,</span> <span class="pre">p_2,</span> <span class="pre">p_3]</span></code> (measure-zero for the optimizer, and a redundant third input the BNN cannot use), and a stick-breaking re-parameterization (valid by construction, but it warps the space and privileges one item, making the reward surface harder to learn).</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pybandits.cmab</span><span class="w"> </span><span class="kn">import</span> <span class="n">CmabBernoulli</span>
@@ -140,202 +149,240 @@
   from .autonotebook import tqdm as notebook_tqdm
 </pre></div></div>
 </div>
-<section id="Setup">
-<h2>Setup<a class="headerlink" href="#Setup" title="Link to this heading"></a></h2>
-<p>First, we’ll define actions with quantitative parameters. In this example, we’ll use two actions, each with a one-dimensional quantitative parameter (e.g., price point or dosage level) ranging from 0 to 1. Unlike the SMAB model, here we also need to define contextual features.</p>
+</section>
+<section id="The-offer-parameterization-and-its-constraint">
+<h2>The offer parameterization and its constraint<a class="headerlink" href="#The-offer-parameterization-and-its-constraint" title="Link to this heading"></a></h2>
+<p>The quantity vector the bandit optimizes is <code class="docutils literal notranslate"><span class="pre">[p_1,</span> <span class="pre">p_2,</span> <span class="pre">price]</span></code>. <code class="docutils literal notranslate"><span class="pre">split</span></code> reads it back into the three portions (last = leftover) and the price. <code class="docutils literal notranslate"><span class="pre">portions_sum_over_one</span></code> is the forbidden-region margin: pybandits treats a region as forbidden where <code class="docutils literal notranslate"><span class="pre">region(x)</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>, so returning <code class="docutils literal notranslate"><span class="pre">p_1</span> <span class="pre">+</span> <span class="pre">p_2</span> <span class="pre">-</span> <span class="pre">1</span></code> forbids exactly the corner of the cube where the portions would exceed 1 (i.e. where <code class="docutils literal notranslate"><span class="pre">p_3</span></code> would go negative).</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Define number of features for the context</span>
-<span class="n">n_features</span> <span class="o">=</span> <span class="mi">3</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">N_ITEMS</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c1"># items in the bundle; their portions must sum to 1</span>
 
-<span class="c1"># Define cold start parameters for the base model</span>
-<span class="n">update_method</span> <span class="o">=</span> <span class="s2">&quot;VI&quot;</span>  <span class="c1"># Variational Inference for Bayesian updates</span>
-<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">50</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;optimizer_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">}}</span>
-<span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>
 
-<span class="c1"># Define actions with zooming models</span>
-<span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;action_1&quot;</span><span class="p">:</span> <span class="n">QuantitativeBayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
-        <span class="n">dimension</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-        <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
-        <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-            <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">10</span><span class="p">],</span>
-            <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
-            <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
-            <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
-            <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
-        <span class="p">),</span>
-    <span class="p">),</span>
-    <span class="s2">&quot;action_2&quot;</span><span class="p">:</span> <span class="n">QuantitativeBayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
-        <span class="n">dimension</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-        <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
-        <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-            <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">10</span><span class="p">],</span>
-            <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
-            <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
-            <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
-            <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
-        <span class="p">),</span>
-    <span class="p">),</span>
-<span class="p">}</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span><span class="n">quantity</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read a quantity vector [p_1, ..., p_{N-1}, price] into (portions, price).</span>
+
+<span class="sd">    The first N_ITEMS - 1 coordinates are the item portions; the final</span>
+<span class="sd">    portion is the leftover so the portions sum to 1. The BNN sees these</span>
+<span class="sd">    coordinates directly, so it learns the reward in real portion space.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">free</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">quantity</span><span class="p">[:</span> <span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">portions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">free</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">free</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+    <span class="n">price</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">quantity</span><span class="p">[</span><span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">portions</span><span class="p">,</span> <span class="n">price</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">portions_sum_over_one</span><span class="p">(</span><span class="n">quantity</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Forbidden-region margin: &gt; 0 where the free portions exceed 1 (invalid).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">quantity</span><span class="p">[:</span> <span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span>
+
+
+<span class="c1"># Passed to predict(): forbids the p_1 + p_2 &gt; 1 corner for the &#39;offer&#39; arm, in</span>
+<span class="c1"># both the optimized (exploit) and Thompson-sampled (explore) branches.</span>
+<span class="n">forbidden_actions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;offer&quot;</span><span class="p">:</span> <span class="n">portions_sum_over_one</span><span class="p">}</span>
 </pre></div>
 </div>
 </div>
+<p>A quick check of the feasible region: about half the cube is feasible, and every feasible point yields non-negative portions that sum to 1.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">actions</span><span class="p">[</span><span class="s2">&quot;action_1&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">bnn</span><span class="o">.</span><span class="n">update_kwargs</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">samples</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="mi">10000</span><span class="p">,</span> <span class="n">N_ITEMS</span><span class="p">))</span>
+<span class="n">feasible</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">portions_sum_over_one</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">samples</span><span class="p">])</span>
+<span class="n">portions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">split</span><span class="p">(</span><span class="n">q</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">samples</span><span class="p">[</span><span class="n">feasible</span><span class="p">]])</span>
+
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">),</span> <span class="s2">&quot;portions must sum to 1&quot;</span>
+<span class="k">assert</span> <span class="p">(</span><span class="n">portions</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="s2">&quot;feasible portions must be non-negative&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">feasible</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> of the cube is feasible; all feasible offers have portions &gt;= 0 summing to 1&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
-</pre></div>
+<div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-VIUpdateKwargs(num_steps=50, method=&#39;advi&#39;, optimizer_type=&#39;adam&#39;, optimizer_kwargs={&#39;step_size&#39;: 0.001}, batch_size=None, early_stopping_kwargs=None, lr_scheduler_type=None, lr_scheduler_kwargs=None, restore_best_svi_state=True, num_particles=1, gradient_clip_norm=None, kl_annealing_fraction=None, epochs=None)
+50% of the cube is feasible; all feasible offers have portions &gt;= 0 summing to 1
 </pre></div></div>
 </div>
-<p>Now we can initialize the CmabBernoulli bandit with our zooming models:</p>
+</section>
+<section id="Simulated-environment:-what-makes-a-customer-buy">
+<h2>Simulated environment: what makes a customer buy<a class="headerlink" href="#Simulated-environment:-what-makes-a-customer-buy" title="Link to this heading"></a></h2>
+<p>Context is three features in <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]</span></code>: <code class="docutils literal notranslate"><span class="pre">[affluence,</span> <span class="pre">preference_item_1,</span> <span class="pre">preference_item_2]</span></code>.</p>
+<p>Each customer has a hidden <strong>ideal offer</strong>:</p>
+<ul class="simple">
+<li><p>an ideal portion mix that reflects their item preferences (item 3’s preference is the leftover), and</p></li>
+<li><p>an ideal price that rises with affluence.</p></li>
+</ul>
+<p>The purchase probability is high when the offer’s mix and price are both close to the customer’s ideal, and decays with distance (a bell curve on each). The bandit has to discover this per-context sweet spot from binary purchase feedback alone.</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Initialize the bandit</span>
-<span class="n">cmab</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions</span><span class="p">,</span> <span class="n">epsilon</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">make_ideal</span><span class="p">(</span><span class="n">context</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The customer&#39;s hidden sweet-spot offer, given their context.&quot;&quot;&quot;</span>
+    <span class="n">affluence</span><span class="p">,</span> <span class="n">pref1</span><span class="p">,</span> <span class="n">pref2</span> <span class="o">=</span> <span class="n">context</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">pref1</span><span class="p">,</span> <span class="n">pref2</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">pref1</span> <span class="o">+</span> <span class="n">pref2</span><span class="p">)])</span> <span class="o">+</span> <span class="mf">0.1</span>  <span class="c1"># keep every share positive</span>
+    <span class="n">ideal_portions</span> <span class="o">=</span> <span class="n">raw</span> <span class="o">/</span> <span class="n">raw</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">ideal_price</span> <span class="o">=</span> <span class="mf">0.2</span> <span class="o">+</span> <span class="mf">0.6</span> <span class="o">*</span> <span class="n">affluence</span>
+    <span class="k">return</span> <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">reward_function</span><span class="p">(</span><span class="n">quantity</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+    <span class="n">portions</span><span class="p">,</span> <span class="n">price</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">quantity</span><span class="p">)</span>
+    <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+    <span class="n">mix_fit</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">portions</span> <span class="o">-</span> <span class="n">ideal_portions</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.05</span><span class="p">)</span>
+    <span class="n">price_fit</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">price</span> <span class="o">-</span> <span class="n">ideal_price</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.03</span><span class="p">)</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">mix_fit</span> <span class="o">*</span> <span class="n">price_fit</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rng</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">prob</span><span class="p">),</span> <span class="n">prob</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_optimal_reward</span><span class="p">(</span><span class="n">context</span><span class="p">):</span>
+    <span class="c1"># The ideal offer hits mix_fit = price_fit = 1, so the best achievable prob is 1.</span>
+    <span class="k">return</span> <span class="mf">1.0</span>
 </pre></div>
 </div>
 </div>
+</section>
+<section id="Build-the-bandit">
+<h2>Build the bandit<a class="headerlink" href="#Build-the-bandit" title="Link to this heading"></a></h2>
+<p>A single quantitative action, <code class="docutils literal notranslate"><span class="pre">&quot;offer&quot;</span></code>, of dimension <code class="docutils literal notranslate"><span class="pre">N_ITEMS</span></code> (two free portion coordinates + price). The BNN receives <code class="docutils literal notranslate"><span class="pre">[quantity,</span> <span class="pre">context]</span></code> and outputs <code class="docutils literal notranslate"><span class="pre">P(purchase)</span></code>.</p>
+<blockquote>
+<div><p>With one action the arm choice is trivial (you’ll see a “MAB will be deterministic” warning) — the real decision here is the <em>continuous</em> offer composition, which the quantity optimizer still explores. Add more actions (e.g. distinct bundle templates) if you also want the bandit to choose <em>between</em> offers.</p>
+</div></blockquote>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">cmab</span><span class="o">.</span><span class="n">actions</span><span class="p">[</span><span class="s2">&quot;action_1&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">bnn</span><span class="o">.</span><span class="n">update_kwargs</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;epsilon: </span><span class="si">{</span><span class="n">cmab</span><span class="o">.</span><span class="n">epsilon</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">n_features</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c1"># [affluence, preference_item_1, preference_item_2]</span>
+<span class="n">dimension</span> <span class="o">=</span> <span class="n">N_ITEMS</span>  <span class="c1"># 2 free portion coordinates + 1 price</span>
+
+<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;epochs&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;optimizer_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">}}</span>
+<span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
+
+<span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;offer&quot;</span><span class="p">:</span> <span class="n">QuantitativeBayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+        <span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">,</span>
+        <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
+        <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span>
+            <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
+            <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
+            <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
+            <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;gelu&quot;</span><span class="p">,</span>
+            <span class="n">bias_std</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+<span class="p">}</span>
+
+<span class="n">cmab</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions</span><span class="p">,</span> <span class="n">epsilon</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># full exploration for the training batch</span>
 </pre></div>
 </div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/work/pybandits/pybandits/pybandits/meta_model.py:357: UserWarning: Only a single action was supplied. This MAB will be deterministic.
+  warnings.warn(&#34;Only a single action was supplied. This MAB will be deterministic.&#34;)
+</pre></div></div>
+</div>
+</section>
+<section id="Train-the-bandit">
+<h2>Train the bandit<a class="headerlink" href="#Train-the-bandit" title="Link to this heading"></a></h2>
+<p>We collect a <strong>single exploration batch</strong> of 4096 offers with <code class="docutils literal notranslate"><span class="pre">epsilon=1</span></code> (random, constraint-respecting offers — no optimizer on the cold model), then update the BNN once. <code class="docutils literal notranslate"><span class="pre">predict</span></code> is called on the whole batch at once — no loop. We pass <code class="docutils literal notranslate"><span class="pre">forbidden_actions</span></code> so every sampled offer respects <code class="docutils literal notranslate"><span class="pre">p_1</span> <span class="pre">+</span> <span class="pre">p_2</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">current_context</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="mi">4096</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span>
+
+<span class="c1"># Single exploration batch: one batched predict, one update.</span>
+<span class="n">pred_actions</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">cmab</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">forbidden_actions</span><span class="o">=</span><span class="n">forbidden_actions</span><span class="p">)</span>
+<span class="n">chosen_actions</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">pred_actions</span><span class="p">]</span>
+<span class="n">chosen_quantities</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">pred_actions</span><span class="p">]</span>
+
+<span class="n">rewards_and_probs</span> <span class="o">=</span> <span class="p">[</span><span class="n">reward_function</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chosen_quantities</span><span class="p">,</span> <span class="n">current_context</span><span class="p">)]</span>
+<span class="n">rewards</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">rewards_and_probs</span><span class="p">]</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">rewards_and_probs</span><span class="p">]</span>
+
+<span class="n">regret</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">get_optimal_reward</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="n">current_context</span><span class="p">])</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">probs</span><span class="p">))</span>
+<span class="n">cmab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">chosen_actions</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">rewards</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">quantities</span><span class="o">=</span><span class="n">chosen_quantities</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Explored and updated on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">current_context</span><span class="p">)</span><span class="si">}</span><span class="s2"> offers. Avg exploration regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-num_steps=50 method=&#39;advi&#39; optimizer_type=&#39;adam&#39; optimizer_kwargs={&#39;step_size&#39;: 0.001} batch_size=None early_stopping_kwargs=None lr_scheduler_type=None lr_scheduler_kwargs=None restore_best_svi_state=True num_particles=1 gradient_clip_norm=None kl_annealing_fraction=None epochs=None
-epsilon: 1.0
+Explored and updated on 4096 offers. Avg exploration regret: 0.9513
 </pre></div></div>
 </div>
 </section>
-<section id="Simulate-Environment">
-<h2>Simulate Environment<a class="headerlink" href="#Simulate-Environment" title="Link to this heading"></a></h2>
-<p>Let’s create a reward function that depends on both the action, its quantitative parameter, and the context. For illustration purposes, we’ll define that:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">action_1</span></code> performs better when the first context feature is high and when the quantitative parameter is around 0.25</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">action_2</span></code> performs better when the second context feature is high and when the quantitative parameter is around 0.75</p></li>
-</ul>
-<p>The reward probability follows a bell curve for the quantitative parameter and is also influenced by the context features.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">reward_function</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">quantity</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;action_1&quot;</span><span class="p">:</span>
-        <span class="c1"># Bell curve centered at 0.25 for the quantity</span>
-        <span class="c1"># Influenced by first context feature</span>
-        <span class="n">quantity_component</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">quantity</span> <span class="o">-</span> <span class="mf">0.25</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.02</span><span class="p">)</span>
-        <span class="n">context_component</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># First feature has influence</span>
-        <span class="n">prob</span> <span class="o">=</span> <span class="n">quantity_component</span> <span class="o">*</span> <span class="n">context_component</span>
-    <span class="k">else</span><span class="p">:</span>  <span class="c1"># action_2</span>
-        <span class="c1"># Bell curve centered at 0.75 for the quantity</span>
-        <span class="c1"># Influenced by second context feature</span>
-        <span class="n">quantity_component</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">quantity</span> <span class="o">-</span> <span class="mf">0.75</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.02</span><span class="p">)</span>
-        <span class="n">context_component</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># Second feature has influence</span>
-        <span class="n">prob</span> <span class="o">=</span> <span class="n">quantity_component</span> <span class="o">*</span> <span class="n">context_component</span>
-
-    <span class="c1"># Ensure probability is between 0 and 1</span>
-    <span class="n">prob</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">prob</span><span class="p">))</span>
-
-    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">prob</span><span class="p">),</span> <span class="n">prob</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">get_optimal_reward</span><span class="p">(</span><span class="n">context</span><span class="p">):</span>
-    <span class="n">max_prob_action_1</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
-    <span class="n">max_prob_action_2</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
-    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_prob_action_1</span><span class="p">,</span> <span class="n">max_prob_action_2</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<p>Let’s visualize our reward functions to understand what the bandit needs to learn. We’ll show the reward surfaces for different values of context:</p>
+<section id="Inspect-the-learned-policy">
+<h2>Inspect the learned policy<a class="headerlink" href="#Inspect-the-learned-policy" title="Link to this heading"></a></h2>
+<p>We rebuild the bandit with <code class="docutils literal notranslate"><span class="pre">epsilon=0</span></code> to <strong>exploit</strong> the trained model, then ask it for the chosen offer at a handful of representative customers and compare to the hidden ideal. The <code class="docutils literal notranslate"><span class="pre">portion_sum</span></code> column is <code class="docutils literal notranslate"><span class="pre">1</span></code> and every portion is non-negative — guaranteed by the <code class="docutils literal notranslate"><span class="pre">p_1</span> <span class="pre">+</span> <span class="pre">p_2</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code> forbidden region.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cmab</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions</span><span class="p">,</span> <span class="n">epsilon</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># exploit the trained model</span>
 
-<span class="c1"># Plot for three different contexts</span>
-<span class="n">contexts</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># High first feature</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># High second feature</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span>  <span class="c1"># Mixed features</span>
-<span class="p">]</span>
+<span class="n">test_contexts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+    <span class="p">[</span>
+        <span class="p">[</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">],</span>  <span class="c1"># affluent, loves item 1</span>
+        <span class="p">[</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">],</span>  <span class="c1"># affluent, loves item 2</span>
+        <span class="p">[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">],</span>  <span class="c1"># budget, balanced taste</span>
+        <span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">],</span>  <span class="c1"># mid, leftover preference -&gt; item 3</span>
+    <span class="p">]</span>
+<span class="p">)</span>
 
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">context</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">contexts</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+<span class="n">pred_actions</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">cmab</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">test_contexts</span><span class="p">,</span> <span class="n">forbidden_actions</span><span class="o">=</span><span class="n">forbidden_actions</span><span class="p">)</span>
 
-    <span class="n">y1</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">xi</span> <span class="o">-</span> <span class="mf">0.25</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.02</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">))</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
-    <span class="n">y2</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">xi</span> <span class="o">-</span> <span class="mf">0.75</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.02</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">))</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">ctx</span><span class="p">,</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">test_contexts</span><span class="p">,</span> <span class="n">pred_actions</span><span class="p">):</span>
+    <span class="n">portions</span><span class="p">,</span> <span class="n">price</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">quantity</span><span class="p">)</span>
+    <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="s2">&quot;chosen_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">&quot;portion_sum&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">&quot;chosen_price&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">price</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">&quot;ideal_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ideal_portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">&quot;ideal_price&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">ideal_price</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
 
-    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y1</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;action_1&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y2</span><span class="p">,</span> <span class="s2">&quot;r-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;action_2&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Quantitative Parameter&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Reward Probability&quot;</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Context: High Feature 1&quot;</span>
-    <span class="k">elif</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Context: High Feature 2&quot;</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Context: Mixed Features&quot;</span>
-
-    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="n">title</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
+<div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_cmab_quant_bnn_12_0.png" src="../_images/tutorials_cmab_quant_bnn_12_0.png" />
-</div>
-</div>
-</section>
-<section id="Generate-Synthetic-Context-Data">
-<h2>Generate Synthetic Context Data<a class="headerlink" href="#Generate-Synthetic-Context-Data" title="Link to this heading"></a></h2>
-<p>Let’s create synthetic context data for our experiment:</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate random context data</span>
-<span class="n">batch_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="mi">20000</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="mi">300</span><span class="p">]</span>
-<span class="n">context_data_sample</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span>
-
-<span class="c1"># Preview the context data</span>
-<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">context_data_sample</span><span class="p">[:</span><span class="mi">5</span><span class="p">],</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;Feature </span><span class="si">{</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_features</span><span class="p">)])</span>
-</pre></div>
-</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/scipy/optimize/_differentiable_functions.py:552: UserWarning: delta_grad == 0.0. Check if the approximated function is linear. If the function is linear better results can be obtained by defining the Hessian as zero instead of using quasi-Newton approximations.
+  self.H.update(delta_x, delta_g)
+</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
 <div class="output_area rendered_html docutils container">
@@ -357,83 +404,136 @@ epsilon: 1.0
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>Feature 1</th>
-      <th>Feature 2</th>
-      <th>Feature 3</th>
+      <th>context</th>
+      <th>chosen_portions</th>
+      <th>portion_sum</th>
+      <th>chosen_price</th>
+      <th>ideal_portions</th>
+      <th>ideal_price</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>0.137375</td>
-      <td>0.366621</td>
-      <td>0.796517</td>
+      <td>[0.9, 0.9, 0.1]</td>
+      <td>[0.0, 1.0, 0.0]</td>
+      <td>1.0</td>
+      <td>0.000</td>
+      <td>[0.556, 0.111, 0.333]</td>
+      <td>0.74</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.749101</td>
-      <td>0.273204</td>
-      <td>0.795529</td>
+      <td>[0.9, 0.1, 0.9]</td>
+      <td>[0.0, 1.0, 0.0]</td>
+      <td>1.0</td>
+      <td>0.000</td>
+      <td>[0.111, 0.556, 0.333]</td>
+      <td>0.74</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.974930</td>
-      <td>0.316642</td>
-      <td>0.046505</td>
+      <td>[0.2, 0.4, 0.4]</td>
+      <td>[0.0, 0.0, 1.0]</td>
+      <td>1.0</td>
+      <td>0.571</td>
+      <td>[0.294, 0.294, 0.412]</td>
+      <td>0.32</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>0.726129</td>
-      <td>0.401092</td>
-      <td>0.122545</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>0.582334</td>
-      <td>0.327514</td>
-      <td>0.312191</td>
+      <td>[0.5, 0.1, 0.1]</td>
+      <td>[0.0, 0.193, 0.807]</td>
+      <td>1.0</td>
+      <td>0.107</td>
+      <td>[0.143, 0.143, 0.714]</td>
+      <td>0.50</td>
     </tr>
   </tbody>
 </table>
 </div></div>
 </div>
 </section>
-<section id="Bandit-Training-Loop">
-<h2>Bandit Training Loop<a class="headerlink" href="#Bandit-Training-Loop" title="Link to this heading"></a></h2>
-<p>Now, let’s train our bandit by simulating interactions for several rounds:</p>
+<section id="Continued-example:-discrete-prices-as-separate-arms">
+<h2>Continued example: discrete prices as separate arms<a class="headerlink" href="#Continued-example:-discrete-prices-as-separate-arms" title="Link to this heading"></a></h2>
+<p>Suppose price is not a free continuous knob but a <strong>discrete choice</strong> — say <strong>-10%, 0%, +10%</strong> around a reference price. The natural model is one <strong>quantitative arm per price level</strong>: three arms that each optimize only the <em>portion mix</em> (dimension <code class="docutils literal notranslate"><span class="pre">N_ITEMS</span> <span class="pre">-</span> <span class="pre">1</span> <span class="pre">=</span> <span class="pre">2</span></code>), while the bandit’s <strong>arm choice picks the price</strong>. Now Thompson sampling does real work across arms <em>and</em> optimizes the continuous mix within the chosen arm.</p>
+<p>Everything else carries over: the <code class="docutils literal notranslate"><span class="pre">p_1</span> <span class="pre">+</span> <span class="pre">p_2</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code> forbidden region applies to every arm.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">PRICE_LEVELS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;price_down&quot;</span><span class="p">:</span> <span class="mf">0.45</span><span class="p">,</span> <span class="s2">&quot;price_same&quot;</span><span class="p">:</span> <span class="mf">0.50</span><span class="p">,</span> <span class="s2">&quot;price_up&quot;</span><span class="p">:</span> <span class="mf">0.55</span><span class="p">}</span>  <span class="c1"># -10%, 0%, +10% of a 0.50 base</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">portions_from</span><span class="p">(</span><span class="n">quantity</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Portions from a portions-only quantity (all coords are free portions; last = leftover).&quot;&quot;&quot;</span>
+    <span class="n">free</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">quantity</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">free</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">free</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">reward_price_arm</span><span class="p">(</span><span class="n">arm</span><span class="p">,</span> <span class="n">quantity</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+    <span class="n">portions</span> <span class="o">=</span> <span class="n">portions_from</span><span class="p">(</span><span class="n">quantity</span><span class="p">)</span>
+    <span class="n">price</span> <span class="o">=</span> <span class="n">PRICE_LEVELS</span><span class="p">[</span><span class="n">arm</span><span class="p">]</span>
+    <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+    <span class="n">mix_fit</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">portions</span> <span class="o">-</span> <span class="n">ideal_portions</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.05</span><span class="p">)</span>
+    <span class="n">price_fit</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">price</span> <span class="o">-</span> <span class="n">ideal_price</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.03</span><span class="p">)</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">mix_fit</span> <span class="o">*</span> <span class="n">price_fit</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rng</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">prob</span><span class="p">),</span> <span class="n">prob</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_optimal_reward_discrete</span><span class="p">(</span><span class="n">context</span><span class="p">):</span>
+    <span class="c1"># Best achievable: perfect mix (mix_fit = 1) at the closest available price level.</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">p</span> <span class="o">-</span> <span class="n">ideal_price</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.03</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">PRICE_LEVELS</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+
+<span class="c1"># One quantitative arm per price level; each optimizes portions only (dimension</span>
+<span class="c1"># N_ITEMS - 1), under the same p_1 + p_2 &lt;= 1 forbidden region.</span>
+<span class="n">forbidden_actions_multi</span> <span class="o">=</span> <span class="p">{</span><span class="n">arm</span><span class="p">:</span> <span class="n">portions_sum_over_one</span> <span class="k">for</span> <span class="n">arm</span> <span class="ow">in</span> <span class="n">PRICE_LEVELS</span><span class="p">}</span>
+
+<span class="n">actions_multi</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">arm</span><span class="p">:</span> <span class="n">QuantitativeBayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+        <span class="n">dimension</span><span class="o">=</span><span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>  <span class="c1"># portions only; the price is the arm</span>
+        <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
+        <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span>
+            <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
+            <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
+            <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
+            <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;gelu&quot;</span><span class="p">,</span>
+            <span class="n">bias_std</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">arm</span> <span class="ow">in</span> <span class="n">PRICE_LEVELS</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<section id="Train-the-multi-arm-bandit">
+<h3>Train the multi-arm bandit<a class="headerlink" href="#Train-the-multi-arm-bandit" title="Link to this heading"></a></h3>
+<p>Same single-batch recipe, but now <code class="docutils literal notranslate"><span class="pre">predict</span></code> also chooses among the three price arms. We explore one batch of 4096 (<code class="docutils literal notranslate"><span class="pre">epsilon=1</span></code>), update every arm from its share of the data, and measure regret against the best <em>achievable</em> reward on the discrete price grid (a perfect mix at the closest price level, generally below 1).</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="nb">iter</span><span class="p">,</span> <span class="n">batch_size</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">batch_sizes</span><span class="p">):</span>
-    <span class="k">if</span> <span class="nb">iter</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">cmab</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions</span><span class="p">,</span> <span class="n">epsilon</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># no exploration</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cmab_multi</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions_multi</span><span class="p">,</span> <span class="n">epsilon</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 
-    <span class="c1"># Get context for this round</span>
-    <span class="n">current_context</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span>
+<span class="n">current_context</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="mi">4096</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span>
+<span class="n">pred_actions</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">cmab_multi</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">forbidden_actions</span><span class="o">=</span><span class="n">forbidden_actions_multi</span><span class="p">)</span>
+<span class="n">chosen_arms</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">pred_actions</span><span class="p">]</span>
+<span class="n">chosen_quantities</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">pred_actions</span><span class="p">]</span>
 
-    <span class="c1"># Predict best action</span>
-    <span class="n">pred_actions</span><span class="p">,</span> <span class="n">model_probs</span><span class="p">,</span> <span class="n">weighted_sums</span> <span class="o">=</span> <span class="n">cmab</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">)</span>
-    <span class="n">chosen_actions</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">pred_actions</span><span class="p">]</span>
-    <span class="n">chosen_quantities</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">pred_actions</span><span class="p">]</span>
+<span class="n">rewards_and_probs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">reward_price_arm</span><span class="p">(</span><span class="n">arm</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">arm</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chosen_arms</span><span class="p">,</span> <span class="n">chosen_quantities</span><span class="p">,</span> <span class="n">current_context</span><span class="p">)</span>
+<span class="p">]</span>
+<span class="n">rewards</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">rewards_and_probs</span><span class="p">]</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">rewards_and_probs</span><span class="p">]</span>
 
-    <span class="c1"># Observe reward</span>
-    <span class="n">rewards_and_probs</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="n">reward_function</span><span class="p">(</span><span class="n">chosen_action</span><span class="p">,</span> <span class="n">chosen_quantity</span><span class="p">,</span> <span class="n">_current_context</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">chosen_action</span><span class="p">,</span> <span class="n">chosen_quantity</span><span class="p">,</span> <span class="n">_current_context</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chosen_actions</span><span class="p">,</span> <span class="n">chosen_quantities</span><span class="p">,</span> <span class="n">current_context</span><span class="p">)</span>
-    <span class="p">]</span>
-    <span class="n">rewards</span> <span class="o">=</span> <span class="p">[</span><span class="n">reward_and_prob</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">reward_and_prob</span> <span class="ow">in</span> <span class="n">rewards_and_probs</span><span class="p">]</span>
-    <span class="n">probs</span> <span class="o">=</span> <span class="p">[</span><span class="n">reward_and_prob</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">reward_and_prob</span> <span class="ow">in</span> <span class="n">rewards_and_probs</span><span class="p">]</span>
+<span class="n">regret</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">get_optimal_reward_discrete</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="n">current_context</span><span class="p">])</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">probs</span><span class="p">))</span>
+<span class="n">cmab_multi</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">chosen_arms</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">rewards</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">quantities</span><span class="o">=</span><span class="n">chosen_quantities</span><span class="p">)</span>
 
-    <span class="n">optimal_probs</span> <span class="o">=</span> <span class="p">[</span><span class="n">get_optimal_reward</span><span class="p">(</span><span class="n">context</span><span class="p">)</span> <span class="k">for</span> <span class="n">context</span> <span class="ow">in</span> <span class="n">current_context</span><span class="p">]</span>
-
-    <span class="n">regret</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">optimal_probs</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">probs</span><span class="p">))</span>
-
-    <span class="c1"># Update bandit</span>
-    <span class="n">cmab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">chosen_actions</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">rewards</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">quantities</span><span class="o">=</span><span class="n">chosen_quantities</span><span class="p">)</span>
-
-    <span class="c1"># Print progress</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Completed </span><span class="si">{</span><span class="nb">iter</span><span class="si">}</span><span class="s2"> batches. Avg regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">arm_counts</span> <span class="o">=</span> <span class="p">{</span><span class="n">arm</span><span class="p">:</span> <span class="n">chosen_arms</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">arm</span><span class="p">)</span> <span class="k">for</span> <span class="n">arm</span> <span class="ow">in</span> <span class="n">PRICE_LEVELS</span><span class="p">}</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Explored and updated on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">current_context</span><span class="p">)</span><span class="si">}</span><span class="s2"> offers. Avg regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">. Arm counts: </span><span class="si">{</span><span class="n">arm_counts</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -445,434 +545,142 @@ epsilon: 1.0
 
 </pre></div></div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Completed 0 batches. Avg regret: 0.5100927299510888
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Completed 1 batches. Avg regret: 0.583197178873189
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Completed 2 batches. Avg regret: 0.5979360441018535
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Completed 3 batches. Avg regret: 0.58557166810078
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Completed 4 batches. Avg regret: 0.6072172876155417
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Completed 5 batches. Avg regret: 0.5857986986813406
-</pre></div></div>
-</div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area stderr docutils container">
+<div class="output_area docutils container">
 <div class="highlight"><pre>
-
+Explored and updated on 4096 offers. Avg regret: 0.5854. Arm counts: {&#39;price_down&#39;: 1357, &#39;price_same&#39;: 1365, &#39;price_up&#39;: 1374}
 </pre></div></div>
 </div>
-<div class="nbinput nblast docutils container">
+</section>
+<section id="Inspect-the-learned-price-+-mix">
+<h3>Inspect the learned price + mix<a class="headerlink" href="#Inspect-the-learned-price-+-mix" title="Link to this heading"></a></h3>
+<p>Rebuild with <code class="docutils literal notranslate"><span class="pre">epsilon=0</span></code> to exploit the trained arms. For each test customer the bandit now returns a <strong>price arm</strong> and a portion mix; it should lean toward the price level nearest the customer’s ideal price and a mix near their ideal portions.</p>
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1">### Plot Reward surface - actual vs. predicted</span>
-</pre></div>
-</div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mgrid</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="mf">0.01</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">:</span><span class="mf">0.01</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
-<span class="n">grid_2d</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
-<span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-<span class="n">y_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
-<span class="n">reward_prob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">quantity</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)):</span>
-    <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">first_feature</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)):</span>
-        <span class="n">y_true</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">],</span> <span class="n">reward_prob</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">reward_function</span><span class="p">(</span>
-            <span class="n">action</span><span class="o">=</span><span class="s2">&quot;action_1&quot;</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="n">quantity</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="p">[</span><span class="n">first_feature</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
-        <span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cmab_multi</span> <span class="o">=</span> <span class="n">CmabBernoulli</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">actions_multi</span><span class="p">,</span> <span class="n">epsilon</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># exploit the trained arms</span>
+<span class="n">pred_actions</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">cmab_multi</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">test_contexts</span><span class="p">,</span> <span class="n">forbidden_actions</span><span class="o">=</span><span class="n">forbidden_actions_multi</span><span class="p">)</span>
 
-<span class="n">cmap</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="s2">&quot;coolwarm&quot;</span><span class="p">)</span>
-<span class="c1"># Create the contour plot</span>
-<span class="n">contour</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">contourf</span><span class="p">(</span><span class="o">*</span><span class="n">grid</span><span class="p">,</span> <span class="n">reward_prob</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">)</span>
-<span class="n">cbar</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">contour</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;action_1&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;First feature&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;Quantitative Parameter&quot;</span><span class="p">)</span>
-
-<span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-<span class="n">y_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
-<span class="n">reward_prob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">quantity</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)):</span>
-    <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">second_feature</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)):</span>
-        <span class="n">y_true</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">],</span> <span class="n">reward_prob</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">reward_function</span><span class="p">(</span>
-            <span class="n">action</span><span class="o">=</span><span class="s2">&quot;action_2&quot;</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="n">quantity</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">second_feature</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
-        <span class="p">)</span>
-
-<span class="n">cmap</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="s2">&quot;coolwarm&quot;</span><span class="p">)</span>
-<span class="c1"># Create the contour plot</span>
-<span class="n">contour</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">contourf</span><span class="p">(</span><span class="o">*</span><span class="n">grid</span><span class="p">,</span> <span class="n">reward_prob</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">)</span>
-<span class="n">cbar</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">contour</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;action_2&quot;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;Second feature&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;Quantitative Parameter&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-[Text(0.5, 1.0, &#39;action_2&#39;),
- Text(0, 0.5, &#39;Second feature&#39;),
- Text(0.5, 0, &#39;Quantitative Parameter&#39;)]
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_cmab_quant_bnn_18_1.png" src="../_images/tutorials_cmab_quant_bnn_18_1.png" />
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">grid_2d_action_1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">grid_2d</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">grid_2d</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">2</span><span class="p">)),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-
-<span class="n">batch_predictions_action_1</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">cmab</span><span class="o">.</span><span class="n">actions</span><span class="p">[</span><span class="s2">&quot;action_1&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d_action_1</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
-<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
-<span class="n">batch_proba_action_1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="p">[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions_action_1</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-
-<span class="n">grid_2d_action_2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
-    <span class="p">[</span><span class="n">grid_2d</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">grid_2d</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">grid_2d</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">grid_2d</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">))],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
-<span class="p">)</span>
-
-<span class="n">batch_predictions_action_2</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">cmab</span><span class="o">.</span><span class="n">actions</span><span class="p">[</span><span class="s2">&quot;action_2&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">bnn</span><span class="o">.</span><span class="n">sample_proba</span><span class="p">(</span><span class="n">grid_2d_action_2</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
-<span class="p">]</span>  <span class="c1"># predictions are list of tuples of probabilities and corresponding weighted sums</span>
-<span class="n">batch_proba_action_2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="p">[</span><span class="n">proba_and_weighted_sum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">proba_and_weighted_sum</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">predictions</span> <span class="ow">in</span> <span class="n">batch_predictions_action_2</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
-<span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-<span class="n">cmap</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="s2">&quot;coolwarm&quot;</span><span class="p">)</span>
-
-<span class="c1"># Create the contour plot</span>
-<span class="n">pred_proba_mean</span> <span class="o">=</span> <span class="n">batch_proba_action_1</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">contour</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">contourf</span><span class="p">(</span><span class="o">*</span><span class="n">grid</span><span class="p">,</span> <span class="n">pred_proba_mean</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">)</span>
-<span class="n">cbar</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">contour</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;First feature&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;Quantitative Parameter&quot;</span><span class="p">)</span>
-
-<span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-<span class="n">pred_proba_mean</span> <span class="o">=</span> <span class="n">batch_proba_action_2</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">contour</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">contourf</span><span class="p">(</span><span class="o">*</span><span class="n">grid</span><span class="p">,</span> <span class="n">pred_proba_mean</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">)</span>
-<span class="n">cbar</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">contour</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">ylabel</span><span class="o">=</span><span class="s2">&quot;Second feature&quot;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s2">&quot;Quantitative Parameter&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-[Text(0, 0.5, &#39;Second feature&#39;), Text(0.5, 0, &#39;Quantitative Parameter&#39;)]
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_cmab_quant_bnn_20_1.png" src="../_images/tutorials_cmab_quant_bnn_20_1.png" />
-</div>
-</div>
-</section>
-<section id="Testing-with-Specific-Contexts">
-<h2>Testing with Specific Contexts<a class="headerlink" href="#Testing-with-Specific-Contexts" title="Link to this heading"></a></h2>
-<p>Finally, let’s test our trained bandit with specific contexts to see if it has learned the optimal policy:</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
-<span class="n">n_samples</span> <span class="o">=</span> <span class="mi">100</span>
-
-<span class="c1"># Plot for three different contexts</span>
-<span class="n">context</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_samples</span><span class="p">),)</span>  <span class="c1"># High first feature # Mixed features</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">context</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">contexts</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
-
-    <span class="n">y1</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">xi</span> <span class="o">-</span> <span class="mf">0.25</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.02</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">))</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
-    <span class="n">y2</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">xi</span> <span class="o">-</span> <span class="mf">0.75</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.02</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">))</span> <span class="k">for</span> <span class="n">xi</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
-
-    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y1</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;action_1&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y2</span><span class="p">,</span> <span class="s2">&quot;r-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;action_2&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Quantitative Parameter&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Reward Probability&quot;</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Context: High Feature 1&quot;</span>
-    <span class="k">elif</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Context: High Feature 2&quot;</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Context: Mixed Features&quot;</span>
-
-    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="n">title</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_cmab_quant_bnn_22_0.png" src="../_images/tutorials_cmab_quant_bnn_22_0.png" />
-</div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Define test contexts</span>
-<span class="n">test_contexts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>  <span class="c1"># High feature 1, low feature 2</span>
-        <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>  <span class="c1"># Low feature 1, high feature 2</span>
-        <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>  <span class="c1"># High feature 1 and 2</span>
-        <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>  <span class="c1"># Low feature 1 and 2</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-
-<span class="c1"># Test predictions</span>
-<span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">context</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">test_contexts</span><span class="p">):</span>
-    <span class="n">context_reshaped</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">pred_actions</span><span class="p">,</span> <span class="n">probs</span><span class="p">,</span> <span class="n">weighted_sums</span> <span class="o">=</span> <span class="n">cmab</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">context_reshaped</span><span class="p">)</span>
-    <span class="n">chosen_action_quantity</span> <span class="o">=</span> <span class="n">pred_actions</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="n">chosen_action</span> <span class="o">=</span> <span class="n">chosen_action_quantity</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="n">chosen_quantities</span> <span class="o">=</span> <span class="n">chosen_action_quantity</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
-    <span class="n">chosen_action_probs</span> <span class="o">=</span> <span class="n">probs</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">chosen_action</span><span class="p">](</span><span class="n">chosen_quantities</span><span class="p">)</span>
-
-    <span class="c1"># Sample optimal quantity for the chosen action</span>
-    <span class="c1"># In a real application, you would have a method to test different quantities</span>
-    <span class="c1"># Here we&#39;ll use our knowledge of the true optimal values</span>
-    <span class="k">if</span> <span class="n">chosen_action</span> <span class="o">==</span> <span class="s2">&quot;action_1&quot;</span><span class="p">:</span>
-        <span class="n">optimal_quantity</span> <span class="o">=</span> <span class="mf">0.25</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">optimal_quantity</span> <span class="o">=</span> <span class="mf">0.75</span>
-
-    <span class="c1"># Expected reward probability</span>
-    <span class="n">expected_reward</span> <span class="o">=</span> <span class="n">reward_function</span><span class="p">(</span><span class="n">chosen_action</span><span class="p">,</span> <span class="n">optimal_quantity</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
-
-    <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">ctx</span><span class="p">,</span> <span class="p">(</span><span class="n">arm</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">test_contexts</span><span class="p">,</span> <span class="n">pred_actions</span><span class="p">):</span>
+    <span class="n">portions</span> <span class="o">=</span> <span class="n">portions_from</span><span class="p">(</span><span class="n">quantity</span><span class="p">)</span>
+    <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
         <span class="p">{</span>
-            <span class="s2">&quot;Context&quot;</span><span class="p">:</span> <span class="n">context</span><span class="p">,</span>
-            <span class="s2">&quot;Chosen Action&quot;</span><span class="p">:</span> <span class="n">chosen_action</span><span class="p">,</span>
-            <span class="s2">&quot;Chosen Quantity&quot;</span><span class="p">:</span> <span class="n">chosen_quantities</span><span class="p">,</span>
-            <span class="s2">&quot;Action Probabilities&quot;</span><span class="p">:</span> <span class="n">chosen_action_probs</span><span class="p">,</span>
-            <span class="s2">&quot;Optimal Quantity&quot;</span><span class="p">:</span> <span class="n">optimal_quantity</span><span class="p">,</span>
-            <span class="s2">&quot;Expected Reward&quot;</span><span class="p">:</span> <span class="n">expected_reward</span><span class="p">,</span>
+            <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="s2">&quot;chosen_price_arm&quot;</span><span class="p">:</span> <span class="n">arm</span><span class="p">,</span>
+            <span class="s2">&quot;chosen_price&quot;</span><span class="p">:</span> <span class="n">PRICE_LEVELS</span><span class="p">[</span><span class="n">arm</span><span class="p">],</span>
+            <span class="s2">&quot;chosen_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">&quot;portion_sum&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">&quot;ideal_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ideal_portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">&quot;ideal_price&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">ideal_price</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
         <span class="p">}</span>
     <span class="p">)</span>
 
-<span class="c1"># Display results</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">result</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">results</span><span class="p">):</span>
-    <span class="n">context_type</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">context_type</span> <span class="o">=</span> <span class="s2">&quot;High feature 1, low feature 2&quot;</span>
-    <span class="k">elif</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">context_type</span> <span class="o">=</span> <span class="s2">&quot;Low feature 1, high feature 2&quot;</span>
-    <span class="k">elif</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="n">context_type</span> <span class="o">=</span> <span class="s2">&quot;High feature 1 and 2&quot;</span>
-    <span class="k">elif</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
-        <span class="n">context_type</span> <span class="o">=</span> <span class="s2">&quot;Low feature 1 and 2&quot;</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Test </span><span class="si">{</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">context_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Context: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;Context&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Chosen Action: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;Chosen Action&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Chosen Quantity: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;Chosen Quantity&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Action Probabilities: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;Action Probabilities&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Optimal Quantity: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;Optimal Quantity&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected Reward: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;Expected Reward&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
+<div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area docutils container">
+<div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-
-Test 1: High feature 1, low feature 2
-Context: [1. 0. 0.]
-Chosen Action: action_1
-Chosen Quantity: 1.444283581619743e-11
-Action Probabilities: 0.8913623211350876
-Optimal Quantity: 0.25
-Expected Reward: (1, np.float64(0.75))
-
-Test 2: Low feature 1, high feature 2
-Context: [0. 1. 0.]
-Chosen Action: action_1
-Chosen Quantity: 0.9999999584090881
-Action Probabilities: 0.00045139861755126326
-Optimal Quantity: 0.25
-Expected Reward: (1, np.float64(0.5))
-
-Test 3: High feature 1 and 2
-Context: [1. 1. 0.]
-Chosen Action: action_2
-Chosen Quantity: 0.0005160191642855313
-Action Probabilities: 0.999999694097773
-Optimal Quantity: 0.75
-Expected Reward: (1, np.float64(0.75))
-
-Test 4: Low feature 1 and 2
-Context: [0. 0. 0.]
-Chosen Action: action_2
-Chosen Quantity: 3.085901206789643e-08
-Action Probabilities: 0.999999694097773
-Optimal Quantity: 0.75
-Expected Reward: (1, np.float64(0.5))
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/scipy/optimize/_differentiable_functions.py:552: UserWarning: delta_grad == 0.0. Check if the approximated function is linear. If the function is linear better results can be obtained by defining the Hessian as zero instead of using quasi-Newton approximations.
+  self.H.update(delta_x, delta_g)
 </pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">result</span>
-</pre></div>
-</div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-{&#39;Context&#39;: array([0., 0., 0.]),
- &#39;Chosen Action&#39;: &#39;action_2&#39;,
- &#39;Chosen Quantity&#39;: np.float64(3.085901206789643e-08),
- &#39;Action Probabilities&#39;: np.float64(0.999999694097773),
- &#39;Optimal Quantity&#39;: 0.75,
- &#39;Expected Reward&#39;: (1, np.float64(0.5))}
-</pre></div></div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>context</th>
+      <th>chosen_price_arm</th>
+      <th>chosen_price</th>
+      <th>chosen_portions</th>
+      <th>portion_sum</th>
+      <th>ideal_portions</th>
+      <th>ideal_price</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>[0.9, 0.9, 0.1]</td>
+      <td>price_same</td>
+      <td>0.50</td>
+      <td>[1.0, 0.0, 0.0]</td>
+      <td>1.0</td>
+      <td>[0.556, 0.111, 0.333]</td>
+      <td>0.74</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>[0.9, 0.1, 0.9]</td>
+      <td>price_up</td>
+      <td>0.55</td>
+      <td>[0.0, 1.0, 0.0]</td>
+      <td>1.0</td>
+      <td>[0.111, 0.556, 0.333]</td>
+      <td>0.74</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>[0.2, 0.4, 0.4]</td>
+      <td>price_down</td>
+      <td>0.45</td>
+      <td>[0.094, 0.906, 0.0]</td>
+      <td>1.0</td>
+      <td>[0.294, 0.294, 0.412]</td>
+      <td>0.32</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>[0.5, 0.1, 0.1]</td>
+      <td>price_same</td>
+      <td>0.50</td>
+      <td>[1.0, 0.0, 0.0]</td>
+      <td>1.0</td>
+      <td>[0.143, 0.143, 0.714]</td>
+      <td>0.50</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
 </div>
+</section>
 </section>
 <section id="Conclusion">
 <h2>Conclusion<a class="headerlink" href="#Conclusion" title="Link to this heading"></a></h2>
-<p>The CMAB BNN-based quantitative model uses a Bayesian Neural Network to map context and continuous action parameters to reward distributions. This approach enables efficient exploration and exploitation of continuous or fine-grained action parameters while conditioning on context. The BNN provides uncertainty estimates (e.g., via variational inference) that the bandit uses for Thompson sampling or similar strategies, balancing exploration of uncertain regions with exploitation of high predicted
-rewards.</p>
-<p>This approach is particularly useful when:</p>
-<ol class="arabic simple">
-<li><p>Actions have continuous parameters (e.g., price, dosage, bid) that affect rewards</p></li>
-<li><p>The reward function depends on both context and action parameters</p></li>
-<li><p>The optimal parameter values may vary across different contexts</p></li>
-<li><p>You want a single differentiable model (BNN) over the full parameter space rather than adaptive discretization</p></li>
-</ol>
-<p>Real-world applications include:</p>
-<ul class="simple">
-<li><p><strong>Personalized pricing</strong>: Find optimal prices (continuous parameter) based on customer features (context)</p></li>
-<li><p><strong>Content recommendation</strong>: Optimize content parameters (e.g., length, complexity) based on user demographics</p></li>
-<li><p><strong>Medical dosing</strong>: Determine optimal medication dosages based on patient characteristics</p></li>
-<li><p><strong>Ad campaign optimization</strong>: Find best bid values based on ad placement and target audience</p></li>
-</ul>
+<p>We used a contextual bandit with a BNN quantitative model to choose <strong>both</strong> the item mix <strong>and</strong> the price of an offer, conditioned on customer context — a fully continuous, multi-dimensional decision learned from binary purchase feedback.</p>
+<p>The key idea for the <code class="docutils literal notranslate"><span class="pre">sum(portions)</span> <span class="pre">==</span> <span class="pre">1</span></code> requirement:</p>
+<blockquote>
+<div><p><strong>Optimize the portions directly and reduce the equality to one inequality.</strong> The first <code class="docutils literal notranslate"><span class="pre">N_ITEMS</span> <span class="pre">-</span> <span class="pre">1</span></code> coordinates are the actual portions (so the BNN learns in un-warped portion space), the last portion is the leftover, and <code class="docutils literal notranslate"><span class="pre">p_1</span> <span class="pre">+</span> <span class="pre">p_2</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code> is enforced as a forbidden region — a full-measure triangle, far friendlier than a measure-zero equality.</p>
+</div></blockquote>
+<p>Contrast with the alternatives: an exact equality on <code class="docutils literal notranslate"><span class="pre">[p_1,</span> <span class="pre">p_2,</span> <span class="pre">p_3]</span></code> gives the optimizer a measure-zero feasible set and the model a redundant input; a stick-breaking encoding is always valid but warps the space and privileges one item. Reach for the forbidden-region / <code class="docutils literal notranslate"><span class="pre">constraint=</span></code> callables whenever feasibility is a genuine <strong>inequality</strong> (“price must exceed cost”, “item 1 below 0.5”); reduce a structural equality to the smallest inequality you can, as we did here.</p>
+<p>And when a dimension is <strong>discrete</strong> rather than continuous (a fixed set of prices, tiers, or templates), don’t force it into the quantity vector — model it as <strong>separate quantitative arms</strong>, one per level, and let the bandit choose the level while each arm optimizes the continuous remainder, as in the discrete-price example above.</p>
 </section>
 </section>
 
