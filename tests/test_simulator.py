@@ -78,9 +78,9 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
 
 # Returns spline function for single dimension input when second_dimension=0
 @given(first_dimension=st.integers(min_value=1, max_value=10))
-def test_single_dimension_spline(first_dimension):
+def test_single_dimension_spline(first_dimension, rng):
     spline_fn = Simulator._generate_prob_reward(first_dimension=first_dimension)
-    test_input = np.random.random(first_dimension)
+    test_input = rng.random(first_dimension)
     result = spline_fn(test_input)
     assert isinstance(result, float)
     assert 0 <= result <= 1
@@ -88,10 +88,10 @@ def test_single_dimension_spline(first_dimension):
 
 # Returns spline function for two dimension inputs when second_dimension>0
 @given(first_dim=st.integers(min_value=1, max_value=5), second_dim=st.integers(min_value=1, max_value=5))
-def test_two_dimension_spline(first_dim, second_dim):
+def test_two_dimension_spline(first_dim, second_dim, rng):
     spline_fn = Simulator._generate_prob_reward(first_dimension=first_dim, second_dimension=second_dim)
-    input1 = np.random.random(first_dim)
-    input2 = np.random.random(second_dim)
+    input1 = rng.random(first_dim)
+    input2 = rng.random(second_dim)
     result = spline_fn(input1, input2)
     assert isinstance(result, float)
     assert 0 <= result <= 1

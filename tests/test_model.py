@@ -844,14 +844,14 @@ class TestCalibrateOutputBias:
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
 )
-def test_check_context_matrix(n_samples, n_features, hidden_dim_list):
+def test_check_context_matrix(rng, n_samples, n_features, hidden_dim_list):
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         hidden_dim_list=hidden_dim_list,
     )
 
     # context is numpy array
-    context = np.random.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
     assert type(context) is np.ndarray
     bnn.check_context_matrix(context=context)
 
@@ -893,7 +893,9 @@ def test_check_context_matrix_bad_input_type(invalid_context) -> None:
     n_rows=st.integers(min_value=1, max_value=3),
     invalid_col_delta=st.integers(min_value=1, max_value=3),
 )
-def test_check_context_matrix_error_handling(n_features: int, n_rows: int, invalid_col_delta: int) -> None:
+def test_check_context_matrix_error_handling(
+    rng: np.random.Generator, n_features: int, n_rows: int, invalid_col_delta: int
+) -> None:
     """
     Test error handling in check_context_matrix method for ArrayLike inputs with invalid number of columns.
 
@@ -904,7 +906,7 @@ def test_check_context_matrix_error_handling(n_features: int, n_rows: int, inval
     for invalid_n_features in [n_features + invalid_col_delta, max(1, n_features - invalid_col_delta)]:
         if invalid_n_features == n_features:
             continue  # skip if by chance delta is 0
-        invalid_context = np.random.rand(n_rows, invalid_n_features)
+        invalid_context = rng.random((n_rows, invalid_n_features))
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=[],
@@ -948,12 +950,12 @@ def test_bnn_sample_proba(
         assert isinstance(layer_params.bias, expected_array)
 
     # context is numpy array
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     assert type(context) is np.ndarray
     sample_proba(context=context)
 
     # check that the model is working with multi-sample prediction
-    context = np.repeat(np.random.uniform(low=-1.0, high=1.0, size=(1, n_features)), n_samples, axis=0)
+    context = np.repeat(rng.uniform(low=-1.0, high=1.0, size=(1, n_features)), n_samples, axis=0)
     assert type(context) is np.ndarray
     prob_and_weighted_sum = bnn.sample_proba(context=np.array(context), rng=rng)
     prob, weighted_sum = zip(*prob_and_weighted_sum)
@@ -974,6 +976,7 @@ def test_bnn_sample_proba(
     epochs=st.just(1),
 )
 def test_bnn_vi_update(
+    rng,
     activation,
     use_residual_connections,
     use_layerwise_scaling,
@@ -1036,7 +1039,7 @@ def test_bnn_vi_update(
     rewards = _make_random_rewards(n_samples)
 
     # context is numpy array
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
     # raise an error if len(context) != len(rewards)
@@ -1452,7 +1455,7 @@ def test_vi_training_options(
         update_method=update_method,
         update_kwargs=update_kwargs,
     )
-    context = np.random.rand(n_samples, n_features).astype(np.float32)
+    context = rng.random((n_samples, n_features)).astype(np.float32)
     rewards = _make_random_rewards(n_samples)
     bnn.update(context=context, rewards=rewards)
     result = bnn.sample_proba(context=context, rng=rng)
@@ -1547,7 +1550,7 @@ class TestKLAnnealing:
     @pytest.mark.parametrize("kl_annealing_factor", [1.0, 0.3])
     @pytest.mark.parametrize("n_features, n_samples", [(1, 3), (3, 7)])
     def test_model_trace_scale_annotation_on_priors_and_not_on_likelihood(
-        self, n_features: int, n_samples: int, kl_annealing_factor: float
+        self, rng: np.random.Generator, n_features: int, n_samples: int, kl_annealing_factor: float
     ) -> None:
         """Tracing the inner model surfaces handlers.scale on every prior sample site (weights, biases)
         with the supplied factor, while the likelihood ``out`` site is left unscaled.
@@ -1559,7 +1562,7 @@ class TestKLAnnealing:
         bnn = self._build_bnn(kl_annealing_fraction=None, n_features=n_features)
         model_fn = bnn._create_update_model()
 
-        x = jnp.asarray(np.random.rand(n_samples, n_features).astype(np.float32))
+        x = jnp.asarray(rng.random((n_samples, n_features)).astype(np.float32))
         y = jnp.asarray(_make_random_rewards(n_samples), dtype=jnp.int32)
 
         tr = numpyro.handlers.trace(numpyro.handlers.seed(model_fn, rng_seed=0)).get_trace(x, y, kl_annealing_factor)
@@ -1590,7 +1593,7 @@ class TestKLAnnealing:
         ),
     )
     def test_symmetric_guide_wrap_scales_guide_sample_sites(
-        self, n_features: int, n_samples: int, kl_annealing_factor: float
+        self, rng: np.random.Generator, n_features: int, n_samples: int, kl_annealing_factor: float
     ) -> None:
         """The guide wrap installed in `_run_svi_training_loop` must scale the guide's sample
         sites symmetrically with the model's prior sites. Without it the per-site KL contribution
@@ -1612,7 +1615,7 @@ class TestKLAnnealing:
         guide = AutoNormal(model_fn)
         scaled_guide = _wrap_guide_with_kl_scale(guide)
 
-        x = jnp.asarray(np.random.rand(n_samples, n_features).astype(np.float32))
+        x = jnp.asarray(rng.random((n_samples, n_features)).astype(np.float32))
         y = jnp.asarray(_make_random_rewards(n_samples), dtype=jnp.int32)
 
         tr = numpyro.handlers.trace(numpyro.handlers.seed(scaled_guide, rng_seed=0)).get_trace(
@@ -1686,7 +1689,14 @@ def test_epochs_and_num_steps_warns(n_features: int, update_method: UpdateMethod
 
 @pytest.mark.parametrize("n_features", [1, 2])
 def test_bnn_mcmc_update(
-    n_features, hidden_dim_list=(1,), n_samples=3, update_method="MCMC", num_warmup=1, mcmc_num_samples=2, num_chains=1
+    rng,
+    n_features,
+    hidden_dim_list=(1,),
+    n_samples=3,
+    update_method="MCMC",
+    num_warmup=1,
+    mcmc_num_samples=2,
+    num_chains=1,
 ):
     hidden_dim_list = list(hidden_dim_list)
     update_kwargs = {"num_warmup": num_warmup, "num_samples": mcmc_num_samples, "num_chains": num_chains}
@@ -1724,7 +1734,7 @@ def test_bnn_mcmc_update(
                 assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
     rewards = _make_random_rewards(n_samples)
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
     # raise an error if len(context) != len(rewards)
@@ -1739,7 +1749,9 @@ def test_bnn_mcmc_update(
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
-def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5, method="fullrank_advi", num_steps=1):
+def test_bnn_fullrank_advi_update(
+    rng, n_features, hidden_dim_list=(1,), n_samples=5, method="fullrank_advi", num_steps=1
+):
     hidden_dim_list = list(hidden_dim_list)
 
     def update(context: np.ndarray, rewards: list):
@@ -1775,7 +1787,7 @@ def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5,
                 assert layer_b.params[param].tolist() == getattr(layer_b, param)
 
     rewards = _make_random_rewards(n_samples)
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     update(context=context, rewards=rewards)
 
 
@@ -1792,7 +1804,7 @@ def test_bnn_fullrank_advi_update(n_features, hidden_dim_list=(1,), n_samples=5,
     update_method=st.just("VI"),
 )
 def test_bnn_svi_nan_loss_raises_error(
-    n_features: int, hidden_dim_list: list[int], n_samples: int, update_method: UpdateMethods
+    rng: np.random.Generator, n_features: int, hidden_dim_list: list[int], n_samples: int, update_method: UpdateMethods
 ) -> None:
     """Test that a NaN loss during SVI training raises a ValueError immediately."""
 
@@ -1812,7 +1824,7 @@ def test_bnn_svi_nan_loss_raises_error(
             return float("nan")
         return original_mean(a, *args, **kwargs)
 
-    context = np.random.uniform(size=(n_samples, n_features))
+    context = rng.uniform(size=(n_samples, n_features))
     rewards = _make_random_rewards(n_samples)
 
     with patch("pybandits.model.bnn.network.np.mean", nan_mean):
@@ -1986,7 +1998,7 @@ def test_create_default_instance_bayesian_neural_network_cc(
         assert bnn_cold_start.use_residual_connections == use_residual_connections
 
         # Test sample_proba works
-        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+        context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
         prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context, rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == n_samples
@@ -2089,7 +2101,7 @@ def test_create_default_instance_bayesian_neural_network_dp(
         assert bnn_cold_start.use_residual_connections == use_residual_connections
 
         # Test sample_proba works
-        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+        context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
         prob_and_weighted_sum = bnn_cold_start.sample_proba(context=context, rng=rng)
         prob, weighted_sum = zip(*prob_and_weighted_sum)
         assert len(prob) == n_samples
@@ -2194,7 +2206,7 @@ def test_bayesian_neural_network_mo_sample_proba(
         assert model.activation == activation
         assert model.use_residual_connections == use_residual_connections
 
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     prob_weights = bnn_mo.sample_proba(context=context, rng=rng)
 
     assert len(prob_weights) == n_samples
@@ -2217,7 +2229,7 @@ def test_bayesian_neural_network_mo_sample_proba(
     epochs=st.just(1),
 )
 def test_bayesian_neural_network_mo_update(
-    activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives, epochs
+    rng, activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives, epochs
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
@@ -2234,8 +2246,8 @@ def test_bayesian_neural_network_mo_update(
     for model in bnn_mo.models:
         assert model.activation == activation
 
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    rewards = [[np.random.randint(0, 2) for _ in range(n_objectives)] for _ in range(n_samples)]
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    rewards = [[rng.integers(0, 2) for _ in range(n_objectives)] for _ in range(n_samples)]
 
     # Should not raise any exceptions
     bnn_mo.update(context=context, rewards=rewards)
@@ -2502,7 +2514,7 @@ def test_cold_start_with_feature_config(n_features, cardinality, hidden_dim_list
     cardinality=st.integers(min_value=2, max_value=8),
     n_samples=st.integers(min_value=2, max_value=10),
 )
-def test_check_context_matrix_with_categorical(n_features, cardinality, n_samples):
+def test_check_context_matrix_with_categorical(rng, n_features, cardinality, n_samples):
     """check_context_matrix validates column count and categorical range for feature_config models."""
     cat_col = n_features - 1
     bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features={cat_col: cardinality})
@@ -2511,7 +2523,7 @@ def test_check_context_matrix_with_categorical(n_features, cardinality, n_sample
     bnn.check_context_matrix(context)
     # too few columns
     with pytest.raises(AttributeError, match="Shape mismatch"):
-        bnn.check_context_matrix(np.random.uniform(size=(n_samples, 1)))
+        bnn.check_context_matrix(rng.uniform(size=(n_samples, 1)))
     # out-of-range category
     bad_context = _make_categorical_context(1, n_features, {cat_col: cardinality})
     bad_context[0, cat_col] = cardinality + 2
@@ -2700,7 +2712,7 @@ def test_bnn_sample_proba_and_update_both_use_forward_layers(
         update_method=update_method,
         update_kwargs=update_kwargs,
     )
-    context = np.random.rand(n_samples, n_features).astype(np.float32)
+    context = rng.random((n_samples, n_features)).astype(np.float32)
     rewards = _make_random_rewards(n_samples)
 
     original_forward_layers = BaseBayesianNeuralNetwork._forward_layers
@@ -2743,7 +2755,16 @@ def test_bnn_sample_proba_and_update_both_use_forward_layers(
     n_sigma_tolerance=st.just(5),
 )
 def test_advi_extracted_params_match_predictive_moments(
-    n_features, hidden_dim_list, dist_type, n_samples, sigma_init, nu, epochs, n_predictive_samples, n_sigma_tolerance
+    rng,
+    n_features,
+    hidden_dim_list,
+    dist_type,
+    n_samples,
+    sigma_init,
+    nu,
+    epochs,
+    n_predictive_samples,
+    n_sigma_tolerance,
 ):
     """Stored (mu, sigma) from _extract_advi_params must match guide posterior sample moments.
 
@@ -2753,7 +2774,7 @@ def test_advi_extracted_params_match_predictive_moments(
     """
     dist_params_init = {"sigma": sigma_init} if dist_type == "normal" else {"sigma": sigma_init, "nu": nu}
     context = np.random.default_rng(0).standard_normal((n_samples, n_features)).astype(np.float32)
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    rewards = rng.choice([0, 1], size=n_samples).tolist()
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
@@ -2795,7 +2816,7 @@ def test_advi_extracted_params_match_predictive_moments(
     lr=st.just(0.0),
 )
 def test_advi_zero_lr_posterior_equals_prior(
-    n_features, hidden_dim_list, dist_type, n_samples, mu_init, sigma_init, nu, num_steps, lr
+    rng, n_features, hidden_dim_list, dist_type, n_samples, mu_init, sigma_init, nu, num_steps, lr
 ):
     """With SGD step_size=0, ADVI must leave mu and sigma identical to the prior.
 
@@ -2822,8 +2843,8 @@ def test_advi_zero_lr_posterior_equals_prior(
         dist_params_init=dist_params_init,
     )
 
-    context = np.random.standard_normal((n_samples, n_features)).astype(np.float32)
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    context = rng.standard_normal((n_samples, n_features)).astype(np.float32)
+    rewards = rng.choice([0, 1], size=n_samples).tolist()
     bnn.update(context=context, rewards=rewards)
 
     # float32 rounding on mu; softplus(softplus_inverse(sigma)) rounding on sigma

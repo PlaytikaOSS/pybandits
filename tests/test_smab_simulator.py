@@ -199,7 +199,7 @@ def mock_predict(self, n_samples, *args, **kwargs):
     models=st.lists(st.sampled_from([Beta(), Zooming.cold_start()]), min_size=2, max_size=2),
 )
 def test_smab_e2e_simulation_with_default_args(
-    action_ids: List[str], models: List[BaseModel], monkeymodule: pytest.MonkeyPatch
+    action_ids: List[str], models: List[BaseModel], monkeymodule: pytest.MonkeyPatch, rng: np.random.Generator
 ):
     """
     Test end-to-end simulation with default arguments.
@@ -213,12 +213,12 @@ def test_smab_e2e_simulation_with_default_args(
     monkeymodule : MonkeyPatch
         Pytest monkeypatch fixture for modifying module attributes.
     """
-    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,)))
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,)))
     monkeymodule.setattr(
-        pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(
-        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
 
@@ -257,6 +257,7 @@ def test_smab_e2e_simulation_with_non_default_args(
     visualize: bool,
     file_prefix: str,
     monkeymodule: MonkeyPatch,
+    rng: np.random.Generator,
 ):
     """
     Test end-to-end simulation with non-default arguments.
@@ -283,13 +284,15 @@ def test_smab_e2e_simulation_with_non_default_args(
         Prefix for saved files.
     monkeymodule : MonkeyPatch
         Pytest monkeypatch fixture for modifying module attributes.
+    rng : np.random.Generator
+        Central numpy random generator for tests.
     """
-    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,)))
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,)))
     monkeymodule.setattr(
-        pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.smab_simulator, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(
-        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(pybandits.smab.SmabBernoulli, "predict", mock_predict)
 

@@ -130,6 +130,7 @@ def test_cmab_simulator_with_explicit_probs_reward(
     expected_values: Dict[str, Dict[str, float]],
     groups: List[str],
     context_shape: tuple,
+    rng: np.random.Generator,
     dimension: int = 2,
     test_context=np.array([0.5, 0.3, 0.7]),
 ):
@@ -172,7 +173,7 @@ def test_cmab_simulator_with_explicit_probs_reward(
 
     # Create context and group arrays
     n_samples, n_features = context_shape
-    context = np.random.random(context_shape)
+    context = rng.random(context_shape)
     group_list = groups * (n_samples // len(groups)) + groups[: n_samples % len(groups)]
 
     # Create simulator with explicit probs_reward
@@ -219,8 +220,9 @@ def test_non_matching_context_and_group_shape(
     n_features,
     n_samples: int,
     group_extra: int,
+    rng: np.random.Generator,
 ):
-    context = np.random.random((n_samples, n_features))
+    context = rng.random((n_samples, n_features))
     # Create a group list with a different length than n_samples
     group: List[str] = [str(i) for i in range(n_samples + group_extra)]
     cmab = CmabBernoulli(actions=dict(zip(action_ids, models)))
@@ -276,13 +278,13 @@ def mock_mab_update(self, actions, rewards, quantities=None, **kwargs):
     st.just(2),
     st.sampled_from([None, 2]),
 )
-def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, action_ids, models, n_features, num_groups):
-    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,)))
+def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, rng, action_ids, models, n_features, num_groups):
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,)))
     monkeymodule.setattr(
-        pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(
-        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "predict", mock_predict)
     monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_mab_update)
@@ -351,13 +353,14 @@ def test_cmab_e2e_simulation_with_non_default_args(
     file_prefix,
     num_groups,
     monkeymodule,
+    rng,
 ):
-    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,)))
+    monkeymodule.setattr(pybandits.utils, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,)))
     monkeymodule.setattr(
-        pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.cmab_simulator, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(
-        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: np.random.random(size=(1,))
+        pybandits.strategy.single_objective, "maximize_by_quantity", lambda *args, **kwargs: rng.random(size=(1,))
     )
     monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "predict", mock_predict)
     monkeymodule.setattr(pybandits.cmab.CmabBernoulli, "update", mock_mab_update)

@@ -37,6 +37,8 @@ from pybandits.quantitative_model import Zooming
 from pybandits.strategy import ClassicBandit
 from tests.test_actions_manager import REFERENCE_DELTA, DummyActionsManager
 
+_rng = np.random.default_rng(seed=42)
+
 
 class DummyMab(BaseMab):
     epsilon: Optional[Float01] = None
@@ -57,7 +59,7 @@ class DummyMab(BaseMab):
         forbidden_actions: Optional[Set[ActionId]] = None,
     ):
         valid_actions = self._get_valid_actions(forbidden_actions)
-        return np.random.choice(valid_actions)
+        return _rng.choice(valid_actions)
 
     def get_state(self) -> Tuple[str, dict]:
         model_name = self.__class__.__name__
@@ -379,3 +381,168 @@ def test_mab_model_post_init_valid_configurations(epsilon=_EPSILON):
     assert mab.epsilon == epsilon
     assert mab.default_action is None
     assert mab.actions_manager.delta == REFERENCE_DELTA
+
+
+class TestLimitedActions:
+    """Tests for BaseMab.limited_actions throttling via limited_action_fraction."""
+
+    other_arm = "a1"
+    limited_arm = "a2"
+    unknown_arm = "a3"
+    other_p = 0.4
+    limited_p = 0.6  # the limited arm strictly wins whenever it is allowed to compete
+    limited_epsilon = 0.1
+    mix_fraction = 0.3
+    mix_tolerance = 0.03
+    mix_seed = 42
+    n_draws = 4_000
+    fraction_min = 0.05
+    fraction_max = 0.95
+
+    @pytest.fixture(scope="class")
+    def make_mab(self):
+        """Factory: builds a DummyMab over the two-arm action set with the given limited-action config."""
+
+        def _factory(**kwargs) -> DummyMab:
+            return DummyMab(
+                actions={self.other_arm: Beta(), self.limited_arm: Beta()},
+                strategy=ClassicBandit(),
+                **kwargs,
+            )
+
+        return _factory
+
+    @pytest.fixture(scope="class")
+    def p(self) -> Dict[ActionId, Probability]:
+        """Sampled probabilities where the limited arm strictly wins whenever it is allowed to compete."""
+        return {self.other_arm: self.other_p, self.limited_arm: self.limited_p}
+
+    @given(fraction=st.floats(min_value=fraction_min, max_value=fraction_max))
+    def test_requires_limited_actions(self, make_mab, fraction: float) -> None:
+        """limited_action_fraction is rejected when limited_actions is not set, for any valid fraction."""
+        with pytest.raises(AttributeError, match="must be defined together"):
+            make_mab(limited_action_fraction=fraction)
+
+    def test_requires_fraction(self, make_mab, limited_arm: ActionId = limited_arm) -> None:
+        """limited_actions is rejected when limited_action_fraction is not set."""
+        with pytest.raises(AttributeError, match="must be defined together"):
+            make_mab(limited_actions={limited_arm})
+
+    @given(
+        fraction=st.floats(min_value=fraction_min, max_value=fraction_max),
+        unknown_arm=st.just(unknown_arm),
+    )
+    def test_rejects_unknown_action(self, make_mab, fraction: float, unknown_arm: ActionId) -> None:
+        """A limited action outside the action set is rejected, for any valid fraction."""
+        with pytest.raises(AttributeError, match="must be a subset of the action set"):
+            make_mab(limited_actions={unknown_arm}, limited_action_fraction=fraction)
+
+    @given(
+        fraction=st.floats(min_value=fraction_min, max_value=fraction_max),
+        epsilon=st.just(limited_epsilon),
+        limited_arm=st.just(limited_arm),
+    )
+    def test_rejects_default_action_in_limited(
+        self, make_mab, fraction: float, epsilon: float, limited_arm: ActionId
+    ) -> None:
+        """A default_action that is also a limited action is rejected, for any valid fraction."""
+        with pytest.raises(AttributeError, match="default_action must not be a limited action"):
+            make_mab(
+                epsilon=epsilon,
+                default_action=limited_arm,
+                limited_actions={limited_arm},
+                limited_action_fraction=fraction,
+            )
+
+    @given(
+        fraction=st.floats(min_value=fraction_min, max_value=fraction_max),
+        limited_arm=st.just(limited_arm),
+        other_arm=st.just(other_arm),
+    )
+    def test_masks_when_gate_closed(
+        self, make_mab, p: Dict[ActionId, Probability], fraction: float, limited_arm: ActionId, other_arm: ActionId
+    ) -> None:
+        """When the gate draw is 0 the limited arm is masked out, so the strategy picks the other arm."""
+        mab = make_mab(limited_actions={limited_arm}, limited_action_fraction=fraction)
+        mab._rng = MagicMock()
+        mab._rng.binomial.return_value = 0
+        assert mab._select_epsilon_greedy_action(p, actions=mab.actions) == other_arm
+
+    @given(
+        fraction=st.floats(min_value=fraction_min, max_value=fraction_max),
+        limited_arm=st.just(limited_arm),
+    )
+    def test_competes_when_gate_open(
+        self, make_mab, p: Dict[ActionId, Probability], fraction: float, limited_arm: ActionId
+    ) -> None:
+        """When the gate draw is 1 the limited arm competes normally and wins on probability."""
+        mab = make_mab(limited_actions={limited_arm}, limited_action_fraction=fraction)
+        mab._rng = MagicMock()
+        mab._rng.binomial.return_value = 1
+        assert mab._select_epsilon_greedy_action(p, actions=mab.actions) == limited_arm
+
+    def test_never_masks_entire_set(
+        self,
+        make_mab,
+        p: Dict[ActionId, Probability],
+        fraction: float = mix_fraction,
+        limited_arm: ActionId = limited_arm,
+        other_arm: ActionId = other_arm,
+    ) -> None:
+        """If every action is limited, a closed gate leaves the full set intact rather than emptying it."""
+        mab = make_mab(limited_actions={other_arm, limited_arm}, limited_action_fraction=fraction)
+        mab._rng = MagicMock()
+        mab._rng.binomial.return_value = 0
+        assert mab._select_epsilon_greedy_action(p, actions=mab.actions) == limited_arm
+
+    def test_mix_distribution(
+        self,
+        make_mab,
+        p: Dict[ActionId, Probability],
+        fraction: float = mix_fraction,
+        seed: int = mix_seed,
+        n_draws: int = n_draws,
+        tolerance: float = mix_tolerance,
+        limited_arm: ActionId = limited_arm,
+        other_arm: ActionId = other_arm,
+    ) -> None:
+        """Empirical share of the limited arm approximates limited_action_fraction.
+
+        No epsilon is set, so selection routes straight through the gate to the strategy; a seeded
+        real rng drives the gate Bernoulli, making the fraction draw the sole source of variance.
+        """
+        mab = make_mab(limited_actions={limited_arm}, limited_action_fraction=fraction, random_seed=seed)
+
+        selections = [mab._select_epsilon_greedy_action(p, actions=mab.actions) for _ in range(n_draws)]
+        limited_share = sum(1 for s in selections if s == limited_arm) / n_draws
+        assert other_arm in selections and limited_arm in selections
+        assert abs(limited_share - fraction) < tolerance
+
+
+class TestActionKindDisjoint:
+    """An action id may be regular xor quantitative, never both (meta_model._instantiate_actions guard)."""
+
+    regular_arm = "a1"
+    quantitative_arm = "a2"
+    shared_arm = "a3"
+    overlap_match = "both regular and quantitative"
+
+    @pytest.mark.parametrize(
+        "action_ids, quantitative_action_ids",
+        [
+            ({shared_arm}, {shared_arm}),  # full overlap
+            ({regular_arm, shared_arm}, {shared_arm}),  # overlap alongside a distinct regular arm
+            ({shared_arm}, {shared_arm, quantitative_arm}),  # overlap alongside a distinct quantitative arm
+            ({regular_arm, shared_arm}, {shared_arm, quantitative_arm}),  # overlap with distinct arms on both sides
+        ],
+    )
+    def test_rejects_shared_action_id(
+        self, action_ids: Set[ActionId], quantitative_action_ids: Set[ActionId], match: str = overlap_match
+    ) -> None:
+        """An id present in both the regular and quantitative sets is rejected, whatever else is declared."""
+        with pytest.raises(AttributeError, match=match):
+            DummyMab(
+                action_ids=action_ids,
+                quantitative_action_ids=quantitative_action_ids,
+                strategy=ClassicBandit(),
+            )

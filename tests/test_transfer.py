@@ -274,14 +274,16 @@ class TestMergeMABs:
         action_ids2=action_ids_strategy,
         subsidy_factor=subsidy_factor_strategy,
     )
-    def test_merge_cc_mabs(self, action_ids1: set, action_ids2: set, subsidy_factor: float) -> None:
+    def test_merge_cc_mabs(
+        self, action_ids1: set, action_ids2: set, subsidy_factor: float, rng: np.random.Generator
+    ) -> None:
         """Test merging cost-control MABs uses mab2 as template."""
         # Ensure no overlap
         action_ids2 = {f"b_{aid}" for aid in action_ids2}
 
         # Generate random costs for each action
-        action_ids_cost1 = {aid: np.random.uniform(0.5, 5.0) for aid in action_ids1}
-        action_ids_cost2 = {aid: np.random.uniform(0.5, 5.0) for aid in action_ids2}
+        action_ids_cost1 = {aid: rng.uniform(0.5, 5.0) for aid in action_ids1}
+        action_ids_cost2 = {aid: rng.uniform(0.5, 5.0) for aid in action_ids2}
 
         mab1 = SmabBernoulliCC.cold_start(
             action_ids_cost=action_ids_cost1, strategy=CostControlBandit(subsidy_factor=subsidy_factor)

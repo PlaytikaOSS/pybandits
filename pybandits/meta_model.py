@@ -225,6 +225,9 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         inner_quantitative_action_ids = quantitative_action_ids or set(quantitative_action_specific_kwargs)
         if not inner_action_ids and not inner_quantitative_action_ids:
             raise AttributeError("At least one action should be defined.")
+        overlap = set(inner_action_ids) & set(inner_quantitative_action_ids)
+        if overlap:
+            raise AttributeError(f"Actions cannot be both regular and quantitative: {overlap}.")
         (
             model_cold_start,
             quantitative_model_cold_start,

@@ -171,12 +171,13 @@ class ModelTestConfig:
         n_features: PositiveInt,
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
+        rng: np.random.Generator,
         n_objectives: Optional[PositiveInt] = None,
         decay_factor: Optional[Float01] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
-            indices = np.random.randint(0, len(model_types), len(action_ids))
+            indices = rng.integers(0, len(model_types), len(action_ids))
             model_types = [model_types[i] for i in indices]
         if all(
             model in [BayesianNeuralNetworkCC, BayesianNeuralNetworkMOCC, QuantitativeBayesianNeuralNetworkCC]
@@ -276,7 +277,10 @@ class ModelTestConfig:
         n_features: PositiveInt,
         hidden_dim_list: List[int],
         update_method: UpdateMethods,
+        rng: np.random.Generator,
         decay_factor: Optional[Float01] = None,
+        default_action_fraction: Optional[Float01] = None,
+        limited_action_fraction: Optional[Float01] = None,
     ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, CmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
@@ -284,18 +288,25 @@ class ModelTestConfig:
             else None
         )
         actions, base_model_cold_start_kwargs = self._create_actions(
-            action_ids, values, n_features, hidden_dim_list, update_method, n_objectives, decay_factor
+            action_ids, values, n_features, hidden_dim_list, update_method, rng, n_objectives, decay_factor
         )
         default_action = action_ids[0] if epsilon and not delta else None
         if default_action and isinstance(actions[default_action], QuantitativeModel):
-            default_action = (default_action, tuple(np.random.random(actions[default_action].dimension)))
+            default_action = (default_action, tuple(rng.random(actions[default_action].dimension)))
         epsilon = epsilon if not delta else 0.1
+        # default_action_fraction requires a default_action; limited_actions is derived from the
+        # action set (excluding default_action) exactly as default_action is derived from epsilon.
+        default_action_fraction = default_action_fraction if default_action else None
+        limited_actions = {action_ids[-1]} if limited_action_fraction is not None else None
         kwargs = {
             k: v
             for k, v in {
                 "epsilon": epsilon,
                 "default_action": default_action,
                 "delta": delta,
+                "default_action_fraction": default_action_fraction,
+                "limited_actions": limited_actions,
+                "limited_action_fraction": limited_action_fraction,
             }.items()
             if v is not None
         }
@@ -362,6 +373,8 @@ TEST_CONFIGS = {
         unique=True,
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -376,6 +389,8 @@ def test_cold_start(
     config: ModelTestConfig,
     action_ids: List[str],
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -385,6 +400,7 @@ def test_cold_start(
     subsidy_factor,
     update_method,
     decay_factor: Optional[float],
+    rng,
 ):
     # Create CMAB instance
     cmab, actions, kwargs = config.create_cmab_and_actions(
@@ -398,7 +414,10 @@ def test_cold_start(
         n_features,
         hidden_dim_list,
         update_method,
+        rng,
         decay_factor,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
     )
 
     # Cold start comparison logic (modified for different model types)
@@ -464,6 +483,7 @@ def test_bad_initialization(
     exploit_p,
     subsidy_factor,
     update_method,
+    rng,
 ):
     """Test various invalid initialization scenarios for CMAB models"""
     real_n_objectives = n_objectives.draw(st.integers(min_value=1, max_value=10))
@@ -552,6 +572,7 @@ def test_bad_initialization(
                 n_features,
                 hidden_dim_list,
                 update_method,
+                rng,
             )
     elif config.cmab_class == CmabBernoulliCC:
         with pytest.raises(ValidationError):
@@ -566,6 +587,7 @@ def test_bad_initialization(
                 n_features,
                 hidden_dim_list,
                 update_method,
+                rng,
             )
     # Test multi-objective specific cases
     if hasattr(config.model_types[0], "models"):
@@ -592,6 +614,8 @@ def test_bad_initialization(
     ),
     n_samples=st.integers(min_value=1, max_value=5),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -607,6 +631,8 @@ def test_update(
     action_ids: List[str],
     n_samples: int,
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -616,6 +642,7 @@ def test_update(
     subsidy_factor,
     update_method,
     memory_len,
+    rng,
 ):
     # Create CMAB instance
     cmab, _, kwargs = config.create_cmab_and_actions(
@@ -629,16 +656,19 @@ def test_update(
         n_features,
         hidden_dim_list,
         update_method,
+        rng,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
     )
     # create patches
 
     n_objectives = kwargs.get("n_objectives")
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     # Generate random rewards
     reward_data = (
-        np.random.choice([0, 1], size=(n_samples, n_objectives), replace=True)
+        rng.choice([0, 1], size=(n_samples, n_objectives), replace=True)
         if n_objectives
-        else np.random.choice([0, 1], size=n_samples, replace=True)
+        else rng.choice([0, 1], size=n_samples, replace=True)
     )
     reward_data = reward_data.tolist()
     # Test updates with generated data
@@ -648,7 +678,7 @@ def test_update(
 
     for_update_kwargs = {"actions": actions_to_update, "rewards": reward_data}
     if any(isinstance(model, BaseQuantitativeBayesianNeuralNetwork) for model in cmab.actions.values()):
-        quantity_data = np.random.random(size=n_samples).tolist()
+        quantity_data = rng.random(size=n_samples).tolist()
         quantity_data = [
             q if isinstance(cmab.actions[action], QuantitativeModel) else None
             for q, action in zip(quantity_data, actions_to_update)
@@ -686,6 +716,8 @@ def test_update(
     ),
     n_samples=st.integers(min_value=1, max_value=100),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -701,6 +733,8 @@ def test_predict(
     action_ids: List[str],
     n_samples: int,
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -711,16 +745,17 @@ def test_predict(
     update_method,
     diff,
     monkeymodule,
+    rng,
 ):
     def mock_maximize_by_quantity(quantity_score_func, dimension, constraint=None, n_trials=10000, **kwargs):
         """Mock maximize_by_quantity to return a quick result."""
-        return np.random.random(dimension)
+        return rng.random(dimension)
 
     if config.cmab_class in (CmabBernoulliMO, CmabBernoulliMOCC):
 
         def mock_find_pareto_front_normal_constraint(self, func, input_dim, n_objectives, n_divisions, model):
             """Mock _find_pareto_front_normal_constraint to return a quick result."""
-            return [np.random.random(input_dim) for _ in range(min(3, n_divisions))]
+            return [rng.random(input_dim) for _ in range(min(3, n_divisions))]
 
         monkeymodule.setattr(
             pybandits.strategy.MultiObjectiveStrategy,
@@ -741,8 +776,11 @@ def test_predict(
             n_features,
             hidden_dim_list,
             update_method,
+            rng,
+            default_action_fraction=default_action_fraction,
+            limited_action_fraction=limited_action_fraction,
         )[0]
-        context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+        context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
         # Test predictions with random forbidden actions
         forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
@@ -795,6 +833,8 @@ def test_predict(
         unique=True,
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -809,6 +849,8 @@ def test_serialization(
     config: ModelTestConfig,
     action_ids: List[str],
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -819,6 +861,7 @@ def test_serialization(
     update_method,
     diff,
     monkeymodule,
+    rng,
 ):
     # Create CMAB instance
     cmab = config.create_cmab_and_actions(
@@ -832,6 +875,9 @@ def test_serialization(
         n_features,
         hidden_dim_list,
         update_method,
+        rng,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
     )[0]
 
     pre_update_state = deepcopy(cmab.get_state())
@@ -991,6 +1037,8 @@ def test_cmab_update_kwargs_migration(
         unique=True,
     ),
     epsilon=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
+    default_action_fraction=st.one_of(st.none(), st.floats(min_value=1e-3, max_value=1)),
+    limited_action_fraction=st.one_of(st.none(), st.floats(min_value=0, max_value=1)),
     delta=st.one_of(st.none(), st.just(0.1)),
     values=st.data(),
     n_objectives=st.data(),
@@ -1005,6 +1053,8 @@ def test_pickling(
     config: ModelTestConfig,
     action_ids: List[str],
     epsilon: Optional[float],
+    default_action_fraction: Optional[float],
+    limited_action_fraction: Optional[float],
     delta,
     values,
     n_objectives,
@@ -1015,6 +1065,7 @@ def test_pickling(
     update_method,
     diff,
     monkeymodule,
+    rng,
 ):
     # Create CMAB instance
     cmab = config.create_cmab_and_actions(
@@ -1028,6 +1079,9 @@ def test_pickling(
         n_features,
         hidden_dim_list,
         update_method,
+        rng,
+        default_action_fraction=default_action_fraction,
+        limited_action_fraction=limited_action_fraction,
     )[0]
     to_temporary_pickle(cmab)
     apply_mock_update(list(cmab.actions.values()))
@@ -1040,11 +1094,12 @@ def test_pickling(
     st.integers(min_value=1, max_value=100),
     st.just([3]),
 )
-def test_cmab_update_shape_mismatch(n_samples, n_features, hidden_dim_list):
-    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
-    rewards = np.random.choice([0, 1], size=n_samples).tolist()
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    quantities = np.random.uniform(low=0, high=1, size=n_samples).tolist()
+def test_cmab_update_shape_mismatch(rng, n_samples, n_features, hidden_dim_list):
+    actions = rng.choice(["a1", "a2"], size=n_samples).tolist()
+    actions[0] = "a1"  # ensure the quantitative arm is present so None-quantity checks trigger
+    rewards = rng.choice([0, 1], size=n_samples).tolist()
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    quantities = rng.uniform(low=0, high=1, size=n_samples).tolist()
 
     mab = CmabBernoulli.cold_start(
         action_ids={"a1", "a2"},
@@ -1052,7 +1107,7 @@ def test_cmab_update_shape_mismatch(n_samples, n_features, hidden_dim_list):
         hidden_dim_list=hidden_dim_list,
     )
     quant_mab = CmabBernoulli.cold_start(
-        action_ids={"a1", "a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list, quantitative_action_ids={"a1"}
+        action_ids={"a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list, quantitative_action_ids={"a1"}
     )
     quantities = [
         q if isinstance(quant_mab.actions[action], QuantitativeModel) else None
@@ -1096,11 +1151,11 @@ def test_cmab_update_shape_mismatch(n_samples, n_features, hidden_dim_list):
 
 @settings(deadline=500)
 @given(st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=2))
-def test_cmab_predict_shape_mismatch(dim_list):
+def test_cmab_predict_shape_mismatch(rng, dim_list):
     n_features = dim_list[0]
     hidden_dim_list = dim_list[1:]
     n_features = dim_list[0]
-    context = np.random.uniform(low=-1.0, high=1.0, size=(100, n_features - 1))
+    context = rng.uniform(low=-1.0, high=1.0, size=(100, n_features - 1))
     mab = CmabBernoulli.cold_start(action_ids={"a1", "a2"}, n_features=n_features, hidden_dim_list=hidden_dim_list)
     with pytest.raises(AttributeError):
         mab.predict(context=context)
@@ -1116,10 +1171,10 @@ def test_cmab_predict_shape_mismatch(dim_list):
     st.just([2]),
     st.integers(min_value=2, max_value=3),
 )
-def test_cmab_mo_update_shape_mismatch(n_samples, n_features, update_method, hidden_dim_list, n_objectives):
-    actions = np.random.choice(["a1", "a2"], size=n_samples).tolist()
+def test_cmab_mo_update_shape_mismatch(rng, n_samples, n_features, update_method, hidden_dim_list, n_objectives):
+    actions = rng.choice(["a1", "a2"], size=n_samples).tolist()
     # Multi-objective rewards
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
 
     # Create multi-objective models
     models_a1 = [
@@ -1142,12 +1197,12 @@ def test_cmab_mo_update_shape_mismatch(n_samples, n_features, update_method, hid
     )
 
     # Test with wrong number of objectives in rewards
-    wrong_rewards = [[np.random.choice([0, 1]) for _ in range(n_objectives + 1)] for _ in range(n_samples)]
+    wrong_rewards = [[rng.choice([0, 1]) for _ in range(n_objectives + 1)] for _ in range(n_samples)]
     with pytest.raises(AttributeError):
         mab.update(context=context, actions=actions, rewards=wrong_rewards)
 
     # Test with single-objective rewards (should fail for MO model)
-    single_rewards = np.random.choice([0, 1], size=n_samples).tolist()
+    single_rewards = rng.choice([0, 1], size=n_samples).tolist()
     with pytest.raises(ValidationError):
         mab.update(context=context, actions=actions, rewards=single_rewards)
 
@@ -1223,7 +1278,7 @@ def test_extract_element_from_probability_weight_unsupported_type(unsupported_ty
     random_seed=st.integers(min_value=0, max_value=2**31 - 1),
 )
 def test_random_seed_propagates_to_bnn(
-    action_ids: List[str], n_samples: int, n_features: int, random_seed: int
+    action_ids: List[str], n_samples: int, n_features: int, random_seed: int, rng: np.random.Generator
 ) -> None:
     """Verify that random_seed set on the CMAB cold_start flows through to every BNN action model.
 
@@ -1249,7 +1304,7 @@ def test_random_seed_propagates_to_bnn(
     # Deep-copy after mock update so both instances share identical layer params AND rng state.
     cmab2 = CmabBernoulli.from_state(cmab1.get_state()[1])
 
-    context = np.random.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
+    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
     actions1, probs1, ws1 = cmab1.predict(context=context)
     actions2, probs2, ws2 = cmab2.predict(context=context)
 
@@ -1261,214 +1316,255 @@ def test_random_seed_propagates_to_bnn(
 ########################################################################################################################
 # Region-aware forbidden_actions (forbidding part of a quantitative arm's hypercube) — CMAB edition
 
-# A forbidden region on a 1-D quantitative arm: float signed-margin convention, forbidden where region(x) > 0,
-# i.e. the upper half-interval x[0] > REGION_SPLIT is blocked.
-REGION_SPLIT = 0.5
-REGION_TOLERANCE = 1e-2
-EXPLORE_SAMPLES = 50
-HYPOTHESIS_EXPLOIT_SAMPLES = 5  # small enough to stay under hypothesis's default 200ms deadline
-EXPLORE_SEED = 123
-N_FEATURES = 2
-QUANTITATIVE_DIMENSION = 1
-QUANTITATIVE_ARM_ID = "q"
-DISCRETE_ARM_ID = "d"
-EPSILON_FULL_EXPLORE = 1.0  # forces the random explore branch on every step
-CONTEXT_LOW = -1.0
-CONTEXT_HIGH = 1.0
-ALLOWED_SEGMENT_LOW = 0.6
-ALLOWED_SEGMENT_HIGH = 1.0
-MAX_REJECTION_SAMPLES = 1000  # rejection-sampling budget for _constraint_aware_maximize
 
+class TestForbiddenRegions:
+    """Region-aware forbidden_actions: forbidding part of a quantitative arm's hypercube (cMAB edition)."""
 
-def _forbid_upper_half(x: np.ndarray) -> float:
-    """Forbidden-region predicate: x[0] > REGION_SPLIT is forbidden (region(x) > 0 => forbidden)."""
-    return float(x[0]) - REGION_SPLIT
+    # A forbidden region on a 1-D quantitative arm follows the float signed-margin convention: forbidden where
+    # region(x) > 0, i.e. the upper half-interval x[0] > region_split is blocked.
+    region_split = 0.5
+    region_tolerance = 1e-2
+    explore_samples = 50
+    hypothesis_exploit_samples = 5  # small enough to stay under hypothesis's default 200ms deadline
+    explore_seed = 123
+    n_features = 2
+    quantitative_dimension = 1
+    quantitative_arm_id = "q"
+    discrete_arm_id = "d"
+    epsilon_full_explore = 1.0  # forces the random explore branch on every step
+    context_low = -1.0
+    context_high = 1.0
+    max_rejection_samples = 1000  # rejection-sampling budget for _constraint_aware_maximize
 
+    @staticmethod
+    def _forbid_upper_half(x: np.ndarray, split: float = region_split) -> float:
+        """Forbidden-region predicate: x[0] > split is forbidden (region(x) > 0 => forbidden)."""
+        return float(x[0]) - split
 
-def _always_forbidden(x: np.ndarray) -> float:
-    """Forbidden-region predicate that forbids the entire quantity space (margin always positive)."""
-    return 1.0
+    @staticmethod
+    def _always_forbidden(x: np.ndarray) -> float:
+        """Forbidden-region predicate that forbids the entire quantity space (margin always positive)."""
+        return 1.0
 
-
-def _constraint_aware_maximize(
-    quantity_score_func, dimension: int, constraint=None, n_trials: int = 10000, **kwargs
-) -> np.ndarray:
-    """Mock maximize_by_quantity: rejection-samples a feasible quantity; np.zeros fallback is unreachable."""
-    constraints = constraint or []
-    for _ in range(MAX_REJECTION_SAMPLES):
-        candidate = np.random.random(dimension)
-        if all(c(candidate) >= 0 for c in constraints):
-            return candidate
-    return np.zeros(dimension)
-
-
-def _quantitative_cmab(**kwargs) -> CmabBernoulli:
-    """Build a cMAB with one continuous (QuantitativeBayesianNeuralNetwork) arm and one BNN arm."""
-    return CmabBernoulli(
-        actions={
-            QUANTITATIVE_ARM_ID: QuantitativeBayesianNeuralNetwork.cold_start(
-                dimension=QUANTITATIVE_DIMENSION, n_features=N_FEATURES
-            ),
-            DISCRETE_ARM_ID: BayesianNeuralNetwork.cold_start(n_features=N_FEATURES),
-        },
+    @staticmethod
+    def _constraint_aware_maximize(
+        quantity_score_func,
+        dimension: int,
+        constraint=None,
+        n_trials: int = 10000,
+        max_rejection_samples: int = max_rejection_samples,
+        rng: np.random.Generator = None,
         **kwargs,
-    )
+    ) -> np.ndarray:
+        """Mock maximize_by_quantity: rejection-samples a feasible quantity; np.zeros fallback is unreachable."""
+        constraints = constraint or []
+        for _ in range(max_rejection_samples):
+            candidate = rng.random(dimension)
+            if all(c(candidate) >= 0 for c in constraints):
+                return candidate
+        return np.zeros(dimension)
 
+    @pytest.fixture(scope="class")
+    def make_cmab(self):
+        """Factory: builds a cMAB with one continuous (QuantitativeBayesianNeuralNetwork) arm and one BNN arm."""
 
-def test_cmab_normalize_forbidden_actions_forms() -> None:
-    """_normalize_forbidden_actions handles the Set, dict-None (whole arm) and dict-region (partial) forms."""
-    cmab = _quantitative_cmab()
-
-    # Legacy Set form: whole-arm blocking, no region constraints.
-    valid, regions = cmab._normalize_forbidden_actions({DISCRETE_ARM_ID})
-    assert valid == {QUANTITATIVE_ARM_ID} and regions == {}
-
-    # dict with None value is equivalent to whole-arm blocking.
-    valid, regions = cmab._normalize_forbidden_actions({DISCRETE_ARM_ID: None})
-    assert valid == {QUANTITATIVE_ARM_ID} and regions == {}
-
-    # dict with a region keeps the arm valid (only its quantity space shrinks) and records its constraint.
-    valid, regions = cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
-    assert valid == {QUANTITATIVE_ARM_ID, DISCRETE_ARM_ID}
-    assert set(regions) == {QUANTITATIVE_ARM_ID} and len(regions[QUANTITATIVE_ARM_ID]) == 1
-
-
-def test_cmab_forbidden_region_rejected_on_discrete_arm() -> None:
-    """A forbidden region cannot be attached to a non-quantitative arm."""
-    cmab = _quantitative_cmab()
-    with pytest.raises(ValueError, match="quantitative"):
-        cmab._normalize_forbidden_actions({DISCRETE_ARM_ID: _forbid_upper_half})
-
-
-@settings(deadline=None)
-@given(
-    quantity=st.floats(min_value=REGION_SPLIT, max_value=1.0, exclude_min=True),
-    epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True),
-)
-def test_cmab_forbidden_region_default_action_in_region_raises(quantity: float, epsilon: float) -> None:
-    """Any quantitative default action strictly above REGION_SPLIT is rejected when the upper half is forbidden."""
-    cmab = _quantitative_cmab(
-        epsilon=epsilon,
-        default_action=(QUANTITATIVE_ARM_ID, (quantity,)),
-    )
-    with pytest.raises(ValueError, match="forbidden region"):
-        cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
-
-
-def test_cmab_sample_allowed_quantity_respects_and_exhausts_region() -> None:
-    """_sample_allowed_quantity returns a point outside the region, or None when the whole space is forbidden."""
-    cmab = _quantitative_cmab(random_seed=EXPLORE_SEED)
-    _, regions = cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _forbid_upper_half})
-
-    allowed = cmab._sample_allowed_quantity(QUANTITATIVE_ARM_ID, regions)
-    assert allowed is not None and allowed[0] <= REGION_SPLIT
-
-    # A region that forbids the entire cube yields no allowed point.
-    _, full_regions = cmab._normalize_forbidden_actions({QUANTITATIVE_ARM_ID: _always_forbidden})
-    assert cmab._sample_allowed_quantity(QUANTITATIVE_ARM_ID, full_regions) is None
-
-
-def test_cmab_predict_explore_never_selects_forbidden_region(monkeypatch) -> None:
-    """With epsilon=1 (always explore), the random quantitative quantity always avoids the forbidden region."""
-    cmab = CmabBernoulli(
-        actions={
-            QUANTITATIVE_ARM_ID: QuantitativeBayesianNeuralNetwork.cold_start(
-                dimension=QUANTITATIVE_DIMENSION, n_features=N_FEATURES
+        def _factory(**kwargs) -> CmabBernoulli:
+            return CmabBernoulli(
+                actions={
+                    self.quantitative_arm_id: QuantitativeBayesianNeuralNetwork.cold_start(
+                        dimension=self.quantitative_dimension, n_features=self.n_features
+                    ),
+                    self.discrete_arm_id: BayesianNeuralNetwork.cold_start(n_features=self.n_features),
+                },
+                **kwargs,
             )
-        },
-        epsilon=EPSILON_FULL_EXPLORE,
-        random_seed=EXPLORE_SEED,
+
+        return _factory
+
+    def test_normalize_forbidden_actions_forms(
+        self,
+        make_cmab,
+        quantitative_arm_id: str = quantitative_arm_id,
+        discrete_arm_id: str = discrete_arm_id,
+    ) -> None:
+        """_normalize_forbidden_actions handles the Set, dict-None (whole arm) and dict-region (partial) forms."""
+        cmab = make_cmab()
+
+        # Legacy Set form: whole-arm blocking, no region constraints.
+        valid, regions = cmab._normalize_forbidden_actions({discrete_arm_id})
+        assert valid == {quantitative_arm_id} and regions == {}
+
+        # dict with None value is equivalent to whole-arm blocking.
+        valid, regions = cmab._normalize_forbidden_actions({discrete_arm_id: None})
+        assert valid == {quantitative_arm_id} and regions == {}
+
+        # dict with a region keeps the arm valid (only its quantity space shrinks) and records its constraint.
+        valid, regions = cmab._normalize_forbidden_actions({quantitative_arm_id: self._forbid_upper_half})
+        assert valid == {quantitative_arm_id, discrete_arm_id}
+        assert set(regions) == {quantitative_arm_id} and len(regions[quantitative_arm_id]) == 1
+
+    def test_region_rejected_on_discrete_arm(self, make_cmab, discrete_arm_id: str = discrete_arm_id) -> None:
+        """A forbidden region cannot be attached to a non-quantitative arm."""
+        cmab = make_cmab()
+        with pytest.raises(ValueError, match="quantitative"):
+            cmab._normalize_forbidden_actions({discrete_arm_id: self._forbid_upper_half})
+
+    @settings(deadline=None)
+    @given(
+        quantity=st.floats(min_value=region_split, max_value=1.0, exclude_min=True),
+        epsilon=st.floats(min_value=0.0, max_value=1.0, exclude_min=True),
+        arm_id=st.just(quantitative_arm_id),
     )
-    apply_mock_update(list(cmab.actions.values()))
-    context = np.random.default_rng(EXPLORE_SEED).uniform(CONTEXT_LOW, CONTEXT_HIGH, size=(EXPLORE_SAMPLES, N_FEATURES))
-    monkeypatch.setattr(
-        pybandits.strategy.single_objective,
-        "maximize_by_quantity",
-        lambda quantity_score_func, dimension, constraint=None, n_trials=10000: np.random.random(dimension),
+    def test_default_action_in_region_raises(self, make_cmab, quantity: float, epsilon: float, arm_id: str) -> None:
+        """Any quantitative default action strictly above region_split is rejected when the upper half is forbidden."""
+        cmab = make_cmab(epsilon=epsilon, default_action=(arm_id, (quantity,)))
+        with pytest.raises(ValueError, match="forbidden region"):
+            cmab._normalize_forbidden_actions({arm_id: self._forbid_upper_half})
+
+    @given(
+        region_split=st.floats(min_value=0.1, max_value=0.9),
+        arm_id=st.just(quantitative_arm_id),
+        random_seed=st.just(explore_seed),
     )
+    def test_sample_allowed_quantity_respects_and_exhausts_region(
+        self,
+        make_cmab,
+        region_split: float,
+        arm_id: str,
+        random_seed: int,
+    ) -> None:
+        """_sample_allowed_quantity returns a point outside the region, or None when the whole space is forbidden."""
+        cmab = make_cmab(random_seed=random_seed)
+        _, regions = cmab._normalize_forbidden_actions({arm_id: partial(self._forbid_upper_half, split=region_split)})
 
-    selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={QUANTITATIVE_ARM_ID: _forbid_upper_half})
+        allowed = cmab._sample_allowed_quantity(arm_id, regions)
+        assert allowed is not None and allowed[0] <= region_split
 
-    assert all(isinstance(action, tuple) and action[0] == QUANTITATIVE_ARM_ID for action in selected_actions)
-    assert all(action[1][0] <= REGION_SPLIT + REGION_TOLERANCE for action in selected_actions)
+        # A region that forbids the entire cube yields no allowed point.
+        _, full_regions = cmab._normalize_forbidden_actions({arm_id: self._always_forbidden})
+        assert cmab._sample_allowed_quantity(arm_id, full_regions) is None
 
+    def test_predict_explore_never_selects_forbidden_region(
+        self,
+        monkeypatch: MonkeyPatch,
+        arm_id: str = quantitative_arm_id,
+        dimension: int = quantitative_dimension,
+        n_features: int = n_features,
+        epsilon: float = epsilon_full_explore,
+        random_seed: int = explore_seed,
+        n_samples: int = explore_samples,
+        context_low: float = context_low,
+        context_high: float = context_high,
+        region_split: float = region_split,
+        tolerance: float = region_tolerance,
+        rng: np.random.Generator = None,
+    ) -> None:
+        """With epsilon=1 (always explore), the random quantitative quantity always avoids the forbidden region."""
+        cmab = CmabBernoulli(
+            actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
+            epsilon=epsilon,
+            random_seed=random_seed,
+        )
+        apply_mock_update(list(cmab.actions.values()))
+        context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
+        monkeypatch.setattr(
+            pybandits.strategy.single_objective,
+            "maximize_by_quantity",
+            lambda quantity_score_func, dimension, constraint=None, n_trials=10000: rng.random(dimension),
+        )
 
-@given(
-    region_split=st.floats(min_value=0.1, max_value=0.9),
-    arm_id=st.just(QUANTITATIVE_ARM_ID),
-    dimension=st.just(QUANTITATIVE_DIMENSION),
-    n_features=st.just(N_FEATURES),
-    random_seed=st.just(EXPLORE_SEED),
-    n_samples=st.just(HYPOTHESIS_EXPLOIT_SAMPLES),
-    context_low=st.just(CONTEXT_LOW),
-    context_high=st.just(CONTEXT_HIGH),
-    tolerance=st.just(REGION_TOLERANCE),
-)
-def test_cmab_predict_exploit_respects_forbidden_region(
-    region_split: float,
-    arm_id: str,
-    dimension: int,
-    n_features: int,
-    random_seed: int,
-    n_samples: int,
-    context_low: float,
-    context_high: float,
-    tolerance: float,
-) -> None:
-    """Constrained optimizer stays below any forbidden boundary, not just the default split of 0.5."""
+        selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: self._forbid_upper_half})
 
-    def forbid_above(x: np.ndarray) -> float:
-        return float(x[0]) - region_split
+        assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
+        assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
 
-    cmab = CmabBernoulli(
-        actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
-        random_seed=random_seed,
+    @given(
+        region_split=st.floats(min_value=0.1, max_value=0.9),
+        arm_id=st.just(quantitative_arm_id),
+        dimension=st.just(quantitative_dimension),
+        n_features=st.just(n_features),
+        random_seed=st.just(explore_seed),
+        n_samples=st.just(hypothesis_exploit_samples),
+        context_low=st.just(context_low),
+        context_high=st.just(context_high),
+        tolerance=st.just(region_tolerance),
     )
-    apply_mock_update(list(cmab.actions.values()))
-    context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
+    def test_predict_exploit_respects_forbidden_region(
+        self,
+        region_split: float,
+        arm_id: str,
+        dimension: int,
+        n_features: int,
+        random_seed: int,
+        n_samples: int,
+        context_low: float,
+        context_high: float,
+        tolerance: float,
+        rng: np.random.Generator,
+    ) -> None:
+        """Constrained optimizer stays below any forbidden boundary, not just the default split of 0.5."""
 
-    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", _constraint_aware_maximize):
-        selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: forbid_above})
+        def forbid_above(x: np.ndarray) -> float:
+            return float(x[0]) - region_split
 
-    assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
-    assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
+        cmab = CmabBernoulli(
+            actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
+            random_seed=random_seed,
+        )
+        apply_mock_update(list(cmab.actions.values()))
+        context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
 
+        with patch.object(
+            pybandits.strategy.single_objective,
+            "maximize_by_quantity",
+            partial(self._constraint_aware_maximize, rng=rng),
+        ):
+            selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: forbid_above})
 
-@given(
-    seg_lo=st.floats(min_value=0.05, max_value=0.45),
-    seg_hi=st.floats(min_value=0.55, max_value=0.95),
-    arm_id=st.just(QUANTITATIVE_ARM_ID),
-    dimension=st.just(QUANTITATIVE_DIMENSION),
-    n_features=st.just(N_FEATURES),
-    random_seed=st.just(EXPLORE_SEED),
-    n_samples=st.just(HYPOTHESIS_EXPLOIT_SAMPLES),
-    context_low=st.just(CONTEXT_LOW),
-    context_high=st.just(CONTEXT_HIGH),
-    tolerance=st.just(REGION_TOLERANCE),
-)
-def test_cmab_segment_forbidden_region_outside_end_to_end(
-    seg_lo: float,
-    seg_hi: float,
-    arm_id: str,
-    dimension: int,
-    n_features: int,
-    random_seed: int,
-    n_samples: int,
-    context_low: float,
-    context_high: float,
-    tolerance: float,
-) -> None:
-    """forbidden_region_outside keeps the exploited quantity inside any valid allowed segment."""
-    allowed = Segment(intervals=((seg_lo, seg_hi),))
-    cmab = CmabBernoulli(
-        actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
-        random_seed=random_seed,
+        assert all(isinstance(action, tuple) and action[0] == arm_id for action in selected_actions)
+        assert all(action[1][0] <= region_split + tolerance for action in selected_actions)
+
+    @given(
+        seg_lo=st.floats(min_value=0.05, max_value=0.45),
+        seg_hi=st.floats(min_value=0.55, max_value=0.95),
+        arm_id=st.just(quantitative_arm_id),
+        dimension=st.just(quantitative_dimension),
+        n_features=st.just(n_features),
+        random_seed=st.just(explore_seed),
+        n_samples=st.just(hypothesis_exploit_samples),
+        context_low=st.just(context_low),
+        context_high=st.just(context_high),
+        tolerance=st.just(region_tolerance),
     )
-    apply_mock_update(list(cmab.actions.values()))
-    context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
-    region = allowed.forbidden_region_outside()
+    def test_segment_region_outside_end_to_end(
+        self,
+        seg_lo: float,
+        seg_hi: float,
+        arm_id: str,
+        dimension: int,
+        n_features: int,
+        random_seed: int,
+        n_samples: int,
+        context_low: float,
+        context_high: float,
+        tolerance: float,
+        rng: np.random.Generator,
+    ) -> None:
+        """forbidden_region_outside keeps the exploited quantity inside any valid allowed segment."""
+        allowed = Segment(intervals=((seg_lo, seg_hi),))
+        cmab = CmabBernoulli(
+            actions={arm_id: QuantitativeBayesianNeuralNetwork.cold_start(dimension=dimension, n_features=n_features)},
+            random_seed=random_seed,
+        )
+        apply_mock_update(list(cmab.actions.values()))
+        context = np.random.default_rng(random_seed).uniform(context_low, context_high, size=(n_samples, n_features))
+        region = allowed.forbidden_region_outside()
 
-    with patch.object(pybandits.strategy.single_objective, "maximize_by_quantity", _constraint_aware_maximize):
-        selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: region})
+        with patch.object(
+            pybandits.strategy.single_objective,
+            "maximize_by_quantity",
+            partial(self._constraint_aware_maximize, rng=rng),
+        ):
+            selected_actions, _, _ = cmab.predict(context=context, forbidden_actions={arm_id: region})
 
-    assert all(seg_lo - tolerance <= action[1][0] <= seg_hi for action in selected_actions)
+        assert all(seg_lo - tolerance <= action[1][0] <= seg_hi for action in selected_actions)
