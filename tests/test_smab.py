@@ -454,7 +454,7 @@ def test_update(
     reward_data = reward_data.tolist()
     # Test updates with generated data
     actions_to_update = sample_with_replacement(
-        action_ids, n_samples
+        action_ids, n_samples, rng=rng
     )  # Generate quantities only if there are any QuantitativeModel actions
     if any(isinstance(model, QuantitativeModel) for model in smab.actions.values()):
         quantity_data = rng.random(size=n_samples).tolist()
@@ -581,9 +581,13 @@ def test_predict(
         )[0]
 
         # Test predictions with random forbidden actions
-        forbidden = set(sample_with_replacement(action_ids, len(action_ids) // 2)) if len(action_ids) > 2 else None
-        if smab.default_action is not None and forbidden is not None and smab.default_action in forbidden:
-            forbidden.remove(smab.default_action)
+        forbidden = (
+            set(sample_with_replacement(action_ids, len(action_ids) // 2, rng=rng)) if len(action_ids) > 2 else None
+        )
+        if smab.default_action is not None and forbidden is not None:
+            da_id = smab.default_action[0] if isinstance(smab.default_action, tuple) else smab.default_action
+            if da_id in forbidden:
+                forbidden.discard(da_id)
 
         mock_update(list(smab.actions.values()), diff, monkeymodule)
         best_actions, probs = smab.predict(n_samples=n_samples, forbidden_actions=forbidden)
