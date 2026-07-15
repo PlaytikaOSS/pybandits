@@ -33,9 +33,8 @@ import numpy as np
 import numpyro
 import numpyro.optim as noptim
 import optax
-from loguru import logger
 from numpyro.distributions import Bernoulli as NumpyroBernoulli
-from numpyro.infer import MCMC, NUTS, SVI, Trace_ELBO, TraceMeanField_ELBO
+from numpyro.infer import Trace_ELBO, TraceMeanField_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal
 from numpyro.infer.initialization import init_to_median, init_to_value
 from pydantic import (
@@ -49,7 +48,6 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from tqdm import trange
 from typing_extensions import Self
 
 from pybandits.base import (
@@ -58,14 +56,13 @@ from pybandits.base import (
     ProbabilityWeight,
 )
 from pybandits.model.base import Model, ModelCC, ModelDP, ModelMO
-from pybandits.model.bnn._guide import ParameterizedScaleAutoNormal, _wrap_guide_with_kl_scale
+from pybandits.model.bnn._dnn import DNNMixin
+from pybandits.model.bnn._guide import ParameterizedScaleAutoNormal
+from pybandits.model.bnn._svi import forward_layers, run_svi
 from pybandits.model.bnn._typing import (
     ActivationFunctions,
     OptaxKind,
-    UpdateMethods,
     _Array,
-    _numpy_gelu,
-    _numpy_relu,
     _numpy_sigmoid,
 )
 from pybandits.model.bnn.config import (
@@ -75,18 +72,16 @@ from pybandits.model.bnn.config import (
     EarlyStopping,
     EmbeddingParams,
     FeaturesConfig,
-    MCMCUpdateKwargs,
     VIUpdateKwargs,
 )
 from pybandits.model.bnn.priors import BaseLocationScaleArray, NormalArray, StudentTArray
 
 
-class BaseBayesianNeuralNetwork(Model, ABC):
+class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     """Bayesian Neural Network model for binary classification.
 
     This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
-    using NumPyro for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
-    and Variational Inference (VI) methods for posterior inference.
+    using NumPyro for binary classification tasks. Posterior inference is by Variational Inference (VI).
 
     References
     ----------
@@ -103,16 +98,12 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     ----------
     model_params : BnnParams
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
-    update_method : str, optional
-        The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
-    update_kwargs : Optional[Union[VIUpdateKwargs, MCMCUpdateKwargs, dict]], optional
-        Keyword arguments for the update method. May be passed as a plain dict (validated and
-        coerced at construction) or as the matching typed model. When ``update_method="VI"`` it is
-        coerced to :class:`VIUpdateKwargs` (``num_steps``/``epochs``, ``method``, ``optimizer_type``,
-        ``optimizer_kwargs``, ``batch_size``, ``early_stopping_kwargs``, ``num_particles``,
-        ``gradient_clip_norm``, ``kl_annealing_fraction``, ...); when ``"MCMC"`` it is coerced to
-        :class:`MCMCUpdateKwargs` (``num_warmup``, ``num_samples``, ``num_chains``, ``progress_bar``,
-        ``nuts``). ``None`` uses the per-method defaults.
+    update_kwargs : Optional[Union[VIUpdateKwargs, dict]], optional
+        Keyword arguments for VI training. May be passed as a plain dict (validated and coerced
+        at construction) or as the typed :class:`VIUpdateKwargs` model (``num_steps``/``epochs``,
+        ``method``, ``optimizer_type``, ``optimizer_kwargs``, ``batch_size``,
+        ``early_stopping_kwargs``, ``num_particles``, ``gradient_clip_norm``,
+        ``kl_annealing_fraction``, ...). ``None`` uses the defaults.
     activation : str, optional
         The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
     use_residual_connections : bool, optional
@@ -120,7 +111,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         the layer output dimension is greater than or equal to the input dimension (default is False).
     early_stopping_config : Optional[EarlyStoppingConfig], optional
         Configuration for early stopping during VI training. If None, no early stopping is used (default is None).
-        Only applicable when update_method is "VI".
 
     Examples
     --------
@@ -156,7 +146,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     bias_var_name: ClassVar[str] = "bias"
     _embedding_var_name: ClassVar[str] = "embedding"
     _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
-    _embedding_dim_divisor: ClassVar[int] = 4
     _numerical_eps: ClassVar[float] = 1e-6
     _optax_return_types: ClassVar[dict] = {
         "optimizer": optax.GradientTransformation,
@@ -215,21 +204,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             )
         return fn
 
-    _jax_activations: ClassVar[dict] = {
-        "tanh": jax.nn.tanh,
-        "relu": jax.nn.relu,
-        "sigmoid": jax.nn.sigmoid,
-        "gelu": lambda x: jax.nn.gelu(x, approximate=False),
-    }
-    _numpy_activations: ClassVar[dict] = {
-        "tanh": np.tanh,
-        "relu": _numpy_relu,
-        "sigmoid": _numpy_sigmoid,
-        "gelu": _numpy_gelu,
-    }
-
-    update_method: UpdateMethods = "VI"
-    update_kwargs: Optional[Union[VIUpdateKwargs, MCMCUpdateKwargs]] = None
+    update_kwargs: Optional[VIUpdateKwargs] = None
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
@@ -260,7 +235,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("model_params",)
-    _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ("update_method",)
+    _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
     _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("activation", "use_residual_connections")
 
     @field_validator("activation")
@@ -362,6 +337,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
     @classmethod
     def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
+        """NumPyro site names for a layer's weight/bias."""
         weight_layer_params_name = f"{cls.weight_var_name}_{layer_ind}"
         bias_layer_params_name = f"{cls.bias_var_name}_{layer_ind}"
         return weight_layer_params_name, bias_layer_params_name
@@ -496,6 +472,22 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         return self.feature_config.n_features
 
     @property
+    def resolved_update_kwargs(self) -> Dict[str, Any]:
+        """The resolved training config (``update_kwargs.model_dump()``, defaults included).
+
+        The public ``update_kwargs`` field is what the user passed (possibly ``None`` or partial);
+        this returns the internal, fully-populated config the engine actually trains with — keys such
+        as ``method``, ``num_particles`` and ``num_steps`` are guaranteed present. Exposed so the joint
+        cMAB meta-model can read a head's effective settings without reaching into a private attribute.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The resolved update kwargs used by the SVI training path.
+        """
+        return self._update_kwargs
+
+    @property
     def hidden_dim_list(self) -> List[int]:
         """
         Returns the hidden layer dimensions of the model.
@@ -511,37 +503,23 @@ class BaseBayesianNeuralNetwork(Model, ABC):
     @model_validator(mode="before")
     @classmethod
     def _coerce_update_kwargs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Coerce ``update_kwargs`` into the typed model matching ``update_method``.
+        """Coerce ``update_kwargs`` into the typed ``VIUpdateKwargs`` model.
 
         Accepts a raw dict (the public API, and the form stored in serialized state), ``None``
-        (defaults), or an already-built ``VIUpdateKwargs``/``MCMCUpdateKwargs``. ``update_method``
-        is the single source of truth for which schema applies, so the kwargs themselves carry no
-        discriminator. All value validation and defaulting lives in the two typed models.
+        (defaults), or an already-built ``VIUpdateKwargs``. All value validation and defaulting
+        lives in the typed model (method validity, ``kl_annealing_fraction`` range, the
+        epochs/num_steps precedence warning, ...).
         """
         if not isinstance(data, dict):
             return data
         raw = data.get("update_kwargs")
-        update_method = data.get("update_method", cls.model_fields["update_method"].default)
-        if isinstance(raw, (VIUpdateKwargs, MCMCUpdateKwargs)):
-            expected = {"VI": VIUpdateKwargs, "MCMC": MCMCUpdateKwargs}.get(update_method)
-            if expected is None:
-                raise ValueError("Invalid update method.")
-            if not isinstance(raw, expected):
-                raise ValueError(
-                    f"update_kwargs type {type(raw).__name__} conflicts with update_method '{update_method}'."
-                )
+        if isinstance(raw, VIUpdateKwargs):
             return data
         raw = dict(raw) if raw else {}
         # Copy before mutating: during Union resolution pydantic feeds the same input dict to each
         # candidate member, so mutating it here would leak an injected update_kwargs into sibling
         # models (e.g. QuantitativeBayesianNeuralNetwork, which has no such field).
-        data = {**data}
-        if update_method == "VI":
-            data["update_kwargs"] = VIUpdateKwargs(**raw)
-        elif update_method == "MCMC":
-            data["update_kwargs"] = MCMCUpdateKwargs(**raw)
-        else:
-            raise ValueError("Invalid update method.")
+        data = {**data, "update_kwargs": VIUpdateKwargs(**raw)}
         return data
 
     def _init_private_attrs(self) -> None:
@@ -557,9 +535,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             if self.random_seed is not None
             else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
         )
-        if self.update_method == "VI":
-            self._obj_optimizer = self._get_obj_optimizer()
-            self._early_stopping_callback = self._get_early_stopping_callback()
+        self._obj_optimizer = self._get_obj_optimizer()
+        self._early_stopping_callback = self._get_early_stopping_callback()
 
     def model_post_init(self, __context: Any) -> None:
         """
@@ -617,27 +594,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         _Array
             The raw linear output of the final layer (pre-sigmoid).
         """
-        n_layers = len(self.model_params.bnn_layer_params)
-        for layer_ind, (w, b) in enumerate(weights_biases):
-            layer_params = self.model_params.bnn_layer_params[layer_ind]
-            input_dim = layer_params.weight.shape[0]
-            output_dim = layer_params.weight.shape[1]
-
-            linear_transform = linear_fn(next_layer_input, w, b)
-
-            if layer_ind < n_layers - 1:
-                activated_output = activation_fn(linear_transform)
-                # Add residual connection if enabled and dimensions allow
-                if self.use_residual_connections and output_dim >= input_dim:
-                    if output_dim == input_dim:
-                        next_layer_input = activated_output + next_layer_input
-                    else:
-                        pad = backend.zeros((next_layer_input.shape[0], output_dim - input_dim))
-                        next_layer_input = activated_output + backend.concatenate([next_layer_input, pad], axis=1)
-                else:
-                    next_layer_input = activated_output
-
-        return linear_transform
+        return forward_layers(
+            next_layer_input=next_layer_input,
+            weights_biases=weights_biases,
+            activation_fn=activation_fn,
+            linear_fn=linear_fn,
+            backend=backend,
+            use_residual_connections=self.use_residual_connections,
+        )
 
     def _create_update_model(self) -> Callable:
         """
@@ -645,8 +609,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         Reads ``self.model_params.bnn_layer_params`` (the posteriors from the previous update
         round) and feeds them to ``numpyro.sample`` as the priors for this round. The model
-        function is consumed by both the VI training loop (via ``svi.update``) and the MCMC
-        path (via ``mcmc.run``).
+        function is consumed by the VI training loop (via ``svi.update``).
 
         Data is passed as arguments to the returned model function. Minibatching is handled via
         ``numpyro.plate`` with ``subsample_size``. Numerical columns are passed through as-is;
@@ -659,8 +622,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             NumPyro model function ``model(x, y, kl_annealing_factor=1.0)``. The
             ``kl_annealing_factor`` argument scales the prior (and embedding-prior) ``sample``
             sites' log-probabilities; the likelihood ``out`` site sits outside the scale
-            context and is unaffected. The default ``1.0`` makes the scale a numerical no-op,
-            preserving the MCMC call path which passes only ``(x, y)``.
+            context and is unaffected. The default ``1.0`` makes the scale a numerical no-op.
 
         Notes
         -----
@@ -679,73 +641,153 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         """
 
         batch_size = self._update_kwargs.get("batch_size")
+
+        def model(x: jax.Array, y: jax.Array, kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0):
+            self.emit_submodel(x=x, y=y, kl_annealing_factor=kl_annealing_factor, batch_size=batch_size)
+
+        return model
+
+    def emit_submodel(
+        self,
+        x: jax.Array,
+        y: jax.Array,
+        kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0,
+        batch_size: Optional[PositiveInt] = None,
+    ) -> None:
+        """Emit this BNN's NumPyro sites on the supplied input array.
+
+        Samples the layer weights/biases and categorical embeddings, runs the forward pass on ``x``,
+        and registers the ``logit`` deterministic + ``out`` Bernoulli likelihood. Factored out of
+        :meth:`_create_update_model` so a meta-model can compose several arms' sub-models into one
+        joint model on a shared backbone embedding *or* on raw context — the meta-model wraps each
+        call in ``numpyro.handlers.scope(prefix=arm)`` to keep the (otherwise identical) site names
+        from colliding, so this method itself stays namespace-free.
+
+        Parameters
+        ----------
+        x : jax.Array
+            Network input — raw context (standalone / no-backbone head) or a backbone embedding.
+        y : jax.Array
+            Binary rewards for these rows.
+        kl_annealing_factor : Union[PositiveFloat01, jax.Array]
+            Scales the prior-site log-probabilities (KL term); ``1.0`` is a no-op.
+        batch_size : Optional[PositiveInt]
+            Minibatch size for the data plate; ``None`` (or ≥ n_samples) means full batch.
+        """
+        weights_biases, embedding_matrices = self.sample_head_sites(kl_annealing_factor)
+        self._observe(x, y, weights_biases, embedding_matrices, batch_size)
+
+    def sample_head_sites(
+        self, kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0
+    ) -> Tuple[List[Tuple[jax.Array, jax.Array]], List[jax.Array]]:
+        """Sample this BNN's global latent sites (layer weights/biases + categorical embeddings).
+
+        These are the parameters shared across all rows, so they live *outside* the data plate. The
+        ``numpyro.handlers.scale`` wrap lets the per-step KL-annealing factor scale the prior-site
+        log-probabilities (combined with the symmetric guide wrap, the full per-site KL is scaled).
+        Factored out of :meth:`emit_submodel` so a joint meta-model can sample each arm's head sites,
+        stack them across arms, and drive a single minibatched observation.
+
+        Parameters
+        ----------
+        kl_annealing_factor : Union[PositiveFloat01, jax.Array]
+            Scales the prior-site log-probabilities (KL term); ``1.0`` is a no-op.
+
+        Returns
+        -------
+        Tuple[List[Tuple[jax.Array, jax.Array]], List[jax.Array]]
+            ``(weights_biases, embedding_matrices)`` — per-layer ``(weight, bias)`` and one embedding
+            matrix per categorical feature (empty when the head has no categorical embeddings).
+        """
+        cat_configs = self.feature_config.categorical_features_configs
+        has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
+        weights_biases: List[Tuple[jax.Array, jax.Array]] = []
+        embedding_matrices: List[jax.Array] = []
+        with numpyro.handlers.scale(scale=kl_annealing_factor):
+            for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
+                weight_name, bias_name = self.get_layer_params_name(layer_ind)
+                w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
+                b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
+                weights_biases.append((w, b))
+
+            if has_embeddings:
+                for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
+                    emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
+                    embedding_matrices.append(emb)
+        return weights_biases, embedding_matrices
+
+    def _observe(
+        self,
+        x: jax.Array,
+        y: jax.Array,
+        weights_biases: List[Tuple[jax.Array, jax.Array]],
+        embedding_matrices: List[jax.Array],
+        batch_size: Optional[PositiveInt] = None,
+    ) -> None:
+        """Forward the (optionally minibatched) input through the sampled sites and observe ``out``.
+
+        Builds the network input (numerical columns + embedded categoricals), runs the forward pass,
+        registers the ``logit`` deterministic, and observes the ``out`` Bernoulli likelihood — inside a
+        subsampling ``data`` plate when ``batch_size`` is set. Kept separate from
+        :meth:`sample_head_sites` so the latent sites can be sampled once and reused.
+
+        Parameters
+        ----------
+        x : jax.Array
+            Network input — raw context (standalone / no-backbone head) or a backbone embedding.
+        y : jax.Array
+            Binary rewards for these rows.
+        weights_biases : List[Tuple[jax.Array, jax.Array]]
+            Per-layer ``(weight, bias)`` from :meth:`sample_head_sites`.
+        embedding_matrices : List[jax.Array]
+            Categorical embedding matrices from :meth:`sample_head_sites` (empty if none).
+        batch_size : Optional[PositiveInt]
+            Minibatch size for the data plate; ``None`` (or ≥ n_samples) means full batch.
+        """
         numerical_indices = self.feature_config.numerical_indices
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
+        n_samples = x.shape[0]
 
-        def model(x: jax.Array, y: jax.Array, kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0):
-            n_samples = x.shape[0]
+        # Data plate with optional minibatching
+        if batch_size is not None and batch_size < n_samples:
+            plate_ctx = numpyro.plate("data", size=n_samples, subsample_size=batch_size)
+        else:
+            plate_ctx = nullcontext()
 
-            # Sample all weights and embeddings (global parameters, outside plate).
-            # Wrapped in handlers.scale so the per-step KL annealing factor scales the
-            # prior-site log-probabilities; combined with the symmetric guide wrap in
-            # _run_svi_training_loop, this scales the full per-site KL contribution
-            # (log p - log q).
-            weights_biases = []
-            embedding_matrices = []
-            with numpyro.handlers.scale(scale=kl_annealing_factor):
-                for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-                    weight_name, bias_name = self.get_layer_params_name(layer_ind)
-                    w = numpyro.sample(weight_name, layer_params.weight.to_numpyro_distribution())
-                    b = numpyro.sample(bias_name, layer_params.bias.to_numpyro_distribution())
-                    weights_biases.append((w, b))
+        with plate_ctx as idx:
+            x_batch = x[idx] if idx is not None else x
+            y_batch = y[idx] if idx is not None else y
 
-                if has_embeddings:
-                    for i, emb_dist in enumerate(self.model_params.embedding_params.embeddings):
-                        emb = numpyro.sample(self.get_embedding_var_name(i), emb_dist.to_numpyro_distribution())
-                        embedding_matrices.append(emb)
-
-            # Data plate with optional minibatching
-            if batch_size is not None and batch_size < n_samples:
-                plate_ctx = numpyro.plate("data", size=n_samples, subsample_size=batch_size)
+            # Build network input: numerical features + embedded categoricals
+            if has_embeddings:
+                input_parts = []
+                if numerical_indices:
+                    input_parts.append(x_batch[:, numerical_indices])
+                for i, cfg in enumerate(cat_configs):
+                    cat_idx = x_batch[:, cfg.column_index].astype(jnp.int32)
+                    input_parts.append(embedding_matrices[i][cat_idx])
+                next_layer_input = jnp.concatenate(input_parts, axis=1) if len(input_parts) > 1 else input_parts[0]
             else:
-                plate_ctx = nullcontext()
+                next_layer_input = x_batch
 
-            with plate_ctx as idx:
-                x_batch = x[idx] if idx is not None else x
-                y_batch = y[idx] if idx is not None else y
+            # Forward pass
+            linear_transform = self._forward_layers(
+                next_layer_input=next_layer_input,
+                weights_biases=weights_biases,
+                activation_fn=self._jax_activation_fn,
+                linear_fn=lambda x, w, b: jnp.dot(x, w) + b,
+                backend=jnp,
+            )
 
-                # Build network input: numerical features + embedded categoricals
-                if has_embeddings:
-                    input_parts = []
-                    if numerical_indices:
-                        input_parts.append(x_batch[:, numerical_indices])
-                    for i, cfg in enumerate(cat_configs):
-                        cat_idx = x_batch[:, cfg.column_index].astype(jnp.int32)
-                        input_parts.append(embedding_matrices[i][cat_idx])
-                    next_layer_input = jnp.concatenate(input_parts, axis=1) if len(input_parts) > 1 else input_parts[0]
-                else:
-                    next_layer_input = x_batch
-
-                # Forward pass
-                linear_transform = self._forward_layers(
-                    next_layer_input=next_layer_input,
-                    weights_biases=weights_biases,
-                    activation_fn=self._jax_activation_fn,
-                    linear_fn=lambda x, w, b: jnp.dot(x, w) + b,
-                    backend=jnp,
-                )
-
-                # Final output processing
-                logit = numpyro.deterministic(
-                    self._logit_var_name,
-                    linear_transform.squeeze(-1),
-                )
-                numpyro.sample(
-                    "out", NumpyroBernoulli(logits=logit), obs=y_batch
-                )  # "The observed reward follows a Bernoulli distribution given the network output"
-
-        return model
+            # Final output processing
+            logit = numpyro.deterministic(
+                self._logit_var_name,
+                linear_transform.squeeze(-1),
+            )
+            numpyro.sample(
+                "out", NumpyroBernoulli(logits=logit), obs=y_batch
+            )  # "The observed reward follows a Bernoulli distribution given the network output"
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def sample_weights(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Tuple[np.ndarray, np.ndarray]]:
@@ -923,7 +965,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             The context matrix for which the probabilities are to be sampled.
         rng : np.random.Generator
             Numpy random generator for weight/embedding sampling.
-            The JAX ``_rng_key`` remains the authority for VI/MCMC training.
+            The JAX ``_rng_key`` remains the authority for VI training.
 
         Returns
         -------
@@ -981,7 +1023,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         return BnnLayerParams(weight=updated_weight, bias=updated_bias)
 
-    def _update_embedding_params_from_vi(self, site_mu: dict, site_sigma: dict) -> None:
+    def update_embedding_params_from_vi(self, site_mu: dict, site_sigma: dict) -> None:
         """
         Update embedding matrices from per-site VI posterior means and stds.
 
@@ -1003,28 +1045,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
         self.model_params.embedding_params.embeddings = updated_embeddings
 
-    def _update_embedding_params_from_mcmc(self, samples: dict) -> None:
-        """
-        Update embedding matrices from MCMC posterior samples.
-
-        Computes mean and std over the sample axis for each embedding variable.
-
-        Parameters
-        ----------
-        samples : dict
-            Dict mapping variable names to arrays of shape ``(n_samples, ...)``.
-        """
-        if self.model_params.embedding_params is None:
-            return
-        updated_embeddings = []
-        for i, orig_emb in enumerate(self.model_params.embedding_params.embeddings):
-            emb_var_name = self.get_embedding_var_name(i)
-            emb_values = np.array(samples[emb_var_name])
-            emb_mu = np.mean(emb_values, axis=0)
-            emb_sigma = np.maximum(np.std(emb_values, axis=0), self._numerical_eps)
-            updated_embeddings.append(orig_emb.with_dist_parameters(mu=emb_mu.tolist(), sigma=emb_sigma.tolist()))
-        self.model_params.embedding_params.embeddings = updated_embeddings
-
     def _build_svi_guide_init(self) -> tuple:
         """Build ``init_loc_fn`` and ``init_scale_fn`` for the SVI guide.
 
@@ -1038,6 +1058,16 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         -------
         tuple
             ``(init_loc_fn, init_scale_fn)``
+        """
+        values, site_sigmas, all_mus, all_sigmas = self.collect_guide_init_arrays()
+        return self.build_guide_init_fns(values, site_sigmas, all_mus, all_sigmas)
+
+    def collect_guide_init_arrays(self) -> Tuple[dict, dict, list, list]:
+        """Collect this BNN's guide-init contributions, keyed by (namespace-free) site name.
+
+        Returns ``(values, site_sigmas, all_mus, all_sigmas)``. A joint multi-arm meta-model collects
+        these per arm and re-keys them under each arm's scope prefix before building a single pair of
+        init functions via :meth:`build_guide_init_fns`.
         """
         values: dict = {}
         all_mus: list = []
@@ -1063,6 +1093,11 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 all_sigmas.append(emb.params["sigma"].ravel())
                 site_sigmas[emb_name] = emb.params["sigma"]
 
+        return values, site_sigmas, all_mus, all_sigmas
+
+    def build_guide_init_fns(self, values: dict, site_sigmas: dict, all_mus: list, all_sigmas: list) -> tuple:
+        """Build ``(init_loc_fn, init_scale_fn)`` from collected guide-init arrays (see
+        :meth:`collect_guide_init_arrays`). Shared by the standalone BNN and the joint meta-model."""
         all_mus_flat = np.concatenate(all_mus)
         init_loc_fn = init_to_median if np.all(all_mus_flat == 0) else init_to_value(values=values)
         avg_sigma = float(max(np.mean(np.concatenate(all_sigmas)), self._numerical_eps))
@@ -1070,7 +1105,24 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         init_scale_fn = lambda name: site_sigmas.get(name, avg_sigma)  # noqa: E731
         return init_loc_fn, init_scale_fn
 
-    def _build_kl_annealing_factors(self, epoch_steps_list: List[int]) -> List[jnp.ndarray]:
+    def compute_epoch_steps(self, n_samples: int) -> List[int]:
+        """Epoch-step partition for the SVI run from this BNN's ``_update_kwargs``.
+
+        Shared by the standalone ``_run_svi_training_loop`` and the joint cMAB engine so that
+        ``epochs``/``batch_size``/``num_steps`` settings are honoured identically on both paths.
+        """
+        effective_batch_size = self._update_kwargs.get("batch_size") or n_samples
+        steps_per_epoch = max(1, n_samples // effective_batch_size)
+        if self._update_kwargs.get("epochs") is not None:
+            return [steps_per_epoch] * self._update_kwargs["epochs"]
+        num_steps = self._update_kwargs["num_steps"]
+        n_full_epochs, remaining = np.divmod(num_steps, steps_per_epoch)
+        epoch_steps_list = [steps_per_epoch] * n_full_epochs
+        if remaining > 0:
+            epoch_steps_list.append(remaining)
+        return epoch_steps_list or [1]
+
+    def build_kl_annealing_factors(self, epoch_steps_list: List[int]) -> List[jnp.ndarray]:
         """Build the per-step KL annealing factor schedule, split into per-epoch chunks.
 
         The factor ``β(step)`` multiplies the KL portion of the ELBO at each SVI step:
@@ -1144,22 +1196,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             self._early_stopping_callback.reset()
         _model = self._create_update_model()
 
-        effective_batch_size = self._update_kwargs.get("batch_size") or n_samples
-        steps_per_epoch = max(1, n_samples // effective_batch_size)
-
-        if self._update_kwargs.get("epochs") is not None:
-            epoch_steps_list = [steps_per_epoch] * self._update_kwargs["epochs"]
-        else:
-            num_steps = self._update_kwargs["num_steps"]
-            n_full_epochs, remaining = np.divmod(num_steps, steps_per_epoch)
-            epoch_steps_list = [steps_per_epoch] * n_full_epochs
-            if remaining > 0:
-                epoch_steps_list.append(remaining)
-            if not epoch_steps_list:
-                epoch_steps_list = [1]
-
         # Build the per-step KL-annealing factor schedule for the entire run
-        epoch_factor_arrays = self._build_kl_annealing_factors(epoch_steps_list)
+        epoch_factor_arrays = self.build_kl_annealing_factors(self.compute_epoch_steps(n_samples))
 
         # Set up VI method (guide + loss) dynamically
         vi_method = self._update_kwargs["method"]
@@ -1176,86 +1214,27 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             # fullrank_advi needs a scalar init_scale; use the avg sigma via the unknown-site fallback.
             guide = method_config["guide"](_model, init_loc_fn=init_loc_fn, init_scale=init_scale_fn(""))
 
-        # Scale-wrap the guide for symmetric KL annealing; `guide` stays unwrapped for
-        # downstream `.median(...)` extraction. See `_wrap_guide_with_kl_scale`.
-        scaled_guide = _wrap_guide_with_kl_scale(guide)
-
         num_particles = self._update_kwargs["num_particles"]
         loss = method_config["loss"](num_particles=num_particles)
-        svi = SVI(_model, scaled_guide, self._obj_optimizer, loss=loss)
-
-        # Run the SVI loop via jax.lax.scan to keep the iteration inside XLA.
-        # A Python for-loop leaks host-side dispatch/compilation metadata on
-        # every call to svi.update(), eventually OOM-ing the LLVM compiler at
-        # a fixed step count regardless of batch size or FP precision.
-        # lax.scan compiles the loop body once and runs it entirely in XLA.
-        self._rng_key, subkey = jax.random.split(self._rng_key)
-        # Initialize the variational parameters (the mu/sigma values that will be optimized).
-        # The kl_annealing_factor=1.0 passed here is a no-op for init but matches the
-        # signature SVI will use during svi.update calls in the scan body.
-        svi_state = svi.init(subkey, x_jnp, y_jnp, 1.0)
-
-        # Pass x/y as explicit JIT arguments (not closure captures) so JAX treats
-        # them as abstract buffers rather than embedding them as XLA constants.
-        # Closing over large arrays causes "Failed to allocate N bytes for new constant"
-        # at compile time when the dataset is large.
-        # The per-step factor array is fed as the scan's `xs`; its length determines
-        # the number of scan iterations, so no `length=` or `static_argnums` is needed.
-        # `state` is a numpyro `SVIState`; annotated as `Any` to avoid pulling its private
-        # import path into the module-level surface.
-        def _run_epoch(state: Any, x: jax.Array, y: jax.Array, factors: jnp.ndarray) -> Tuple[Any, jax.Array]:
-            def _svi_body(s: Any, factor: Union[PositiveFloat01, jax.Array]) -> Tuple[Any, jax.Array]:
-                s, loss = svi.update(s, x, y, factor)
-                return s, loss
-
-            return jax.lax.scan(_svi_body, state, factors)
-
-        _run_epoch = jax.jit(_run_epoch)
-
         restore_best = self._update_kwargs.get("restore_best_svi_state", True)
-        all_losses = []
-        best_loss = float("inf")
-        best_svi_state = svi_state
-        pbar = trange(len(epoch_steps_list), desc="SVI", leave=False)
 
-        try:
-            for epoch_idx, epoch_factors in enumerate(epoch_factor_arrays):
-                svi_state, epoch_losses = _run_epoch(svi_state, x_jnp, y_jnp, epoch_factors)
-
-                epoch_np = np.array(epoch_losses)
-                epoch_loss = float(np.mean(epoch_np))
-                all_losses.append(epoch_np)
-                pbar.update(1)
-                pbar.set_postfix(loss=f"{epoch_loss:.4f}")
-
-                if np.isnan(epoch_loss):
-                    raise ValueError(
-                        f"SVI training diverged: loss is NaN at epoch {epoch_idx + 1}/{len(epoch_steps_list)}. "
-                        "Consider reducing the learning rate or checking your data for invalid values."
-                    )
-
-                if restore_best and epoch_loss < best_loss:
-                    best_loss = epoch_loss
-                    best_svi_state = svi_state
-
-                if self._early_stopping_callback is not None:
-                    if self._early_stopping_callback.should_stop(epoch_loss):
-                        logger.info(
-                            f"Early stopping at epoch {epoch_idx + 1}/{len(epoch_steps_list)}: "
-                            f"loss change below {self._early_stopping_callback.tolerance} "
-                            f"({self._early_stopping_callback.diff_type}) for "
-                            f"{self._early_stopping_callback.patience} consecutive epochs. "
-                            f"Best loss: {best_loss:.6f}, last loss: {epoch_loss:.6f}."
-                        )
-                        break
-        finally:
-            pbar.close()
-        self._approx_history = np.concatenate(all_losses) if all_losses else np.array([])
-        final_state = best_svi_state if restore_best else svi_state
-        params = svi.get_params(final_state)
+        # Build + drive the SVI loop via the shared `run_svi` helper (guide-wrapping, SVI, jit/scan
+        # with x/y as explicit jit args, and the epoch loop). `guide` stays unwrapped here for any
+        # downstream `.median(...)` extraction. The same helper powers the joint cMAB engine.
+        svi, params, self._approx_history, self._rng_key = run_svi(
+            model=_model,
+            guide=guide,
+            optimizer=self._obj_optimizer,
+            loss=loss,
+            rng_key=self._rng_key,
+            model_args=(x_jnp, y_jnp),
+            epoch_factor_arrays=epoch_factor_arrays,
+            restore_best=restore_best,
+            early_stopping_callback=self._early_stopping_callback,
+        )
         return svi, guide, params
 
-    def _extract_advi_params(self, params: dict) -> tuple:
+    def extract_advi_params(self, params: dict) -> tuple:
         """
         Extract per-site posterior means and stds from AutoNormal (ADVI) guide params.
 
@@ -1341,7 +1320,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         vi_method = self._update_kwargs["method"]
         if vi_method == "advi":
-            site_mu, site_sigma = self._extract_advi_params(params)
+            site_mu, site_sigma = self.extract_advi_params(params)
         elif vi_method == "fullrank_advi":
             site_mu, site_sigma = self._extract_fullrank_advi_params(guide, params)
         else:
@@ -1349,7 +1328,17 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 f"Invalid VI method: {vi_method}. Supported methods are: {list(self._vi_method_config.keys())}"
             )
 
-        # Update layer params from per-site posterior
+        # Update layer params + embeddings from per-site posterior
+        updated_layer_params_list = self.layer_params_from_posterior(site_mu, site_sigma)
+        self.update_embedding_params_from_vi(site_mu, site_sigma)
+        return updated_layer_params_list
+
+    def layer_params_from_posterior(self, site_mu: dict, site_sigma: dict) -> List:
+        """Build updated ``BnnLayerParams`` from a per-site posterior dict keyed by (namespace-free) name.
+
+        Reused by the joint multi-arm meta-model: after one SVI pass, the meta-model slices each arm's
+        scoped sites back to namespace-free names and calls this to read back that arm's layers.
+        """
         updated_layer_params_list = []
         for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
             weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
@@ -1365,56 +1354,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
                 w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
             )
             updated_layer_params_list.append(updated_layer_params)
-
-        # Update embedding params
-        self._update_embedding_params_from_vi(site_mu, site_sigma)
-        return updated_layer_params_list
-
-    def _extract_mcmc_params(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray) -> List:
-        """
-        Run MCMC and extract updated layer params and embeddings.
-
-        Parameters
-        ----------
-        x_jnp : jnp.ndarray
-            Context array in JAX format.
-        y_jnp : jnp.ndarray
-            Rewards array in JAX format.
-
-        Returns
-        -------
-        List
-            Updated ``BnnLayerParams`` list (embeddings are updated in-place as a side-effect).
-        """
-        _model = self._create_update_model()
-        nuts_kwargs = self._update_kwargs["nuts"]
-        # All top-level keys except 'nuts' are MCMC kwargs
-        mcmc_kwargs = {k: v for k, v in self._update_kwargs.items() if k != "nuts"}
-
-        kernel = NUTS(_model, **nuts_kwargs)
-        mcmc = MCMC(kernel, **mcmc_kwargs)
-        self._rng_key, subkey = jax.random.split(self._rng_key)
-        mcmc.run(subkey, x_jnp, y_jnp)
-        samples = mcmc.get_samples()
-
-        updated_layer_params_list = []
-        for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
-            weight_layer_params_name, bias_layer_params_name = self.get_layer_params_name(layer_ind)
-
-            w_values = np.array(samples[weight_layer_params_name])
-            b_values = np.array(samples[bias_layer_params_name])
-
-            w_mu = np.mean(w_values, axis=0)
-            w_sigma = np.maximum(np.std(w_values, axis=0), self._numerical_eps)
-            b_mu = np.mean(b_values, axis=0)
-            b_sigma = np.maximum(np.std(b_values, axis=0), self._numerical_eps)
-
-            updated_layer_params = self._create_updated_layer_params(
-                w_mu, w_sigma, b_mu, b_sigma, layer_params.weight, layer_params.bias
-            )
-            updated_layer_params_list.append(updated_layer_params)
-
-        self._update_embedding_params_from_mcmc(samples)
         return updated_layer_params_list
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -1431,8 +1370,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
 
         Notes
         -----
-        This method updates the model's parameters by sampling from the posterior distribution
-        using either Variational Inference (VI) or Markov Chain Monte Carlo (MCMC) methods.
+        This method updates the model's parameters by fitting the posterior distribution with
+        Variational Inference (VI).
         """
         self.check_context_matrix(context=context)
 
@@ -1454,24 +1393,13 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         if not is_first_fit:
             self._inflate_prior_variance()
 
-        if self.update_method == "VI":
-            updated_layer_params_list = self._extract_vi_params(x_jnp, y_jnp, n_samples)
-
-        elif self.update_method == "MCMC":
-            updated_layer_params_list = self._extract_mcmc_params(x_jnp, y_jnp)
-
-        else:
-            raise ValueError("Invalid update method.")
-
-        self.model_params.bnn_layer_params = (
-            updated_layer_params_list  # update the model_params with the new found posteriors
-        )
+        self.model_params.bnn_layer_params = self._extract_vi_params(x_jnp, y_jnp, n_samples)
 
     def _inflate_prior_variance(self):
         """
         Inflate the stored posterior variance before re-fitting, implementing per-update forgetting.
         Every weight, bias, and embedding ``sigma`` is multiplied
-        by ``1 / decay_factor``, widening the prior consumed by the next VI/MCMC round so that fresh
+        by ``1 / decay_factor``, widening the prior consumed by the next VI round so that fresh
         data dominates old evidence. The means (``mu``) and the Student-t degrees of freedom (``nu``)
         are left untouched. No-op when ``decay_factor`` is None or 1.
         """
@@ -1497,7 +1425,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         cls,
         n_features: PositiveInt,
         hidden_dim_list: Optional[List[PositiveInt]] = None,
-        update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
         dist_type: Literal["normal", "studentt"] = "studentt",
         dist_params_init: Optional[Dict[str, float]] = None,
@@ -1520,10 +1447,8 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             Total number of columns in the context array, including any categorical columns.
         hidden_dim_list : Optional[List[PositiveInt]], optional
             List of dimensions for the hidden layers of the network. If None, no hidden layers are added.
-        update_method : UpdateMethods
-            Method to update the network, either "MCMC" or "VI". Default is "VI".
         update_kwargs : Optional[dict], optional
-            Additional keyword arguments for the update method. Default is None.
+            Additional keyword arguments for VI training. Default is None.
         dist_type : Literal["normal", "studentt"]
             Type of distribution to use for priors. Default is "studentt".
         dist_params_init : Optional[Dict[str, float]], optional
@@ -1544,14 +1469,14 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             (which otherwise pushes mass towards p=0 / p=1 after sigmoid at cold start). Default is None.
         calibrate_output_bias : bool
             If True, the output-layer bias mu is set to ``logit(empirical_reward_rate)`` on the very first
-            ``update()`` call, before VI/MCMC training begins. This replaces the cold-start prior mean
+            ``update()`` call, before VI training begins. This replaces the cold-start prior mean
             (logit 0 ≈ 50 % reward rate) with a data-driven intercept, preventing optimistic over-exploration
             of arms that have accumulated little data. The calibration fires only once per arm lifetime
             (or after a ``_reset()``). Default is False.
         categorical_features : Optional[Dict[int, int]], optional
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
-            to ``ceil(cardinality / _embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
+            to ``ceil(cardinality / embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
         random_seed : Optional[NonNegativeInt], optional
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.
@@ -1571,7 +1496,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
             CategoricalFeatureConfig(
                 column_index=col_idx,
                 cardinality=cardinality,
-                embedding_dim=ceil(cardinality / cls._embedding_dim_divisor),
+                embedding_dim=ceil(cardinality / cls.embedding_dim_divisor),
             )
             for col_idx, cardinality in (categorical_features or {}).items()
         ]
@@ -1596,7 +1521,6 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         )
         return cls(
             model_params=model_params,
-            update_method=update_method,
             update_kwargs=update_kwargs,
             activation=activation,
             use_residual_connections=use_residual_connections,
@@ -1628,7 +1552,7 @@ class BaseBayesianNeuralNetwork(Model, ABC):
         Notes
         -----
         - The sigma of the output-layer bias prior is left unchanged; only ``mu`` is updated.
-        - This method is called from ``_update`` before VI/MCMC training begins, so the
+        - This method is called from ``_update`` before VI training begins, so the
           calibrated intercept serves as the warm-start location for the variational guide.
         - The clipping bounds use ``_numerical_eps`` to stay safely away from the degenerate logit values at 0 and 1.
         """
@@ -1665,18 +1589,14 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork, ModelCC):
     """Bayesian Neural Network model for binary classification with cost constraint.
 
     This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
-    using PyMC for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
-    and Variational Inference (VI) methods for posterior inference.
+    using NumPyro for binary classification tasks. Posterior inference is by Variational Inference (VI).
 
     Parameters
     ----------
     model_params : BnnParams
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
-    update_method : str, optional
-        The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
     update_kwargs : Optional[dict], optional
-        A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
-        For VI, it contains both 'trace' and 'fit' settings.
+        A dictionary of keyword arguments for VI training.
     cost : NonNegativeFloat
         Cost associated to the Bayesian Neural Network model.
 
@@ -1692,18 +1612,14 @@ class BayesianNeuralNetworkDP(BaseBayesianNeuralNetwork, ModelDP):
     """Bayesian Neural Network model for binary classification with dynamic pricing.
 
     This class implements a Bayesian Neural Network with an arbitrary number of fully connected layers
-    using PyMC for binary classification tasks. It supports both Markov Chain Monte Carlo (MCMC)
-    and Variational Inference (VI) methods for posterior inference.
+    using NumPyro for binary classification tasks. Posterior inference is by Variational Inference (VI).
 
     Parameters
     ----------
     model_params : BnnParams
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
-    update_method : str, optional
-        The method used for posterior inference, either "MCMC" or "VI" (default is "MCMC").
     update_kwargs : Optional[dict], optional
-        A dictionary of keyword arguments for the update method. For MCMC, it contains 'trace' settings.
-        For VI, it contains both 'trace' and 'fit' settings.
+        A dictionary of keyword arguments for VI training.
     price : NonNegativeFloat
         Price associated to the Bayesian Neural Network model.
 
@@ -1769,7 +1685,6 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         n_objectives: PositiveInt,
         n_features: PositiveInt,
         hidden_dim_list: Optional[List[PositiveInt]] = None,
-        update_method: UpdateMethods = "VI",
         update_kwargs: Optional[dict] = None,
         dist_type: Literal["normal", "studentt"] = "studentt",
         dist_params: Optional[Dict[str, float]] = None,
@@ -1792,10 +1707,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Number of input features for each network.
         hidden_dim_list : Optional[List[PositiveInt]], optional
             List of dimensions for the hidden layers of each network.
-        update_method : UpdateMethods
-            Method to update the networks.
         update_kwargs : Optional[dict], optional
-            Additional keyword arguments for the update method.
+            Additional keyword arguments for VI training.
         dist_type : Literal["normal", "studentt"]
             Type of distribution to use for priors. Default is "studentt".
         dist_params : Optional[Dict[str, float]], optional
@@ -1826,7 +1739,6 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             BayesianNeuralNetwork.cold_start(
                 n_features=n_features,
                 hidden_dim_list=hidden_dim_list,
-                update_method=update_method,
                 update_kwargs=update_kwargs,
                 dist_type=dist_type,
                 dist_params_init=dist_params,

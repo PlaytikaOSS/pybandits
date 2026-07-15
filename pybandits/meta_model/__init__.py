@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2023 Playtika Ltd.
+# Copyright (c) 2022 Playtika Ltd.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -19,32 +19,43 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from typing import Literal, Union
 
-import jax
-import numpy as np
-from scipy.special import erf
+from pybandits.meta_model.base import (
+    ActionModelType,
+    BaseMetaModel,
+    SampleProbaResult,
+)
+from pybandits.meta_model.cmab_meta_model import (
+    CmabMetaModel,
+    CmabMetaModelCC,
+    CmabMetaModelDP,
+    CmabMetaModelMO,
+    CmabMetaModelMOCC,
+    CmabMetaModelSO,
+)
+from pybandits.meta_model.smab_meta_model import (
+    SmabMetaModel,
+    SmabMetaModelCC,
+    SmabMetaModelDP,
+    SmabMetaModelMO,
+    SmabMetaModelMOCC,
+    SmabMetaModelSO,
+)
 
-_Array = Union[np.ndarray, jax.Array]
-
-VIMethods = Literal["advi", "fullrank_advi"]
-ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
-OptaxKind = Literal["optimizer", "lr_scheduler"]
-
-_LOGIT_CLIPPING_THRESHOLD = 15
-
-
-def _numpy_relu(x: np.ndarray) -> np.ndarray:
-    """ReLU activation function for NumPy."""
-    return np.maximum(0, x)
-
-
-def _numpy_gelu(x: np.ndarray) -> np.ndarray:
-    """GELU activation function for NumPy."""
-    return 0.5 * x * (1 + erf(x / np.sqrt(2.0)))
-
-
-def _numpy_sigmoid(x):
-    """Stable sigmoid activation function for NumPy."""
-    x = np.clip(x, -_LOGIT_CLIPPING_THRESHOLD, _LOGIT_CLIPPING_THRESHOLD)
-    return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+__all__ = [
+    "ActionModelType",
+    "BaseMetaModel",
+    "SampleProbaResult",
+    "SmabMetaModel",
+    "SmabMetaModelSO",
+    "SmabMetaModelCC",
+    "SmabMetaModelDP",
+    "SmabMetaModelMO",
+    "SmabMetaModelMOCC",
+    "CmabMetaModel",
+    "CmabMetaModelSO",
+    "CmabMetaModelCC",
+    "CmabMetaModelDP",
+    "CmabMetaModelMO",
+    "CmabMetaModelMOCC",
+]

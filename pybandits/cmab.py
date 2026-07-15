@@ -79,7 +79,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
     @property
     def input_dim(self) -> int:
         """Returns the input feature dimension (number of context features)."""
-        return next(iter(self.actions.values())).input_dim
+        return self.actions_manager.meta_model.input_dim
 
     @staticmethod
     def _extract_element_from_probability_weight(
@@ -244,6 +244,16 @@ class BaseCmabBernoulli(BaseMab, ABC):
                 fc = FeaturesConfig(n_features=n_features, categorical_features_configs=[])
                 action_state["feature_config"] = fc.model_dump()
 
+            # ``update_method`` is no longer a field (the BNN is VI-only); drop it from legacy states.
+            # An MCMC-trained legacy state cannot be migrated: the MCMC backend was removed entirely,
+            # so there is no VI equivalent to load it as.
+            old_update_method = action_state.pop("update_method", None)
+            if old_update_method == "MCMC":
+                raise ValueError(
+                    f"Action '{action_id}' was trained with the MCMC backend, which has been removed; "
+                    "MCMC-trained states can no longer be loaded."
+                )
+
             if "update_kwargs" in action_state and action_state["update_kwargs"] is not None:  # v6.0.0 compatability
                 kwargs = action_state["update_kwargs"]
 
@@ -254,26 +264,6 @@ class BaseCmabBernoulli(BaseMab, ABC):
                         kwargs["num_steps"] = fit.pop("n")
                     if "method" in fit:
                         kwargs["method"] = fit.pop("method")
-
-                # Migrate MCMC kwargs: "trace" dict → flat keys + "nuts" sub-dict
-                if "trace" in kwargs:
-                    trace = kwargs.pop("trace")
-                    if "tune" in trace:
-                        kwargs["num_warmup"] = trace.pop("tune")
-                    if "draws" in trace:
-                        kwargs["num_samples"] = trace.pop("draws")
-                    if "chains" in trace:
-                        kwargs["num_chains"] = trace.pop("chains")
-                    if "progressbar" in trace:
-                        kwargs["progress_bar"] = trace.pop("progressbar")
-                    nuts = {}
-                    if "target_accept" in trace:
-                        nuts["target_accept_prob"] = trace.pop("target_accept")
-                    if nuts:
-                        kwargs["nuts"] = nuts
-                    # Remove PyMC-only keys
-                    for pymc_key in ("init", "cores", "return_inferencedata"):
-                        trace.pop(pymc_key, None)
 
                 # Migrate optimizer kwargs: learning_rate → step_size
                 if "optimizer_kwargs" in kwargs:
@@ -302,6 +292,13 @@ class CmabBernoulli(BaseCmabBernoulli):
         The manager for actions and their associated models.
     strategy: ClassicBandit
         The strategy used to select actions.
+
+    Notes
+    -----
+    ``cold_start`` is inherited from ``BaseMab``: a shared backbone is requested by passing
+    ``backbone_hidden_dims`` (plus optional ``embedding_dim``/``backbone_activation``), which flow
+    through to ``CmabMetaModel`` to build the encoder; ``delta`` + backbone is rejected by the manager.
+    With no ``backbone_hidden_dims`` each arm is an independent BNN head on the raw context.
     """
 
     actions_manager: CmabActionsManagerSO

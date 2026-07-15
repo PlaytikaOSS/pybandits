@@ -85,7 +85,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
             Categorical context columns as ``{column_index: cardinality}``.
         base_model_cold_start_kwargs : Optional[Dict[str, Any]], optional
             Keyword arguments passed to BayesianNeuralNetwork.cold_start. May include e.g.
-            hidden_dim_list, update_method, update_kwargs, dist_type, dist_params_init,
+            hidden_dim_list, update_kwargs, dist_type, dist_params_init,
             activation, use_residual_connections, use_layerwise_scaling, decay_factor. Default is None.
         **kwargs
             Additional keyword arguments for the QuantitativeBayesianNeuralNetwork constructor.
@@ -302,8 +302,6 @@ class QuantitativeBayesianNeuralNetwork(BaseQuantitativeBayesianNeuralNetwork):
         The underlying Bayesian Neural Network model.
     hidden_dim_list : Optional[List[PositiveInt]]
         List of hidden layer dimensions for the BNN. None means no hidden layers.
-    update_method : str
-        The method used for posterior inference, either "MCMC" or "VI".
     update_kwargs : Optional[dict]
         Additional keyword arguments for the update method.
 
@@ -313,7 +311,6 @@ class QuantitativeBayesianNeuralNetwork(BaseQuantitativeBayesianNeuralNetwork):
     >>> model = QuantitativeBayesianNeuralNetwork.cold_start(
     ...     dimension=2,
     ...     hidden_dim_list=[8, 4],
-    ...     update_method="VI"
     ... )
     >>> # Sample probability functions (context required for BNN)
     >>> context = np.zeros((3, 1))  # (n_samples, n_features)
@@ -343,8 +340,6 @@ class QuantitativeBayesianNeuralNetworkCC(BaseQuantitativeBayesianNeuralNetwork,
         The underlying Bayesian Neural Network model.
     hidden_dim_list : Optional[List[PositiveInt]]
         List of hidden layer dimensions for the BNN. None means no hidden layers.
-    update_method : str
-        The method used for posterior inference, either "MCMC" or "VI".
     update_kwargs : Optional[dict]
         Additional keyword arguments for the update method.
     cost : Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
@@ -376,8 +371,6 @@ class QuantitativeBayesianNeuralNetworkDP(BaseQuantitativeBayesianNeuralNetwork,
         The underlying Bayesian Neural Network model.
     hidden_dim_list : Optional[List[PositiveInt]]
         List of hidden layer dimensions for the BNN. None means no hidden layers.
-    update_method : str
-        The method used for posterior inference, either "MCMC" or "VI".
     update_kwargs : Optional[dict]
         Additional keyword arguments for the update method.
     price : Callable[[Union[float, np.ndarray]], NonNegativeFloat]

@@ -57,7 +57,6 @@ from pybandits.model import (
     NormalArray,
     OptaxKind,
     StudentTArray,
-    UpdateMethods,
     _wrap_guide_with_kl_scale,
 )
 
@@ -972,7 +971,6 @@ def test_bnn_sample_proba(
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(2),
-    update_method=st.just("VI"),
     epochs=st.just(1),
 )
 def test_bnn_vi_update(
@@ -984,14 +982,12 @@ def test_bnn_vi_update(
     n_features,
     hidden_dim_list,
     n_samples,
-    update_method,
     epochs,
 ):
     def update(context: np.ndarray, rewards: list):
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
             activation=activation,
             use_residual_connections=use_residual_connections,
             use_layerwise_scaling=use_layerwise_scaling,
@@ -1047,7 +1043,6 @@ def test_bnn_vi_update(
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
             use_residual_connections=use_residual_connections,
             use_layerwise_scaling=use_layerwise_scaling,
             dist_type=dist_type,
@@ -1097,7 +1092,6 @@ def _create_update_kwargs(
     early_stopping_diff=st.sampled_from((None, "absolute", "relative")),
     early_stopping_tol=st.one_of(st.none(), st.floats(min_value=1e-6, max_value=1e-1)),
     early_stopping_patience=st.one_of(st.none(), st.integers(min_value=1, max_value=10)),
-    update_method=st.just("VI"),
     restore_best_svi_state=st.one_of(st.none(), st.booleans()),
 )
 def test_bnn_vi_update_parameters(
@@ -1109,7 +1103,6 @@ def test_bnn_vi_update_parameters(
     early_stopping_diff: Optional[Literal["absolute", "relative"]],
     early_stopping_tol: Optional[float],
     early_stopping_patience: Optional[int],
-    update_method: UpdateMethods,
     restore_best_svi_state: Optional[bool],
 ) -> None:
     """Test BNN VI update with various valid parameters."""
@@ -1122,7 +1115,6 @@ def test_bnn_vi_update_parameters(
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         hidden_dim_list=hidden_dim_list,
-        update_method=update_method,
         update_kwargs=update_kwargs,
     )
 
@@ -1146,98 +1138,14 @@ def test_bnn_vi_update_parameters(
 @given(
     n_features=st.just(2),
     hidden_dim_list=st.just([1]),
-    update_method=st.just("MCMC"),
-)
-def test_bnn_mcmc_update_parameters(
-    n_features: int,
-    hidden_dim_list: list[int],
-    update_method: UpdateMethods,
-) -> None:
-    """Test BNN MCMC update with valid parameters (no batch_size, optimizer, or early_stopping)."""
-
-    bnn = BayesianNeuralNetwork.cold_start(
-        n_features=n_features,
-        hidden_dim_list=hidden_dim_list,
-        update_method=update_method,
-        update_kwargs={},
-    )
-
-    model_fn = bnn._create_update_model()
-    assert callable(model_fn)
-
-
-@given(
-    n_features=st.just(2),
-    hidden_dim_list=st.just([1]),
-    batch_size=st.sampled_from((2, 4)),
-    optimizer_type=st.sampled_from((None, "adam")),
-    lr=st.floats(min_value=0.0, max_value=1.0, exclude_min=True, exclude_max=True),
-    early_stopping_diff=st.sampled_from(("absolute", "relative")),
-    early_stopping_tol=st.floats(min_value=1e-6, max_value=1e-1),
-    early_stopping_patience=st.integers(min_value=1, max_value=10),
-    update_method=st.just("MCMC"),
-)
-def test_bnn_mcmc_update_parameters_failures(
-    n_features: int,
-    hidden_dim_list: list[int],
-    batch_size: int,
-    optimizer_type: Optional[str],
-    lr: Optional[float],
-    early_stopping_diff: str,
-    early_stopping_tol: float,
-    early_stopping_patience: int,
-    update_method: UpdateMethods,
-) -> None:
-    """Test that MCMC update raises ValueError when invalid parameters are provided."""
-    # Test with batch_size
-    update_kwargs_with_batch = _create_update_kwargs(batch_size)
-    with pytest.raises(ValueError):
-        BayesianNeuralNetwork.cold_start(
-            n_features=n_features,
-            hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
-            update_kwargs=update_kwargs_with_batch,
-        )
-
-    # Test with optimizer_type
-    if optimizer_type is not None:
-        update_kwargs_with_optimizer = _create_update_kwargs(None, optimizer_type, lr, None, None, None)
-        with pytest.raises(ValueError):
-            BayesianNeuralNetwork.cold_start(
-                n_features=n_features,
-                hidden_dim_list=hidden_dim_list,
-                update_method="MCMC",
-                update_kwargs=update_kwargs_with_optimizer,
-            )
-
-    # Test with early_stopping_kwargs
-    update_kwargs_with_early_stopping = _create_update_kwargs(
-        early_stopping_diff=early_stopping_diff,
-        early_stopping_tol=early_stopping_tol,
-        early_stopping_patience=early_stopping_patience,
-    )
-    with pytest.raises(ValueError):
-        BayesianNeuralNetwork.cold_start(
-            n_features=n_features,
-            hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
-            update_kwargs=update_kwargs_with_early_stopping,
-        )
-
-
-@given(
-    n_features=st.just(2),
-    hidden_dim_list=st.just([1]),
     batch_size=st.sampled_from((None, 2, 4)),
     optimizer_type=st.just("dummy_optimizer"),
-    update_method=st.just("VI"),
 )
 def test_bnn_vi_update_parameters_dummy_optimizer_failure(
     n_features: int,
     hidden_dim_list: list[int],
     batch_size: Optional[int],
     optimizer_type: Optional[str],
-    update_method: UpdateMethods,
 ) -> None:
     """Test that dummy_optimizer raises ValueError for BNN VI update."""
     update_kwargs = _create_update_kwargs(batch_size, optimizer_type)
@@ -1246,7 +1154,6 @@ def test_bnn_vi_update_parameters_dummy_optimizer_failure(
         BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
             update_kwargs=update_kwargs,
         )
 
@@ -1258,15 +1165,12 @@ def test_bnn_vi_update_parameters_dummy_optimizer_failure(
         ("sgd", {"invalid_param": 123}),
     ],
 )
-def test_invalid_optimizer_kwargs(
-    optimizer_type: str, optimizer_kwargs: dict, n_features: int = 2, update_method: UpdateMethods = "VI"
-) -> None:
+def test_invalid_optimizer_kwargs(optimizer_type: str, optimizer_kwargs: dict, n_features: int = 2) -> None:
     """Test that invalid optimizer kwargs raise TypeError or ValueError."""
 
     with pytest.raises((TypeError, ValueError), match="Invalid optimizer kwargs"):
         BayesianNeuralNetwork.cold_start(
             n_features=n_features,
-            update_method=update_method,
             update_kwargs={
                 "optimizer_type": optimizer_type,
                 "optimizer_kwargs": optimizer_kwargs,
@@ -1321,15 +1225,12 @@ def test_resolve_optax_fn_rejects_missing_required_kwarg(
         {"diff": "invalid", "tolerance": 1e-3},
     ],
 )
-def test_invalid_early_stopping_kwargs(
-    early_stopping_kwargs: dict, n_features: int = 2, update_method: UpdateMethods = "VI"
-) -> None:
+def test_invalid_early_stopping_kwargs(early_stopping_kwargs: dict, n_features: int = 2) -> None:
     """Test that invalid early stopping kwargs raise TypeError or ValueError."""
 
     with pytest.raises((TypeError, ValueError, KeyError), match="Invalid early stopping kwargs"):
         BayesianNeuralNetwork.cold_start(
             n_features=n_features,
-            update_method=update_method,
             update_kwargs={
                 "early_stopping_kwargs": early_stopping_kwargs,
             },
@@ -1367,7 +1268,6 @@ def test_lr_scheduler_valid(
     """Test that valid lr_scheduler_type/lr_scheduler_kwargs build an optimizer successfully."""
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
-        update_method="VI",
         update_kwargs={
             "optimizer_type": optimizer_type,
             "optimizer_kwargs": optimizer_kwargs,
@@ -1397,7 +1297,6 @@ def test_lr_scheduler_invalid_type_or_kwargs(
     with pytest.raises((TypeError, ValueError)):
         BayesianNeuralNetwork.cold_start(
             n_features=n_features,
-            update_method="VI",
             update_kwargs={
                 "lr_scheduler_type": lr_scheduler_type,
                 "lr_scheduler_kwargs": lr_scheduler_kwargs,
@@ -1414,7 +1313,6 @@ def test_lr_scheduler_invalid_type_or_kwargs(
     kl_annealing_fraction=st.one_of(st.none(), st.floats(min_value=0.05, max_value=1.0)),
     num_steps=st.just(5),
     n_features=st.just(2),
-    update_method=st.just("VI"),
     n_samples=st.just(5),
     decay_rate=st.just(0.9),
     transition_steps_factor=st.just(2),
@@ -1428,7 +1326,6 @@ def test_vi_training_options(
     kl_annealing_fraction: Optional[float],
     num_steps: int,
     n_features: int,
-    update_method: UpdateMethods,
     n_samples: int,
     decay_rate: float,
     transition_steps_factor: int,
@@ -1452,7 +1349,6 @@ def test_vi_training_options(
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
-        update_method=update_method,
         update_kwargs=update_kwargs,
     )
     context = rng.random((n_samples, n_features)).astype(np.float32)
@@ -1487,7 +1383,6 @@ class TestKLAnnealing:
             update_kwargs["kl_annealing_fraction"] = kl_annealing_fraction
         return BayesianNeuralNetwork.cold_start(
             n_features=n_features,
-            update_method="VI",
             update_kwargs=update_kwargs,
         )
 
@@ -1505,7 +1400,7 @@ class TestKLAnnealing:
         regardless of how the total steps are split into epochs."""
         total_steps = sum(epoch_steps_list)
         bnn = self._build_bnn(kl_annealing_fraction=None, num_steps=total_steps)
-        epoch_chunks = bnn._build_kl_annealing_factors(epoch_steps_list)
+        epoch_chunks = bnn.build_kl_annealing_factors(epoch_steps_list)
         # Assert the per-epoch split contract directly: one chunk per epoch, each chunk
         # holding exactly that epoch's step count. The flattened check below cannot catch a
         # regression that splits at the wrong boundaries (lax.scan consumes one chunk per epoch).
@@ -1530,7 +1425,7 @@ class TestKLAnnealing:
         """The active schedule is min(1, (step+1)/W) with W = max(1, ceil(fraction * total_steps))."""
         total_steps = sum(epoch_steps_list)
         bnn = self._build_bnn(kl_annealing_fraction=kl_annealing_fraction, num_steps=total_steps)
-        epoch_chunks = bnn._build_kl_annealing_factors(epoch_steps_list)
+        epoch_chunks = bnn.build_kl_annealing_factors(epoch_steps_list)
         # Assert the per-epoch split contract directly (see the inactive-schedule test)
         assert len(epoch_chunks) == len(epoch_steps_list)
         assert [len(chunk) for chunk in epoch_chunks] == epoch_steps_list
@@ -1638,7 +1533,6 @@ class TestKLAnnealing:
         with pytest.raises(ValueError, match="kl_annealing_fraction"):
             BayesianNeuralNetwork.cold_start(
                 n_features=n_features,
-                update_method="VI",
                 update_kwargs={"num_steps": num_steps, "kl_annealing_fraction": invalid_value},
             )
 
@@ -1650,102 +1544,23 @@ class TestKLAnnealing:
         """A NumPy real scalar in (0, 1] is a valid `kl_annealing_fraction` and must construct."""
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
-            update_method="VI",
             update_kwargs={"num_steps": 5, "kl_annealing_fraction": valid_numpy_fraction},
         )
         assert bnn is not None
 
-    @given(n_features=st.just(2), kl_annealing_fraction=st.just(0.5))
-    def test_mcmc_rejects_kl_annealing_fraction_as_vi_only_kwarg(
-        self, n_features: int, kl_annealing_fraction: float
-    ) -> None:
-        """`kl_annealing_fraction` is a VI-only kwarg; passing it under MCMC must error out because
-        `MCMCUpdateKwargs` forbids unknown fields (``extra="forbid"``). The rejection fires on the
-        kwarg's presence, not its value, so the inputs are pinned via st.just.
-        """
-        with pytest.raises(ValueError, match="kl_annealing_fraction"):
-            BayesianNeuralNetwork.cold_start(
-                n_features=n_features,
-                update_method="MCMC",
-                update_kwargs={"kl_annealing_fraction": kl_annealing_fraction},
-            )
-
 
 @given(
     n_features=st.just(2),
-    update_method=st.just("VI"),
     epochs=st.integers(min_value=1, max_value=100),
     num_steps=st.integers(min_value=1, max_value=100),
 )
-def test_epochs_and_num_steps_warns(n_features: int, update_method: UpdateMethods, epochs: int, num_steps: int) -> None:
+def test_epochs_and_num_steps_warns(n_features: int, epochs: int, num_steps: int) -> None:
     """Test that specifying both 'epochs' and 'num_steps' raises a UserWarning (epochs takes precedence)."""
     with pytest.warns(UserWarning, match="'epochs' takes precedence"):
         BayesianNeuralNetwork.cold_start(
             n_features=n_features,
-            update_method=update_method,
             update_kwargs={"epochs": epochs, "num_steps": num_steps},
         )
-
-
-@pytest.mark.parametrize("n_features", [1, 2])
-def test_bnn_mcmc_update(
-    rng,
-    n_features,
-    hidden_dim_list=(1,),
-    n_samples=3,
-    update_method="MCMC",
-    num_warmup=1,
-    mcmc_num_samples=2,
-    num_chains=1,
-):
-    hidden_dim_list = list(hidden_dim_list)
-    update_kwargs = {"num_warmup": num_warmup, "num_samples": mcmc_num_samples, "num_chains": num_chains}
-
-    def update(context: np.ndarray, rewards: list):
-        bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features,
-            hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
-            update_kwargs=update_kwargs,
-        )
-        dim_list = [n_features] + hidden_dim_list
-        for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight.params
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight.params
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias.params
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias.params
-            for param in ["mu", "sigma", "nu"]:
-                assert np.all(layer_w[param] == layer_w_init[param])
-                assert np.all(layer_b[param] == layer_b_init[param])
-
-        bnn.update(context=context, rewards=rewards)
-
-        for layer_ind in range(len(dim_list)):
-            layer_w = bnn.model_params.bnn_layer_params[layer_ind].weight
-            layer_w_init = bnn.model_params.bnn_layer_params_init[layer_ind].weight
-            layer_b = bnn.model_params.bnn_layer_params[layer_ind].bias
-            layer_b_init = bnn.model_params.bnn_layer_params_init[layer_ind].bias
-            for param in ["mu", "sigma"]:
-                assert np.all(layer_w.params[param] != layer_w_init.params[param])
-                assert np.all(layer_b.params[param] != layer_b_init.params[param])
-
-            for param in ["mu", "sigma", "nu"]:
-                assert layer_w.params[param].tolist() == getattr(layer_w, param)
-                assert layer_b.params[param].tolist() == getattr(layer_b, param)
-
-    rewards = _make_random_rewards(n_samples)
-    context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    update(context=context, rewards=rewards)
-
-    # raise an error if len(context) != len(rewards)
-    with pytest.raises(AttributeError):
-        bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features,
-            hidden_dim_list=hidden_dim_list,
-            update_method=update_method,
-            update_kwargs=update_kwargs,
-        )
-        bnn.update(context=context, rewards=rewards[1:])
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
@@ -1758,7 +1573,6 @@ def test_bnn_fullrank_advi_update(
         bnn = BayesianNeuralNetwork.cold_start(
             n_features=n_features,
             hidden_dim_list=hidden_dim_list,
-            update_method="VI",
             update_kwargs={"method": method, "num_steps": num_steps},
         )
         dim_list = [n_features] + hidden_dim_list
@@ -1801,17 +1615,15 @@ def test_bnn_fullrank_advi_update(
     n_features=st.integers(min_value=1, max_value=3),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(2),
-    update_method=st.just("VI"),
 )
 def test_bnn_svi_nan_loss_raises_error(
-    rng: np.random.Generator, n_features: int, hidden_dim_list: list[int], n_samples: int, update_method: UpdateMethods
+    rng: np.random.Generator, n_features: int, hidden_dim_list: list[int], n_samples: int
 ) -> None:
     """Test that a NaN loss during SVI training raises a ValueError immediately."""
 
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         hidden_dim_list=hidden_dim_list,
-        update_method=update_method,
     )
 
     # Patch np.mean to return NaN on the first epoch to simulate divergence.
@@ -2224,18 +2036,16 @@ def test_bayesian_neural_network_mo_sample_proba(
     n_features=st.integers(min_value=1, max_value=2),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(3),
-    update_method=st.just("VI"),
     n_objectives=st.integers(min_value=1, max_value=2),
     epochs=st.just(1),
 )
 def test_bayesian_neural_network_mo_update(
-    rng, activation, n_features, hidden_dim_list, n_samples, update_method, n_objectives, epochs
+    rng, activation, n_features, hidden_dim_list, n_samples, n_objectives, epochs
 ):
     models = [
         BayesianNeuralNetwork.cold_start(
             n_features,
             hidden_dim_list,
-            update_method=update_method,
             activation=activation,
             update_kwargs={"epochs": epochs},  # Use minimal iterations for faster tests
         )
@@ -2669,11 +2479,10 @@ def test_reset_restores_embedding_params(n_features, cardinality):
     cardinality=st.integers(min_value=2, max_value=6),
     hidden_dim_list=st.lists(st.integers(min_value=1, max_value=2), min_size=0, max_size=1),
     n_samples=st.just(2),
-    update_method=st.just("VI"),
     epochs=st.just(1),
 )
 def test_bnn_vi_update_with_categorical_features_updates_embeddings(
-    dist_type, n_features, cardinality, hidden_dim_list, n_samples, update_method, epochs
+    dist_type, n_features, cardinality, hidden_dim_list, n_samples, epochs
 ):
     cat_col = n_features - 1
     categorical_features = {cat_col: cardinality}
@@ -2682,7 +2491,6 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
         categorical_features=categorical_features,
         hidden_dim_list=hidden_dim_list,
         dist_type=dist_type,
-        update_method=update_method,
         update_kwargs={"epochs": epochs},
     )
     context = _make_categorical_context(n_samples, n_features, categorical_features)
@@ -2700,16 +2508,15 @@ def test_bnn_vi_update_with_categorical_features_updates_embeddings(
 
 
 @pytest.mark.parametrize(
-    "update_method, update_kwargs",
-    [("VI", {"num_steps": 2}), ("MCMC", {"num_warmup": 2, "num_samples": 2})],
+    "update_kwargs",
+    [{"num_steps": 2}],
 )
 def test_bnn_sample_proba_and_update_both_use_forward_layers(
-    rng, update_method: str, update_kwargs: dict, n_features: int = 1, n_samples: int = 1, ref: int = 1
+    rng, update_kwargs: dict, n_features: int = 1, n_samples: int = 1, ref: int = 1
 ) -> None:
     """Verify that both sample_proba and update call _forward_layers."""
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
-        update_method=update_method,
         update_kwargs=update_kwargs,
     )
     context = rng.random((n_samples, n_features)).astype(np.float32)
@@ -2766,7 +2573,7 @@ def test_advi_extracted_params_match_predictive_moments(
     n_predictive_samples,
     n_sigma_tolerance,
 ):
-    """Stored (mu, sigma) from _extract_advi_params must match guide posterior sample moments.
+    """Stored (mu, sigma) from extract_advi_params must match guide posterior sample moments.
 
     AutoNormal draws each site from Normal(loc, scale), so posterior predictive
     sample mean/std must recover the extracted loc/scale up to sampling noise.
@@ -2779,7 +2586,6 @@ def test_advi_extracted_params_match_predictive_moments(
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         hidden_dim_list=hidden_dim_list,
-        update_method="VI",
         update_kwargs={"epochs": epochs, "method": "advi"},
         dist_type=dist_type,
         dist_params_init=dist_params_init,
@@ -2788,7 +2594,7 @@ def test_advi_extracted_params_match_predictive_moments(
     x_jnp = jnp.array(context)
     y_jnp = jnp.array(rewards, dtype=jnp.int32)
     _, guide, params = bnn._run_svi_training_loop(x_jnp, y_jnp, n_samples)
-    site_mu, site_sigma = bnn._extract_advi_params(params)
+    site_mu, site_sigma = bnn.extract_advi_params(params)
 
     samples = Predictive(guide, params=params, num_samples=n_predictive_samples)(jax.random.PRNGKey(0), x_jnp, y_jnp)
 
@@ -2832,7 +2638,6 @@ def test_advi_zero_lr_posterior_equals_prior(
     bnn = BayesianNeuralNetwork.cold_start(
         n_features=n_features,
         hidden_dim_list=hidden_dim_list,
-        update_method="VI",
         update_kwargs={
             "num_steps": num_steps,
             "method": "advi",

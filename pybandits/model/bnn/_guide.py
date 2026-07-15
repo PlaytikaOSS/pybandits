@@ -209,7 +209,7 @@ def _wrap_guide_with_kl_scale(guide: Callable) -> Callable:
     so that ``log q(z)`` is scaled by the same factor the model applies to ``log p(z)``.
     Without this, ``handlers.scale`` on the model alone would scale ``log p(z)`` but leave
     ``log q(z)`` untouched, so the per-site KL contribution (``log p - log q``) would not
-    scale uniformly. The wrapper extracts the factor from the SVI call signature (the third
+    scale uniformly. The wrapper extracts the factor from the SVI call signature (the final
     positional argument, or the ``kl_annealing_factor`` keyword), defaulting to ``1.0``.
 
     Exposed at module level so tests can exercise the exact production wrapper.
@@ -227,7 +227,9 @@ def _wrap_guide_with_kl_scale(guide: Callable) -> Callable:
     """
 
     def scaled_guide(*args: Any, **kwargs: Any):
-        kl_annealing_factor = args[2] if len(args) > 2 else kwargs.get("kl_annealing_factor", 1.0)
+        # run_svi appends the KL-annealing factor as the final positional argument on every call
+        # (svi.init/update: ``*model_args, factor``), regardless of how many model args precede it.
+        kl_annealing_factor = args[-1] if args else kwargs.get("kl_annealing_factor", 1.0)
         with numpyro.handlers.scale(scale=kl_annealing_factor):
             return guide(*args, **kwargs)
 

@@ -23,13 +23,11 @@
 """Tests for transfer learning functionality."""
 
 import json
-import logging
 import math
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pytest
-from _pytest.logging import LogCaptureFixture
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from pytest import MonkeyPatch
@@ -62,10 +60,8 @@ _BNN_STRUCTURAL_KEY_VALUES: Dict[str, Tuple[Any, Any]] = {
     "use_residual_connections": (False, True),
 }
 
-# Contrasting value pairs for each extendable key.
-_BNN_EXTENDABLE_KEY_VALUES: Dict[str, Tuple[Any, Any]] = {
-    "update_method": ("VI", "MCMC"),
-}
+# Contrasting value pairs for each extendable key (currently none — the BNN is VI-only).
+_BNN_EXTENDABLE_KEY_VALUES: Dict[str, Tuple[Any, Any]] = {}
 
 # Guard: these dicts must stay in sync with the actual ClassVar declarations.
 assert set(_BNN_STRUCTURAL_KEY_VALUES) == set(BaseBayesianNeuralNetwork.transfer_structural_keys), (
@@ -129,12 +125,8 @@ class TestMergeMABs:
         # Ensure no overlap
         action_ids2 = {f"b_{aid}" for aid in action_ids2}
 
-        mab1 = CmabBernoulli.cold_start(
-            action_ids=action_ids1, n_features=n_features, strategy=ClassicBandit(), update_method="VI"
-        )
-        mab2 = CmabBernoulli.cold_start(
-            action_ids=action_ids2, n_features=n_features, strategy=ClassicBandit(), update_method="VI"
-        )
+        mab1 = CmabBernoulli.cold_start(action_ids=action_ids1, n_features=n_features, strategy=ClassicBandit())
+        mab2 = CmabBernoulli.cold_start(action_ids=action_ids2, n_features=n_features, strategy=ClassicBandit())
 
         merged = _merge_mabs(mab1, mab2)
 
@@ -522,7 +514,7 @@ class TestIntegration:
         monkeymodule: MonkeyPatch,
     ) -> None:
         """Test using transfer learning for hyperparameter tuning."""
-        # Mock the VI/MCMC fitting
+        # Mock the VI fitting
         monkeymodule.setattr(
             pybandits.model.BaseBayesianNeuralNetwork,
             "_update",
@@ -604,24 +596,7 @@ class TestModelCompatibilityValidation:
         with pytest.raises(ValueError, match=key):
             edit_model_on_the_fly(current, template)
 
-    @pytest.mark.parametrize(
-        "key,val1,val2",
-        [(k, v[0], v[1]) for k, v in _BNN_EXTENDABLE_KEY_VALUES.items()],
-    )
-    def test_transfer_extendable_key_change_warns(
-        self, key: str, val1: Any, val2: Any, caplog: LogCaptureFixture
-    ) -> None:
-        """Test that changing an extendable key emits a warning but succeeds (parametrized over transfer_extendable_keys)."""
-        caplog.set_level(logging.WARNING)
-        current = CmabBernoulli.cold_start(
-            action_ids={_ACTION_ID}, n_features=_N_FEATURES, **{key: val1}, strategy=ClassicBandit()
-        )
-        template = CmabBernoulli.cold_start(
-            action_ids={_ACTION_ID}, n_features=_N_FEATURES, **{key: val2}, strategy=ClassicBandit()
-        )
-        result = edit_model_on_the_fly(current, template)
-        assert result is not None
-        assert getattr(result.actions[_ACTION_ID], key) == val2
+    # No extendable keys remain (the BNN is VI-only), so there is no extendable-key-change case to test.
 
     def test_transfer_dist_type_change_allowed(self) -> None:
         """Test that changing distribution type (StudentT vs Normal) is allowed."""
@@ -1100,7 +1075,7 @@ class TestCategoricalFeatureExpansion:
         )
         result = edit_model_on_the_fly(current, template)
         result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
-        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
         assert result_emb.shape == (new_cardinality, expected_dim)
 
     @given(scenario=_compatible_grow_scenario(), n_objectives=n_objectives_strategy)
@@ -1124,7 +1099,7 @@ class TestCategoricalFeatureExpansion:
             strategy=MultiObjectiveBandit(),
         )
         result = edit_model_on_the_fly(current, template)
-        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
         for obj_model in result.actions[action_id].models:
             result_emb = obj_model.model_params.embedding_params.embeddings[0]
             assert result_emb.shape == (new_cardinality, expected_dim)
@@ -1282,7 +1257,7 @@ class TestCategoricalFeatureExpansion:
         )
         result = edit_model_on_the_fly(current, template)
         result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
-        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
         assert result_emb.shape == (new_cat_cardinality, expected_dim)
 
     @given(
@@ -1312,7 +1287,7 @@ class TestCategoricalFeatureExpansion:
         assert result.actions[action_id].input_dim == new_n_features
         assert result.actions[action_id].model_params.embedding_params is not None
         result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
-        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork._embedding_dim_divisor)
+        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
         assert result_emb.shape == (new_cat_cardinality, expected_dim)
 
     # ------------------------------------------------------------------

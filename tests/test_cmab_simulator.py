@@ -201,10 +201,8 @@ def test_cmab_simulator_with_explicit_probs_reward(
     models=st.lists(
         st.sampled_from(
             [
-                BayesianNeuralNetwork.cold_start(n_features=2, update_method="VI"),
-                QuantitativeBayesianNeuralNetwork.cold_start(
-                    n_features=2, base_model_cold_start_kwargs={"update_method": "VI"}
-                ),
+                BayesianNeuralNetwork.cold_start(n_features=2),
+                QuantitativeBayesianNeuralNetwork.cold_start(n_features=2, base_model_cold_start_kwargs={}),
             ]
         ),
         min_size=2,
@@ -266,10 +264,8 @@ def mock_mab_update(self, actions, rewards, quantities=None, **kwargs):
     st.lists(
         st.sampled_from(
             [
-                BayesianNeuralNetwork.cold_start(n_features=2, update_method="VI"),
-                QuantitativeBayesianNeuralNetwork.cold_start(
-                    n_features=2, base_model_cold_start_kwargs={"update_method": "VI"}
-                ),
+                BayesianNeuralNetwork.cold_start(n_features=2),
+                QuantitativeBayesianNeuralNetwork.cold_start(n_features=2, base_model_cold_start_kwargs={}),
             ]
         ),
         min_size=2,
@@ -321,10 +317,8 @@ def test_cmab_e2e_simulation_with_default_arguments(monkeymodule, rng, action_id
     models=st.lists(
         st.sampled_from(
             [
-                BayesianNeuralNetwork.cold_start(n_features=3, update_method="VI"),
-                QuantitativeBayesianNeuralNetwork.cold_start(
-                    n_features=3, base_model_cold_start_kwargs={"update_method": "VI"}
-                ),
+                BayesianNeuralNetwork.cold_start(n_features=3),
+                QuantitativeBayesianNeuralNetwork.cold_start(n_features=3, base_model_cold_start_kwargs={}),
             ]
         ),
         min_size=2,

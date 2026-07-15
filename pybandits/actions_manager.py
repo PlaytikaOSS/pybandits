@@ -59,9 +59,9 @@ from pybandits.base import (
 from pybandits.base_model import BaseModel, BaseModelMO, BaseModelSO
 from pybandits.meta_model import (
     BaseMetaModel,
-    CmabPerActionMetaModel,
-    PerActionMetaModel,
+    CmabMetaModel,
     SampleProbaResult,
+    SmabMetaModel,
 )
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
@@ -142,14 +142,11 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     @classmethod
     def _get_meta_model_cls(cls) -> Type[BaseMetaModel]:
         """Return the concrete meta-model class from the manager's ``meta_model`` field annotation."""
-        meta_model_field = cls.model_fields.get("meta_model")
-        if meta_model_field is not None and meta_model_field.annotation is not None:
-            annotation = meta_model_field.annotation
-            type_args = get_args(annotation)
-            if type_args and not isinstance(type_args[0], TypeVar):
-                return annotation  # type: ignore[return-value]
-            return get_origin(annotation) or annotation  # type: ignore[return-value]
-        return PerActionMetaModel
+        annotation = cls.model_fields["meta_model"].annotation
+        type_args = get_args(annotation)
+        if type_args and not isinstance(type_args[0], TypeVar):
+            return annotation  # type: ignore[return-value]
+        return get_origin(annotation) or annotation  # type: ignore[return-value]
 
     @classmethod
     def _get_expected_memory_length(cls, actions: Dict[ActionId, BaseModel]) -> NonNegativeInt:
@@ -237,7 +234,9 @@ class ActionsManager(PyBanditsBaseModel, ABC):
                 q is not None for a, q in zip(actions, quantities) if isinstance(self.actions[a], QuantitativeModel)
             ):
                 raise ValueError("Quantitative actions require defined quantities.")
-            if not all(q is None for a, q in zip(actions, quantities) if isinstance(self.actions[a], (Model, ModelMO))):
+            if not all(
+                q is None for a, q in zip(actions, quantities) if not isinstance(self.actions[a], QuantitativeModel)
+            ):
                 raise ValueError("regular actions should not have defined quantities.")
 
     @classmethod
@@ -257,7 +256,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         """Sample per-action probabilities/scores for the bandit's predict path.
 
         Delegates to ``self.meta_model.sample_proba``. With the default
-        ``PerActionMetaModel`` this is a per-action dispatch loop; alternative
+        ``SmabMetaModel`` this is a per-action dispatch loop; alternative
         meta-models (e.g. a shared backbone) may evaluate all actions jointly.
 
         Parameters
@@ -729,14 +728,14 @@ class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
 
     Parameters
     ----------
-    meta_model : PerActionMetaModel[SmabModelType]
+    meta_model : SmabMetaModel[SmabModelType]
         The meta-model owning per-action state. Constructed automatically from an ``actions`` dict
         when the manager is instantiated via the ``actions=`` kwarg.
     delta : Optional[PositiveProbability]
         The confidence level for the adaptive window. ``None`` disables change-point detection.
     """
 
-    meta_model: PerActionMetaModel[SmabModelType]  # type: ignore[valid-type]
+    meta_model: SmabMetaModel[SmabModelType]  # type: ignore[valid-type]
 
     @model_validator(mode="after")
     def all_actions_have_same_number_of_objectives(self) -> "SmabActionsManager":
@@ -809,15 +808,25 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
 
     Parameters
     ----------
-    meta_model : CmabPerActionMetaModel[CmabModelType]
-        The cmab-specific meta-model owning per-action state and the cross-action consistency
-        validator (input dim / update method / update kwargs). Constructed automatically from an
-        ``actions`` dict when the manager is instantiated via the ``actions=`` kwarg.
+    meta_model : CmabMetaModel[CmabModelType]
+        The unified cmab meta-model: per-arm BNN heads with an optional shared backbone, trained by
+        a single joint VI pass. Constructed automatically from an ``actions`` dict / ``action_ids``
+        via the ``actions=`` / ``action_ids=`` kwargs (``_get_meta_model_cls`` resolves the
+        parameterized class from this field annotation); a shared backbone is requested by passing
+        ``backbone_hidden_dims`` (etc.) through ``cold_start``.
     delta : Optional[PositiveProbability]
         The confidence level for the adaptive window. ``None`` disables change-point detection.
+        Not supported together with a shared backbone.
     """
 
-    meta_model: CmabPerActionMetaModel[CmabModelType]  # type: ignore[valid-type]
+    meta_model: CmabMetaModel[CmabModelType]  # type: ignore[valid-type]
+
+    @model_validator(mode="after")
+    def _check_backbone_delta(self) -> "CmabActionsManager":
+        """The shared-backbone path does not support the adaptive window yet."""
+        if self.delta is not None and self.meta_model.backbone is not None:
+            raise ValueError("The shared-backbone path does not support the adaptive window (delta) yet.")
+        return self
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(
@@ -900,7 +909,7 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
         Update the models associated with the given actions using the provided rewards.
 
         Delegates to ``self.meta_model.update``. With the default
-        ``PerActionMetaModel`` this preserves the historical per-action
+        ``SmabMetaModel`` this preserves the historical per-action
         loop; alternative meta-models (introduced in follow-up PRs) may
         run a joint update across actions instead.
 

@@ -439,6 +439,11 @@ def test_update(
     memory_len,
     rng: np.random.Generator,
 ):
+    # rng is a session-scoped fixture shared across every Hypothesis example in this run; reseeding
+    # here makes each example's random draws depend only on this call, not on how many draws prior
+    # examples (or other tests) already consumed — otherwise Hypothesis's shrink/confirm replay can
+    # see different random data for the "same" example and flag a spurious FlakyFailure.
+    rng = np.random.default_rng(seed=42)
     # Create SMAB instance
     smab, _, kwargs = config.create_smab_and_actions(
         action_ids, epsilon, delta, values, n_objectives, exploit_p, subsidy_factor, rng

@@ -287,7 +287,7 @@ class EarlyStopping(PyBanditsBaseModel):
 class VIUpdateKwargs(PyBanditsBaseModel):
     """Validated keyword arguments for a Variational Inference (VI) BNN update.
 
-    Replaces the previously untyped ``update_kwargs`` dict for ``update_method="VI"``.
+    Replaces the previously untyped ``update_kwargs`` dict (the BNN is VI-only).
     Constrained fields validate the values that used to be checked by hand; the nested
     ``optimizer_kwargs``, ``lr_scheduler_kwargs`` and ``early_stopping_kwargs`` dicts are
     intentionally left as open dicts because they are passed through verbatim to optax /
@@ -352,32 +352,3 @@ class VIUpdateKwargs(PyBanditsBaseModel):
                 stacklevel=2,
             )
         return data
-
-
-class MCMCUpdateKwargs(PyBanditsBaseModel):
-    """Validated keyword arguments for an MCMC (NUTS) BNN update.
-
-    Replaces the previously untyped ``update_kwargs`` dict for ``update_method="MCMC"``.
-    ``extra="forbid"`` (inherited from ``PyBanditsBaseModel``) rejects unknown keys, which
-    is what enforces that VI-only parameters cannot be passed under MCMC. The nested
-    ``nuts`` dict is forwarded verbatim to ``numpyro.infer.NUTS``.
-
-    Parameters
-    ----------
-    num_warmup : NonNegativeInt
-        Number of warmup (burn-in) steps. Default 500.
-    num_samples : PositiveInt
-        Number of posterior samples to draw. Default 1000.
-    num_chains : PositiveInt
-        Number of MCMC chains. Default 2.
-    progress_bar : bool
-        Whether to display the sampling progress bar. Default False.
-    nuts : dict
-        Keyword arguments forwarded to ``numpyro.infer.NUTS`` (e.g. ``target_accept_prob``).
-    """
-
-    num_warmup: NonNegativeInt = 500
-    num_samples: PositiveInt = 1000
-    num_chains: PositiveInt = 2
-    progress_bar: bool = False
-    nuts: dict = Field(default_factory=lambda: {"target_accept_prob": 0.95})

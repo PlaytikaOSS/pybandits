@@ -38,7 +38,7 @@ from pybandits.actions_manager import (
     SmabActionsManager,
 )
 from pybandits.base import ActionId, BinaryReward
-from pybandits.meta_model import BaseMetaModel, PerActionMetaModel
+from pybandits.meta_model import BaseMetaModel, CmabMetaModel, SmabMetaModel
 from pybandits.model import BayesianNeuralNetwork, Beta, BetaMO
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, Zooming
 from tests.utils import make_action_ids, make_binary_rewards, make_context_matrix, mock_update
@@ -47,7 +47,7 @@ REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
-    meta_model: PerActionMetaModel[Union[Beta, BetaMO, Zooming]]
+    meta_model: SmabMetaModel[Union[Beta, BetaMO, Zooming]]
 
     def _update_actions(
         self,
@@ -962,6 +962,9 @@ def manager_factory(request):
         return actions, SmabActionsManager[Beta](actions=actions), None
 
     build.kind = kind  # exposed so tests can branch on context-vs-no-context cleanly
+    # The two managers use different meta-model implementations (smab → SmabMetaModel,
+    # cmab → CmabMetaModel); tests assert on / patch the right one via this attribute.
+    build.meta_model_cls = CmabMetaModel if kind == "cmab" else SmabMetaModel
     return build
 
 
@@ -971,7 +974,7 @@ def test_manager_meta_model_wiring(manager_factory, n_actions, n_features):
     """meta_model is owned by the manager; `actions` reads through to it without copying."""
     actions, manager, _ = manager_factory(n_actions=n_actions, n_features=n_features)
     assert isinstance(manager.meta_model, BaseMetaModel)
-    assert isinstance(manager.meta_model, PerActionMetaModel)
+    assert isinstance(manager.meta_model, manager_factory.meta_model_cls)
     # meta_model is a regular Pydantic field; repeated reads return the same instance.
     assert manager.meta_model is manager.meta_model
     assert set(manager.meta_model.action_ids) == set(manager.actions.keys())
@@ -986,7 +989,7 @@ def test_manager_update_delegates_to_meta_model(monkeypatch, rng, manager_factor
     _, manager, ctx_builder = manager_factory(n_actions=n_actions, n_features=n_features)
     action_ids = list(manager.actions.keys())
     captured: List[Dict[str, Any]] = []
-    monkeypatch.setattr(PerActionMetaModel, "update", lambda self, **kw: captured.append(kw), raising=True)
+    monkeypatch.setattr(manager_factory.meta_model_cls, "update", lambda self, **kw: captured.append(kw), raising=True)
 
     sampled_actions = [action_ids[i % len(action_ids)] for i in range(batch_size)]
     rewards = make_binary_rewards(batch_size, rate=0.5, rng=rng)
@@ -1019,7 +1022,7 @@ def test_manager_sample_proba_delegates_to_meta_model(
         captured.update(rng=rng, valid_action_ids=valid_action_ids, kwargs=kwargs)
         return {a: [0.5] for a in (valid_action_ids or self.actions.keys())}
 
-    monkeypatch.setattr(PerActionMetaModel, "sample_proba", spy, raising=True)
+    monkeypatch.setattr(manager_factory.meta_model_cls, "sample_proba", spy, raising=True)
 
     if ctx_builder is not None:
         ctx = ctx_builder(1, rng)

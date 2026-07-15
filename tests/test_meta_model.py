@@ -25,7 +25,6 @@
 import pickle
 from typing import Any, Dict, List
 
-import numpy as np
 import pytest
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
@@ -34,9 +33,9 @@ import pybandits.model as model_mod
 from pybandits.base import ACTION_IDS_PREFIX, QUANTITATIVE_ACTION_IDS_PREFIX
 from pybandits.meta_model import (
     BaseMetaModel,
-    PerActionMetaModel,
-    PerActionMetaModelSmabMO,
-    PerActionMetaModelSmabSO,
+    SmabMetaModel,
+    SmabMetaModelMO,
+    SmabMetaModelSO,
 )
 from pybandits.model import Beta, BetaCC, BetaMO
 from pybandits.utils import classproperty
@@ -62,10 +61,10 @@ def make_beta_actions():
 
 @pytest.fixture
 def make_beta_meta(make_beta_actions):
-    """Factory returning a fresh ``PerActionMetaModel`` over N Beta actions."""
+    """Factory returning a fresh ``SmabMetaModel`` over N Beta actions."""
 
     def _make(n: int = 2, factory=Beta):
-        return PerActionMetaModel(actions=make_beta_actions(n, factory))
+        return SmabMetaModel(actions=make_beta_actions(n, factory))
 
     return _make
 
@@ -79,7 +78,7 @@ def spy_beta_update(monkeypatch) -> List[Dict[str, Any]]:
 
 
 ########################################################################################################################
-# PerActionMetaModel — core behaviour
+# SmabMetaModel — core behaviour
 
 
 def test_base_meta_model_is_abstract():
@@ -93,7 +92,7 @@ def test_independent_actions_meta_model_construction(make_beta_meta, n):
     meta = make_beta_meta(n)
     assert isinstance(meta, BaseMetaModel)
     # Typed alias must also construct.
-    PerActionMetaModelSmabSO(actions=meta.actions.copy())
+    SmabMetaModelSO(actions=meta.actions.copy())
 
 
 @pytest.mark.parametrize("n", [2, 4, 8])
@@ -111,7 +110,7 @@ def test_actions_field_preserves_model_instances(make_beta_actions, n):
     ``actions`` property as the meta-model holds internally.
     """
     actions = make_beta_actions(n)
-    meta = PerActionMetaModel(actions=actions)
+    meta = SmabMetaModel(actions=actions)
     for a, beta in actions.items():
         assert meta.actions[a] is beta
 
@@ -171,7 +170,7 @@ def test_update_with_only_some_actions_in_batch_leaves_others_untouched(make_bet
     actions = make_beta_actions(n_actions)
     targeted = next(iter(actions))
     others_before = {a: (m.n_successes, m.n_failures) for a, m in actions.items() if a != targeted}
-    meta = PerActionMetaModel(actions=actions)
+    meta = SmabMetaModel(actions=actions)
 
     meta.update(actions=[targeted] * batch_size, rewards=[1] * batch_size)
 
@@ -204,72 +203,36 @@ def test_update_with_quantities_only_passes_quantities_when_any_present(
         assert "quantities" not in spy_beta_update[0]
 
 
-@pytest.mark.parametrize("n_actions", [2, 4])
-@pytest.mark.parametrize("context_extra_rows", [0, 1, 5])
-@pytest.mark.parametrize("n_features", [1, 3, 8])
-def test_update_context_oversize_is_sliced_to_actions(
-    make_beta_meta, spy_beta_update, n_actions, context_extra_rows, n_features
-):
-    """Oversized context (memory prefix scenario): trailing ``len(actions)`` rows are used per action."""
-    meta = make_beta_meta(n_actions)
-    action_list = list(meta.action_ids)  # one row per action
-    context = np.arange((len(action_list) + context_extra_rows) * n_features, dtype=float).reshape(-1, n_features)
-    meta.update(actions=action_list, rewards=[1] * len(action_list), context=context)
-    # Each per-action update should see exactly its own row (1 row, n_features cols).
-    assert all(call["context"].shape == (1, n_features) for call in spy_beta_update)
-
-
-@pytest.mark.parametrize("n_actions, n_features", [(2, 3), (3, 5), (5, 1)])
-def test_update_context_length_guard_rejects_short_context(make_beta_meta, n_actions, n_features):
-    meta = make_beta_meta(n_actions)
-    action_list = list(meta.action_ids)
-    with pytest.raises(ValueError, match="context"):
-        meta.update(
-            actions=action_list,
-            rewards=[1] * n_actions,
-            context=np.zeros((len(action_list) - 1, n_features)),
-        )
-
-
-@pytest.mark.parametrize("n_actions", [2, 4])
-def test_update_quantities_length_guard(make_beta_meta, n_actions):
-    """update() rejects quantities shorter than actions."""
-    meta = make_beta_meta(n_actions)
-    action_list = list(meta.action_ids)
-    with pytest.raises(ValueError, match="quantities"):
-        meta.update(actions=action_list, rewards=[1] * n_actions, quantities=[1.0] * (n_actions - 1))
-
-
 @pytest.mark.parametrize("costs", [(1.0, 2.0), (0.1, 5.0, 10.0)])
 def test_independent_actions_meta_model_accepts_cc_models(costs):
     """Cost-controlled models (BetaCC) satisfy the BaseModel constraint."""
     actions = {a: BetaCC(cost=c) for a, c in zip(make_action_ids(len(costs)), costs)}
-    meta = PerActionMetaModel(actions=actions)
+    meta = SmabMetaModel(actions=actions)
     for action_id, expected_cost in zip(meta.action_ids, costs):
         assert meta.actions[action_id].cost == expected_cost
 
 
 def test_per_action_meta_model_rejects_empty_actions():
     with pytest.raises(AttributeError, match="At least one action"):
-        PerActionMetaModel[Beta](actions={})
+        SmabMetaModel[Beta](actions={})
 
 
 def test_per_action_meta_model_warns_on_single_action(make_beta_actions):
     with pytest.warns(UserWarning, match="deterministic"):
-        PerActionMetaModel[Beta](actions=make_beta_actions(1))
+        SmabMetaModel[Beta](actions=make_beta_actions(1))
 
 
 def test_per_action_meta_model_rejects_wrong_action_type():
-    """PerActionMetaModel[Beta] rejects BetaMO instances (wrong concrete type)."""
+    """SmabMetaModel[Beta] rejects BetaMO instances (wrong concrete type)."""
     with pytest.raises((ValidationError, TypeError)):
-        PerActionMetaModel[Beta](actions={"a0": Beta(), "a1": BetaMO()})
+        SmabMetaModel[Beta](actions={"a0": Beta(), "a1": BetaMO()})
 
 
 @pytest.mark.parametrize(
     "alias, factory",
     [
-        (PerActionMetaModelSmabSO, lambda: Beta()),
-        (PerActionMetaModelSmabMO, lambda: BetaMO(models=[Beta(), Beta()])),
+        (SmabMetaModelSO, lambda: Beta()),
+        (SmabMetaModelMO, lambda: BetaMO(models=[Beta(), Beta()])),
     ],
     ids=["smab-SO", "smab-MO"],
 )
@@ -283,7 +246,7 @@ def test_pickle_roundtrip_meta_model_aliases(alias, factory, n_actions):
 
 
 ########################################################################################################################
-# PerActionMetaModel._extract_action_specific_kwargs
+# SmabMetaModel._extract_action_specific_kwargs
 
 
 @pytest.mark.parametrize(
@@ -318,7 +281,7 @@ def test_pickle_roundtrip_meta_model_aliases(alias, factory, n_actions):
     ],
 )
 def test_extract_action_specific_kwargs(kwargs, expected_action, expected_quant, expected_remaining):
-    action, quant = PerActionMetaModel._extract_action_specific_kwargs(kwargs)
+    action, quant = SmabMetaModel._extract_action_specific_kwargs(kwargs)
     assert action == expected_action
     assert quant == expected_quant
     assert kwargs == expected_remaining
@@ -343,7 +306,7 @@ class _MockActionModel:
         pass
 
 
-class _MockMetaModel(PerActionMetaModel):
+class _MockMetaModel(SmabMetaModel):
     """Concrete subclass that exposes ``_MockActionModel`` as the only action-model class.
 
     Avoids patching the ``_action_model_classes`` classproperty (which now raises on
@@ -378,8 +341,8 @@ def test_extract_action_model_class_and_attributes(
     mocker: MockerFixture, issubclass_side_effect, expected_branch, kwargs, arg_names
 ):
     """The extractor routes kwargs into the regular or quantitative bucket based on ``issubclass``."""
-    mocker.patch("pybandits.meta_model.extract_argument_names_from_function", return_value=arg_names)
-    mocker.patch("pybandits.meta_model.issubclass", **issubclass_side_effect)
+    mocker.patch("pybandits.meta_model.base.extract_argument_names_from_function", return_value=arg_names)
+    mocker.patch("pybandits.meta_model.base.issubclass", **issubclass_side_effect)
 
     kwargs_copy = kwargs.copy()
     (_, _, action_general_kwargs, quantitative_action_general_kwargs) = (
@@ -400,7 +363,7 @@ def test_extract_action_model_class_and_attributes(
 
 def test_extract_action_model_class_and_attributes_raises_without_subclass_match(mocker: MockerFixture):
     """When ``_MockActionModel`` matches neither Model/ModelMO nor QuantitativeModel, the extractor raises."""
-    mocker.patch("pybandits.meta_model.extract_argument_names_from_function", return_value=["param1", "param2"])
+    mocker.patch("pybandits.meta_model.base.extract_argument_names_from_function", return_value=["param1", "param2"])
     with pytest.raises(TypeError):
         _MockMetaModel._extract_action_model_class_and_attributes({"param1": 1, "param2": 2})
 
@@ -408,4 +371,4 @@ def test_extract_action_model_class_and_attributes_raises_without_subclass_match
 def test_action_model_classes_raises_on_unparameterised_meta_model():
     """The classproperty refuses to return a fallback on unparameterised subclasses."""
     with pytest.raises(TypeError, match="parameterise"):
-        _ = PerActionMetaModel._action_model_classes
+        _ = SmabMetaModel._action_model_classes
