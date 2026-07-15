@@ -89,6 +89,7 @@
  | <a href="#G"><strong>G</strong></a>
  | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
+ | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
  | <a href="#O"><strong>O</strong></a>
@@ -200,10 +201,10 @@
 </li>
       <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkCC">BayesianNeuralNetworkCC (class in pybandits.model)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkDP">BayesianNeuralNetworkDP (class in pybandits.model)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkMO">BayesianNeuralNetworkMO (class in pybandits.model)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BayesianNeuralNetworkMOCC">BayesianNeuralNetworkMOCC (class in pybandits.model)</a>
@@ -237,6 +238,10 @@
       <li><a href="fullapi.html#pybandits.model.BnnParams">BnnParams (class in pybandits.model)</a>
 </li>
       <li><a href="fullapi.html#pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator.bootstrap_batch_size">bootstrap_batch_size (pybandits.offline_policy_estimator.BaseOfflinePolicyEstimator attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.build_guide_init_fns">build_guide_init_fns() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.build_kl_annealing_factors">build_kl_annealing_factors() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -278,10 +283,10 @@
 </li>
       <li><a href="fullapi.html#pybandits.cmab.CmabBernoulliDP">CmabBernoulliDP (class in pybandits.cmab)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.cmab.CmabBernoulliMO">CmabBernoulliMO (class in pybandits.cmab)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="fullapi.html#pybandits.cmab.CmabBernoulliMOCC">CmabBernoulliMOCC (class in pybandits.cmab)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">CmabSimulator (class in pybandits.cmab_simulator)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator">[1]</a>
@@ -302,9 +307,13 @@
         <li><a href="fullapi.html#pybandits.quantitative_model.BaseZooming.cold_start">(pybandits.quantitative_model.BaseZooming class method)</a>
 </li>
       </ul></li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.collect_guide_init_arrays">collect_guide_init_arrays() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.model.CategoricalFeatureConfig.column_index">column_index (pybandits.model.CategoricalFeatureConfig attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.BaseZooming.comparison_threshold">comparison_threshold (pybandits.quantitative_model.BaseZooming attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.compute_epoch_steps">compute_epoch_steps() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">context (pybandits.cmab_simulator.CmabSimulator attribute)</a>, <a href="fullapi.html#pybandits.cmab_simulator.CmabSimulator.context">[1]</a>
 </li>
@@ -382,6 +391,8 @@
 </li>
       <li><a href="fullapi.html#pybandits.model.EmbeddingParams.embeddings_init">embeddings_init (pybandits.model.EmbeddingParams attribute)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.emit_submodel">emit_submodel() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
       <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModelCC.encode_cost">encode_cost() (pybandits.quantitative_model.QuantitativeModelCC method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.QuantitativeModelDP.encode_price">encode_price() (pybandits.quantitative_model.QuantitativeModelDP method)</a>
@@ -409,6 +420,8 @@
 </li>
       </ul></li>
       <li><a href="fullapi.html#pybandits.strategy.BestActionIdentificationBandit.exploit_p">exploit_p (pybandits.strategy.BestActionIdentificationBandit attribute)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.extract_advi_params">extract_advi_params() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.extract_sample">extract_sample() (pybandits.model.BaseBayesianNeuralNetwork static method)</a>
 </li>
@@ -501,6 +514,14 @@
       <li><a href="fullapi.html#pybandits.quantitative_model.Segment.is_adjacent">is_adjacent() (pybandits.quantitative_model.Segment method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.quantitative_model.BaseZooming.is_similar_performance">is_similar_performance() (pybandits.quantitative_model.BaseZooming method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="L">L</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.layer_params_from_posterior">layer_params_from_posterior() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -1050,6 +1071,8 @@
 </li>
       <li><a href="fullapi.html#pybandits.model.EarlyStopping.reset">reset() (pybandits.model.EarlyStopping method)</a>
 </li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.resolved_update_kwargs">resolved_update_kwargs (pybandits.model.BaseBayesianNeuralNetwork property)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -1059,6 +1082,8 @@
       <li><a href="fullapi.html#pybandits.model.BaseLocationScaleArray.sample_at_indices">sample_at_indices() (pybandits.model.BaseLocationScaleArray method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.sample_embeddings">sample_embeddings() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
+</li>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.sample_head_sites">sample_head_sites() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
       <li><a href="fullapi.html#pybandits.actions_manager.ActionsManager.sample_proba">sample_proba() (pybandits.actions_manager.ActionsManager method)</a>
 
@@ -1346,9 +1371,9 @@
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.update_kwargs">update_kwargs (pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.update_embedding_params_from_vi">update_embedding_params_from_vi() (pybandits.model.BaseBayesianNeuralNetwork method)</a>
 </li>
-      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.update_method">update_method (pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
+      <li><a href="fullapi.html#pybandits.model.BaseBayesianNeuralNetwork.update_kwargs">update_kwargs (pybandits.model.BaseBayesianNeuralNetwork attribute)</a>
 </li>
       <li><a href="fullapi.html#pybandits.cmab.BaseCmabBernoulli.update_old_state">update_old_state() (pybandits.cmab.BaseCmabBernoulli class method)</a>
 </li>

@@ -217,7 +217,6 @@
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">blr</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
     <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
 <span class="p">)</span>
 <span class="n">blr</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="n">x_train</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">y_train</span><span class="p">)</span>
@@ -252,7 +251,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BLR — Accuracy: 0.252, AUC: 0.167
+BLR — Accuracy: 0.394, AUC: 0.417
 </pre></div></div>
 </div>
 <p>Because BLR is linear it struggles with the non-linear moon boundary.</p>
@@ -274,7 +273,7 @@ BLR — Accuracy: 0.252, AUC: 0.167
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7fec6f2f0cd0&gt;
+&lt;matplotlib.legend.Legend at 0x7f287fcf3040&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -373,7 +372,6 @@ BLR — Accuracy: 0.252, AUC: 0.167
     <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
     <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
     <span class="n">use_residual_connections</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params</span><span class="p">,</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
@@ -419,8 +417,8 @@ BLR — Accuracy: 0.252, AUC: 0.167
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN — Accuracy: 0.800, AUC: 0.923
-BLR — Accuracy: 0.252, AUC: 0.167
+BNN — Accuracy: 0.830, AUC: 0.924
+BLR — Accuracy: 0.394, AUC: 0.417
 </pre></div></div>
 </div>
 <p>The BNN produces a much better separation than the linear BLR.</p>
@@ -442,7 +440,7 @@ BLR — Accuracy: 0.252, AUC: 0.167
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;matplotlib.legend.Legend at 0x7febcc0beb00&gt;
+&lt;matplotlib.legend.Legend at 0x7f287fd227a0&gt;
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -544,7 +542,6 @@ BLR — Accuracy: 0.252, AUC: 0.167
     <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
     <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;relu&quot;</span><span class="p">,</span>
     <span class="n">use_residual_connections</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
@@ -576,8 +573,8 @@ BLR — Accuracy: 0.252, AUC: 0.167
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN Student-T — Accuracy: 0.800, AUC: 0.923
-BNN Normal    — Accuracy: 0.494, AUC: 0.746
+BNN Student-T — Accuracy: 0.830, AUC: 0.924
+BNN Normal    — Accuracy: 0.756, AUC: 0.843
 </pre></div></div>
 </div>
 <section id="FeaturesConfig:-Categorical-Embeddings">
@@ -634,16 +631,16 @@ BNN Normal    — Accuracy: 0.494, AUC: 0.746
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 First 5 training samples (x1, x2, region_index):
-[[-1.36966143  0.41086857  0.        ]
- [ 0.31625263  0.80994112  1.        ]
- [ 0.52052295  1.16403377  2.        ]
- [ 0.373558   -1.09146877  1.        ]
- [-0.05102296 -1.40189092  1.        ]]
+[[-0.48871284  1.61126656  1.        ]
+ [-0.4785999  -0.86913014  1.        ]
+ [ 0.28230367 -0.35472646  1.        ]
+ [ 1.17377056 -1.44787016  2.        ]
+ [ 0.39213201 -1.24534627  1.        ]]
 
 Region distribution:
-  left: 151
-  center: 202
-  right: 147
+  left: 152
+  center: 198
+  right: 150
 </pre></div></div>
 </div>
 </section>
@@ -694,7 +691,6 @@ Total BNN input dim : 6
     <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
     <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">,</span>
     <span class="n">use_residual_connections</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
     <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
     <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">},</span>
     <span class="n">update_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">},</span>
@@ -731,7 +727,7 @@ Total BNN input dim : 6
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-BNN with embeddings — Accuracy: 0.814, AUC: 0.912
+BNN with embeddings — Accuracy: 0.864, AUC: 0.940
 </pre></div></div>
 </div>
 </section>
@@ -799,14 +795,14 @@ BNN with embeddings — Accuracy: 0.814, AUC: 0.912
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Learned embedding means (mu) for each &#39;region&#39; category:
-  left    : [-0.127]
-  center  : [-0.043]
-  right   : [-0.389]
+  left    : [-0.134]
+  center  : [0.381]
+  right   : [-0.125]
 
 Learned embedding std-devs (sigma) for each &#39;region&#39; category:
-  left    : [0.923]
-  center  : [0.918]
-  right   : [0.932]
+  left    : [0.964]
+  center  : [0.943]
+  right   : [0.959]
 </pre></div></div>
 </div>
 </section>

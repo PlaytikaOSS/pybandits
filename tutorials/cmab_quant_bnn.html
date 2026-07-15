@@ -268,7 +268,6 @@ full-measure region, far friendlier than the measure-zero equality.</p>
         <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
         <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
             <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span>
-            <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
             <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
             <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
             <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;gelu&quot;</span><span class="p">,</span>
@@ -286,7 +285,7 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/work/pybandits/pybandits/pybandits/meta_model.py:360: UserWarning: Only a single action was supplied. This MAB will be deterministic.
+/home/runner/work/pybandits/pybandits/pybandits/meta_model/base.py:209: UserWarning: Only a single action was supplied. This MAB will be deterministic.
   warnings.warn(&#34;Only a single action was supplied. This MAB will be deterministic.&#34;)
 </pre></div></div>
 </div>
@@ -329,7 +328,7 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Explored and updated on 4096 offers. Avg exploration regret: 0.9469
+Explored and updated on 4096 offers. Avg exploration regret: 0.9523
 </pre></div></div>
 </div>
 </section>
@@ -416,9 +415,9 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9469
     <tr>
       <th>0</th>
       <td>[0.9, 0.9, 0.1]</td>
-      <td>[0.0, 0.0, 1.0]</td>
+      <td>[0.119, 0.0, 0.881]</td>
       <td>1.0</td>
-      <td>0.517</td>
+      <td>0.000</td>
       <td>[0.556, 0.111, 0.333]</td>
       <td>0.74</td>
     </tr>
@@ -427,23 +426,23 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9469
       <td>[0.9, 0.1, 0.9]</td>
       <td>[0.0, 0.0, 1.0]</td>
       <td>1.0</td>
-      <td>0.000</td>
+      <td>0.046</td>
       <td>[0.111, 0.556, 0.333]</td>
       <td>0.74</td>
     </tr>
     <tr>
       <th>2</th>
       <td>[0.2, 0.4, 0.4]</td>
-      <td>[0.604, 0.282, 0.113]</td>
+      <td>[0.565, 0.278, 0.158]</td>
       <td>1.0</td>
-      <td>0.686</td>
+      <td>0.000</td>
       <td>[0.294, 0.294, 0.412]</td>
       <td>0.32</td>
     </tr>
     <tr>
       <th>3</th>
       <td>[0.5, 0.1, 0.1]</td>
-      <td>[0.0, 0.395, 0.605]</td>
+      <td>[1.0, 0.0, 0.0]</td>
       <td>1.0</td>
       <td>0.000</td>
       <td>[0.143, 0.143, 0.714]</td>
@@ -497,7 +496,6 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9469
         <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
         <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
             <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span>
-            <span class="n">update_method</span><span class="o">=</span><span class="s2">&quot;VI&quot;</span><span class="p">,</span>
             <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
             <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
             <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;gelu&quot;</span><span class="p">,</span>
@@ -550,7 +548,7 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9469
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Explored and updated on 4096 offers. Avg regret: 0.5848. Arm counts: {&#39;price_down&#39;: 1370, &#39;price_same&#39;: 1345, &#39;price_up&#39;: 1381}
+Explored and updated on 4096 offers. Avg regret: 0.5800. Arm counts: {&#39;price_down&#39;: 1421, &#39;price_same&#39;: 1330, &#39;price_up&#39;: 1345}
 </pre></div></div>
 </div>
 </section>
@@ -591,8 +589,6 @@ Explored and updated on 4096 offers. Avg regret: 0.5848. Arm counts: {&#39;price
 <div class="highlight"><pre>
 /home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/scipy/optimize/_differentiable_functions.py:552: UserWarning: delta_grad == 0.0. Check if the approximated function is linear. If the function is linear better results can be obtained by defining the Hessian as zero instead of using quasi-Newton approximations.
   self.H.update(delta_x, delta_g)
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/scipy/optimize/_differentiable_functions.py:317: UserWarning: delta_grad == 0.0. Check if the approximated function is linear. If the function is linear better results can be obtained by defining the Hessian as zero instead of using quasi-Newton approximations.
-  self.H.update(self.x - self.x_prev, self.g - self.g_prev)
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -633,7 +629,7 @@ Explored and updated on 4096 offers. Avg regret: 0.5848. Arm counts: {&#39;price
       <td>[0.9, 0.9, 0.1]</td>
       <td>price_down</td>
       <td>0.45</td>
-      <td>[0.0, 0.765, 0.235]</td>
+      <td>[0.0, 0.0, 1.0]</td>
       <td>1.0</td>
       <td>[0.556, 0.111, 0.333]</td>
       <td>0.74</td>
@@ -643,7 +639,7 @@ Explored and updated on 4096 offers. Avg regret: 0.5848. Arm counts: {&#39;price
       <td>[0.9, 0.1, 0.9]</td>
       <td>price_down</td>
       <td>0.45</td>
-      <td>[0.0, 1.0, 0.0]</td>
+      <td>[1.0, 0.0, 0.0]</td>
       <td>1.0</td>
       <td>[0.111, 0.556, 0.333]</td>
       <td>0.74</td>
@@ -651,9 +647,9 @@ Explored and updated on 4096 offers. Avg regret: 0.5848. Arm counts: {&#39;price
     <tr>
       <th>2</th>
       <td>[0.2, 0.4, 0.4]</td>
-      <td>price_up</td>
-      <td>0.55</td>
-      <td>[0.0, 1.0, 0.0]</td>
+      <td>price_same</td>
+      <td>0.50</td>
+      <td>[1.0, 0.0, 0.0]</td>
       <td>1.0</td>
       <td>[0.294, 0.294, 0.412]</td>
       <td>0.32</td>
