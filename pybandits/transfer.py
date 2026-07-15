@@ -738,9 +738,6 @@ def edit_model_on_the_fly(
         - activation: Activation function (tanh, relu, sigmoid, gelu)
         - use_residual_connections: Whether skip connections are used
 
-    **STRUCTURAL_EXTENDABLE (warns but allows):**
-        - update_method: Inference method (VI vs MCMC) - emits warning if changed
-
     **CONFIGURABLE_MUTABLE (safe to change):**
         - update_kwargs: Training hyperparameters (epochs, learning rate, etc.)
         - use_layerwise_scaling: Only affects initialization
@@ -821,11 +818,6 @@ def edit_model_on_the_fly(
     ...     merged = edit_model_on_the_fly(current, new)
     ... except ValueError as e:
     ...     print("Error: activation mismatch prevents transfer")
-    >>>
-    >>> # Example 4: CMAB - update_method change (WARNS but allows)
-    >>> current = CmabBernoulli.cold_start(action_ids={'a1'}, n_features=5, update_method='VI')
-    >>> new = CmabBernoulli.cold_start(action_ids={'a1'}, n_features=5, update_method='MCMC')
-    >>> merged = edit_model_on_the_fly(current, new)  # Success with warning
     """
     _validate_mab_compatibility(current_mab, new_mab)
 

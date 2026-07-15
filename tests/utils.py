@@ -2,7 +2,7 @@ import json
 import pickle
 import random
 from tempfile import NamedTemporaryFile
-from typing import Any, List, Optional, Tuple, get_args
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 from bokeh.core.serialization import Serializable
@@ -10,10 +10,8 @@ from pydantic import PositiveInt
 
 from pybandits.base import PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel
-from pybandits.model import BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BnnLayerParams, UpdateMethods
+from pybandits.model import BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BnnLayerParams
 from pybandits.quantitative_model import BaseQuantitativeBayesianNeuralNetwork, QuantitativeModel
-
-literal_update_methods = get_args(UpdateMethods)
 
 
 class _EvalArray:
@@ -125,6 +123,17 @@ def apply_mock_update(actions: List[Any]) -> None:
             mock_update(action)
         elif isinstance(action, BaseQuantitativeBayesianNeuralNetwork):
             mock_update(action.bnn)
+
+
+def mock_joint_svi_update(self, context, arm_to_rows, rewards_arr, quantities) -> None:
+    """Joint-engine stand-in for ``mock_update`` (patches ``CmabMetaModel._joint_svi_update``).
+
+    The unified cmab engine trains all arms jointly and never calls each head's ``_update``, so a
+    test that wants to skip real SVI patches this method instead. It randomises the batch arms'
+    head parameters (via ``apply_mock_update``), leaving the surrounding ``update`` plumbing
+    (context/shape validation, counter increments, adaptive window) intact.
+    """
+    apply_mock_update([self.actions[arm] for arm in arm_to_rows])
 
 
 def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:

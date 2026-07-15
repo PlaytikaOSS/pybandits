@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Meta-model abstraction layer for action managers.
+"""Abstract meta-model base for action managers.
 
 A meta-model sits between an actions manager (e.g. ``CmabActionsManager``)
 and the per-action models. The manager delegates ``sample_proba``, ``update``,
@@ -28,26 +28,20 @@ and ``reset`` to the meta-model. The meta-model decides whether per-action
 calls are independent (simple dispatch loop) or require coordinated state
 (e.g. a shared learned representation).
 
-One concrete class is provided:
-
-- ``PerActionMetaModel[T]``: generic implementation wrapping a
-  ``Dict[ActionId, T]`` with an independent per-action dispatch loop.
-  Behaviour is identical to the pre-meta-model smab/cmab pattern.
-  Domain validators (e.g. same number of objectives for smab; consistent
-  input size / update method for cmab) live on the respective manager
-  subclasses, not here.
-
-The interface is intentionally minimal and will be extended as additional
-meta-model patterns (e.g. shared-backbone neural-linear) are introduced.
+This module holds only ``BaseMetaModel`` (the abstract base) plus the shared
+construction/validation machinery. Concrete implementations live alongside it in
+the ``meta_model`` package: ``SmabMetaModel`` (independent per-action
+dispatch) in ``smab_meta_model.py`` and ``CmabMetaModel`` (per-arm heads +
+optional shared backbone) in ``cmab_meta_model.py``.
 """
 
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, Generic, List, Optional, Set, Tuple, Type, TypeVar, Union, get_args, get_origin
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union, get_args, get_origin
 
 import numpy as np
-from pydantic import ConfigDict, field_validator, model_validator
+from pydantic import ConfigDict, field_validator
 
 from pybandits.base import (
     ACTION_IDS_PREFIX,
@@ -65,29 +59,8 @@ from pybandits.base import (
     QuantitativeProbabilityWeight,
 )
 from pybandits.base_model import BaseModel
-from pybandits.model import (
-    BayesianNeuralNetwork,
-    BayesianNeuralNetworkCC,
-    BayesianNeuralNetworkDP,
-    BayesianNeuralNetworkMO,
-    BayesianNeuralNetworkMOCC,
-    Beta,
-    BetaCC,
-    BetaDP,
-    BetaMO,
-    BetaMOCC,
-    Model,
-    ModelMO,
-)
-from pybandits.quantitative_model import (
-    QuantitativeBayesianNeuralNetwork,
-    QuantitativeBayesianNeuralNetworkCC,
-    QuantitativeBayesianNeuralNetworkDP,
-    QuantitativeModel,
-    Zooming,
-    ZoomingCC,
-    ZoomingDP,
-)
+from pybandits.model import Model, ModelMO
+from pybandits.quantitative_model import QuantitativeModel
 from pybandits.utils import classproperty, extract_argument_names_from_function
 
 # Possible return shapes from a per-action sample_proba call.
@@ -122,6 +95,47 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     actions: Dict[ActionId, BaseModel]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_validator("actions", mode="after")
+    @classmethod
+    def _at_least_one_action_is_defined(cls, v: Dict[ActionId, BaseModel]) -> Dict[ActionId, BaseModel]:
+        cls._check_action_count(v)
+        return v
+
+    def __init__(
+        self,
+        actions: Optional[Dict[ActionId, BaseModel]] = None,
+        action_ids: Optional[Set[ActionId]] = None,
+        quantitative_action_ids: Optional[Set[ActionId]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ):
+        """Construct from a pre-built ``actions`` dict or cold-start specs.
+
+        Everything travels in the single ``kwargs`` bag: the per-action model arguments *and* this
+        meta-model's own extra fields (e.g. the cmab ``backbone`` / ``random_seed``). That bag is the
+        same dict ``BaseMab`` threads through for unknown-argument detection, so it is mutated in place —
+        ``_instantiate_actions`` pops the per-action model keys it consumes. The meta-model's own fields
+        are pulled out of the bag with :func:`extract_argument_names_from_function` and forwarded to
+        Pydantic; a field that doubles as a per-action cold-start key (``random_seed``) is snapshotted
+        *before* the actions are built, and a meta-only field (``backbone``) is then popped so it
+        does not linger as an apparent leftover for ``BaseMab``'s check.
+
+        Subclasses whose fields also arrive as top-level kwargs on Pydantic (de)serialization simply
+        fold those into the bag before delegating here (see :meth:`CmabMetaModel.__init__`), so this
+        base needs no catch-all keyword argument.
+        """
+        kwargs = kwargs or {}
+        field_names = [f for f in extract_argument_names_from_function(type(self)) if f != "actions"]
+        field_kwargs = {k: kwargs[k] for k in field_names if k in kwargs}
+        actions_dict = self._instantiate_actions(
+            actions=actions,
+            action_ids=action_ids,
+            quantitative_action_ids=quantitative_action_ids,
+            kwargs=kwargs,
+        )
+        for field in field_names:
+            kwargs.pop(field, None)
+        super().__init__(actions=actions_dict, **field_kwargs)
 
     @property
     def action_ids(self) -> List[ActionId]:
@@ -186,28 +200,60 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     def reset(self) -> None:
         """Reset every per-action model to its cold-start state."""
 
-    @classmethod
-    def _preprocess_actions(
-        cls,
-        actions: Optional[Dict[ActionId, BaseModel]],
-        action_ids: Optional[Set[ActionId]],
-        quantitative_action_ids: Optional[Set[ActionId]],
-        kwargs: Dict[str, Any],
-    ) -> Dict[ActionId, BaseModel]:
-        """Return the canonical per-action dict the meta-model should store.
+    @staticmethod
+    def _check_action_count(actions: Dict[ActionId, BaseModel]) -> None:
+        """Shared action-count guard: at least one action; a single action is deterministic."""
+        if len(actions) == 0:
+            raise AttributeError("At least one action should be defined.")
+        if len(actions) == 1:
+            warnings.warn("Only a single action was supplied. This MAB will be deterministic.")
 
-        Default behaviour (used by ``PerActionMetaModel`` and any subclass whose state is
-        a 1:1 per-action mapping): if ``actions`` is None, cold-start the per-action models
-        from ``action_ids`` / ``quantitative_action_ids`` and the remaining ``kwargs``.
-        Shared-state meta-models (e.g. neural-linear) override this to materialise per-action
-        regression heads on top of a jointly-trained backbone.
+    def _dispatch_per_action_update(
+        self,
+        actions: List[ActionId],
+        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        **row_aligned_kwargs: Any,
+    ) -> None:
+        """Group rows by action and dispatch to each action's own ``update`` — independent per-action training.
+
+        Shared by ``SmabMetaModel`` (always) and ``CmabMetaModel`` (when there is no shared backbone,
+        so there is nothing to train jointly): each action's model is updated in isolation, from only
+        that action's own rows, exactly as if it were the sole action in the batch.
+
+        Parameters
+        ----------
+        actions : List[ActionId]
+            The selected action per sample.
+        rewards : Union[List[BinaryReward], List[List[BinaryReward]]]
+            The reward per sample (or per-objective list of rewards per sample).
+        quantities : Optional[List[Union[float, List[float], None]]]
+            Per-sample quantity for quantitative actions; ``None`` for non-quantitative actions.
+        **row_aligned_kwargs : Any
+            Additional per-sample data, row-aligned with ``actions``, forwarded (sliced to that
+            action's own rows) to each action's ``update`` — e.g. ``context=...`` for
+            ``CmabMetaModel``. ``smab`` passes none of these, so this base method carries no
+            knowledge of any cmab-specific parameter.
         """
-        return cls._instantiate_actions(
-            actions=actions,
-            action_ids=action_ids,
-            quantitative_action_ids=quantitative_action_ids,
-            kwargs=kwargs,
-        )
+        rewards_dict: Dict[ActionId, List[Any]] = defaultdict(list)
+        extra_dicts = {name: defaultdict(list) for name in row_aligned_kwargs}
+        quantities_dict = defaultdict(list) if quantities is not None else None
+
+        for i, a in enumerate(actions):
+            rewards_dict[a].append(rewards[i])
+            for name, values in row_aligned_kwargs.items():
+                extra_dicts[name][a].append(values[i])
+            if quantities_dict is not None:
+                quantities_dict[a].append(quantities[i])
+
+        for a in set(actions):
+            call_kwargs: Dict[str, Any] = {"rewards": rewards_dict[a]}
+            for name, values in row_aligned_kwargs.items():
+                action_values = extra_dicts[name][a]
+                call_kwargs[name] = np.array(action_values) if isinstance(values, np.ndarray) else action_values
+            if quantities_dict is not None and any(quantities_dict[a]):
+                call_kwargs["quantities"] = quantities_dict[a]
+            self.actions[a].update(**call_kwargs)
 
     @classmethod
     def _instantiate_actions(
@@ -317,7 +363,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         if not type_args or len(type_args) < 2:
             raise TypeError(
                 f"{cls.__name__}.actions has no concrete value type annotation; "
-                "parameterise the meta-model (e.g. PerActionMetaModel[Beta]) before cold-starting."
+                "parameterise the meta-model with a concrete model class before cold-starting."
             )
         action_model_type = type_args[1]
         if isinstance(action_model_type, TypeVar):
@@ -328,193 +374,3 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         if get_origin(action_model_type) is Union:
             return get_args(action_model_type)
         return (action_model_type,)
-
-
-class PerActionMetaModel(BaseMetaModel, Generic[ActionModelType]):
-    """Meta-model that dispatches independently to per-action models.
-
-    Wraps a ``Dict[ActionId, ActionModelType]`` and routes each ``sample_proba`` /
-    ``update`` / ``reset`` call to the relevant action's model. This is the
-    historical cmab/smab pattern, lifted into the meta-model abstraction without
-    any behavioural change.
-
-    The ``actions`` dict is a regular Pydantic field. Pydantic v2 with its
-    default ``revalidate_instances='never'`` does not deep-copy nested model
-    instances during validation, so the original model references are preserved.
-    This guarantees that mutations via ``update()`` are visible to callers that
-    hold references to the original per-action model objects.
-
-    Domain invariants (e.g. same number of objectives for smab; consistent
-    input size / update method for cmab) are validated on the respective manager
-    subclasses, not here.
-    """
-
-    actions: Dict[ActionId, ActionModelType]  # type: ignore[valid-type]
-
-    @field_validator("actions", mode="after")
-    @classmethod
-    def at_least_one_action_is_defined(cls, v: Dict[ActionId, ActionModelType]) -> Dict[ActionId, ActionModelType]:
-        if len(v) == 0:
-            raise AttributeError("At least one action should be defined.")
-        elif len(v) == 1:
-            warnings.warn("Only a single action was supplied. This MAB will be deterministic.")
-        return v
-
-    def __init__(
-        self,
-        actions: Optional[Dict[ActionId, BaseModel]] = None,
-        action_ids: Optional[Set[ActionId]] = None,
-        quantitative_action_ids: Optional[Set[ActionId]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
-    ):
-        """Construct a meta-model from either a pre-built ``actions`` dict or cold-start specs.
-
-        Mirrors the ``ActionsManager.__init__`` pattern: optional construction kwargs are
-        resolved into a per-action dict, then handed to Pydantic's ``BaseModel.__init__``
-        via ``super().__init__(actions=...)``.
-        """
-        actions_dict = type(self)._preprocess_actions(
-            actions=actions,
-            action_ids=action_ids,
-            quantitative_action_ids=quantitative_action_ids,
-            kwargs=kwargs or {},
-        )
-        super().__init__(actions=actions_dict)
-
-    def sample_proba(
-        self,
-        rng: np.random.Generator,
-        valid_action_ids: Optional[Set[ActionId]] = None,
-        **kwargs: Any,
-    ) -> Dict[ActionId, SampleProbaResult]:
-        return {
-            action_id: model.sample_proba(rng=rng, **kwargs)
-            for action_id, model in self.actions.items()
-            if valid_action_ids is None or action_id in valid_action_ids
-        }
-
-    def update(
-        self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
-        context: Optional[np.ndarray] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Group rows by action and dispatch to each action's ``update``.
-
-        ``context`` and ``quantities`` may be longer than ``actions`` when the
-        adaptive-window manager prepends memory rows before calling here.  We
-        slice to the trailing ``len(actions)`` rows so only the current batch
-        is passed to each per-action model.
-        """
-        if context is not None:
-            if len(context) < len(actions):
-                raise ValueError(
-                    f"context has {len(context)} rows but {len(actions)} actions were provided; "
-                    "context must have at least as many rows as actions."
-                )
-            context = context[-len(actions) :]
-
-        rewards_dict: Dict[ActionId, List[Any]] = defaultdict(list)
-        context_dict: Dict[ActionId, List[Any]] = defaultdict(list)
-
-        if quantities is None:
-            for i, (a, r) in enumerate(zip(actions, rewards)):
-                rewards_dict[a].append(r)
-                if context is not None:
-                    context_dict[a].append(context[i])
-            for a in set(actions):
-                call_kwargs: Dict[str, Any] = {"rewards": rewards_dict[a]}
-                if context is not None:
-                    call_kwargs["context"] = np.array(context_dict[a])
-                self.actions[a].update(**call_kwargs)
-        else:
-            if len(quantities) < len(actions):
-                raise ValueError(
-                    f"quantities has {len(quantities)} elements but {len(actions)} actions were provided; "
-                    "quantities must have at least as many elements as actions."
-                )
-            quantities = quantities[-len(actions) :]
-            quantities_dict: Dict[ActionId, List[Any]] = defaultdict(list)
-            for i, (a, r, q) in enumerate(zip(actions, rewards, quantities)):
-                rewards_dict[a].append(r)
-                if context is not None:
-                    context_dict[a].append(context[i])
-                quantities_dict[a].append(q)
-            for a in set(actions):
-                call_kwargs = {"rewards": rewards_dict[a]}
-                if context is not None:
-                    call_kwargs["context"] = np.array(context_dict[a])
-                if any(quantities_dict[a]):
-                    call_kwargs["quantities"] = quantities_dict[a]
-                self.actions[a].update(**call_kwargs)
-
-    def reset(self) -> None:
-        for model in self.actions.values():
-            model.reset()
-
-
-class CmabPerActionMetaModel(PerActionMetaModel[ActionModelType], Generic[ActionModelType]):
-    """Per-action meta-model for cmab variants.
-
-    Adds a cross-action consistency validator (same input dim, same update method, same
-    update kwargs) that the cmab branch needs at construction time. This lives on the
-    meta-model rather than on ``CmabActionsManager`` because the constraint is about the
-    per-action *models* (their BNN shape and training config), not about the manager.
-    """
-
-    @staticmethod
-    def _maybe_crawl_model(model: Any) -> "BayesianNeuralNetwork":
-        """Unwrap MO/quantitative wrappers to the base BNN."""
-        from pybandits.model import BaseBayesianNeuralNetworkMO  # local import: avoids circular at module top
-        from pybandits.quantitative_model import BaseQuantitativeBayesianNeuralNetwork
-
-        if isinstance(model, BaseBayesianNeuralNetworkMO):
-            return model.models[0]
-        if isinstance(model, BaseQuantitativeBayesianNeuralNetwork):
-            return model.bnn
-        return model
-
-    @staticmethod
-    def _get_expected_context_size(model: Any) -> int:
-        """Return the expected ``input_dim`` for the given cmab model."""
-        from pybandits.model import BaseBayesianNeuralNetworkMO
-
-        if isinstance(model, BaseBayesianNeuralNetworkMO):
-            return model.models[0].input_dim
-        return model.input_dim
-
-    @model_validator(mode="after")
-    def check_models(self) -> "CmabPerActionMetaModel":
-        action_models = list(self.actions.values())
-        first_action = action_models[0]
-        test_first_action = self._maybe_crawl_model(first_action)
-        for action in action_models[1:]:
-            test_action = self._maybe_crawl_model(action)
-            if not self._get_expected_context_size(first_action) == self._get_expected_context_size(action):
-                raise AttributeError("All actions should have the same input size.")
-            if not test_first_action.update_method == test_action.update_method:
-                raise AttributeError("All actions should have the same update method.")
-            if not test_first_action.update_kwargs == test_action.update_kwargs:
-                raise AttributeError("All actions should have the same update kwargs.")
-        return self
-
-
-# Module-level aliases for concrete parameterisations.
-# These are required for pickling: Python's pickle resolves a class by looking
-# up ``cls.__qualname__`` on ``sys.modules[cls.__module__]``.  Pydantic sets the
-# qualname of a parameterised generic to e.g.
-# ``PerActionMetaModel[Union[Beta, Zooming]]``; defining the alias here makes
-# that attribute accessible on this module.
-PerActionMetaModelSmabSO = PerActionMetaModel[Union[Beta, Zooming]]
-PerActionMetaModelSmabCC = PerActionMetaModel[Union[BetaCC, ZoomingCC]]
-PerActionMetaModelSmabDP = PerActionMetaModel[Union[BetaDP, ZoomingDP]]
-PerActionMetaModelSmabMO = PerActionMetaModel[BetaMO]
-PerActionMetaModelSmabMOCC = PerActionMetaModel[BetaMOCC]
-
-PerActionMetaModelCmabSO = CmabPerActionMetaModel[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]]
-PerActionMetaModelCmabCC = CmabPerActionMetaModel[Union[BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC]]
-PerActionMetaModelCmabDP = CmabPerActionMetaModel[Union[BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP]]
-PerActionMetaModelCmabMO = CmabPerActionMetaModel[BayesianNeuralNetworkMO]
-PerActionMetaModelCmabMOCC = CmabPerActionMetaModel[BayesianNeuralNetworkMOCC]

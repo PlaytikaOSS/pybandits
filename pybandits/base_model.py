@@ -166,8 +166,23 @@ class BaseModelSO(BaseModel, ABC):
             The binary reward for each sample.
         """
         self._update(rewards=rewards, **kwargs)
-        self.n_successes += sum(rewards)
-        self.n_failures += len(rewards) - sum(rewards)
+        self.record_rewards(rewards)
+
+    def record_rewards(self, rewards: List[BinaryReward]) -> None:
+        """Tally binary rewards into the success/failure counters.
+
+        The canonical success/failure bookkeeping, factored out of ``update`` so callers that train
+        through a different path (e.g. the joint cMAB SVI engine, which bypasses per-model ``update``)
+        can keep the counters in sync without re-implementing the arithmetic.
+
+        Parameters
+        ----------
+        rewards : List[BinaryReward]
+            The binary reward for each sample.
+        """
+        successes = sum(rewards)
+        self.n_successes += successes
+        self.n_failures += len(rewards) - successes
 
     @abstractmethod
     def _update(self, rewards: List[BinaryReward], **kwargs):

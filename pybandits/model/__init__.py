@@ -42,7 +42,6 @@ from pybandits.model.bnn._guide import (
 from pybandits.model.bnn._typing import (
     ActivationFunctions,
     OptaxKind,
-    UpdateMethods,
     VIMethods,
 )
 from pybandits.model.bnn.config import (
@@ -69,7 +68,6 @@ from pybandits.model.bnn.priors import (
 )
 
 __all__ = [
-    "UpdateMethods",
     "VIMethods",
     "ActivationFunctions",
     "OptaxKind",
