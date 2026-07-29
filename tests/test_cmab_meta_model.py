@@ -25,12 +25,21 @@ from typing import List, Optional, Set
 
 import numpy as np
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pybandits.base import ActionId
 from pybandits.meta_model import CmabMetaModelMO, CmabMetaModelSO
 from pybandits.model.bnn.backbone import MLPBackbone
+
+# Shared strategies for the backbone's architecture and its joint-training knobs. Used by the tests
+# that only build/serialise a backbone; the SVI-training tests below keep fixed architectures instead,
+# so their runtime stays bounded.
+_HIDDEN_DIMS = st.lists(st.integers(min_value=1, max_value=8), min_size=0, max_size=2)
+_TRAINING_KNOBS = [
+    ("l2_anchoring", st.floats(min_value=0.0, max_value=1e6, allow_nan=False, allow_infinity=False)),
+    ("lr", st.one_of(st.none(), st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False))),
+]
 
 
 class TestMLPBackbone:
@@ -49,11 +58,14 @@ class TestMLPBackbone:
         n_rows=st.integers(min_value=1, max_value=12),
         n_features=st.integers(min_value=1, max_value=8),
         embedding_dim=st.integers(min_value=1, max_value=6),
+        hidden_dims=_HIDDEN_DIMS,
     )
-    def test_embed_output_shape(self, n_rows: int, n_features: int, embedding_dim: int) -> None:
+    def test_embed_output_shape(self, n_rows: int, n_features: int, embedding_dim: int, hidden_dims: List[int]) -> None:
         """``embed`` maps ``(n_rows, n_features)`` to ``(n_rows, embedding_dim)``."""
         rng = np.random.default_rng(0)
-        bb = MLPBackbone.cold_start(n_features=n_features, hidden_dims=[4], embedding_dim=embedding_dim, random_seed=1)
+        bb = MLPBackbone.cold_start(
+            n_features=n_features, hidden_dims=hidden_dims, embedding_dim=embedding_dim, random_seed=1
+        )
         assert bb.embed(rng.normal(size=(n_rows, n_features))).shape == (n_rows, embedding_dim)
 
     def test_embed_is_deterministic(self, rng: np.random.Generator) -> None:
@@ -65,11 +77,12 @@ class TestMLPBackbone:
         np.testing.assert_array_equal(bb.embed(x), bb.embed(x))
 
     @pytest.mark.parametrize("activation", ["relu", "tanh", "gelu", "sigmoid"])
-    def test_serialization_round_trip(self, activation: str, rng: np.random.Generator) -> None:
+    @given(hidden_dims=_HIDDEN_DIMS)
+    def test_serialization_round_trip(self, activation: str, hidden_dims: List[int], rng: np.random.Generator) -> None:
         """A backbone survives ``model_dump_json`` / ``model_validate`` with identical embeddings."""
         bb = MLPBackbone.cold_start(
             n_features=self.n_features,
-            hidden_dims=self.hidden,
+            hidden_dims=hidden_dims,
             embedding_dim=self.embedding_dim,
             activation=activation,
             random_seed=1,
@@ -78,12 +91,33 @@ class TestMLPBackbone:
         x = self._context(rng)
         np.testing.assert_allclose(bb.embed(x), restored.embed(x))
 
+    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @given(data=st.data(), hidden_dims=_HIDDEN_DIMS)
+    def test_training_knobs_survive_reset_and_serialization(
+        self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject, hidden_dims: List[int]
+    ) -> None:
+        """A knob set at ``cold_start`` persists through ``reset`` and a JSON round-trip, at any value."""
+        value = data.draw(value_strategy)
+        bb = MLPBackbone.cold_start(
+            n_features=self.n_features,
+            hidden_dims=hidden_dims,
+            embedding_dim=self.embedding_dim,
+            random_seed=self.backbone_seed,
+            **{knob_name: value},
+        )
+        assert getattr(bb, knob_name) == value
+        assert getattr(bb.reset(), knob_name) == value
+        assert getattr(MLPBackbone.model_validate_json(bb.model_dump_json()), knob_name) == value
+
 
 class TestCmabMetaModel:
     """The unified per-arm-heads (+ optional shared backbone) joint-VI meta-model."""
 
     n_features = 6
     hidden = [4]
+    # Fixed (not hypothesis-drawn) architectures: the tests here run real SVI, so their cost has to stay
+    # bounded — _HIDDEN_DIMS explores the architecture space in TestMLPBackbone, where nothing trains.
+    backbone_hidden_dims = [8]
     embedding_dim = 4
     n_rows = 9
     action_ids: Set[ActionId] = {"a", "b", "c"}
@@ -97,6 +131,10 @@ class TestCmabMetaModel:
     # joint-minibatch config: batch_size < minibatch_n engages the single-plate minibatch path.
     minibatch_size = 24
     minibatch_n = 160
+    # MLPBackbone's l2_anchoring / lr disabled-state sentinels (the field defaults); other values are
+    # hypothesis-generated per test.
+    l2_anchoring_disabled = 0.0
+    lr_freeze = 0.0
 
     # ----------------------------------------------------------------- helpers / fixtures
     def _head_cold_start_kwargs(self, n_features: int = None) -> dict:
@@ -108,8 +146,18 @@ class TestCmabMetaModel:
             "random_seed": self.meta_seed,
         }
 
-    def _build_meta(self, with_backbone: bool, batch_size: Optional[int] = None) -> CmabMetaModelSO:
-        """Build a meta-model, optionally with a shared backbone and/or a minibatch ``batch_size``."""
+    def _build_meta(
+        self,
+        with_backbone: bool,
+        batch_size: Optional[int] = None,
+        l2_anchoring: float = 0.0,
+        lr: Optional[float] = None,
+    ) -> CmabMetaModelSO:
+        """Build a meta-model, optionally with a shared backbone and/or a minibatch ``batch_size``.
+
+        The training knobs live on the ``MLPBackbone``, so they go to its ``cold_start`` here rather
+        than into the meta-model's own ``kwargs``.
+        """
         update_kwargs = {"num_steps": self.num_steps}
         if batch_size is not None:
             update_kwargs["batch_size"] = batch_size
@@ -122,9 +170,11 @@ class TestCmabMetaModel:
         if with_backbone:
             kwargs["backbone"] = MLPBackbone.cold_start(
                 n_features=self.n_features,
-                hidden_dims=[8],
+                hidden_dims=self.backbone_hidden_dims,
                 embedding_dim=self.embedding_dim,
                 random_seed=self.backbone_seed,
+                l2_anchoring=l2_anchoring,
+                lr=lr,
             )
         return CmabMetaModelSO(action_ids=self.action_ids, kwargs=kwargs)
 
@@ -155,7 +205,7 @@ class TestCmabMetaModel:
         """Shared-backbone unified meta-model (heads on the embedding)."""
         backbone = MLPBackbone.cold_start(
             n_features=self.n_features,
-            hidden_dims=[8],
+            hidden_dims=self.backbone_hidden_dims,
             embedding_dim=self.embedding_dim,
             random_seed=self.backbone_seed,
         )
@@ -228,6 +278,150 @@ class TestCmabMetaModel:
         assert any(not np.allclose(b, a) for b, a in zip(w_before, meta.backbone.weight_arrays))
         assert not np.allclose(mu_before, self._head_mu(meta, "a"))
 
+    @settings(deadline=None, max_examples=5)
+    @given(l2_anchoring=st.floats(min_value=1e4, max_value=1e8, allow_nan=False, allow_infinity=False))
+    def test_backbone_l2_anchoring_reduces_drift(self, l2_anchoring: float) -> None:
+        """A positive ``l2_anchoring`` keeps the backbone's weights *and* biases closer to their
+        pre-update values (it anchors every parameter, biases included, unlike L2 weight decay).
+
+        Locally-seeded ``rng``, not the session-scoped fixture: that fixture keeps advancing across
+        examples, so a hypothesis replay would see different data and flag a spurious flaky failure.
+        """
+        rng = np.random.default_rng(0)
+        actions, rewards, context = self._balanced_batch(rng)
+        unanchored = self._build_meta(with_backbone=True, l2_anchoring=self.l2_anchoring_disabled)
+        anchored = self._build_meta(with_backbone=True, l2_anchoring=l2_anchoring)
+        w_initial = [w.copy() for w in unanchored.backbone.weight_arrays]
+        b_initial = [b.copy() for b in unanchored.backbone.bias_arrays]
+        unanchored.update(actions=actions, rewards=rewards, context=context)
+        anchored.update(actions=actions, rewards=rewards, context=context)
+        drift_unanchored_w = sum(np.sum((a - b) ** 2) for a, b in zip(w_initial, unanchored.backbone.weight_arrays))
+        drift_anchored_w = sum(np.sum((a - b) ** 2) for a, b in zip(w_initial, anchored.backbone.weight_arrays))
+        drift_unanchored_b = sum(np.sum((a - b) ** 2) for a, b in zip(b_initial, unanchored.backbone.bias_arrays))
+        drift_anchored_b = sum(np.sum((a - b) ** 2) for a, b in zip(b_initial, anchored.backbone.bias_arrays))
+        assert drift_anchored_w < drift_unanchored_w
+        assert drift_anchored_b < drift_unanchored_b
+
+    def test_backbone_lr_zero_freezes_backbone_exactly(self, rng: np.random.Generator) -> None:
+        """``lr=0.0`` produces exactly zero backbone movement, while heads still train normally."""
+        actions, rewards, context = self._balanced_batch(rng)
+        meta = self._build_meta(with_backbone=True, lr=self.lr_freeze)
+        w_before = [w.copy() for w in meta.backbone.weight_arrays]
+        mu_before = self._head_mu(meta, "a").copy()
+        meta.update(actions=actions, rewards=rewards, context=context)
+        for before, after in zip(w_before, meta.backbone.weight_arrays):
+            np.testing.assert_array_equal(before, after)
+        assert not np.allclose(mu_before, self._head_mu(meta, "a"))
+
+    @settings(deadline=None, max_examples=5)
+    @given(
+        slow_lr=st.floats(min_value=1e-4, max_value=1e-1, allow_nan=False, allow_infinity=False),
+        speedup=st.floats(min_value=2.0, max_value=100.0, allow_nan=False, allow_infinity=False),
+    )
+    def test_backbone_lr_scales_backbone_drift(self, slow_lr: float, speedup: float) -> None:
+        """A smaller ``lr`` produces proportionally less backbone movement, same seed/data.
+
+        Locally-seeded ``rng`` — see :meth:`test_backbone_l2_anchoring_reduces_drift`.
+        """
+        rng = np.random.default_rng(0)
+        actions, rewards, context = self._balanced_batch(rng)
+        fast = self._build_meta(with_backbone=True, lr=slow_lr * speedup)
+        slow = self._build_meta(with_backbone=True, lr=slow_lr)
+        w_initial = [w.copy() for w in fast.backbone.weight_arrays]
+        fast.update(actions=actions, rewards=rewards, context=context)
+        slow.update(actions=actions, rewards=rewards, context=context)
+        drift_fast = sum(np.sum((a - b) ** 2) for a, b in zip(w_initial, fast.backbone.weight_arrays))
+        drift_slow = sum(np.sum((a - b) ** 2) for a, b in zip(w_initial, slow.backbone.weight_arrays))
+        assert drift_slow < drift_fast
+
+    @settings(deadline=None, max_examples=5)
+    @given(
+        l2_anchoring=st.floats(min_value=1e4, max_value=1e8, allow_nan=False, allow_infinity=False),
+        lr=st.floats(min_value=1e-4, max_value=1e-1, allow_nan=False, allow_infinity=False),
+    )
+    def test_backbone_l2_anchoring_and_lr_compose(self, l2_anchoring: float, lr: float) -> None:
+        """Setting both backbone training knobs together doesn't crash and still trains everything.
+
+        Locally-seeded ``rng`` — see :meth:`test_backbone_l2_anchoring_reduces_drift`.
+        """
+        rng = np.random.default_rng(0)
+        actions, rewards, context = self._balanced_batch(rng)
+        meta = self._build_meta(with_backbone=True, l2_anchoring=l2_anchoring, lr=lr)
+        w_before = [w.copy() for w in meta.backbone.weight_arrays]
+        mu_before = self._head_mu(meta, "a").copy()
+        meta.update(actions=actions, rewards=rewards, context=context)
+        assert any(not np.allclose(b, a) for b, a in zip(w_before, meta.backbone.weight_arrays))
+        assert not np.allclose(mu_before, self._head_mu(meta, "a"))
+
+    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @given(data=st.data())
+    def test_backbone_training_knobs_serialization_round_trip(
+        self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
+    ) -> None:
+        """Backbone training knobs (on the nested ``backbone``) survive a full ``CmabMetaModel`` JSON round
+        trip, for any valid value."""
+        value = data.draw(value_strategy)
+        meta = self._build_meta(with_backbone=True, **{knob_name: value})
+        restored = CmabMetaModelSO.model_validate_json(meta.model_dump_json())
+        assert getattr(restored.backbone, knob_name) == value
+
+    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @given(data=st.data())
+    def test_backbone_training_knobs_reach_backbone_via_cold_start_kwargs(
+        self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
+    ) -> None:
+        """``backbone_``-prefixed cold-start kwargs thread through onto the built ``MLPBackbone``, prefix
+        stripped, for any valid value."""
+        value = data.draw(value_strategy)
+        kwargs = {
+            "n_features": self.n_features,
+            "hidden_dim_list": self.hidden,
+            "update_kwargs": {"num_steps": self.num_steps},
+            "backbone_hidden_dims": self.backbone_hidden_dims,
+            "backbone_embedding_dim": self.embedding_dim,
+            f"backbone_{knob_name}": value,
+        }
+        meta = CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
+        assert getattr(meta.backbone, knob_name) == value
+
+    @given(random_seed=st.integers(min_value=0, max_value=2**31 - 1))
+    def test_backbone_inherits_meta_model_random_seed(self, random_seed: int) -> None:
+        """The backbone falls back to the meta-model's ``random_seed``, so one top-level seed makes the
+        whole model (backbone init included) reproducible; ``backbone_random_seed`` overrides it."""
+        kwargs = {
+            "n_features": self.n_features,
+            "hidden_dim_list": self.hidden,
+            "update_kwargs": {"num_steps": self.num_steps},
+            "backbone_hidden_dims": self.backbone_hidden_dims,
+            "backbone_embedding_dim": self.embedding_dim,
+            "random_seed": random_seed,
+        }
+        meta = CmabMetaModelSO(action_ids=self.valid_subset, kwargs=dict(kwargs))
+        assert meta.backbone.random_seed == random_seed
+
+        overridden = CmabMetaModelSO(
+            action_ids=self.valid_subset, kwargs={**kwargs, "backbone_random_seed": self.backbone_seed}
+        )
+        assert overridden.backbone.random_seed == self.backbone_seed
+
+    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @given(data=st.data())
+    def test_backbone_training_knobs_require_backbone_hidden_dims(
+        self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
+    ) -> None:
+        """A ``backbone_``-prefixed knob passed via cold-start kwargs without ``backbone_hidden_dims``
+        raises, at any value — the same ``TypeError`` as ``backbone_embedding_dim``/``backbone_activation``.
+        """
+        value = data.draw(value_strategy)
+        kwargs = {
+            "n_features": self.n_features,
+            "hidden_dim_list": self.hidden,
+            "update_kwargs": {"num_steps": self.num_steps},
+            f"backbone_{knob_name}": value,
+        }
+        with pytest.raises(TypeError, match="only apply with a backbone"):
+            CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
+
     def test_reset_restores_backbone(self, meta_backbone: CmabMetaModelSO, rng: np.random.Generator) -> None:
         """``reset`` restores the backbone (same seed) after an update."""
         w_initial = [w.copy() for w in meta_backbone.backbone.weight_arrays]
@@ -278,7 +472,7 @@ class TestCmabMetaModel:
         if with_backbone:
             head_kwargs["backbone"] = MLPBackbone.cold_start(
                 n_features=self.n_features,
-                hidden_dims=[8],
+                hidden_dims=self.backbone_hidden_dims,
                 embedding_dim=self.embedding_dim,
                 random_seed=self.backbone_seed,
             )
@@ -320,7 +514,7 @@ class TestCmabMetaModel:
             "hidden_dim_list": self.hidden,
             "update_kwargs": {"method": "fullrank_advi"},
             "backbone_hidden_dims": self.hidden,
-            "embedding_dim": self.embedding_dim,
+            "backbone_embedding_dim": self.embedding_dim,
         }
         with pytest.raises(NotImplementedError, match="advi"):
             CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
@@ -382,7 +576,7 @@ class TestCmabMetaModel:
             "random_seed": self.meta_seed,
             "backbone": MLPBackbone.cold_start(
                 n_features=self.n_features,
-                hidden_dims=[8],
+                hidden_dims=self.backbone_hidden_dims,
                 embedding_dim=self.embedding_dim,
                 random_seed=self.backbone_seed,
             ),

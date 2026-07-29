@@ -23,7 +23,7 @@
 import json
 from copy import deepcopy
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
 from unittest.mock import patch
 
 import numpy as np
@@ -49,7 +49,6 @@ from pybandits.cmab import (
     CmabBernoulliMO,
     CmabBernoulliMOCC,
 )
-from pybandits.meta_model import CmabMetaModel
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
     BaseBayesianNeuralNetworkMO,
@@ -60,6 +59,7 @@ from pybandits.model import (
     BayesianNeuralNetworkMOCC,
     StudentTArray,
 )
+from pybandits.model.bnn._typing import ActivationFunctions
 from pybandits.quantitative_model import (
     BaseQuantitativeBayesianNeuralNetwork,
     QuantitativeBayesianNeuralNetwork,
@@ -78,7 +78,7 @@ from pybandits.strategy import (
 )
 from tests.utils import (
     apply_mock_update,
-    mock_joint_svi_update,
+    mocked_cmab_training,
     sample_with_replacement,
     to_temporary_pickle,
 )
@@ -677,9 +677,9 @@ def test_update(
 
     old_cmab = deepcopy(cmab)
     for k, transform in enumerate([lambda x: x, np.array, lambda x: x.copy()]):
-        # The unified cmab engine trains jointly (never per-head _update), so skip real SVI by
-        # patching the joint training method; the surrounding update plumbing stays exercised.
-        with patch.object(CmabMetaModel, "_joint_svi_update", mock_joint_svi_update):
+        # Skip real SVI on both update paths (joint engine with a backbone, per-head dispatch without);
+        # the surrounding update plumbing stays exercised.
+        with mocked_cmab_training():
             if k and delta and "actions_memory" not in for_update_kwargs:
                 with pytest.warns(UserWarning):
                     cmab.update(context=transform(context), **for_update_kwargs)
@@ -1599,18 +1599,37 @@ def test_cold_start_with_backbone_reports_raw_input_dim() -> None:
 
 
 @pytest.mark.parametrize(
-    "kwargs, expected_exception, match",
+    "kwarg_name, value_strategy",
     [
-        # Backbone-only knobs are rejected when no backbone is requested.
-        (dict(embedding_dim=8), TypeError, "only apply with a backbone"),
-        (dict(backbone_activation="tanh"), TypeError, "only apply with a backbone"),
-        # The shared-backbone path does not support the adaptive window yet.
-        (dict(backbone_hidden_dims=_BACKBONE_HIDDEN_DIMS, delta=0.1), ValueError, "adaptive window"),
+        ("backbone_embedding_dim", st.integers(min_value=1, max_value=64)),
+        ("backbone_activation", st.sampled_from(get_args(ActivationFunctions))),
+        ("backbone_l2_anchoring", st.floats(min_value=0, max_value=1e6, allow_nan=False, allow_infinity=False)),
+        (
+            "backbone_lr",
+            st.one_of(st.none(), st.floats(min_value=0, max_value=1.0, allow_nan=False, allow_infinity=False)),
+        ),
     ],
 )
-def test_cold_start_rejects_cross_path_arguments(
-    kwargs: Dict[str, Any], expected_exception: Type[Exception], match: str
+@given(data=st.data())
+def test_cold_start_rejects_backbone_only_kwargs_without_backbone(
+    kwarg_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
 ) -> None:
-    """Arguments belonging to the other model path raise instead of being silently ignored."""
-    with pytest.raises(expected_exception, match=match):
-        CmabBernoulli.cold_start(action_ids=_BACKBONE_ACTION_IDS, n_features=_BACKBONE_N_FEATURES, **kwargs)
+    """A backbone-only knob, at any valid value, raises instead of being silently ignored when no
+    backbone is requested (no ``backbone_hidden_dims``)."""
+    value = data.draw(value_strategy)
+    with pytest.raises(TypeError, match="only apply with a backbone"):
+        CmabBernoulli.cold_start(
+            action_ids=_BACKBONE_ACTION_IDS, n_features=_BACKBONE_N_FEATURES, **{kwarg_name: value}
+        )
+
+
+@given(delta=st.floats(min_value=0, max_value=1, exclude_min=True, allow_nan=False, allow_infinity=False))
+def test_cold_start_rejects_delta_with_backbone(delta: float) -> None:
+    """The shared-backbone path does not support the adaptive window (``delta``) yet."""
+    with pytest.raises(ValueError, match="adaptive window"):
+        CmabBernoulli.cold_start(
+            action_ids=_BACKBONE_ACTION_IDS,
+            n_features=_BACKBONE_N_FEATURES,
+            backbone_hidden_dims=_BACKBONE_HIDDEN_DIMS,
+            delta=delta,
+        )

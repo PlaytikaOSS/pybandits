@@ -262,6 +262,11 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     def approx_history(self) -> Optional[np.ndarray]:
         return self._approx_history
 
+    @property
+    def obj_optimizer(self) -> Any:
+        """The optax optimizer built from ``update_kwargs``, wrapped via ``optax_to_numpyro``."""
+        return self._obj_optimizer
+
     def _prepare_context_arrays(self, context: np.ndarray) -> Tuple[np.ndarray, Dict[int, np.ndarray]]:
         """
         Split a numpy context array into numerical and categorical index arrays.
@@ -295,36 +300,47 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         return numerical_arr, cat_indices_dict
 
-    def _get_obj_optimizer(self) -> Any:
-        """Build an optax optimizer from update_kwargs, wrapped via ``optax_to_numpyro``.
+    def build_optax_optimizer(self, step_size: Optional[float] = None) -> optax.GradientTransformation:
+        """Build the raw optax optimizer from ``update_kwargs`` (learning-rate schedule included).
 
-        Optionally chains a learning-rate schedule and/or gradient clipping.
+        Gradient clipping and the ``optax_to_numpyro`` wrapping are *not* applied here, so callers
+        training several parameter groups at once (see ``CmabMetaModel._get_joint_optimizer``) can
+        combine per-group optimizers before clipping globally.
+
+        Parameters
+        ----------
+        step_size : Optional[float], default=None
+            Learning rate override; ``None`` uses ``optimizer_kwargs["step_size"]`` (default ``0.01``).
         """
-        optimizer_type = self.update_kwargs.optimizer_type
         optimizer_kwargs = dict(self.update_kwargs.optimizer_kwargs or {})
-        lr_scheduler_type = self.update_kwargs.lr_scheduler_type
-        lr_scheduler_kwargs = self.update_kwargs.lr_scheduler_kwargs or {}
-        gradient_clip_norm = self.update_kwargs.gradient_clip_norm
-
-        optimizer_fn = self._resolve_optax_fn(optimizer_type, "optimizer")
+        default_step_size = optimizer_kwargs.pop("step_size", 0.01)
+        learning_rate = default_step_size if step_size is None else step_size
 
         # Resolve learning rate (possibly a schedule)
-        learning_rate = optimizer_kwargs.pop("step_size", 0.01)
-        if lr_scheduler_type is not None:
-            scheduler_fn = self._resolve_optax_fn(lr_scheduler_type, "lr_scheduler")
+        if self.update_kwargs.lr_scheduler_type is not None:
+            scheduler_fn = self._resolve_optax_fn(self.update_kwargs.lr_scheduler_type, "lr_scheduler")
+            lr_scheduler_kwargs = self.update_kwargs.lr_scheduler_kwargs or {}
             try:
                 learning_rate = scheduler_fn(init_value=learning_rate, **lr_scheduler_kwargs)
             except (TypeError, ValueError) as e:
                 raise e.__class__(f"Invalid lr_scheduler_kwargs: {lr_scheduler_kwargs}.\n{e}") from e
 
+        optimizer_fn = self._resolve_optax_fn(self.update_kwargs.optimizer_type, "optimizer")
         try:
-            base_optimizer = optimizer_fn(learning_rate=learning_rate, **optimizer_kwargs)
+            return optimizer_fn(learning_rate=learning_rate, **optimizer_kwargs)
         except (TypeError, ValueError, KeyError) as e:
             raise e.__class__(f"Invalid optimizer kwargs: {optimizer_kwargs}.\n{e}") from e
 
+    def clip_and_wrap_optimizer(self, optimizer: optax.GradientTransformation) -> Any:
+        """Chain ``gradient_clip_norm`` (when set) onto ``optimizer`` and wrap it for numpyro."""
+        gradient_clip_norm = self.update_kwargs.gradient_clip_norm
         if gradient_clip_norm is not None:
-            return noptim.optax_to_numpyro(optax.chain(optax.clip_by_global_norm(gradient_clip_norm), base_optimizer))
-        return noptim.optax_to_numpyro(base_optimizer)
+            optimizer = optax.chain(optax.clip_by_global_norm(gradient_clip_norm), optimizer)
+        return noptim.optax_to_numpyro(optimizer)
+
+    def _get_obj_optimizer(self) -> Any:
+        """The single-model optimizer: ``build_optax_optimizer`` plus clipping and numpyro wrapping."""
+        return self.clip_and_wrap_optimizer(self.build_optax_optimizer())
 
     def _get_early_stopping_callback(self) -> Optional[EarlyStopping]:
         early_stopping_kwargs = self.update_kwargs.early_stopping_kwargs

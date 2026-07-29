@@ -1,8 +1,10 @@
 import json
 import pickle
 import random
+from contextlib import contextmanager
 from tempfile import NamedTemporaryFile
-from typing import Any, List, Optional, Tuple
+from typing import Any, Iterator, List, Optional, Tuple
+from unittest.mock import patch
 
 import numpy as np
 from bokeh.core.serialization import Serializable
@@ -10,6 +12,7 @@ from pydantic import PositiveInt
 
 from pybandits.base import PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel
+from pybandits.meta_model import CmabMetaModel
 from pybandits.model import BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BnnLayerParams
 from pybandits.quantitative_model import BaseQuantitativeBayesianNeuralNetwork, QuantitativeModel
 
@@ -134,6 +137,22 @@ def mock_joint_svi_update(self, context, arm_to_rows, rewards_arr, quantities) -
     (context/shape validation, counter increments, adaptive window) intact.
     """
     apply_mock_update([self.actions[arm] for arm in arm_to_rows])
+
+
+@contextmanager
+def mocked_cmab_training() -> Iterator[None]:
+    """Skip real SVI in *both* cmab update paths, leaving the surrounding ``update`` plumbing intact.
+
+    ``CmabMetaModel.update`` routes through the joint SVI engine only when a shared backbone is set;
+    with no backbone it dispatches to each head's own ``update`` (and thus ``_update``). Patching only
+    one of the two silently trains the other for real — which costs hours of CI time.
+    """
+    with (
+        patch.object(BaseBayesianNeuralNetwork, "_update", mock_update),
+        patch.object(QuantitativeModel, "_update", mock_update),
+        patch.object(CmabMetaModel, "_joint_svi_update", mock_joint_svi_update),
+    ):
+        yield
 
 
 def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:

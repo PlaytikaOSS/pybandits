@@ -151,8 +151,12 @@ class TestBetaDecayFactor:
     counts = st.integers(min_value=1, max_value=MAX_COUNT)
     diverging_counts = st.integers(min_value=2, max_value=MAX_COUNT)  # > prior, so decayed != raw
     binary_rewards = st.lists(st.integers(min_value=0, max_value=1), min_size=1)
+    # Highest decay factor that still forgets *measurably*: at 1 - 1e-16 the decayed counts are within
+    # one float of the raw ones, so the two Beta(a, b) draws come out bit-identical and any
+    # "decayed sampling differs from raw sampling" assertion is vacuously false.
+    MAX_FORGETTING_DECAY_FACTOR = 0.999
     decay_factors = st.floats(min_value=MIN_DECAY_FACTOR, max_value=MAX_DECAY_FACTOR)
-    forgetting_decay_factors = st.floats(min_value=MIN_DECAY_FACTOR, max_value=MAX_DECAY_FACTOR, exclude_max=True)
+    forgetting_decay_factors = st.floats(min_value=MIN_DECAY_FACTOR, max_value=MAX_FORGETTING_DECAY_FACTOR)
 
     @given(
         decay_factor=st.one_of(st.none(), decay_factors),
@@ -1122,7 +1126,7 @@ def test_bnn_vi_update_parameters(
     assert callable(model_fn)
 
     # Optimizer is always set for VI (built from defaults or user override)
-    assert bnn._obj_optimizer is not None
+    assert bnn.obj_optimizer is not None
 
     if "early_stopping_kwargs" in update_kwargs:
         assert bnn._get_early_stopping_callback() is not None
@@ -1275,7 +1279,7 @@ def test_lr_scheduler_valid(
             "lr_scheduler_kwargs": lr_scheduler_kwargs,
         },
     )
-    assert bnn._obj_optimizer is not None
+    assert bnn.obj_optimizer is not None
 
 
 @pytest.mark.parametrize(
