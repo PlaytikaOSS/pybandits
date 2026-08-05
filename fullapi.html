@@ -967,6 +967,20 @@ in the training loop. Each element holds the per-step factor for that epoch.</p>
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.build_optax_optimizer">
+<span class="sig-name descname"><span class="pre">build_optax_optimizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">step_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">GradientTransformation</span></span></span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.build_optax_optimizer" title="Link to this definition"></a></dt>
+<dd><p>Build the raw optax optimizer from <code class="docutils literal notranslate"><span class="pre">update_kwargs</span></code> (learning-rate schedule included).</p>
+<p>Gradient clipping and the <code class="docutils literal notranslate"><span class="pre">optax_to_numpyro</span></code> wrapping are <em>not</em> applied here, so callers
+training several parameter groups at once (see <code class="docutils literal notranslate"><span class="pre">CmabMetaModel._get_joint_optimizer</span></code>) can
+combine per-group optimizers before clipping globally.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>step_size</strong> (<em>Optional</em><em>[</em><em>float</em><em>]</em><em>, </em><em>default=None</em>) – Learning rate override; <code class="docutils literal notranslate"><span class="pre">None</span></code> uses <code class="docutils literal notranslate"><span class="pre">optimizer_kwargs[&quot;step_size&quot;]</span></code> (default <code class="docutils literal notranslate"><span class="pre">0.01</span></code>).</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py attribute">
 <dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.calibrate_output_bias">
 <span class="sig-name descname"><span class="pre">calibrate_output_bias</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.calibrate_output_bias" title="Link to this definition"></a></dt>
@@ -983,6 +997,12 @@ Categorical columns are validated to contain valid integer indices within their 
 <dd class="field-odd"><p><strong>context</strong> (<em>np.ndarray</em>) – Matrix of contextual features of shape <code class="docutils literal notranslate"><span class="pre">(n_samples,</span> <span class="pre">n_cols)</span></code>.</p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.clip_and_wrap_optimizer">
+<span class="sig-name descname"><span class="pre">clip_and_wrap_optimizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">optimizer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GradientTransformation</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.clip_and_wrap_optimizer" title="Link to this definition"></a></dt>
+<dd><p>Chain <code class="docutils literal notranslate"><span class="pre">gradient_clip_norm</span></code> (when set) onto <code class="docutils literal notranslate"><span class="pre">optimizer</span></code> and wrap it for numpyro.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1239,6 +1259,12 @@ scoped sites back to namespace-free names and calls this to read back that arm�
 <dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.model_post_init">
 <span class="sig-name descname"><span class="pre">model_post_init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">_BaseBayesianNeuralNetwork__context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.model_post_init" title="Link to this definition"></a></dt>
 <dd><p>Initialize activation function PrivateAttr based on the activation setting.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.obj_optimizer">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">obj_optimizer</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Any</span></em><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.obj_optimizer" title="Link to this definition"></a></dt>
+<dd><p>The optax optimizer built from <code class="docutils literal notranslate"><span class="pre">update_kwargs</span></code>, wrapped via <code class="docutils literal notranslate"><span class="pre">optax_to_numpyro</span></code>.</p>
 </dd></dl>
 
 <dl class="py attribute">
