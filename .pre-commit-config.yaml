@@ -27,6 +27,9 @@ repos:
     rev: 0.8.1
     hooks:
       - id: nbstripout
+        # fastjsonschema>=2.22.0 uses `dict | bool` PEP 604 syntax without a `__future__` import,
+        # which breaks the CI Python 3.9 job; pin below that until 3.9 support is dropped.
+        additional_dependencies: ['fastjsonschema<2.22.0']
         args: [
           '--extra-keys',
           'metadata.kernelspec metadata.language_info.version metadata.language_info.pygments_lexer'

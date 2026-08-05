@@ -41,6 +41,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpyro
+import optax
 from loguru import logger
 from numpyro.distributions import Bernoulli as NumpyroBernoulli
 from numpyro.infer import TraceMeanField_ELBO
@@ -92,6 +93,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     * a single BNN (SO/CC/DP);
     * a multi-objective head — a list of per-objective BNNs (``BaseBayesianNeuralNetworkMO``);
     * a quantitative head — wraps a ``.bnn`` whose input is ``[quantity ‖ context]``.
+
+    How the shared encoder is trained (anchoring penalty, backbone-only learning rate) is configured on
+    the backbone itself — see :class:`~pybandits.model.bnn.backbone.MLPBackbone`.
     """
 
     actions: Dict[ActionId, CmabHeadType]  # type: ignore[assignment]
@@ -106,6 +110,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     _obj_prefix: ClassVar[str] = "obj"
     # tqdm progress-bar label for the joint SVI run.
     _svi_desc: ClassVar[str] = "cmab joint SVI"
+    # Cold-start kwargs prefix marking a key as backbone-only: it is popped and forwarded, prefix
+    # stripped, to ``MLPBackbone.cold_start`` (so a new backbone knob needs no change here).
+    _backbone_kwargs_prefix: ClassVar[str] = "backbone_"
 
     _rng_key: Any = PrivateAttr(default=None)
 
@@ -121,11 +128,12 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         """Build from a pre-made ``actions`` dict or cold-start specs, plus an optional ``backbone``.
 
         The shared ``backbone`` / ``random_seed`` fields reach this constructor two ways: inside the
-        ``kwargs`` bag on **cold start** (the backbone requested via ``backbone_hidden_dims`` plus
-        optional ``embedding_dim`` / ``backbone_activation`` — how ``cold_start`` reaches this class
-        through the generic ``BaseMab.cold_start`` factory, so no bespoke cmab ``cold_start`` is needed),
-        or as top-level keyword arguments on **pydantic (de)serialization**. Both are folded into the
-        single bag here so ``BaseMetaModel.__init__`` handles every field uniformly (no catch-all kwarg).
+        ``kwargs`` bag on **cold start** (the backbone requested via ``backbone_hidden_dims`` plus any
+        other ``backbone_``-prefixed knob — see ``_build_backbone_from_kwargs``; this is how
+        ``cold_start`` reaches this class through the generic ``BaseMab.cold_start`` factory, so no
+        bespoke cmab ``cold_start`` is needed), or as top-level keyword arguments on **pydantic
+        (de)serialization**. Both are folded into the single bag here so ``BaseMetaModel.__init__``
+        handles every field uniformly (no catch-all kwarg).
         """
         kwargs = kwargs or {}
         # Fold the explicitly-passed (de)serialization fields into the bag; ``setdefault`` yields to a
@@ -138,7 +146,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         # heads that ``BaseMetaModel.__init__`` cold-starts sit on the embedding. The built backbone is
         # stashed back into the bag as the ``backbone`` field for the base ``__init__`` to forward.
         if kwargs.get("backbone") is None:
-            built = self._build_backbone_from_kwargs(kwargs, kwargs.get("random_seed"))
+            built = self._build_backbone_from_kwargs(kwargs)
             if built is not None:
                 kwargs["backbone"] = built
         super().__init__(
@@ -149,41 +157,34 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         )
 
     @classmethod
-    def _build_backbone_from_kwargs(
-        cls, kwargs: Dict[str, Any], random_seed: Optional[NonNegativeInt]
-    ) -> Optional[MLPBackbone]:
-        """Pop the backbone specs from ``kwargs`` and build the shared encoder (``None`` if not requested).
+    def _build_backbone_from_kwargs(cls, kwargs: Dict[str, Any]) -> Optional[MLPBackbone]:
+        """Pop every ``backbone_``-prefixed key from ``kwargs`` and build the shared encoder (``None``
+        if not requested).
 
-        Mutates ``kwargs`` in place: removes ``backbone_hidden_dims``/``embedding_dim``/
-        ``backbone_activation`` and, when a backbone is built, rewrites ``n_features`` to the embedding
-        width so the per-arm heads sit on the embedding. Backbone-only knobs without
-        ``backbone_hidden_dims`` raise, rather than being silently ignored.
+        Mutates ``kwargs`` in place: each ``f"{_backbone_kwargs_prefix}{name}"`` key is popped and,
+        prefix stripped, forwarded as ``name=`` to :meth:`MLPBackbone.cold_start` — so a new
+        backbone-only knob needs a ``cold_start`` parameter there and nothing here. Keys not given keep
+        ``MLPBackbone.cold_start``'s own defaults rather than duplicating them here, except
+        ``random_seed``, which falls back to the meta-model's own so one top-level seed makes the whole
+        model reproducible. When a backbone is built, ``n_features`` is rewritten to the embedding width
+        so the per-arm heads sit on the embedding. Backbone-only knobs without ``hidden_dims`` (i.e. no
+        backbone requested) raise, rather than being silently ignored.
         """
-        hidden_dims = kwargs.pop("backbone_hidden_dims", None)
-        embedding_dim = kwargs.pop("embedding_dim", None)
-        activation = kwargs.pop("backbone_activation", None)
-        if hidden_dims is None:
-            backbone_only = {"embedding_dim": embedding_dim, "backbone_activation": activation}
-            set_params = sorted(name for name, value in backbone_only.items() if value is not None)
-            if set_params:
+        prefix = cls._backbone_kwargs_prefix
+        backbone_kwargs = {key[len(prefix) :]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
+        if "hidden_dims" not in backbone_kwargs:
+            if backbone_kwargs:
+                set_params = sorted(f"{prefix}{name}" for name in backbone_kwargs)
                 raise TypeError(f"{set_params} only apply with a backbone; pass backbone_hidden_dims=[...].")
             return None
         n_features = kwargs.get("n_features")
         if n_features is None:
             raise ValueError("n_features must be provided to build the shared backbone.")
-        emb = (
-            embedding_dim
-            if embedding_dim is not None
-            else max(1, n_features // BaseBayesianNeuralNetwork.embedding_dim_divisor)
-        )
-        backbone = MLPBackbone.cold_start(
-            n_features=n_features,
-            hidden_dims=hidden_dims,
-            embedding_dim=emb,
-            activation=activation or "relu",
-            random_seed=kwargs.get("random_seed", random_seed),
-        )
-        kwargs["n_features"] = emb  # per-arm heads live on the embedding, not the raw context
+        backbone_kwargs.setdefault("random_seed", kwargs.get("random_seed"))
+        if backbone_kwargs.get("embedding_dim") is None:
+            backbone_kwargs["embedding_dim"] = max(1, n_features // BaseBayesianNeuralNetwork.embedding_dim_divisor)
+        backbone = MLPBackbone.cold_start(n_features=n_features, **backbone_kwargs)
+        kwargs["n_features"] = backbone_kwargs["embedding_dim"]  # heads live on the embedding, not raw context
         return backbone
 
     def model_post_init(self, __context: Any) -> None:
@@ -448,7 +449,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         svi, params, _history, self._rng_key = run_svi(
             model=model,
             guide=guide,
-            optimizer=representative_bnn._obj_optimizer,
+            optimizer=self._get_joint_optimizer(representative_bnn, n_bb_layers),
             loss=loss,
             rng_key=self._rng_key,
             model_args=model_args,
@@ -462,12 +463,56 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             self._store_head(self.actions[arm], site_mu, site_sigma, arm)
         self._store_backbone(params, n_bb_layers)
 
+    def _get_joint_optimizer(self, representative_bnn: BaseBayesianNeuralNetwork, n_bb_layers: int) -> Any:
+        """The optimizer for the joint SVI pass.
+
+        One optimizer for every parameter (backbone and heads alike) unless the shared backbone sets its
+        own ``lr``, in which case an ``optax.multi_transform`` gives the backbone's params their own rate
+        — everything else (optimizer type, remaining ``optimizer_kwargs``, lr schedule) stays shared with
+        the heads. Gradient clipping is applied globally, *before* the per-group split, so the threshold
+        keeps bounding the whole gradient's norm either way.
+
+        ``backbone.lr=0.0`` uses ``optax.set_to_zero()`` rather than the adaptive optimizer at a zero
+        rate, so the per-step update is architecturally zero whatever the optimizer's internals do.
+        """
+        if self.backbone is None or self.backbone.lr is None:
+            return representative_bnn.obj_optimizer
+
+        backbone_optimizer = (
+            optax.set_to_zero()
+            if not self.backbone.lr
+            else representative_bnn.build_optax_optimizer(step_size=self.backbone.lr)
+        )
+        backbone_param_names: Set[str] = {
+            name for i in range(n_bb_layers) for name in self.backbone.get_layer_params_name(i)
+        }
+
+        def label_fn(params: Dict[str, Any]) -> Dict[str, str]:
+            return {name: ("backbone" if name in backbone_param_names else "head") for name in params}
+
+        return representative_bnn.clip_and_wrap_optimizer(
+            optax.multi_transform(
+                {"backbone": backbone_optimizer, "head": representative_bnn.build_optax_optimizer()}, label_fn
+            )
+        )
+
     def _declare_backbone(self, backbone_w: list, backbone_b: list, n_bb_layers: int) -> list:
-        """Register the backbone's deterministic weights as ``numpyro.param`` (inside the trace)."""
+        """Register the backbone's deterministic weights as ``numpyro.param`` (inside the trace).
+
+        When ``backbone.l2_anchoring > 0``, also adds a ``numpyro.factor`` quadratic penalty pulling each
+        layer's optimized weights *and* biases back toward ``backbone_w``/``backbone_b`` — the values at
+        the start of this SVI run, i.e. the previous ``update()`` call's — to bound per-call drift (see
+        :class:`~pybandits.model.bnn.backbone.MLPBackbone`). Declared outside the data plate, so the
+        penalty is not scaled by the minibatch.
+        """
         weights_biases = []
         for i in range(n_bb_layers):
             w_name, b_name = self.backbone.get_layer_params_name(i)
-            weights_biases.append((numpyro.param(w_name, backbone_w[i]), numpyro.param(b_name, backbone_b[i])))
+            w, b = numpyro.param(w_name, backbone_w[i]), numpyro.param(b_name, backbone_b[i])
+            if self.backbone.l2_anchoring > 0:
+                penalty = jnp.sum((w - backbone_w[i]) ** 2) + jnp.sum((b - backbone_b[i]) ** 2)
+                numpyro.factor(f"backbone_anchor_{i}", -0.5 * self.backbone.l2_anchoring * penalty)
+            weights_biases.append((w, b))
         return weights_biases
 
     def _full_batch_model(
