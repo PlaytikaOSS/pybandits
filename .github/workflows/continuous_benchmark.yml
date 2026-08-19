@@ -1,0 +1,66 @@
+# This is a workflow for the model execution-time benchmark
+
+name: Benchmark
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+  # Allows you to run this workflow manually from the Actions tab. Use this for the full
+  # sweep; pull requests run the reduced one (see below).
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: "Run the reduced sweep instead of the full one"
+        type: boolean
+        default: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    # A single pinned Python version, deliberately: timings are only comparable within one
+    # runner image and interpreter, so a matrix would produce numbers that cannot be read
+    # against each other.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Nothing here pushes; not retaining the token in the git config keeps
+          # it out of reach of anything the benchmark run executes.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 - --version 2.2.1
+          echo "${POETRY_HOME:-$HOME/.local}/bin" >> "$GITHUB_PATH"
+
+      - name: Install project dependencies with Poetry
+        run: |
+          poetry install --all-extras
+
+      # Pull requests run the reduced sweep so the SVI path does not dominate CI time; it
+      # exercises the identical code path, so a break in the benchmark still surfaces here.
+      - name: Run benchmark
+        run: |
+          if [ "${{ inputs.quick }}" = "false" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            poetry run python -m pybandits.benchmark_models --output benchmark.csv
+          else
+            poetry run python -m pybandits.benchmark_models --quick --output benchmark.csv
+          fi
+
+      - name: Show results
+        run: cat benchmark.csv
+
+      - name: Upload benchmark results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark.csv
+          retention-days: 30
