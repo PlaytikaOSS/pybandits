@@ -169,6 +169,21 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         model reproducible. When a backbone is built, ``n_features`` is rewritten to the embedding width
         so the per-arm heads sit on the embedding. Backbone-only knobs without ``hidden_dims`` (i.e. no
         backbone requested) raise, rather than being silently ignored.
+
+        ``categorical_features`` describes columns of the *raw* context, and only makes sense for a
+        model that actually sees that raw context. ``MLPBackbone`` has no categorical-embedding step of
+        its own (it consumes every raw column as a plain numeric input), so once a backbone is built the
+        per-arm heads sit purely on its dense embedding — an output space with no categorical columns
+        left to describe. Left in ``kwargs``, the *raw* column indices/cardinalities would otherwise
+        reach each head's own ``cold_start`` unchanged and be reinterpreted as categorical columns of the
+        embedding instead: harmless in shape only by coincidence (when every raw categorical column
+        index happens to be smaller than ``embedding_dim``), and otherwise an outright
+        ``column_index ... out of range`` error at cold start. Even in the "harmless by coincidence"
+        case the head's real first-layer width silently becomes ``embedding_dim - n_categorical +
+        sum(embedding_dim_c)`` instead of ``embedding_dim`` — passing the ``_check_models`` cross-arm
+        check (which only compares the *nominal* ``feature_config.n_features``) while the actual weight
+        matrix drifts out of sync with the backbone's output width, surfacing later as an
+        ``einsum`` shape mismatch inside the joint SVI pass. So it is popped here rather than forwarded.
         """
         prefix = cls._backbone_kwargs_prefix
         backbone_kwargs = {key[len(prefix) :]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
@@ -185,6 +200,12 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             backbone_kwargs["embedding_dim"] = max(1, n_features // BaseBayesianNeuralNetwork.embedding_dim_divisor)
         backbone = MLPBackbone.cold_start(n_features=n_features, **backbone_kwargs)
         kwargs["n_features"] = backbone_kwargs["embedding_dim"]  # heads live on the embedding, not raw context
+        if kwargs.pop("categorical_features", None):
+            logger.warning(
+                "categorical_features is not supported together with a shared backbone (the backbone has no "
+                "categorical-embedding step of its own and the per-arm heads sit on its embedding, which has no "
+                "categorical columns to describe); ignoring it for the per-arm heads."
+            )
         return backbone
 
     def model_post_init(self, __context: Any) -> None:
