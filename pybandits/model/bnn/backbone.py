@@ -29,12 +29,11 @@ Pydantic immutability is preserved by returning a new instance from :meth:`with_
 It shares its activation field, maps and resolvers with the Bayesian heads via :class:`DNNMixin`.
 """
 
-from typing import ClassVar, List, Optional, Tuple
+from typing import ClassVar, List, Optional, Self, Tuple
 
 import jax.numpy as jnp
 import numpy as np
 from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt, PositiveInt
-from typing_extensions import Self
 
 from pybandits.model.bnn._dnn import DNNMixin
 from pybandits.model.bnn._svi import forward_layers

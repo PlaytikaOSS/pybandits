@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC
-from typing import ClassVar, List, Optional, Tuple
+from typing import ClassVar, List, Optional, Self, Tuple
 
 import numpy as np
 from numpy import sqrt
@@ -31,7 +31,6 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits.base import (
     BinaryReward,

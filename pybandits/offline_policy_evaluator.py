@@ -28,7 +28,7 @@ from functools import partial
 from itertools import product
 from math import floor
 from multiprocessing import Pool, cpu_count
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Self, Tuple, Union
 
 import numpy as np
 import optuna
@@ -61,7 +61,6 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits import offline_policy_estimator
 from pybandits.base import ActionId, Float01, PyBanditsBaseModel

@@ -25,7 +25,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 from math import ceil
 from types import ModuleType
-from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Self, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -48,7 +48,6 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits.base import (
     BinaryReward,

@@ -18,9 +18,6 @@ authors = [
 license = "MIT License"
 readme = "README.md"
 classifiers = [
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -30,22 +27,12 @@ repository = "https://github.com/PlaytikaOSS/pybandits"
 keywords = ["multi-armed bandits", "reinforcement-learning", "optimization"]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.15"
+python = ">=3.12,<3.15"
 loguru = "^0.6"
-numpy = [
-    { version = ">=1.25", python = ">=3.9,<3.12" },
-    { version = ">=1.26", python = ">=3.12" },
-]
+numpy = ">=1.26"
 pydantic = "^2.0"
-scipy = [
-    { version = "^1.9", python = ">=3.9,<3.12" },
-    { version = "^1.11", python = ">=3.12,<3.13" },
-    { version = "^1.14", python = ">=3.13" },
-]
-numpyro = [
-    { version = "^0.16", python = ">=3.9,<3.11" },
-    { version = "^0.20", python = ">=3.11" },
-]
+scipy = "^1.14"
+numpyro = "^0.20"
 optax = "^0.1"
 scikit-learn = "^1.1"
 optuna = "^3.6"

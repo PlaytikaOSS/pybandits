@@ -21,7 +21,7 @@
 # SOFTWARE.
 import warnings
 from copy import deepcopy
-from typing import ClassVar, List, Literal, Optional, Union
+from typing import ClassVar, List, Literal, Optional, Self, Union
 
 from pydantic import (
     Field,
@@ -32,7 +32,6 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits.base import (
     PositiveFloat01,
