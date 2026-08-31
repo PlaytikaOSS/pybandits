@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC
-from typing import ClassVar, List, Optional, Self, Tuple
+from typing import ClassVar, Self
 
 import numpy as np
 from numpy import sqrt
@@ -50,22 +50,22 @@ class BaseBeta(Model, ABC):
         Counter of the number of successes.
     n_failures: PositiveInt = 1
         Counter of the number of failures.
-    decay_factor: Optional[PositiveFloat01] = None
+    decay_factor: PositiveFloat01 | None = None
         Per-update forgetting factor in (0, 1] inherited from Model. When set, sampling is
         driven by the effective (decayed) counts below instead of the raw n_successes/n_failures.
-    decayed_n_successes: Optional[PositiveFloat] = None
+    decayed_n_successes: PositiveFloat | None = None
         Effective number of successes after decay, used for sampling when decay_factor is set.
         Seeded from n_successes on first use; None when decay is disabled.
-    decayed_n_failures: Optional[PositiveFloat] = None
+    decayed_n_failures: PositiveFloat | None = None
         Effective number of failures after decay, used for sampling when decay_factor is set.
         Seeded from n_failures on first use; None when decay is disabled.
     """
 
-    decayed_n_successes: Optional[PositiveFloat] = None
-    decayed_n_failures: Optional[PositiveFloat] = None
+    decayed_n_successes: PositiveFloat | None = None
+    decayed_n_failures: PositiveFloat | None = None
 
     # The effective decayed counts are learned state and must be transferred alongside the raw counts.
-    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("decayed_n_successes", "decayed_n_failures")
+    _transfer_learned_keys: ClassVar[tuple[str, ...]] = ("decayed_n_successes", "decayed_n_failures")
 
     @model_validator(mode="after")
     def _init_decayed_counts(self) -> Self:
@@ -90,7 +90,7 @@ class BaseBeta(Model, ABC):
         return sqrt((n_s * n_f) / (total * (total - 1)))
 
     @validate_call
-    def _update(self, rewards: List[BinaryReward]):
+    def _update(self, rewards: list[BinaryReward]):
         """
         Update the effective decayed counts (the raw n_successes/n_failures are updated by BaseModelSO).
 
@@ -100,7 +100,7 @@ class BaseBeta(Model, ABC):
 
         Parameters
         ----------
-        rewards: List[BinaryReward]
+        rewards: list[BinaryReward]
             A list of binary rewards.
         """
         if self.decay_factor is not None:
@@ -115,7 +115,7 @@ class BaseBeta(Model, ABC):
             self.decayed_n_successes = float(self._prior_pseudo_count)
             self.decayed_n_failures = float(self._prior_pseudo_count)
 
-    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Probability]:
+    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> list[Probability]:
         """
         Sample the probability of getting a positive reward.
 
@@ -187,7 +187,7 @@ class BaseBetaMO(ModelMO, ABC):
 
     Parameters
     ----------
-    models: List[Beta] of length (n_objectives,)
+    models: list[Beta] of length (n_objectives,)
         List of Beta distributions.
     """
 
@@ -195,7 +195,7 @@ class BaseBetaMO(ModelMO, ABC):
 
     @classmethod
     @validate_call
-    def cold_start(cls, n_objectives: PositiveInt, decay_factor: Optional[PositiveFloat01] = None, **kwargs) -> Self:
+    def cold_start(cls, n_objectives: PositiveInt, decay_factor: PositiveFloat01 | None = None, **kwargs) -> Self:
         """
         Utility function to create a BetaMO or child model with cost control,
         with default parameters.
@@ -204,9 +204,9 @@ class BaseBetaMO(ModelMO, ABC):
         ----------
         n_objectives : PositiveInt
             Number of objectives (models) to create.
-        decay_factor : Optional[PositiveFloat01]
+        decay_factor : PositiveFloat01 | None
             Per-update forgetting factor forwarded to each per-objective Beta model.
-        kwargs: Dict[str, Any]
+        kwargs: dict[str, Any]
             Additional arguments for the BaseBetaMO child model.
 
         Returns
@@ -225,7 +225,7 @@ class BetaMO(BaseBetaMO):
 
     Parameters
     ----------
-    models: List[Beta] of length (n_objectives,)
+    models: list[Beta] of length (n_objectives,)
         List of Beta distributions.
     """
 
@@ -236,7 +236,7 @@ class BetaMOCC(BaseBetaMO, ModelCC):
 
     Parameters
     ----------
-    models: List[Beta] of shape (n_objectives,)
+    models: list[Beta] of shape (n_objectives,)
         List of Beta distributions.
     cost: NonNegativeFloat
         Cost associated to the Beta distribution.

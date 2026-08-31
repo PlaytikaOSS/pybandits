@@ -1,8 +1,8 @@
 """Tests for pybandits.utils module."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from types import ModuleType
-from typing import Callable, List, Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -407,7 +407,7 @@ class TestMaximizeByQuantity:
         self,
         quantity_score_func: Callable[[np.ndarray], float],
         dimension: int,
-        constraints: List[Callable[[np.ndarray], float]],
+        constraints: list[Callable[[np.ndarray], float]],
         default_n_trials: int,
     ) -> None:
         """Test maximize_by_quantity with constraints."""
@@ -504,7 +504,7 @@ class TestMaximizeByQuantity:
     )
     def test_maximize_by_quantity_various_constraint_inputs(
         self,
-        constraints: Optional[List[Callable[[np.ndarray], float]]],
+        constraints: list[Callable[[np.ndarray], float]] | None,
         default_dimension: int,
         center: float = 0.5,
     ) -> None:

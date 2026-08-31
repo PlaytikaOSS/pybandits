@@ -1,9 +1,10 @@
 import json
 import pickle
 import random
+from collections.abc import Iterator
 from contextlib import contextmanager
 from tempfile import NamedTemporaryFile
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -35,7 +36,7 @@ class _EvalArray:
         return self.array
 
 
-def sample_with_replacement(source: list, length: PositiveInt, rng: Optional[np.random.Generator] = None) -> list:
+def sample_with_replacement(source: list, length: PositiveInt, rng: np.random.Generator | None = None) -> list:
     if rng is not None:
         # Use index-based sampling to avoid numpy converting special chars (e.g. '\x00' → '') during array storage.
         indices = rng.integers(0, len(source), size=length)
@@ -43,7 +44,7 @@ def sample_with_replacement(source: list, length: PositiveInt, rng: Optional[np.
     return [random.choice(source) for _ in range(length)]
 
 
-def make_action_ids(n: int) -> Tuple[str, ...]:
+def make_action_ids(n: int) -> tuple[str, ...]:
     """Stable, indexable action-id tuple of length ``n``: ('a0', 'a1', ...).
 
     Used by tests that parametrize over action count and need predictable
@@ -52,13 +53,13 @@ def make_action_ids(n: int) -> Tuple[str, ...]:
     return tuple(f"a{i}" for i in range(n))
 
 
-def make_binary_rewards(n: int, rate: float, rng: Optional[np.random.Generator] = None) -> List[int]:
+def make_binary_rewards(n: int, rate: float, rng: np.random.Generator | None = None) -> list[int]:
     """Return a list of n binary rewards drawn from Bernoulli(rate)."""
     _rng = rng if rng is not None else np.random.default_rng()
     return _rng.binomial(1, rate, size=n).tolist()
 
 
-def make_context_matrix(n_samples: int, n_features: int, rng: Optional[np.random.Generator] = None) -> np.ndarray:
+def make_context_matrix(n_samples: int, n_features: int, rng: np.random.Generator | None = None) -> np.ndarray:
     """Return a ``(n_samples, n_features)`` matrix of standard-normal context features.
 
     Used by cmab tests to build per-batch context arrays without each test reaching
@@ -103,7 +104,7 @@ def mock_update(self, *args, **kwargs):
     self.model_params.bnn_layer_params = updated_layer_params_list
 
 
-def apply_mock_update(actions: List[Any]) -> None:
+def apply_mock_update(actions: list[Any]) -> None:
     """Apply mock_update to every BNN model contained in a list of CMAB actions.
 
     Handles all three action-model variants:
@@ -114,7 +115,7 @@ def apply_mock_update(actions: List[Any]) -> None:
 
     Parameters
     ----------
-    actions : List[Any]
+    actions : list[Any]
         The action-model objects extracted from a CMAB instance
         (e.g. ``list(cmab.actions.values())``).
     """
@@ -155,7 +156,7 @@ def mocked_cmab_training() -> Iterator[None]:
         yield
 
 
-def pop_from_state(state: str, key: str) -> Tuple[Serializable, str]:
+def pop_from_state(state: str, key: str) -> tuple[Serializable, str]:
     """
     Pop a key from a JSON string state.
 

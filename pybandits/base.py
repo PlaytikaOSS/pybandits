@@ -20,18 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from collections.abc import Callable
+from types import UnionType
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
     NewType,
-    Optional,
     Self,
-    Set,
-    Tuple,
     Union,
-    _GenericAlias,
     get_args,
     get_origin,
 )
@@ -46,47 +41,44 @@ from pydantic import (
 )
 
 ActionId = NewType("ActionId", constr(min_length=1))
-QuantitativeActionId = Tuple[ActionId, Tuple[float, ...]]
-UnifiedActionId = Union[ActionId, QuantitativeActionId]
+QuantitativeActionId = tuple[ActionId, tuple[float, ...]]
+UnifiedActionId = ActionId | QuantitativeActionId
 Float01 = NewType("Float_0_1", confloat(ge=0, le=1))
 PositiveFloat01 = NewType("PositiveFloat01", confloat(gt=0, le=1))
 Probability = NewType("Probability", Float01)
 PositiveProbability = NewType("PositiveProbability", confloat(gt=0, le=1))
-ProbabilityWeight = Tuple[Probability, float]
-MOProbability = List[Probability]
-MOProbabilityWeight = List[ProbabilityWeight]
+ProbabilityWeight = tuple[Probability, float]
+MOProbability = list[Probability]
+MOProbabilityWeight = list[ProbabilityWeight]
 # QuantitativeProbability generalizes probability to include both action quantities and their associated probability
 QuantitativeProbability = Callable[[np.ndarray], Probability]
 QuantitativeWeight = Callable[[np.ndarray], float]
-QuantitativeProbabilityWeight = Tuple[QuantitativeProbability, QuantitativeWeight]
+QuantitativeProbabilityWeight = tuple[QuantitativeProbability, QuantitativeWeight]
 QuantitativeMOProbability = Callable[[np.ndarray], MOProbability]
-QuantitativeMOProbabilityWeight = Tuple[Callable[[np.ndarray], MOProbability], Callable[[np.ndarray], float]]
+QuantitativeMOProbabilityWeight = tuple[Callable[[np.ndarray], MOProbability], Callable[[np.ndarray], float]]
 
 # A forbidden region restricts a quantitative action's quantity space [0, 1]^d.
 # Signed-margin convention: forbidden(x) > 0 => x is forbidden, <= 0 => x is allowed. A float margin (not a bare
 # bool) is required so the optimizer has directional information and degrades gracefully near the boundary.
 ForbiddenRegion = Callable[[np.ndarray], float]
 # forbidden_actions generalizes whole-arm blocking to per-arm hypercube-region blocking:
-#   - Set[ActionId]: forbid whole arms (legacy form).
-#   - Dict[ActionId, None]: forbid the whole arm (equivalent to set membership).
-#   - Dict[ActionId, ForbiddenRegion | List[ForbiddenRegion]]: forbid region(s) of a quantitative arm
+#   - set[ActionId]: forbid whole arms (legacy form).
+#   - dict[ActionId, None]: forbid the whole arm (equivalent to set membership).
+#   - dict[ActionId, ForbiddenRegion | list[ForbiddenRegion]]: forbid region(s) of a quantitative arm
 #     (multiple regions are OR-combined: a quantity is forbidden if any region forbids it).
-ForbiddenActions = Union[
-    Set[ActionId],
-    Dict[ActionId, Optional[Union[ForbiddenRegion, List[ForbiddenRegion]]]],
-]
+ForbiddenActions = set[ActionId] | dict[ActionId, ForbiddenRegion | list[ForbiddenRegion] | None]
 
-UnifiedProbability = Union[Probability, QuantitativeProbability]
-UnifiedProbabilityWeight = Union[ProbabilityWeight, QuantitativeProbabilityWeight]
-UnifiedMOProbability = Union[MOProbability, QuantitativeMOProbability]
-UnifiedMOProbabilityWeight = Union[MOProbabilityWeight, QuantitativeMOProbabilityWeight]
+UnifiedProbability = Probability | QuantitativeProbability
+UnifiedProbabilityWeight = ProbabilityWeight | QuantitativeProbabilityWeight
+UnifiedMOProbability = MOProbability | QuantitativeMOProbability
+UnifiedMOProbabilityWeight = MOProbabilityWeight | QuantitativeMOProbabilityWeight
 # SmabPredictions is a tuple of two lists: the first list contains the selected action ids,
 # and the second list contains their associated probabilities
 SmabPredictions = NewType(
     "SmabPredictions",
-    Tuple[
-        List[UnifiedActionId],
-        Union[List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, MOProbability]]],
+    tuple[
+        list[UnifiedActionId],
+        list[dict[UnifiedActionId, Probability]] | list[dict[UnifiedActionId, MOProbability]],
     ],
 )
 # CmabPredictions is a tuple of three lists: the first list contains the selected action ids,
@@ -94,29 +86,25 @@ SmabPredictions = NewType(
 # and the third list contains their associated weighted sums
 CmabPredictions = NewType(
     "CmabPredictions",
-    Union[
-        Tuple[List[UnifiedActionId], List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, float]]],
-        Tuple[
-            List[UnifiedActionId], List[Dict[UnifiedActionId, MOProbability]], List[Dict[UnifiedActionId, List[float]]]
-        ],
+    tuple[list[UnifiedActionId], list[dict[UnifiedActionId, Probability]], list[dict[UnifiedActionId, float]]]
+    | tuple[
+        list[UnifiedActionId], list[dict[UnifiedActionId, MOProbability]], list[dict[UnifiedActionId, list[float]]]
     ],
 )
-Predictions = NewType("Predictions", Union[SmabPredictions, CmabPredictions])
+Predictions = NewType("Predictions", SmabPredictions | CmabPredictions)
 BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
 ActionRewardLikelihood = NewType(
     "ActionRewardLikelihood",
-    Union[
-        Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
-        Dict[ActionId, Union[Probability, Callable[[np.ndarray], Probability]]],
-        Dict[ActionId, Union[List[Probability], Callable[[np.ndarray], List[Probability]]]],
-    ],
+    dict[ActionId, float | Callable[[np.ndarray], float]]
+    | dict[ActionId, list[float] | Callable[[np.ndarray], list[float]]]
+    | dict[ActionId, Probability | Callable[[np.ndarray], Probability]]
+    | dict[ActionId, list[Probability] | Callable[[np.ndarray], list[Probability]]],
 )
 ACTION_IDS_PREFIX = "action_ids_"
 ACTIONS = "actions"
 QUANTITATIVE_ACTION_IDS_PREFIX = f"quantitative_{ACTION_IDS_PREFIX}"
-SerializablePrimitive = Union[str, int, float, bool, None]
-Serializable = Union[SerializablePrimitive, Dict[str, "Serializable"], List["Serializable"]]
+SerializablePrimitive = str | int | float | bool | None
+Serializable = SerializablePrimitive | dict[str, "Serializable"] | list["Serializable"]
 
 
 class PyBanditsBaseModel(BaseModel):
@@ -169,15 +157,15 @@ class PyBanditsBaseModel(BaseModel):
         return self.model_copy(update={argument_name: argument_value})
 
     @classmethod
-    def _get_value_with_default(cls, key: str, values: Dict[str, Any]) -> Any:
+    def _get_value_with_default(cls, key: str, values: dict[str, Any]) -> Any:
         return values.get(key, cls.model_fields[key].default)
 
     @classmethod
     def _get_field_type(cls, key: str) -> Any:
         annotation = cls.model_fields[key].annotation
-        if isinstance(annotation, _GenericAlias) and get_origin(annotation) is dict:
-            annotation = get_args(annotation)[1]  # refer to the type of the Dict values
-        if get_origin(annotation) is Union:
+        if get_origin(annotation) is dict:
+            annotation = get_args(annotation)[1]  # refer to the type of the dict values
+        if get_origin(annotation) in (Union, UnionType):
             annotation = get_args(annotation)
         return annotation
 

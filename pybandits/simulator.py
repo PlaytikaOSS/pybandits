@@ -23,8 +23,9 @@
 import os.path
 import random
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from functools import cached_property
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -60,8 +61,8 @@ from pybandits.utils import in_jupyter_notebook, visualize_via_bokeh
 DoubleParametricActionProbability = Callable[[np.ndarray, np.ndarray], Probability]
 #                                  one of: quantity or context
 ParametricActionProbability = Callable[[np.ndarray], Probability]
-ProbabilityValue = Union[Probability, ParametricActionProbability, DoubleParametricActionProbability]
-ActionProbabilityGroundTruth = Dict[ActionId, ProbabilityValue]
+ProbabilityValue = Probability | ParametricActionProbability | DoubleParametricActionProbability
+ActionProbabilityGroundTruth = dict[ActionId, ProbabilityValue]
 
 
 class Simulator(PyBanditsBaseModel, ABC):
@@ -80,7 +81,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         The number of updates (i.e. batches of samples) in the simulation.
     batch_size : PositiveInt, defaults to 100
         The number of samples per batch.
-    probs_reward : Optional[Union[ActionProbabilityGroundTruth, Dict[str, ActionProbabilityGroundTruth]]]
+    probs_reward : ActionProbabilityGroundTruth | dict[str, ActionProbabilityGroundTruth] | None
         The reward probability for the different actions. If None probabilities are set to 0.5.
         The keys of the dict must match the mab actions_ids, and the quantities are float in the interval [0, 1].
         e.g. probs_reward={"a1 A": [0.6], "a2 B": [0.5], "a3": [0.8]}.
@@ -102,15 +103,15 @@ class Simulator(PyBanditsBaseModel, ABC):
     mab: BaseMab
     n_updates: PositiveInt = 10
     batch_size: PositiveInt = 100
-    probs_reward: Optional[Union[ActionProbabilityGroundTruth, Dict[str, ActionProbabilityGroundTruth]]] = None
+    probs_reward: ActionProbabilityGroundTruth | dict[str, ActionProbabilityGroundTruth] | None = None
     save: bool = False
     path: str = ""
     file_prefix: str = ""
-    random_seed: Optional[NonNegativeInt] = None
+    random_seed: NonNegativeInt | None = None
     verbose: bool = False
     visualize: bool = False
     _results: pd.DataFrame = PrivateAttr()
-    _base_columns: List[str] = PrivateAttr()
+    _base_columns: list[str] = PrivateAttr()
     _cumulative_col_prefix: str = "cum"
     # Define dash patterns, markers, and colors for lines
     _dash_patterns = ["solid", "dashed", "dotted"]
@@ -122,7 +123,7 @@ class Simulator(PyBanditsBaseModel, ABC):
 
     @classmethod
     def _validate_probs_reward_dict(
-        cls, action_probability_ground_truth: ActionProbabilityGroundTruth, actions: Dict[ActionId, BaseModelSO]
+        cls, action_probability_ground_truth: ActionProbabilityGroundTruth, actions: dict[ActionId, BaseModelSO]
     ):
         if set(action_probability_ground_truth.keys()) != set(actions.keys()):
             raise ValueError("The keys of the action probability ground truth dictionary must match the actions.")
@@ -191,7 +192,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         second_dimension: NonNegativeInt = 0,
         n_points: PositiveInt = 10,
         spline_degree: PositiveInt = 3,
-    ) -> Union[ParametricActionProbability, DoubleParametricActionProbability]:
+    ) -> ParametricActionProbability | DoubleParametricActionProbability:
         """
         Generate a spline for the given dimensions.
 
@@ -208,7 +209,7 @@ class Simulator(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        Union[ParametricActionProbability, DoubleParametricActionProbability]
+        ParametricActionProbability | DoubleParametricActionProbability
             The spline function.
         """
         if spline_degree >= n_points:
@@ -284,9 +285,9 @@ class Simulator(PyBanditsBaseModel, ABC):
     def _step(
         self,
         batch_index: int,
-        metadata: Dict[str, List],
-        predict_kwargs: Dict[str, Union[int, np.ndarray]],
-        update_kwargs: Dict[str, np.ndarray],
+        metadata: dict[str, list],
+        predict_kwargs: dict[str, int | np.ndarray],
+        update_kwargs: dict[str, np.ndarray],
     ):
         """
         Perform a step of the simulation process. It consists in the following steps:
@@ -299,11 +300,11 @@ class Simulator(PyBanditsBaseModel, ABC):
         ----------
         batch_index : int
             The index of the batch.
-        metadata : Dict[str, List]
+        metadata : dict[str, List]
             The metadata for the selected actions.
-        predict_kwargs : Dict[str, Union[int, np.ndarray]]
+        predict_kwargs : dict[str, int | np.ndarray]
             Dictionary containing the keyword arguments for the batch used in mab.predict.
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Dictionary containing the keyword arguments for the batch used in mab.update.
         """
         # select actions for batch #index
@@ -326,23 +327,23 @@ class Simulator(PyBanditsBaseModel, ABC):
 
     @abstractmethod
     def _draw_rewards(
-        self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
-    ) -> List[BinaryReward]:
+        self, actions: list[UnifiedActionId], metadata: dict[str, list], update_kwargs: dict[str, np.ndarray]
+    ) -> list[BinaryReward]:
         """
         Draw rewards for the selected actions based on metadata according to probs_reward.
 
         Parameters
         ----------
-        actions : List[UnifiedActionId]
+        actions : list[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
-        metadata : Dict[str, List]
+        metadata : dict[str, List]
             The metadata for the selected actions.
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Update keyword arguments.
 
         Returns
         -------
-        reward : List[BinaryReward]
+        reward : list[BinaryReward]
             A list of binary rewards.
         """
 
@@ -360,7 +361,7 @@ class Simulator(PyBanditsBaseModel, ABC):
     @abstractmethod
     def _get_batch_step_kwargs_and_metadata(
         self, batch_index: int
-    ) -> Tuple[Dict[str, Union[int, np.ndarray]], Dict[str, np.ndarray], Dict[str, List]]:
+    ) -> tuple[dict[str, int | np.ndarray], dict[str, np.ndarray], dict[str, list]]:
         """
         Extract kwargs required for the MAB's update and predict functionality,
         as well as metadata for sample association.
@@ -372,16 +373,16 @@ class Simulator(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        predict_kwargs : Dict[str, Union[int, np.ndarray]]
+        predict_kwargs : dict[str, int | np.ndarray]
             Dictionary containing the keyword arguments for the batch used in mab.predict.
-        update_kwargs : Dict[str, Any]
+        update_kwargs : dict[str, Any]
             Dictionary containing the keyword arguments for the batch used in mab.update.
-        metadata : Dict[str, List]
+        metadata : dict[str, List]
             Dictionary containing the association information for the batch.
         """
 
     @abstractmethod
-    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]) -> pd.DataFrame:
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: dict[str, np.ndarray]) -> pd.DataFrame:
         """
         Finalize the step by adding additional information to the batch results.
 
@@ -389,7 +390,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         ----------
         batch_results : pd.DataFrame
             raw batch results
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Update keyword arguments
 
         Returns
@@ -410,25 +411,25 @@ class Simulator(PyBanditsBaseModel, ABC):
         self._results["cum_regret"] = self._results["regret"].cumsum()
 
     @cached_property
-    def _action_ids(self) -> List[ActionId]:
+    def _action_ids(self) -> list[ActionId]:
         """
         Get the list of actions.
 
         Returns
         -------
-        List[ActionId]
+        list[ActionId]
             The list of actions
         """
         return sorted(list(self.mab.actions.keys()))
 
     @cached_property
-    def _cumulative_actions_cols(self) -> List[str]:
+    def _cumulative_actions_cols(self) -> list[str]:
         """
         Get the list of cumulative actions columns.
 
         Returns
         -------
-        : List[str]
+        : list[str]
             The list of cumulative actions columns
         """
         return [f"{self._cumulative_col_prefix}_{action}" for action in self._action_ids]
@@ -448,7 +449,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         return Category10[max(n_actions, min(category10_keys))] if n_actions <= max(category10_keys) else Turbo256
 
     @classmethod
-    def _impute_missing_counts(cls, df: pd.DataFrame, action_ids: List[ActionId]) -> pd.DataFrame:
+    def _impute_missing_counts(cls, df: pd.DataFrame, action_ids: list[ActionId]) -> pd.DataFrame:
         """
         Impute missing counts for actions in the data frame.
 
@@ -456,7 +457,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         ----------
         df : pd.DataFrame
             Data frame with counts of actions selected by the bandit.
-        action_ids : List[ActionId]
+        action_ids : list[ActionId]
             List of action ids.
 
         Returns
@@ -646,11 +647,11 @@ class Simulator(PyBanditsBaseModel, ABC):
     def _add_line_to_figure(
         self,
         fig: Plot,
-        legend_items: List[Tuple[str, List]],
+        legend_items: list[tuple[str, list]],
         df: pd.DataFrame,
         index: int,
         action: ActionId,
-        action_data_source_id: Optional[str] = None,
+        action_data_source_id: str | None = None,
     ):
         """
         Add a line corresponding to action based on filtering df using action_data_source_id to the figure.
@@ -659,7 +660,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         ----------
         fig : Plot
             Bokeh figure for which a line should be added.
-        legend_items : List[Tuple[str, List]
+        legend_items : list[tuple[str, list]]
             List of legend elements, given by tuples of name and associated plot members.
         df : DataFrame
             Data frame to filter for line data.
@@ -667,7 +668,7 @@ class Simulator(PyBanditsBaseModel, ABC):
             Line serial number.
         action : ActionId
             Subjected action.
-        action_data_source_id : Optional[str], resorts to action if not specified
+        action_data_source_id : str | None, resorts to action if not specified
             Corresponding value to action to filter df by.
         """
 
@@ -684,13 +685,13 @@ class Simulator(PyBanditsBaseModel, ABC):
         legend_items.append((action, [line, scatter]))
 
     @staticmethod
-    def _add_legend_to_figure(legend_items: List[Tuple[str, List]], fig: Plot):
+    def _add_legend_to_figure(legend_items: list[tuple[str, list]], fig: Plot):
         """
         Add legend with the legend items to fig.
 
         Parameters
         ----------
-        legend_items : List[Tuple[str, List]
+        legend_items : list[tuple[str, list]]
             List of legend elements, given by tuples of name and associated plot members.
         fig : Plot
             Bokeh figure for which a legend should be added.
@@ -702,7 +703,7 @@ class Simulator(PyBanditsBaseModel, ABC):
         fig.add_layout(legend, "right")
 
     @staticmethod
-    def _get_modulus_element(index: int, elements: List):
+    def _get_modulus_element(index: int, elements: list):
         """
         Get the element of the list at the index modulo the length of the list.
 

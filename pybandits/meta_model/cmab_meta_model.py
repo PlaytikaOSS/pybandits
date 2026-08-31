@@ -34,8 +34,9 @@ isolated to the cmab path.
 
 import functools
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import nullcontext
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union, cast
+from typing import Any, ClassVar, Generic, TypeVar, cast
 
 import jax
 import jax.numpy as jnp
@@ -71,7 +72,7 @@ from pybandits.quantitative_model import (
 
 CmabHeadType = TypeVar(
     "CmabHeadType",
-    bound=Union[BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO, BaseQuantitativeBayesianNeuralNetwork],
+    bound=BaseBayesianNeuralNetwork | BaseBayesianNeuralNetworkMO | BaseQuantitativeBayesianNeuralNetwork,
 )
 
 
@@ -98,9 +99,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     the backbone itself — see :class:`~pybandits.model.bnn.backbone.MLPBackbone`.
     """
 
-    actions: Dict[ActionId, CmabHeadType]  # type: ignore[assignment]
-    backbone: Optional[MLPBackbone] = None
-    random_seed: Optional[NonNegativeInt] = None
+    actions: dict[ActionId, CmabHeadType]  # type: ignore[assignment]
+    backbone: MLPBackbone | None = None
+    random_seed: NonNegativeInt | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -118,12 +119,12 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
     def __init__(
         self,
-        actions: Optional[Dict[ActionId, BaseModel]] = None,
-        action_ids: Optional[Set[ActionId]] = None,
-        quantitative_action_ids: Optional[Set[ActionId]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
-        backbone: Optional[MLPBackbone] = None,
-        random_seed: Optional[NonNegativeInt] = None,
+        actions: dict[ActionId, BaseModel] | None = None,
+        action_ids: set[ActionId] | None = None,
+        quantitative_action_ids: set[ActionId] | None = None,
+        kwargs: dict[str, Any] | None = None,
+        backbone: MLPBackbone | None = None,
+        random_seed: NonNegativeInt | None = None,
     ):
         """Build from a pre-made ``actions`` dict or cold-start specs, plus an optional ``backbone``.
 
@@ -157,7 +158,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         )
 
     @classmethod
-    def _build_backbone_from_kwargs(cls, kwargs: Dict[str, Any]) -> Optional[MLPBackbone]:
+    def _build_backbone_from_kwargs(cls, kwargs: dict[str, Any]) -> MLPBackbone | None:
         """Pop every ``backbone_``-prefixed key from ``kwargs`` and build the shared encoder (``None``
         if not requested).
 
@@ -274,7 +275,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         return cast(BaseBayesianNeuralNetwork, head).input_dim  # quantitative.input_dim excludes quantity cols
 
     @classmethod
-    def _arm_units(cls, head: BaseModel) -> List[Tuple[BaseBayesianNeuralNetwork, Optional[int], bool]]:
+    def _arm_units(cls, head: BaseModel) -> list[tuple[BaseBayesianNeuralNetwork, int | None, bool]]:
         """Decompose a head into joint-model sub-units.
 
         Returns ``(bnn, objective_index_or_None, is_quantitative)`` per trainable BNN: one quantitative
@@ -287,7 +288,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         return [(cast(BaseBayesianNeuralNetwork, head), None, False)]
 
     @classmethod
-    def _unit_scope(cls, arm: ActionId, obj_index: Optional[int]) -> str:
+    def _unit_scope(cls, arm: ActionId, obj_index: int | None) -> str:
         """``numpyro.handlers.scope`` prefix isolating one trainable unit's sites in the joint trace.
 
         Per-arm for single-objective/quantitative heads; per-(arm, objective) for multi-objective.
@@ -298,11 +299,11 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     def sample_proba(
         self,
         rng: np.random.Generator,
-        valid_action_ids: Optional[Set[ActionId]] = None,
+        valid_action_ids: set[ActionId] | None = None,
         *,
         context: np.ndarray,
         **kwargs: Any,
-    ) -> Dict[ActionId, SampleProbaResult]:
+    ) -> dict[ActionId, SampleProbaResult]:
         """Embed the context once (if a backbone is set), then sample each (valid) head on it."""
         # The actions manager already validated/cast the context; embed it once when a backbone is set,
         # otherwise pass it straight to the per-arm heads (which handle their own shape checks).
@@ -315,10 +316,10 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
     def update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
         context: np.ndarray,
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        quantities: list[float | list[float] | None] | None = None,
         **kwargs: Any,
     ) -> None:
         """Run one joint SVI pass over the batch (VI-only), then drop it (no replay buffer).
@@ -350,7 +351,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                         f"multi-objective action '{action_id}' expects rewards with {n_obj} objectives per row."
                     )
 
-        arm_to_rows: Dict[ActionId, List[int]] = defaultdict(list)
+        arm_to_rows: dict[ActionId, list[int]] = defaultdict(list)
         for row_index, action_id in enumerate(actions):
             arm_to_rows[action_id].append(row_index)
 
@@ -368,9 +369,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     def _joint_svi_update(
         self,
         context: np.ndarray,
-        arm_to_rows: Dict[ActionId, List[int]],
+        arm_to_rows: dict[ActionId, list[int]],
         rewards_arr: np.ndarray,
-        quantities: Optional[List[Union[float, List[float], None]]],
+        quantities: list[float | list[float] | None] | None,
     ) -> None:
         """Train the (optional) backbone point estimates + all per-arm head posteriors in one SVI pass.
 
@@ -400,11 +401,11 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         ----------
         context : np.ndarray of shape (n_samples, input_dim)
             Feature matrix for the batch (raw context, or backbone input).
-        arm_to_rows : Dict[ActionId, List[int]]
+        arm_to_rows : dict[ActionId, list[int]]
             Row indices of ``context`` belonging to each arm in the batch.
         rewards_arr : np.ndarray
             Rewards for the batch; 1-D for single-objective, 2-D ``(n_samples, n_objectives)`` for MO.
-        quantities : Optional[List[Union[float, List[float], None]]]
+        quantities : list[float | list[float] | None] | None
             Per-sample quantities for quantitative heads; ``None`` for non-quantitative batches.
         """
         batch_arms = list(arm_to_rows)
@@ -423,7 +424,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             action_index = jnp.asarray(self._build_action_index(arm_to_rows, batch_arms), dtype=jnp.int32)
             y_all = jnp.asarray(rewards_arr, dtype=jnp.int32)
             model = self._make_so_model(batch_arms, representative_bnn, batch_size, n_samples, declare_backbone)
-            model_args: Tuple[Any, ...] = (x, action_index, y_all)
+            model_args: tuple[Any, ...] = (x, action_index, y_all)
         else:
             if batch_size is not None and batch_size < n_samples:
                 logger.warning(
@@ -483,11 +484,11 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             if not self.backbone.lr
             else representative_bnn.build_optax_optimizer(step_size=self.backbone.lr)
         )
-        backbone_param_names: Set[str] = {
+        backbone_param_names: set[str] = {
             name for i in range(n_bb_layers) for name in self.backbone.get_layer_params_name(i)
         }
 
-        def label_fn(params: Dict[str, Any]) -> Dict[str, str]:
+        def label_fn(params: dict[str, Any]) -> dict[str, str]:
             return {name: ("backbone" if name in backbone_param_names else "head") for name in params}
 
         return representative_bnn.clip_and_wrap_optimizer(
@@ -518,10 +519,10 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     def _full_batch_model(
         self,
         x_: jax.Array,
-        arm_data_: Dict[ActionId, Any],
+        arm_data_: dict[ActionId, Any],
         kl_annealing_factor: float = 1.0,
         *,
-        arm_q: Dict[ActionId, Any],
+        arm_q: dict[ActionId, Any],
         declare_backbone: Callable[[], list],
     ) -> None:
         """The full-batch joint NumPyro model for MO/quantitative heads; bound by :meth:`_joint_svi_update`.
@@ -554,14 +555,14 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         )
 
     @staticmethod
-    def _build_action_index(arm_to_rows: Dict[ActionId, List[int]], batch_arms: List[ActionId]) -> np.ndarray:
+    def _build_action_index(arm_to_rows: dict[ActionId, list[int]], batch_arms: list[ActionId]) -> np.ndarray:
         """Map each row to its arm's position in ``batch_arms`` (the arm-indexing trick's lookup).
 
         Parameters
         ----------
-        arm_to_rows : Dict[ActionId, List[int]]
+        arm_to_rows : dict[ActionId, list[int]]
             Row indices belonging to each arm.
-        batch_arms : List[ActionId]
+        batch_arms : list[ActionId]
             Fixed arm order; the stacked per-arm head params follow this order.
 
         Returns
@@ -578,9 +579,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
     def _make_so_model(
         self,
-        batch_arms: List[ActionId],
+        batch_arms: list[ActionId],
         representative_bnn: BaseBayesianNeuralNetwork,
-        batch_size: Optional[int],
+        batch_size: int | None,
         n_samples: int,
         declare_backbone: Callable[[], list],
     ) -> Callable:
@@ -602,11 +603,11 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
         Parameters
         ----------
-        batch_arms : List[ActionId]
+        batch_arms : list[ActionId]
             Fixed arm order (matches ``_build_action_index``).
         representative_bnn : BaseBayesianNeuralNetwork
             Any head; supplies the shared activation / residual flag / feature config.
-        batch_size : Optional[int]
+        batch_size : int | None
             Minibatch size (subsample from ``n_samples``); ``None`` (or ``>= n_samples``) is full-batch.
         n_samples : int
             Total rows (the data plate's ``size``).
@@ -634,9 +635,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         y_: jax.Array,
         kl_annealing_factor: float = 1.0,
         *,
-        batch_arms: List[ActionId],
+        batch_arms: list[ActionId],
         representative_bnn: BaseBayesianNeuralNetwork,
-        batch_size: Optional[int],
+        batch_size: int | None,
         n_samples: int,
         declare_backbone: Callable[[], list],
     ) -> None:
@@ -671,17 +672,17 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
 
     @staticmethod
-    def _stack_head_sites(per_arm: List[Tuple[list, list]]) -> Tuple[list, list]:
+    def _stack_head_sites(per_arm: list[tuple[list, list]]) -> tuple[list, list]:
         """Stack per-arm sampled head sites across arms for the arm-indexing gather.
 
         Parameters
         ----------
-        per_arm : List[Tuple[list, list]]
+        per_arm : list[tuple[list, list]]
             One ``(weights_biases, embedding_matrices)`` per arm (in ``batch_arms`` order).
 
         Returns
         -------
-        Tuple[list, list]
+        tuple[list, list]
             ``(stacked_wb, stacked_emb)`` where each layer's ``(w, b)`` is stacked to
             ``(num_arms, in, out)`` / ``(num_arms, out)`` and each categorical embedding to
             ``(num_arms, cardinality, emb_dim)``.
@@ -734,7 +735,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             parts.append(stacked_emb[i][arm_of_row, cat_vals])
         return jnp.concatenate(parts, axis=1) if len(parts) > 1 else parts[0]
 
-    def _build_joint_guide(self, model: Callable, batch_arms: List[ActionId]) -> ParameterizedScaleAutoNormal:
+    def _build_joint_guide(self, model: Callable, batch_arms: list[ActionId]) -> ParameterizedScaleAutoNormal:
         """Build the joint ADVI guide, seeding each unit's sites under its scope prefix.
 
         Each head contributes namespace-free guide-init arrays (means/sigmas from its current
@@ -746,7 +747,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         ----------
         model : Callable
             The joint NumPyro model the guide wraps.
-        batch_arms : List[ActionId]
+        batch_arms : list[ActionId]
             Arms present in this batch (each contributes its head's sites).
 
         Returns
@@ -768,12 +769,12 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         )
         return ParameterizedScaleAutoNormal(model, init_loc_fn=init_loc_fn, init_scale_fn=init_scale_fn)
 
-    def _backbone_jax_params(self) -> Tuple[list, list, int]:
+    def _backbone_jax_params(self) -> tuple[list, list, int]:
         """JAX copies of the backbone's deterministic weights/biases (empty when no backbone).
 
         Returns
         -------
-        Tuple[list, list, int]
+        tuple[list, list, int]
             ``(weights, biases, n_layers)`` as jnp arrays; ``([], [], 0)`` with no backbone.
         """
         if self.backbone is None:
@@ -783,23 +784,23 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         return w, b, len(w)
 
     def _build_arm_quantities(
-        self, arm_to_rows: Dict[ActionId, List[int]], quantities: Optional[List[Union[float, List[float], None]]]
-    ) -> Dict[ActionId, Any]:
+        self, arm_to_rows: dict[ActionId, list[int]], quantities: list[float | list[float] | None] | None
+    ) -> dict[ActionId, Any]:
         """Per-arm quantity matrices ``(n_arm_rows, dimension)`` for quantitative heads (jnp), else {}.
 
         Parameters
         ----------
-        arm_to_rows : Dict[ActionId, List[int]]
+        arm_to_rows : dict[ActionId, list[int]]
             Row indices of the batch belonging to each arm.
-        quantities : Optional[List[Union[float, List[float], None]]]
+        quantities : list[float | list[float] | None] | None
             Per-sample quantities; must be present for every row of a quantitative arm.
 
         Returns
         -------
-        Dict[ActionId, Any]
+        dict[ActionId, Any]
             Quantity matrix per quantitative arm; non-quantitative arms are omitted.
         """
-        arm_q: Dict[ActionId, Any] = {}
+        arm_q: dict[ActionId, Any] = {}
         for arm, rows in arm_to_rows.items():
             head = self.actions[arm]
             if not isinstance(head, BaseQuantitativeBayesianNeuralNetwork):
@@ -849,7 +850,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         new_b = [np.asarray(params[bn]) for _, bn in layer_names]
         self.backbone = self.backbone.with_weights_and_biases(new_w, new_b)
 
-    def _increment_counters(self, arm_to_rows: Dict[ActionId, List[int]], rewards_arr: np.ndarray) -> None:
+    def _increment_counters(self, arm_to_rows: dict[ActionId, list[int]], rewards_arr: np.ndarray) -> None:
         """Keep each head's success/failure counters in sync (the joint engine bypasses per-head ``update``).
 
         These counters feed the manager's adaptive-window stats. The joint SVI pass trains every arm at
@@ -859,7 +860,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
         Parameters
         ----------
-        arm_to_rows : Dict[ActionId, List[int]]
+        arm_to_rows : dict[ActionId, list[int]]
             Row indices of the batch belonging to each arm.
         rewards_arr : np.ndarray
             Rewards for the batch (1-D single-objective, 2-D ``(n_samples, n_objectives)`` for MO).
@@ -875,8 +876,8 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
 
 # Module-level aliases for concrete parameterisations (required for pickling; see meta_model.py).
-CmabMetaModelSO = CmabMetaModel[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]]
-CmabMetaModelCC = CmabMetaModel[Union[BayesianNeuralNetworkCC, QuantitativeBayesianNeuralNetworkCC]]
-CmabMetaModelDP = CmabMetaModel[Union[BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP]]
+CmabMetaModelSO = CmabMetaModel[BayesianNeuralNetwork | QuantitativeBayesianNeuralNetwork]
+CmabMetaModelCC = CmabMetaModel[BayesianNeuralNetworkCC | QuantitativeBayesianNeuralNetworkCC]
+CmabMetaModelDP = CmabMetaModel[BayesianNeuralNetworkDP | QuantitativeBayesianNeuralNetworkDP]
 CmabMetaModelMO = CmabMetaModel[BayesianNeuralNetworkMO]
 CmabMetaModelMOCC = CmabMetaModel[BayesianNeuralNetworkMOCC]

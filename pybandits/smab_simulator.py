@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 import random
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -39,8 +39,8 @@ from pybandits.utils import (
 
 #                                        quantity
 ParametricActionProbability = Callable[[np.ndarray], Probability]
-SmabProbabilityValue = Union[Probability, ParametricActionProbability]
-SmabActionProbabilityGroundTruth = Dict[ActionId, SmabProbabilityValue]
+SmabProbabilityValue = Probability | ParametricActionProbability
+SmabActionProbabilityGroundTruth = dict[ActionId, SmabProbabilityValue]
 
 
 class SmabSimulator(Simulator):
@@ -57,9 +57,9 @@ class SmabSimulator(Simulator):
         sMAB model.
     """
 
-    probs_reward: Optional[Union[SmabActionProbabilityGroundTruth, Dict[str, SmabActionProbabilityGroundTruth]]] = None
+    probs_reward: SmabActionProbabilityGroundTruth | dict[str, SmabActionProbabilityGroundTruth] | None = None
     mab: BaseSmabBernoulli = Field(validation_alias="smab")
-    _base_columns: List[str] = ["batch", "action", "reward"]
+    _base_columns: list[str] = ["batch", "action", "reward"]
 
     @classmethod
     def _validate_probs_reward_values(cls, probability: SmabProbabilityValue, is_quantitative_action: bool):
@@ -104,21 +104,21 @@ class SmabSimulator(Simulator):
         )
 
     def _draw_rewards(
-        self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
-    ) -> List[BinaryReward]:
+        self, actions: list[UnifiedActionId], metadata: dict[str, list], update_kwargs: dict[str, np.ndarray]
+    ) -> list[BinaryReward]:
         """
         Draw rewards for the selected actions according to probs_reward.
 
         Parameters
         ----------
-        actions : List[UnifiedActionId]
+        actions : list[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
-        metadata : Dict[str, List]
+        metadata : dict[str, List]
             The metadata for the selected actions. Not used in this implementation.
 
         Returns
         -------
-        reward : List[BinaryReward]
+        reward : list[BinaryReward]
             A list of binary rewards.
         """
         rewards = [int(random.random() < self._extract_ground_truth(a)) for a in actions]
@@ -148,7 +148,7 @@ class SmabSimulator(Simulator):
 
     def _get_batch_step_kwargs_and_metadata(
         self, batch_index
-    ) -> Tuple[Dict[str, int], Dict[str, np.ndarray], Dict[str, List]]:
+    ) -> tuple[dict[str, int], dict[str, np.ndarray], dict[str, list]]:
         """
         Extract context required for the sMAB's update and predict functionality,
         as well as metadata for sample group.
@@ -160,11 +160,11 @@ class SmabSimulator(Simulator):
 
         Returns
         -------
-        predict_kwargs : Dict[str, int]
+        predict_kwargs : dict[str, int]
             Dictionary containing the number of samples for sMAB prediction.
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Dictionary containing nothing.
-        metadata : Dict[str, List]
+        metadata : dict[str, List]
             Dictionary containing nothing.
         """
         predict_kwargs = {"n_samples": self.batch_size}
@@ -172,7 +172,7 @@ class SmabSimulator(Simulator):
         metadata = {}
         return predict_kwargs, update_kwargs, metadata
 
-    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]) -> pd.DataFrame:
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: dict[str, np.ndarray]) -> pd.DataFrame:
         """
         Finalize the step by adding additional information to the batch results.
 
@@ -180,7 +180,7 @@ class SmabSimulator(Simulator):
         ----------
         batch_results : pd.DataFrame
             Raw batch results
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Placeholder for interface compatability
 
         Returns

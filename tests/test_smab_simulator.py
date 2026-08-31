@@ -21,8 +21,8 @@
 # SOFTWARE.
 
 import os
+from collections.abc import Callable
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pytest
@@ -75,8 +75,8 @@ def test_mismatched_probs_reward_columns(mocker: MockerFixture):
 )
 def test_smab_simulator_with_explicit_probs_reward(
     mocker: MockerFixture,
-    probs_reward_config: Dict[str, Union[float, Callable]],
-    expected_values: Dict[str, float],
+    probs_reward_config: dict[str, float | Callable],
+    expected_values: dict[str, float],
     dimension: int = 2,
     test_quantity=np.array([0.5, 0.3]),
 ):
@@ -91,9 +91,9 @@ def test_smab_simulator_with_explicit_probs_reward(
     ----------
     mocker : MockerFixture
         Pytest mock fixture for mocking objects.
-    probs_reward_config : Dict[str, Union[float, Callable]]
+    probs_reward_config : dict[str, float | Callable]
         Explicit probs_reward configuration with float values or callable functions.
-    expected_values : Dict[str, float]
+    expected_values : dict[str, float]
         Expected probability values for verification.
     """
     # Create mock MAB with actions that match the probs_reward types
@@ -159,16 +159,14 @@ def test_smab_simulator_with_explicit_probs_reward(
         (lambda x, y: 0.5, True, False),
     ],
 )
-def test_validate_probs_reward_values(
-    probability: Union[float, Callable], is_quantitative_action: bool, should_pass: bool
-):
+def test_validate_probs_reward_values(probability: float | Callable, is_quantitative_action: bool, should_pass: bool):
     """
     Test the _validate_probs_reward_values method with various combinations
     of probability values and action types.
 
     Parameters
     ----------
-    probability : Union[float, callable]
+    probability : float | callable
         The probability value to test
     is_quantitative_action : bool
         Whether the action is quantitative
@@ -199,16 +197,16 @@ def mock_predict(self, n_samples, *args, **kwargs):
     models=st.lists(st.sampled_from([Beta(), Zooming.cold_start()]), min_size=2, max_size=2),
 )
 def test_smab_e2e_simulation_with_default_args(
-    action_ids: List[str], models: List[BaseModel], monkeymodule: pytest.MonkeyPatch, rng: np.random.Generator
+    action_ids: list[str], models: list[BaseModel], monkeymodule: pytest.MonkeyPatch, rng: np.random.Generator
 ):
     """
     Test end-to-end simulation with default arguments.
 
     Parameters
     ----------
-    action_ids : List[str]
+    action_ids : list[str]
         List of action IDs for the MAB.
-    models : List[BaseModel]
+    models : list[BaseModel]
         List of models for the actions.
     monkeymodule : MonkeyPatch
         Pytest monkeypatch fixture for modifying module attributes.
@@ -247,12 +245,12 @@ def test_smab_e2e_simulation_with_default_args(
     file_prefix=st.sampled_from(["", "unit_test"]),
 )
 def test_smab_e2e_simulation_with_non_default_args(
-    action_ids: List[str],
-    models: List[SmabModelType],
+    action_ids: list[str],
+    models: list[SmabModelType],
     n_updates: int,
     batch_size: int,
     save: bool,
-    random_seed: Optional[int],
+    random_seed: int | None,
     verbose: bool,
     visualize: bool,
     file_prefix: str,
@@ -264,9 +262,9 @@ def test_smab_e2e_simulation_with_non_default_args(
 
     Parameters
     ----------
-    action_ids : List[str]
+    action_ids : list[str]
         List of action IDs for the MAB.
-    models : List[BaseModel]
+    models : list[BaseModel]
         List of models for the actions.
     n_updates : int
         Number of updates for the simulation.
@@ -274,7 +272,7 @@ def test_smab_e2e_simulation_with_non_default_args(
         Batch size for the simulation.
     save : bool
         Whether to save results.
-    random_seed : Optional[int]
+    random_seed : int | None
         Random seed for reproducibility.
     verbose : bool
         Whether to enable verbose output.

@@ -23,7 +23,7 @@
 import json
 from copy import deepcopy
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
+from typing import Any, get_args
 from unittest.mock import patch
 
 import numpy as np
@@ -98,7 +98,7 @@ def mock_student_t_array(
     field_value: StudentTArray,
     diff: Any,
     monkeymodule: MonkeyPatch,
-    label: Union[int, str],
+    label: int | str,
 ) -> int:
     """
     Update the mu and sigma fields of a StudentTArray object.
@@ -111,7 +111,7 @@ def mock_student_t_array(
         The diff object for drawing random values.
     monkeymodule : MonkeyPatch
         The monkey module for patching.
-    label : Union[int, str]
+    label : int | str
         The label for the diff draw.
 
     Returns
@@ -154,20 +154,20 @@ class ModelTestConfig:
     across single/multi-objective and cost/no-cost variants.
     """
 
-    cmab_class: Type
-    strategy_class: Type
-    model_types: List[Type[CmabModelType]]
+    cmab_class: type
+    strategy_class: type
+    model_types: list[type[CmabModelType]]
 
     def _create_actions(
         self,
-        action_ids: List[str],
-        values: Optional[st.SearchStrategy],
+        action_ids: list[str],
+        values: st.SearchStrategy | None,
         n_features: PositiveInt,
-        hidden_dim_list: List[int],
+        hidden_dim_list: list[int],
         rng: np.random.Generator,
-        n_objectives: Optional[PositiveInt] = None,
-        decay_factor: Optional[Float01] = None,
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        n_objectives: PositiveInt | None = None,
+        decay_factor: Float01 | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
             indices = rng.integers(0, len(model_types), len(action_ids))
@@ -202,7 +202,7 @@ class ModelTestConfig:
             model_cold_start_kwargs["decay_factor"] = decay_factor
         base_model_cold_start_kwargs = dict(hidden_dim_list=hidden_dim_list, **model_cold_start_kwargs)
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         if n_objectives is None:
             # Single-objective models
             if costs is not None:
@@ -260,21 +260,21 @@ class ModelTestConfig:
 
     def create_cmab_and_actions(
         self,
-        action_ids: List[str],
-        epsilon: Optional[Float01],
-        delta: Optional[PositiveProbability],
+        action_ids: list[str],
+        epsilon: Float01 | None,
+        delta: PositiveProbability | None,
         values: st.SearchStrategy,
         n_objectives: st.SearchStrategy[PositiveInt],
-        exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
-        subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
+        exploit_p: st.SearchStrategy[Float01 | None] | float | None,
+        subsidy_factor: st.SearchStrategy[Float01 | None] | float | None,
         n_features: PositiveInt,
-        hidden_dim_list: List[int],
+        hidden_dim_list: list[int],
         rng: np.random.Generator,
-        decay_factor: Optional[Float01] = None,
-        default_action_fraction: Optional[Float01] = None,
-        limited_action_fraction: Optional[Float01] = None,
-        backbone_hidden_dims: Optional[List[int]] = None,
-    ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, CmabModelType], Dict[str, Any]]:
+        decay_factor: Float01 | None = None,
+        default_action_fraction: Float01 | None = None,
+        limited_action_fraction: Float01 | None = None,
+        backbone_hidden_dims: list[int] | None = None,
+    ) -> tuple[BaseCmabBernoulli, dict[ActionId, CmabModelType], dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
             if self.cmab_class in [CmabBernoulliMO, CmabBernoulliMOCC]
@@ -337,14 +337,14 @@ class ModelTestConfig:
         return cmab, actions, kwargs
 
     @staticmethod
-    def cold_start_kwargs(actions: Dict[ActionId, CmabModelType], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    def cold_start_kwargs(actions: dict[ActionId, CmabModelType], kwargs: dict[str, Any]) -> dict[str, Any]:
         """Assemble the ``cold_start`` kwargs equivalent to a pre-built ``actions`` dict (+ strategy kwargs).
 
         Shared by ``test_cold_start`` (equality check) and the backbone branch of
         ``create_cmab_and_actions``: derives ``action_ids`` / ``quantitative_action_ids`` and any
         per-action cost/price maps from ``actions``, then merges the construction ``kwargs``.
         """
-        cold_start_kwargs: Dict[str, Any] = {
+        cold_start_kwargs: dict[str, Any] = {
             "action_ids": {
                 a for a, m in actions.items() if isinstance(m, (BaseBayesianNeuralNetwork, BaseBayesianNeuralNetworkMO))
             },
@@ -426,10 +426,10 @@ TEST_CONFIGS = {
 )
 def test_cold_start(
     config: ModelTestConfig,
-    action_ids: List[str],
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    action_ids: list[str],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -437,7 +437,7 @@ def test_cold_start(
     hidden_dim_list,
     exploit_p,
     subsidy_factor,
-    decay_factor: Optional[float],
+    decay_factor: float | None,
     rng,
 ):
     # Create CMAB instance
@@ -475,9 +475,9 @@ def test_cold_start(
 )
 def test_bad_initialization(
     config: ModelTestConfig,
-    action_ids: List[str],
+    action_ids: list[str],
     n_features: int,
-    hidden_dim_list: List[PositiveInt],
+    hidden_dim_list: list[PositiveInt],
     values,
     n_objectives,
     exploit_p,
@@ -613,11 +613,11 @@ def test_bad_initialization(
 )
 def test_update(
     config: ModelTestConfig,
-    action_ids: List[str],
+    action_ids: list[str],
     n_samples: int,
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -719,11 +719,11 @@ def test_update(
 )
 def test_predict(
     config: ModelTestConfig,
-    action_ids: List[str],
+    action_ids: list[str],
     n_samples: int,
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -840,10 +840,10 @@ def test_predict(
 )
 def test_serialization(
     config: ModelTestConfig,
-    action_ids: List[str],
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    action_ids: list[str],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -901,7 +901,7 @@ _MISSING_FEATURE_CONFIG_TEST_CONFIGS = {
 def test_cmab_from_old_state_missing_feature_config(
     CmabClass,
     n_features: int,
-    hidden_dim_list: List[int],
+    hidden_dim_list: list[int],
 ) -> None:
     """
     Test the pre-4.4 migration path: model_params present in action states but feature_config absent.
@@ -955,9 +955,7 @@ _UPDATE_KWARGS_MIGRATION_CASES = [
 @pytest.mark.parametrize("old_kwargs,expected_kwargs", _UPDATE_KWARGS_MIGRATION_CASES)
 @settings(deadline=500)
 @given(n_features=st.integers(min_value=1, max_value=5))
-def test_cmab_update_kwargs_migration(
-    n_features: int, old_kwargs: Optional[dict], expected_kwargs: Optional[dict]
-) -> None:
+def test_cmab_update_kwargs_migration(n_features: int, old_kwargs: dict | None, expected_kwargs: dict | None) -> None:
     """
     Test that update_kwargs in old PyMC-format states are correctly migrated to the NumPyro format
     by BaseCmabBernoulli.update_old_state.
@@ -1051,10 +1049,10 @@ def test_cmab_update_old_state_rejects_mcmc(n_features: int) -> None:
 )
 def test_pickling(
     config: ModelTestConfig,
-    action_ids: List[str],
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    action_ids: list[str],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -1197,7 +1195,7 @@ def test_cmab_mo_update_shape_mismatch(rng, n_samples, n_features, hidden_dim_li
         mab.update(context=context, actions=actions, rewards=wrong_rewards)
 
     # Test with single-objective (flat, not nested) rewards — should fail for MO model. This isn't
-    # merely the wrong shape but the wrong structure entirely (List[int] instead of List[List[int]]),
+    # merely the wrong shape but the wrong structure entirely (list[int] instead of list[list[int]]),
     # so pydantic's own @validate_call type enforcement on BayesianNeuralNetworkMO.update() rejects it
     # before the model's manual shape check ever runs.
     single_rewards = rng.choice([0, 1], size=n_samples).tolist()
@@ -1230,7 +1228,7 @@ def test_cmab_mo_update_shape_mismatch(rng, n_samples, n_features, hidden_dim_li
     ],
 )
 def test_extract_element_from_probability_weight_valid_cases(
-    prob_weight: Union[Tuple[float, float], List[Tuple[float, float]]], index: int, expected: Union[float, List[float]]
+    prob_weight: tuple[float, float] | list[tuple[float, float]], index: int, expected: float | list[float]
 ) -> None:
     """Test extracting element from probability weight with valid inputs."""
     result = BaseCmabBernoulli._extract_element_from_probability_weight(index, prob_weight)
@@ -1251,7 +1249,7 @@ def test_extract_element_from_probability_weight_valid_cases(
     ],
 )
 def test_extract_element_from_probability_weight_invalid_index(
-    prob_weight: Union[Tuple[float, float], List[Tuple[float, float]]], index: int
+    prob_weight: tuple[float, float] | list[tuple[float, float]], index: int
 ) -> None:
     """Test extracting element with invalid index raises IndexError."""
     with pytest.raises(IndexError):
@@ -1276,7 +1274,7 @@ def test_extract_element_from_probability_weight_unsupported_type(unsupported_ty
     random_seed=st.integers(min_value=0, max_value=2**31 - 1),
 )
 def test_random_seed_propagates_to_bnn(
-    action_ids: List[str], n_samples: int, n_features: int, random_seed: int, rng: np.random.Generator
+    action_ids: list[str], n_samples: int, n_features: int, random_seed: int, rng: np.random.Generator
 ) -> None:
     """Verify that random_seed set on the CMAB cold_start flows through to every BNN action model.
 

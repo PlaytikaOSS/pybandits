@@ -24,9 +24,10 @@ import importlib.metadata
 import json
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from inspect import isclass
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Self, Set, Tuple, Union, get_origin
+from typing import Any, ClassVar, Self, get_origin
 
 import numpy as np
 from packaging import version
@@ -87,16 +88,16 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     Parameters
     ----------
-    actions : Dict[ActionId, Model]
+    actions : dict[ActionId, Model]
         The list of possible actions, and their associated Model.
     strategy : Strategy
         The strategy used to select actions.
-    epsilon : Optional[Float01], 0 if not specified.
+    epsilon : Float01 | None, 0 if not specified.
         The probability of selecting a random action.
-    default_action : Optional[ActionId], None if not specified.
+    default_action : ActionId | None, None if not specified.
         The default action to select with a probability of epsilon when using the epsilon-greedy approach.
         If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-    default_action_fraction : Optional[PositiveFloat01], None if not specified.
+    default_action_fraction : PositiveFloat01 | None, None if not specified.
         Probability of picking `default_action` (vs a uniformly-random action) when the epsilon-greedy
         coin flip selects the explore branch. Only meaningful together with `epsilon` and `default_action`.
         Must be in the range (0, 1] — use ``None`` to preserve legacy behavior (always default when set).
@@ -104,42 +105,42 @@ class BaseMab(PyBanditsBaseModel, ABC):
             - `default_action_fraction = 1.0`: explore always returns `default_action` (same as omitting this field).
             - `None` (default): legacy behavior; explore returns `default_action` deterministically when set,
               otherwise a uniformly-random action.
-    limited_actions : Optional[Set[ActionId]], None if not specified.
+    limited_actions : set[ActionId] | None, None if not specified.
         A set of actions whose selection is throttled, e.g. newly-introduced arms that Thompson Sampling
         would otherwise over-explore. On each selection they are allowed to compete only with probability
         `limited_action_fraction`; otherwise they are masked out. Must be used together with
         `limited_action_fraction`, must be a subset of the action set, and must not contain `default_action`.
-    limited_action_fraction : Optional[Float01], None if not specified.
+    limited_action_fraction : Float01 | None, None if not specified.
         Probability that the `limited_actions` are allowed to compete on a given selection (mirrors
         `epsilon`: higher = more exploration). Only meaningful together with `limited_actions`.
     current_supported_version_th : ClassVar[str]
         The threshold of the supported version of PyBandits which don't require any changes to the state.
-    strategy_kwargs : Dict[str, Any]
+    strategy_kwargs : dict[str, Any]
         Relevant only if strategy was not provided. This argument contains the parameters for the strategy,
         which in turn will be used to instantiate the strategy.
     """
 
     actions_manager: ActionsManager
     strategy: BaseStrategy
-    epsilon: Optional[Float01] = None
-    default_action: Optional[UnifiedActionId] = None
-    default_action_fraction: Optional[PositiveFloat01] = None
-    limited_actions: Optional[Set[ActionId]] = None
-    limited_action_fraction: Optional[Float01] = None
-    version: Optional[str] = None
-    random_seed: Optional[NonNegativeInt] = None
+    epsilon: Float01 | None = None
+    default_action: UnifiedActionId | None = None
+    default_action_fraction: PositiveFloat01 | None = None
+    limited_actions: set[ActionId] | None = None
+    limited_action_fraction: Float01 | None = None
+    version: str | None = None
+    random_seed: NonNegativeInt | None = None
     _current_supported_version_th: ClassVar[str] = _get_pybandits_version()
     _rng: Any = PrivateAttr(default=None)
 
     def __init__(
         self,
-        epsilon: Optional[Float01] = None,
-        default_action: Optional[UnifiedActionId] = None,
-        default_action_fraction: Optional[PositiveFloat01] = None,
-        limited_actions: Optional[Set[ActionId]] = None,
-        limited_action_fraction: Optional[Float01] = None,
-        version: Optional[str] = None,
-        random_seed: Optional[NonNegativeInt] = None,
+        epsilon: Float01 | None = None,
+        default_action: UnifiedActionId | None = None,
+        default_action_fraction: PositiveFloat01 | None = None,
+        limited_actions: set[ActionId] | None = None,
+        limited_action_fraction: Float01 | None = None,
+        version: str | None = None,
+        random_seed: NonNegativeInt | None = None,
         **kwargs,
     ):
         # Inject random_seed into kwargs so it flows through ActionsManager into BNN cold_start.
@@ -167,7 +168,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         )
 
     @classmethod
-    def _get_instantiated_class_attribute(cls, attribute_name: str, kwargs: Dict[str, Any]) -> PyBanditsBaseModel:
+    def _get_instantiated_class_attribute(cls, attribute_name: str, kwargs: dict[str, Any]) -> PyBanditsBaseModel:
         attribute_class = cls._get_attribute_type(attribute_name)
         if attribute_name in kwargs:
             attribute = (
@@ -256,30 +257,30 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return feasibility_constraint
 
     def _normalize_forbidden_actions(
-        self, forbidden_actions: Optional[ForbiddenActions]
-    ) -> Tuple[Set[ActionId], Dict[ActionId, List[Callable[[np.ndarray], float]]]]:
+        self, forbidden_actions: ForbiddenActions | None
+    ) -> tuple[set[ActionId], dict[ActionId, list[Callable[[np.ndarray], float]]]]:
         """
         Normalize ``forbidden_actions`` into valid action IDs and per-arm region feasibility constraints.
 
-        Accepts both the legacy ``Set[ActionId]`` form (whole-arm blocking) and the generalized
-        ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` form, where a ``None`` value forbids
+        Accepts both the legacy ``set[ActionId]`` form (whole-arm blocking) and the generalized
+        ``dict[ActionId, None | ForbiddenRegion | list[ForbiddenRegion]]`` form, where a ``None`` value forbids
         the whole arm and region callable(s) forbid part of a quantitative arm's quantity space.
 
         Parameters
         ----------
-        forbidden_actions: Optional[ForbiddenActions]
+        forbidden_actions: ForbiddenActions | None
             The whole-arm and/or per-arm region restrictions.
 
         Returns
         -------
-        valid_actions: Set[ActionId]
+        valid_actions: set[ActionId]
             Action IDs that remain selectable (region-forbidden arms stay valid; only their quantity space shrinks).
-        region_constraints: Dict[ActionId, List[Callable[[np.ndarray], float]]]
+        region_constraints: dict[ActionId, list[Callable[[np.ndarray], float]]]
             Per-arm feasibility constraints (``>= 0`` feasible) derived from the forbidden regions.
         """
         action_ids = set(self.actions.keys())
-        whole_forbidden: Set[ActionId] = set()
-        region_constraints: Dict[ActionId, List[Callable[[np.ndarray], float]]] = {}
+        whole_forbidden: set[ActionId] = set()
+        region_constraints: dict[ActionId, list[Callable[[np.ndarray], float]]] = {}
 
         if forbidden_actions is None:
             forbidden_actions = set()
@@ -316,18 +317,18 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         return valid_actions, region_constraints
 
-    def _get_valid_actions(self, forbidden_actions: Optional[ForbiddenActions]) -> Set[ActionId]:
+    def _get_valid_actions(self, forbidden_actions: ForbiddenActions | None) -> set[ActionId]:
         """
         Given forbidden actions, return the set of valid (selectable) action IDs.
 
         Parameters
         ----------
-        forbidden_actions: Optional[ForbiddenActions]
+        forbidden_actions: ForbiddenActions | None
             The whole-arm and/or per-arm region restrictions.
 
         Returns
         -------
-        valid_actions: Set[ActionId]
+        valid_actions: set[ActionId]
             The set of valid (i.e. not wholly forbidden) action IDs.
         """
         return self._normalize_forbidden_actions(forbidden_actions)[0]
@@ -335,17 +336,17 @@ class BaseMab(PyBanditsBaseModel, ABC):
     ####################################################################################################################
 
     @property
-    def actions(self) -> Dict[ActionId, BaseModel]:
+    def actions(self) -> dict[ActionId, BaseModel]:
         return self.actions_manager.actions
 
     @validate_call
     def update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
-        actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None = None,
+        actions_memory: list[ActionId] | None = None,
+        rewards_memory: list[BinaryReward] | list[list[BinaryReward]] | None = None,
         **kwargs,
     ):
         """
@@ -353,19 +354,19 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        actions: List[ActionId]
+        actions: list[ActionId]
             The selected action for each sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : list[BinaryReward] | list[list[BinaryReward]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
-        quantities: Optional[List[Union[float, List[float], None]]]
+        quantities: list[float | list[float] | None] | None
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        actions_memory : Optional[List[ActionId]]
+        actions_memory : list[ActionId] | None
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : list[BinaryReward] | list[list[BinaryReward]] | None
             List of previously collected rewards.
         """
         self.actions_manager.update(
@@ -378,29 +379,29 @@ class BaseMab(PyBanditsBaseModel, ABC):
         )
 
     @staticmethod
-    def _transform_nested_list(lst: List[List[Dict]]):
+    def _transform_nested_list(lst: list[list[dict]]):
         return [{k: v for d in single_action_dicts for k, v in d.items()} for single_action_dicts in zip(*lst)]
 
     def _get_action_probabilities(
-        self, valid_actions: Set[ActionId], **kwargs
-    ) -> Union[
-        List[Dict[ActionId, Union[Probability, QuantitativeProbability]]],
-        List[Dict[ActionId, Union[ProbabilityWeight, QuantitativeProbabilityWeight]]],
-        List[Dict[ActionId, Union[MOProbability, QuantitativeMOProbability]]],
-        List[Dict[ActionId, Union[MOProbabilityWeight, QuantitativeMOProbabilityWeight]]],
-    ]:
+        self, valid_actions: set[ActionId], **kwargs
+    ) -> (
+        list[dict[ActionId, Probability | QuantitativeProbability]]
+        | list[dict[ActionId, ProbabilityWeight | QuantitativeProbabilityWeight]]
+        | list[dict[ActionId, MOProbability | QuantitativeMOProbability]]
+        | list[dict[ActionId, MOProbabilityWeight | QuantitativeMOProbabilityWeight]]
+    ):
         """
         Get the probability of getting a positive reward for each action.
 
         Parameters
         ----------
-        valid_actions : Set[ActionId]
+        valid_actions : set[ActionId]
             The action IDs to sample. Wholly-forbidden arms are excluded by the caller; region-forbidden
             quantitative arms remain valid here (their quantity space is restricted later, at selection time).
 
         Returns
         -------
-        action_probabilities: Union[List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, ProbabilityWeight]], List[Dict[UnifiedActionId, MOProbability]], List[Dict[UnifiedActionId, MOProbabilityWeight]]]
+        action_probabilities: list[dict[UnifiedActionId, Probability]] | list[dict[UnifiedActionId, ProbabilityWeight]] | list[dict[UnifiedActionId, MOProbability]] | list[dict[UnifiedActionId, MOProbabilityWeight]]
             The probability of getting a positive reward for each action.
         """
 
@@ -415,26 +416,26 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
     @abstractmethod
     @validate_call
-    def predict(self, forbidden_actions: Optional[ForbiddenActions] = None) -> Predictions:
+    def predict(self, forbidden_actions: ForbiddenActions | None = None) -> Predictions:
         """
         Predict actions.
 
         Parameters
         ----------
-        forbidden_actions : Optional[ForbiddenActions], default=None
-            Actions to forbid. Either a ``Set[ActionId]`` of wholly-forbidden arms, or a
-            ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` where ``None`` forbids the whole arm
+        forbidden_actions : ForbiddenActions | None, default=None
+            Actions to forbid. Either a ``set[ActionId]`` of wholly-forbidden arms, or a
+            ``dict[ActionId, None | ForbiddenRegion | list[ForbiddenRegion]]`` where ``None`` forbids the whole arm
             and region callable(s) forbid part of a quantitative arm's quantity space (``region(x) > 0`` => forbidden).
             By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
         -------
-        actions: List[ActionId] of shape (n_samples,)
+        actions: list[ActionId] of shape (n_samples,)
             The actions selected by the multi-armed bandit model.
-        probs: List[Dict[ActionId, Probability]] of shape (n_samples,)
+        probs: list[dict[ActionId, Probability]] of shape (n_samples,)
             The probabilities of getting a positive reward for each action
-        ws : List[Dict[ActionId, float]], only relevant for some of the MABs
+        ws : list[dict[ActionId, float]], only relevant for some of the MABs
             The weighted sum of logistic regression logits..
         """
 
@@ -455,9 +456,9 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def _sample_allowed_quantity(
         self,
         action_id: ActionId,
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]],
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None,
         max_tries: int = 100,
-    ) -> Optional[Tuple[float, ...]]:
+    ) -> tuple[float, ...] | None:
         """
         Uniformly sample a quantity in ``[0, 1]^d`` that lies outside the arm's forbidden regions.
 
@@ -469,14 +470,14 @@ class BaseMab(PyBanditsBaseModel, ABC):
         ----------
         action_id: ActionId
             The quantitative arm to sample a quantity for.
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]]
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None
             Per-arm feasibility constraints (``>= 0`` feasible); a point is forbidden where any constraint is ``< 0``.
         max_tries: int, default=100
             Maximum number of rejection-sampling attempts before giving up.
 
         Returns
         -------
-        Optional[Tuple[float, ...]]
+        tuple[float, ...] | None
             An allowed quantity vector, or ``None`` if none was found within ``max_tries``.
         """
         dimension = self.actions[action_id].dimension
@@ -491,8 +492,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def _select_epsilon_greedy_action(
         self,
         p: ActionRewardLikelihood,
-        actions: Optional[Dict[ActionId, BaseModel]] = None,
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
+        actions: dict[ActionId, BaseModel] | None = None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
     ) -> ActionId:
         """
         Wraps self.strategy.select_action function with epsilon-greedy strategy,
@@ -510,12 +511,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        p: Union[Dict[ActionId, float], Dict[ActionId, Probability], Dict[ActionId, List[Probability]]]
+        p: dict[ActionId, float] | dict[ActionId, Probability] | dict[ActionId, list[Probability]]
             The dictionary or actions and their sampled probability of getting a positive reward.
             For MO strategy, the sampled probability is a list with elements corresponding to the objectives.
-        actions: Optional[Dict[ActionId, Model]]
+        actions: dict[ActionId, Model] | None
             The dictionary of actions and their associated Model.
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]]
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None
             Per-arm feasibility constraints restricting quantitative arms' quantity space. Honored by both the
             strategy (exploit) and the random explore branch, so a forbidden region is never selected by any path.
 
@@ -608,7 +609,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return cls.model_validate_json(state)
 
     @classmethod
-    def update_old_state(cls, state: Dict[str, Serializable]) -> Dict[str, Serializable]:
+    def update_old_state(cls, state: dict[str, Serializable]) -> dict[str, Serializable]:
         """
         Update the model state to the current version if needed.
 
@@ -620,7 +621,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        state : Dict[str, Serializable]
+        state : dict[str, Serializable]
             The updated state of the model.
             The state is in the current format of PyBandits, with actions_manager and delta added if needed.
         """
@@ -657,7 +658,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         return cls.from_state(state)
 
     @classmethod
-    def _get_class_type_attributes(cls) -> List[str]:
+    def _get_class_type_attributes(cls) -> list[str]:
         return [
             attribute_name
             for attribute_name in cls.model_fields.keys()
@@ -677,12 +678,12 @@ class BaseMab(PyBanditsBaseModel, ABC):
     @validate_call
     def cold_start(
         cls,
-        epsilon: Optional[Float01] = None,
-        default_action: Optional[UnifiedActionId] = None,
-        default_action_fraction: Optional[PositiveFloat01] = None,
-        limited_actions: Optional[Set[ActionId]] = None,
-        limited_action_fraction: Optional[Float01] = None,
-        random_seed: Optional[NonNegativeInt] = None,
+        epsilon: Float01 | None = None,
+        default_action: UnifiedActionId | None = None,
+        default_action_fraction: PositiveFloat01 | None = None,
+        limited_actions: set[ActionId] | None = None,
+        limited_action_fraction: Float01 | None = None,
+        random_seed: NonNegativeInt | None = None,
         **kwargs,
     ) -> Self:
         """
@@ -691,27 +692,27 @@ class BaseMab(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        epsilon : Optional[Float01]
+        epsilon : Float01 | None
             epsilon for epsilon-greedy approach. If None, epsilon-greedy is not used.
-        default_action : Optional[ActionId]
+        default_action : ActionId | None
             The default action to select with a probability of epsilon when using the epsilon-greedy approach.
             If `default_action` is None, a random action from the action set will be selected with a probability of epsilon.
-        default_action_fraction : Optional[PositiveFloat01]
+        default_action_fraction : PositiveFloat01 | None
             Probability of picking `default_action` (vs a uniformly-random action) when the explore
             branch of epsilon-greedy fires. Requires both `epsilon` and `default_action` to be set.
             `1.0` always returns `default_action`; `None` (default) preserves legacy behavior.
-        limited_actions : Optional[Set[ActionId]]
+        limited_actions : set[ActionId] | None
             Actions whose selection is throttled (e.g. newly-introduced arms). On each selection they
             are allowed to compete only with probability `limited_action_fraction`. Requires
             `limited_action_fraction`, must be a subset of the action set, and must not contain
             `default_action`.
-        limited_action_fraction : Optional[Float01]
+        limited_action_fraction : Float01 | None
             Probability that `limited_actions` are allowed to compete on a given selection (higher =
             more exploration). Requires `limited_actions`.
-        random_seed : Optional[NonNegativeInt]
+        random_seed : NonNegativeInt | None
             Seed for the MAB's central numpy RNG (used for epsilon-greedy and Thompson sampling).
             Propagated automatically to BNN action models so the full pipeline is reproducible.
-        kwargs : Dict[str, Any]
+        kwargs : dict[str, Any]
             Additional parameters for the mab and for the action model, e.g. ``decay_factor`` for
             per-update forgetting in the action models.
 

@@ -22,7 +22,7 @@
 
 from copy import deepcopy
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -68,7 +68,7 @@ def value_strategy(draw, n_actions):
     return draw(st.lists(st.floats(min_value=0, max_value=2), min_size=n_actions, max_size=n_actions))
 
 
-def mock_update(models: List[SmabModelType], diff, monkeymodule, label=0):
+def mock_update(models: list[SmabModelType], diff, monkeymodule, label=0):
     for model in models:
         for field in model.model_fields:
             if field in ("n_successes", "n_failures"):
@@ -84,23 +84,23 @@ def _quantitative_callable(x, value):
 
 @dataclass
 class ModelTestConfig:
-    smab_class: Type
-    strategy_class: Type
-    model_types: List[Type[SmabModelType]]
+    smab_class: type
+    strategy_class: type
+    model_types: list[type[SmabModelType]]
 
     def _create_actions(
         self,
-        action_ids: List[str],
-        values: Optional[st.SearchStrategy],
-        n_objectives: Optional[PositiveInt],
+        action_ids: list[str],
+        values: st.SearchStrategy | None,
+        n_objectives: PositiveInt | None,
         rng: np.random.Generator,
-        decay_factor: Optional[Float01] = None,
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        decay_factor: Float01 | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         model_types = list(self.model_types)
         if len(model_types) < len(action_ids):
             indices = rng.integers(0, len(model_types), len(action_ids))
             model_types = [model_types[i] for i in indices]
-        base_model_cold_start_kwargs: Dict[str, Any] = {}
+        base_model_cold_start_kwargs: dict[str, Any] = {}
         if decay_factor is not None:
             base_model_cold_start_kwargs["decay_factor"] = decay_factor
         if all(model in [BetaCC, ZoomingCC, BetaMOCC] for model in model_types):
@@ -158,18 +158,18 @@ class ModelTestConfig:
 
     def create_smab_and_actions(
         self,
-        action_ids: List[str],
-        epsilon: Optional[Float01],
-        delta: Optional[PositiveProbability],
+        action_ids: list[str],
+        epsilon: Float01 | None,
+        delta: PositiveProbability | None,
         values: st.SearchStrategy,
         n_objectives: st.SearchStrategy[PositiveInt],
-        exploit_p: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
-        subsidy_factor: Union[st.SearchStrategy[Optional[Float01]], Optional[float]],
+        exploit_p: st.SearchStrategy[Float01 | None] | float | None,
+        subsidy_factor: st.SearchStrategy[Float01 | None] | float | None,
         rng: np.random.Generator,
-        decay_factor: Optional[Float01] = None,
-        default_action_fraction: Optional[Float01] = None,
-        limited_action_fraction: Optional[Float01] = None,
-    ) -> Tuple[BaseSmabBernoulli, Dict[ActionId, SmabModelType], Dict[str, Any]]:
+        decay_factor: Float01 | None = None,
+        default_action_fraction: Float01 | None = None,
+        limited_action_fraction: Float01 | None = None,
+    ) -> tuple[BaseSmabBernoulli, dict[ActionId, SmabModelType], dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
             if self.smab_class in [SmabBernoulliMO, SmabBernoulliMOCC]
@@ -259,16 +259,16 @@ TEST_CONFIGS = {
 )
 def test_cold_start(
     config: ModelTestConfig,
-    action_ids: List[str],
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    action_ids: list[str],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
     exploit_p,
     subsidy_factor,
-    decay_factor: Optional[float],
+    decay_factor: float | None,
     rng: np.random.Generator,
 ):
     # Create SMAB instance
@@ -327,7 +327,7 @@ def test_cold_start(
 )
 def test_bad_initialization(
     config: ModelTestConfig,
-    action_ids: List[str],
+    action_ids: list[str],
     n_objectives,
     values,
     exploit_p,
@@ -426,11 +426,11 @@ def test_bad_initialization(
 )
 def test_update(
     config: ModelTestConfig,
-    action_ids: List[str],
+    action_ids: list[str],
     n_samples: int,
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -540,11 +540,11 @@ def test_update(
 )
 def test_predict(
     config: ModelTestConfig,
-    action_ids: List[str],
+    action_ids: list[str],
     n_samples: int,
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -641,10 +641,10 @@ def test_predict(
 )
 def test_serialization(
     config: ModelTestConfig,
-    action_ids: List[str],
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    action_ids: list[str],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,
@@ -702,10 +702,10 @@ def test_serialization(
 )
 def test_pickling(
     config: ModelTestConfig,
-    action_ids: List[str],
-    epsilon: Optional[float],
-    default_action_fraction: Optional[float],
-    limited_action_fraction: Optional[float],
+    action_ids: list[str],
+    epsilon: float | None,
+    default_action_fraction: float | None,
+    limited_action_fraction: float | None,
     delta,
     values,
     n_objectives,

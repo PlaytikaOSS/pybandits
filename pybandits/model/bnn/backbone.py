@@ -29,7 +29,7 @@ Pydantic immutability is preserved by returning a new instance from :meth:`with_
 It shares its activation field, maps and resolvers with the Bayesian heads via :class:`DNNMixin`.
 """
 
-from typing import ClassVar, List, Optional, Self, Tuple
+from typing import ClassVar, Self
 
 import jax.numpy as jnp
 import numpy as np
@@ -71,39 +71,39 @@ class MLPBackbone(DNNMixin):
     # Uniform-init half-width numerator: limit = sqrt(numerator / fan), shared by He and Glorot/Xavier.
     _init_limit_numerator: ClassVar[float] = 6.0
     # Activations whose negative-half saturation calls for He init (variance ~ 2/fan_in).
-    _he_activations: ClassVar[Tuple[str, ...]] = ("relu", "gelu")
+    _he_activations: ClassVar[tuple[str, ...]] = ("relu", "gelu")
 
     n_features: PositiveInt
     embedding_dim: PositiveInt
-    hidden_dims: List[PositiveInt]
+    hidden_dims: list[PositiveInt]
     activation: ActivationFunctions = "relu"
-    random_seed: Optional[NonNegativeInt] = None
-    weights: List[List[List[float]]]  # per layer: (input_dim, output_dim)
-    biases: List[List[float]]  # per layer: (output_dim,)
+    random_seed: NonNegativeInt | None = None
+    weights: list[list[list[float]]]  # per layer: (input_dim, output_dim)
+    biases: list[list[float]]  # per layer: (output_dim,)
     l2_anchoring: NonNegativeFloat = 0.0
-    lr: Optional[NonNegativeFloat] = None
+    lr: NonNegativeFloat | None = None
 
     # Site-name prefixes for the backbone's deterministic params inside the joint NumPyro model.
     weight_var_name: ClassVar[str] = "backbone_weight"
     bias_var_name: ClassVar[str] = "backbone_bias"
 
     @staticmethod
-    def _as_float32_arrays(nested: List[List[float]]) -> List[np.ndarray]:
+    def _as_float32_arrays(nested: list[list[float]]) -> list[np.ndarray]:
         """Convert per-layer nested lists to ``float32`` numpy arrays (JAX's default working precision)."""
         return [np.asarray(arr, dtype=np.float32) for arr in nested]
 
     @property
-    def weight_arrays(self) -> List[np.ndarray]:
+    def weight_arrays(self) -> list[np.ndarray]:
         """Per-layer weight matrices as numpy arrays (consumed by the forward pass / joint SVI engine)."""
         return self._as_float32_arrays(self.weights)
 
     @property
-    def bias_arrays(self) -> List[np.ndarray]:
+    def bias_arrays(self) -> list[np.ndarray]:
         """Per-layer bias vectors as numpy arrays (consumed by the forward pass / joint SVI engine)."""
         return self._as_float32_arrays(self.biases)
 
     @classmethod
-    def get_layer_params_name(cls, layer_ind: int) -> Tuple[str, str]:
+    def get_layer_params_name(cls, layer_ind: int) -> tuple[str, str]:
         """NumPyro ``param`` names for a backbone layer's weight/bias (namespaced away from heads).
 
         Parameters
@@ -113,7 +113,7 @@ class MLPBackbone(DNNMixin):
 
         Returns
         -------
-        Tuple[str, str]
+        tuple[str, str]
             The ``(weight_name, bias_name)`` site names for the layer.
         """
         return f"{cls.weight_var_name}_{layer_ind}", f"{cls.bias_var_name}_{layer_ind}"
@@ -155,29 +155,29 @@ class MLPBackbone(DNNMixin):
     def _init_params(
         cls,
         n_features: PositiveInt,
-        hidden_dims: List[PositiveInt],
+        hidden_dims: list[PositiveInt],
         embedding_dim: PositiveInt,
         activation: ActivationFunctions,
-        random_seed: Optional[int],
-    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        random_seed: int | None,
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
         """Activation-aware (He/Xavier) uniform weights + zero biases; deterministic given ``random_seed``.
 
         Parameters
         ----------
         n_features : int
             Input (context) dimensionality.
-        hidden_dims : List[int]
+        hidden_dims : list[int]
             Hidden-layer widths.
         embedding_dim : int
             Output (embedding) dimensionality.
         activation : ActivationFunctions
             Activation used for the init scheme (He vs Xavier/Glorot).
-        random_seed : Optional[int]
+        random_seed : int | None
             Seed for reproducible initialisation.
 
         Returns
         -------
-        Tuple[List[np.ndarray], List[np.ndarray]]
+        tuple[list[np.ndarray], list[np.ndarray]]
             Per-layer ``(weights, biases)`` arrays.
         """
         rng = np.random.default_rng(random_seed)
@@ -193,12 +193,12 @@ class MLPBackbone(DNNMixin):
     def cold_start(
         cls,
         n_features: PositiveInt,
-        hidden_dims: List[PositiveInt],
+        hidden_dims: list[PositiveInt],
         embedding_dim: PositiveInt,
         activation: ActivationFunctions = "relu",
-        random_seed: Optional[NonNegativeInt] = None,
+        random_seed: NonNegativeInt | None = None,
         l2_anchoring: NonNegativeFloat = 0.0,
-        lr: Optional[NonNegativeFloat] = None,
+        lr: NonNegativeFloat | None = None,
     ) -> Self:
         """Initialise an MLP backbone with activation-dependent (He/Xavier) weights and zero biases.
 
@@ -206,17 +206,17 @@ class MLPBackbone(DNNMixin):
         ----------
         n_features : PositiveInt
             Input (context) dimensionality.
-        hidden_dims : List[PositiveInt]
+        hidden_dims : list[PositiveInt]
             Hidden-layer widths.
         embedding_dim : PositiveInt
             Output (embedding) dimensionality.
         activation : ActivationFunctions, default="relu"
             Element-wise activation applied after every layer except the last.
-        random_seed : Optional[NonNegativeInt], default=None
+        random_seed : NonNegativeInt | None, default=None
             Seed for reproducible initialisation.
         l2_anchoring : NonNegativeFloat, default=0.0
             Weight of the per-update anchoring penalty on the backbone's params (``0.0`` disables it).
-        lr : Optional[NonNegativeFloat], default=None
+        lr : NonNegativeFloat | None, default=None
             Backbone-only learning rate for joint SVI (``None`` shares the heads'; ``0.0`` freezes).
 
         Returns
@@ -280,7 +280,7 @@ class MLPBackbone(DNNMixin):
             )
         )
 
-    def forward_jax(self, x: jnp.ndarray, weights_biases: List[Tuple[jnp.ndarray, jnp.ndarray]]) -> jnp.ndarray:
+    def forward_jax(self, x: jnp.ndarray, weights_biases: list[tuple[jnp.ndarray, jnp.ndarray]]) -> jnp.ndarray:
         """JAX forward pass on ``x`` using the supplied (e.g. ``numpyro.param``) weight/bias pairs.
 
         Used inside the joint NumPyro model where the backbone weights are optimised as params.
@@ -289,7 +289,7 @@ class MLPBackbone(DNNMixin):
         ----------
         x : jnp.ndarray of shape (n, n_features)
             Context matrix.
-        weights_biases : List[Tuple[jnp.ndarray, jnp.ndarray]]
+        weights_biases : list[tuple[jnp.ndarray, jnp.ndarray]]
             Per-layer ``(weight, bias)`` arrays (the ``numpyro.param`` point estimates).
 
         Returns
@@ -306,14 +306,14 @@ class MLPBackbone(DNNMixin):
             use_residual_connections=False,
         )
 
-    def with_weights_and_biases(self, weights: List[np.ndarray], biases: List[np.ndarray]) -> Self:
+    def with_weights_and_biases(self, weights: list[np.ndarray], biases: list[np.ndarray]) -> Self:
         """Return a new instance with the given weight/bias arrays (Pydantic immutability).
 
         Parameters
         ----------
-        weights : List[np.ndarray]
+        weights : list[np.ndarray]
             Per-layer weight matrices.
-        biases : List[np.ndarray]
+        biases : list[np.ndarray]
             Per-layer bias vectors.
 
         Returns

@@ -23,7 +23,8 @@
 import functools
 import inspect
 from abc import ABC, abstractmethod
-from typing import Callable, ClassVar, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
 from pydantic import (
@@ -60,12 +61,12 @@ class QuantitativeModel(BaseModelSO, ABC):
     """
 
     dimension: PositiveInt
-    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("dimension",)
+    _transfer_structural_keys: ClassVar[tuple[str, ...]] = ("dimension",)
 
     @abstractmethod
     def sample_proba(
         self, rng: np.random.Generator, **kwargs
-    ) -> Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]:
+    ) -> list[QuantitativeProbability] | list[QuantitativeProbabilityWeight]:
         """
         Sample the model.
 
@@ -76,7 +77,7 @@ class QuantitativeModel(BaseModelSO, ABC):
 
         Returns
         -------
-        Union[List[QuantitativeProbability], List[QuantitativeProbabilityWeight]]
+        list[QuantitativeProbability] | list[QuantitativeProbabilityWeight]
             A list of callables: either probability functions (quantity -> Probability)
             or (probability, weight) tuples. List length is equal to the number of samples.
         """
@@ -84,8 +85,8 @@ class QuantitativeModel(BaseModelSO, ABC):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _update(
         self,
-        quantities: Optional[List[Union[float, List[float]]]],
-        rewards: List[BinaryReward],
+        quantities: list[float | list[float]] | None,
+        rewards: list[BinaryReward],
         **kwargs,
     ):
         """
@@ -93,9 +94,9 @@ class QuantitativeModel(BaseModelSO, ABC):
 
         Parameters
         ----------
-        quantities : Optional[List[Union[float, List[float], None]]
+        quantities : list[float | list[float] | None] | None
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: List[BinaryReward]
+        rewards: list[BinaryReward]
             The reward for each sample.
         """
 
@@ -105,8 +106,8 @@ class QuantitativeModel(BaseModelSO, ABC):
     @abstractmethod
     def _quantitative_update(
         self,
-        quantities: List[Union[float, List[float], None]],
-        rewards: List[BinaryReward],
+        quantities: list[float | list[float] | None],
+        rewards: list[BinaryReward],
         **kwargs,
     ):
         """
@@ -114,9 +115,9 @@ class QuantitativeModel(BaseModelSO, ABC):
 
         Parameters
         ----------
-        quantities : Optional[List[Union[float, List[float], None]]
+        quantities : list[float | list[float] | None] | None
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: List[BinaryReward]
+        rewards: list[BinaryReward]
             The reward for each sample.
         """
 
@@ -216,11 +217,11 @@ class QuantitativeModelCC(CallableFieldSerde, BaseModelCC, ABC):
 
     Parameters
     ----------
-    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+    cost: Callable[[float | NonNegativeFloat], NonNegativeFloat]
         Cost associated to the Beta distribution.
     """
 
-    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+    cost: Callable[[float | NonNegativeFloat], NonNegativeFloat]
 
     @field_serializer("cost")
     def encode_cost(self, value):
@@ -241,11 +242,11 @@ class QuantitativeModelDP(CallableFieldSerde, BaseModelDP, ABC):
 
     Parameters
     ----------
-    price: Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+    price: Callable[[float | np.ndarray], NonNegativeFloat]
         Price associated to the Beta distribution.
     """
 
-    price: Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+    price: Callable[[float | np.ndarray], NonNegativeFloat]
 
     @field_serializer("price")
     def encode_price(self, value):

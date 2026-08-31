@@ -22,8 +22,9 @@
 
 import inspect
 from abc import ABC
+from collections.abc import Callable
 from types import ModuleType
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 from bokeh.io import curdoc, output_file, output_notebook, save, show
@@ -59,7 +60,7 @@ class OptimizationFailedError(Exception):
 
 
 @validate_call
-def extract_argument_names_from_function(handle: Callable, ignore_arguments: Tuple = ("self", "cls")) -> List[str]:
+def extract_argument_names_from_function(handle: Callable, ignore_arguments: tuple = ("self", "cls")) -> list[str]:
     """
     Extract the argument names from a function handle.
 
@@ -72,7 +73,7 @@ def extract_argument_names_from_function(handle: Callable, ignore_arguments: Tup
 
     Returns
     -------
-    argument_names : List[str]
+    argument_names : list[str]
         List of argument names
     """
 
@@ -86,7 +87,7 @@ def extract_argument_names_from_function(handle: Callable, ignore_arguments: Tup
 
 
 @validate_call(config=dict(arbitrary_types_allowed=True))
-def get_non_abstract_classes(module: ModuleType) -> List[type]:
+def get_non_abstract_classes(module: ModuleType) -> list[type]:
     non_abc_classes = []
     for name, obj in inspect.getmembers(module, inspect.isclass):
         # Ensure the class is defined in the module and not imported
@@ -123,15 +124,15 @@ def in_jupyter_notebook() -> bool:
         return False  # Probably standard Python interpreter
 
 
-def visualize_via_bokeh(output_path: Optional[str], tabs: List[TabPanel]):
+def visualize_via_bokeh(output_path: str | None, tabs: list[TabPanel]):
     """
     Visualize output to either a Jupyter notebook or an HTML file.
 
     Parameters
     ----------
-    output_path : Optional[str]
+    output_path : str | None
         Path to the output file. Required if not running in a Jupyter notebook.
-    tabs : List[TabPanel]
+    tabs : list[TabPanel]
         List of TabPanel objects to visualize.
     """
 
@@ -179,10 +180,10 @@ _DE_PARAMS = {
 def maximize_by_quantity(
     quantity_score_func: Callable[[np.ndarray], float],
     dimension: PositiveInt,
-    constraint: Optional[List[Callable[[np.ndarray], float]]] = None,
+    constraint: list[Callable[[np.ndarray], float]] | None = None,
     n_trials: PositiveInt = 10000,
     maxiter_factor: PositiveInt = 10,
-    seed: Optional[Any] = None,
+    seed: Any | None = None,
 ) -> np.ndarray:
     """
     Maximize the quantity score for the given function.
@@ -193,14 +194,14 @@ def maximize_by_quantity(
         The quantity score function.
     dimension : PositiveInt
         The quantity vector dimension.
-    constraint : Optional[List[Callable[[np.ndarray], float]]]
+    constraint : list[Callable[[np.ndarray], float]] | None
         The constraint functions. final constraint is inf >= constraint(x) >= 0
     n_trials : PositiveInt, defaults to 10000
         The number of optimization trials.
     maxiter_factor : PositiveInt, defaults to 10
         The factor to define maximum number of iterations for differential evolution.
         Relative to n_trials.
-    seed : Optional[Any], default=None
+    seed : Any | None, default=None
         Seed for the differential evolution optimizer (passed directly to scipy). Accepts an int,
         a ``numpy.random.Generator``, or ``None`` (uses global numpy random state).
 

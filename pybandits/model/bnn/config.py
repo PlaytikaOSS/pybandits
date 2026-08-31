@@ -21,7 +21,7 @@
 # SOFTWARE.
 import warnings
 from copy import deepcopy
-from typing import ClassVar, List, Literal, Optional, Self, Union
+from typing import ClassVar, Literal, Self
 
 from pydantic import (
     Field,
@@ -74,12 +74,12 @@ class FeaturesConfig(PyBanditsBaseModel):
     ----------
     n_features : int
         Total number of columns in the input numpy array. Default 0.
-    categorical_features_configs : List[CategoricalFeatureConfig]
+    categorical_features_configs : list[CategoricalFeatureConfig]
         List of categorical feature configurations.
     """
 
     n_features: NonNegativeInt = 0
-    categorical_features_configs: List[CategoricalFeatureConfig] = Field(default_factory=list)
+    categorical_features_configs: list[CategoricalFeatureConfig] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -97,7 +97,7 @@ class FeaturesConfig(PyBanditsBaseModel):
         return values
 
     @property
-    def numerical_indices(self) -> List[int]:
+    def numerical_indices(self) -> list[int]:
         """Sorted list of column positions treated as numerical (not used by any categorical)."""
         cat_cols = {cfg.column_index for cfg in self.categorical_features_configs}
         return [i for i in range(self.n_features) if i not in cat_cols]
@@ -132,16 +132,16 @@ class EmbeddingParams(PyBanditsBaseModel):
 
     Parameters
     ----------
-    embeddings : List[Union[StudentTArray, NormalArray]]
+    embeddings : list[StudentTArray | NormalArray]
         Ordered list of embedding matrix distributions, matching the order of
         ``FeaturesConfig.categorical_features_configs``.
         Shape of each matrix: ``(cardinality, embedding_dim)``.
-    embeddings_init : List[Union[StudentTArray, NormalArray]]
+    embeddings_init : list[StudentTArray | NormalArray]
         Frozen copy of the initial embeddings for resetting. Set automatically.
     """
 
-    embeddings: List[Union[StudentTArray, NormalArray]]
-    embeddings_init: List[Union[StudentTArray, NormalArray]] = Field(default_factory=list, init=False, frozen=True)
+    embeddings: list[StudentTArray | NormalArray]
+    embeddings_init: list[StudentTArray | NormalArray] = Field(default_factory=list, init=False, frozen=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -191,14 +191,14 @@ class BnnLayerParams(PyBanditsBaseModel):
 
     Parameters
     ----------
-    weight : Union[NormalArray, StudentTArray]
+    weight : NormalArray | StudentTArray
         The weight parameter of the BNN layer, represented as either a NormalArray or StudentTArray.
-    bias : Union[StudentTArray, NormalArray]
+    bias : StudentTArray | NormalArray
         The bias parameter of the BNN layer, represented as either a StudentTArray or NormalArray.
     """
 
-    weight: Union[NormalArray, StudentTArray]
-    bias: Union[StudentTArray, NormalArray]
+    weight: NormalArray | StudentTArray
+    bias: StudentTArray | NormalArray
 
 
 class BnnParams(PyBanditsBaseModel):
@@ -209,21 +209,21 @@ class BnnParams(PyBanditsBaseModel):
 
     Parameters
     ----------
-    bnn_layer_params : List[BnnLayerParams]
+    bnn_layer_params : list[BnnLayerParams]
         A list of BNN layer parameters representing the current state of the model.
-    bnn_layer_params_init : List[BnnLayerParams]
+    bnn_layer_params_init : list[BnnLayerParams]
         A list of BNN layer parameters representing the initial state of the model.
-    embedding_params : Optional[EmbeddingParams]
+    embedding_params : EmbeddingParams | None
         Bayesian embedding matrices for categorical features. ``None`` when no
         categorical features are configured.
-    embedding_params_init : Optional[EmbeddingParams]
+    embedding_params_init : EmbeddingParams | None
         Frozen copy of the initial embedding parameters for resetting. Set automatically.
     """
 
-    bnn_layer_params: Optional[List[BnnLayerParams]]
-    bnn_layer_params_init: List[BnnLayerParams] = Field(default_factory=list, init=False, frozen=True)
-    embedding_params: Optional[EmbeddingParams] = None
-    embedding_params_init: Optional[EmbeddingParams] = Field(default=None, init=False, frozen=True)
+    bnn_layer_params: list[BnnLayerParams] | None
+    bnn_layer_params_init: list[BnnLayerParams] = Field(default_factory=list, init=False, frozen=True)
+    embedding_params: EmbeddingParams | None = None
+    embedding_params_init: EmbeddingParams | None = Field(default=None, init=False, frozen=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -257,7 +257,7 @@ class EarlyStopping(PyBanditsBaseModel):
     patience: PositiveInt = 10
     tolerance: PositiveFloat = 1e-4
     diff_type: Literal["relative", "absolute"] = "relative"
-    _previous_loss: Optional[float] = PrivateAttr(default=None)
+    _previous_loss: float | None = PrivateAttr(default=None)
     _no_improvement_count: int = PrivateAttr(default=0)
 
     def reset(self) -> None:
@@ -302,24 +302,24 @@ class VIUpdateKwargs(PyBanditsBaseModel):
         Name of the optax optimizer (resolved at construction). Default "sgd".
     optimizer_kwargs : dict
         Keyword arguments forwarded to the optax optimizer (e.g. ``step_size``).
-    batch_size : Optional[PositiveInt]
+    batch_size : PositiveInt | None
         Mini-batch size; ``None`` uses the full dataset. Default None.
-    early_stopping_kwargs : Optional[dict]
+    early_stopping_kwargs : dict | None
         Keyword arguments forwarded to ``EarlyStopping``; ``None`` disables it. Default None.
-    lr_scheduler_type : Optional[str]
+    lr_scheduler_type : str | None
         Name of the optax learning-rate schedule, or ``None``. Default None.
-    lr_scheduler_kwargs : Optional[dict]
+    lr_scheduler_kwargs : dict | None
         Keyword arguments forwarded to the optax schedule. Default None.
     restore_best_svi_state : bool
         Whether to restore the lowest-loss SVI state at the end of training. Default True.
     num_particles : PositiveInt
         Number of ELBO particles. Default 1.
-    gradient_clip_norm : Optional[PositiveFloat]
+    gradient_clip_norm : PositiveFloat | None
         Global gradient-norm clipping threshold, or ``None`` to disable. Default None.
-    kl_annealing_fraction : Optional[PositiveFloat01]
+    kl_annealing_fraction : PositiveFloat01 | None
         Fraction of total steps over which the KL term is linearly warmed up; must lie in
         the half-open interval (0, 1] or be ``None``. Default None.
-    epochs : Optional[PositiveInt]
+    epochs : PositiveInt | None
         Number of epochs; takes precedence over ``num_steps`` when provided. Default None.
     """
 
@@ -327,15 +327,15 @@ class VIUpdateKwargs(PyBanditsBaseModel):
     method: Literal["advi", "fullrank_advi"] = "advi"
     optimizer_type: str = "adam"
     optimizer_kwargs: dict = Field(default_factory=lambda: {"step_size": 0.0003})
-    batch_size: Optional[PositiveInt] = None
-    early_stopping_kwargs: Optional[dict] = None
-    lr_scheduler_type: Optional[str] = None
-    lr_scheduler_kwargs: Optional[dict] = None
+    batch_size: PositiveInt | None = None
+    early_stopping_kwargs: dict | None = None
+    lr_scheduler_type: str | None = None
+    lr_scheduler_kwargs: dict | None = None
     restore_best_svi_state: bool = True
     num_particles: PositiveInt = 1
-    gradient_clip_norm: Optional[PositiveFloat] = None
-    kl_annealing_fraction: Optional[PositiveFloat01] = None
-    epochs: Optional[PositiveInt] = None
+    gradient_clip_norm: PositiveFloat | None = None
+    kl_annealing_fraction: PositiveFloat01 | None = None
+    epochs: PositiveInt | None = None
 
     @model_validator(mode="before")
     @classmethod

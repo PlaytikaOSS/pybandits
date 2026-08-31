@@ -28,7 +28,7 @@ from functools import partial
 from itertools import product
 from math import floor
 from multiprocessing import Pool, cpu_count
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Self, Tuple, Union
+from typing import Any, ClassVar, Literal, Self
 
 import numpy as np
 import optuna
@@ -86,7 +86,7 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
 
     Parameters
     ----------
-    estimator_type : Optional[Literal["logreg", "gbm", "rf", "mlp", "xgb"]]
+    estimator_type : Literal["logreg", "gbm", "rf", "mlp", "xgb"] | None
         The model type to optimize.
 
     fast_fit : bool
@@ -101,7 +101,7 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
     verbose : bool
         Whether to log detailed information during the optimization process.
 
-    study_name : Optional[str]
+    study_name : str | None
         Name of the study to be created by Optuna.
 
     multi_action_prediction : bool
@@ -125,43 +125,43 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
     action_one_hot_encoder: OneHotEncoder = OneHotEncoder(sparse_output=False)
     n_trials: int
     verbose: bool
-    study_name: Optional[str] = None
+    study_name: str | None = None
     multi_action_prediction: bool
     include_action_in_features: bool = True
     calibrate: bool = True
     _default_cv: ClassVar[int] = 5
-    _model_mapping: ClassVar[Dict[str, type[ClassifierMixin]]] = {
+    _model_mapping: ClassVar[dict[str, type[ClassifierMixin]]] = {
         "mlp": MLPClassifier,
         "rf": RandomForestClassifier,
         "logreg": LogisticRegression,
         "gbm": GradientBoostingClassifier,
     }
     if _XGBOOST_AVAILABLE:
-        _model: Union[
-            CalibratedClassifierCV,
-            LogisticRegression,
-            GradientBoostingClassifier,
-            RandomForestClassifier,
-            MLPClassifier,
-            XGBClassifier,
-        ] = PrivateAttr()
+        _model: (
+            CalibratedClassifierCV
+            | LogisticRegression
+            | GradientBoostingClassifier
+            | RandomForestClassifier
+            | MLPClassifier
+            | XGBClassifier
+        ) = PrivateAttr()
         _model_mapping.update(
             {
                 "xgb": XGBClassifier,
             }
         )
     else:
-        _model: Union[
-            CalibratedClassifierCV,
-            LogisticRegression,
-            GradientBoostingClassifier,
-            RandomForestClassifier,
-            MLPClassifier,
-        ] = PrivateAttr()
+        _model: (
+            CalibratedClassifierCV
+            | LogisticRegression
+            | GradientBoostingClassifier
+            | RandomForestClassifier
+            | MLPClassifier
+        ) = PrivateAttr()
 
     @model_validator(mode="before")
     @classmethod
-    def validate_action_prediction_config(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_action_prediction_config(cls, values: dict[str, Any]) -> dict[str, Any]:
         """
         Validate that multi_action_prediction and include_action_in_features are compatible.
 
@@ -171,12 +171,12 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
 
         Parameters
         ----------
-        values : Dict[str, Any]
+        values : dict[str, Any]
             The raw input dictionary before field validation.
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             The validated values dictionary.
 
         Raises
@@ -193,14 +193,14 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
             )
         return values
 
-    def _pre_process(self, batch: Dict[str, Any]) -> np.ndarray:
+    def _pre_process(self, batch: dict[str, Any]) -> np.ndarray:
         """
         Preprocess the feature vectors to be used for regression model training.
         This method concatenates the context vector and optionally action context vectors.
 
         Parameters
         ----------
-        batch : Dict[str, Any]
+        batch : dict[str, Any]
             The batch of data containing context, action, and action context.
 
         Returns
@@ -216,8 +216,8 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
             return context
 
     def _sample_parameter_space(
-        self, trial: Trial, scale_pos_weight: Optional[float] = None
-    ) -> Dict[str, Union[str, int, float]]:
+        self, trial: Trial, scale_pos_weight: float | None = None
+    ) -> dict[str, str | int | float]:
         """
         Define the hyperparameter search space for a given model type in Optuna.
 
@@ -227,7 +227,7 @@ class _FunctionEstimator(PyBanditsBaseModel, ClassifierMixin, arbitrary_types_al
         ----------
         trial : optuna.Trial
             A single trial in the Optuna optimization process.
-        scale_pos_weight : Optional[float]
+        scale_pos_weight : float | None
             The data-driven class imbalance ratio (neg_count / pos_count) for XGBoost.
             When provided, the search range is [1.0, scale_pos_weight] (or fixed at 1.0
             if the ratio <= 1). When None, scale_pos_weight is not tuned.
@@ -491,11 +491,11 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         Method used to compute/estimate propensity score pi_b (propensity_score, logging / behavioral policy).
     expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp", "xgb"]
         Method used to estimate expected reward for each action a in the training set.
-    n_trials : Optional[int]
+    n_trials : int | None
         Number of trials for the Optuna optimization process.
     fast_fit : bool
         Whether to use the default parameter set for the function estimator models.
-    ope_estimators: Optional[List[BaseOfflinePolicyEstimator]]
+    ope_estimators: list[BaseOfflinePolicyEstimator] | None
         List of OPE estimators used to evaluate the policy value of evaluation policy.
         All available estimators are if not specified.
     shuffle : bool
@@ -504,18 +504,18 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         Column name for batch as available in logged_data
     action_feature : str
         Column name for action as available in logged_data
-    reward_feature : Union[str, List[str]]
+    reward_feature : str | list[str]
         Column name for reward as available in logged_data
-    contextual_features : Optional[List[str]]
+    contextual_features : list[str] | None
         Column names for contextual features as available in logged_data
-    cost_feature : Optional[str]
+    cost_feature : str | None
         Column name for cost as available in logged_data; used for bandit with cost control
-    group_feature : Optional[str]
+    group_feature : str | None
         Column name for group definition feature as available in logged_data; available from simulated data
         to define samples with similar contextual profile
-    true_reward_feature : Optional[Union[str, List[str]]]
+    true_reward_feature : str | list[str] | None
         Column names for reward proba distribution features as available in simulated logged_data. Used to compute ground truth
-    propensity_score_feature  : Optional[str]
+    propensity_score_feature  : str | None
         Column name for propensity score as available in logged_data; used for evaluation of the policy value
     verbose : bool
         Whether to log detailed information during the optimization process.
@@ -534,19 +534,19 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ]
         expected_reward_model_type: Literal["logreg", "gbm", "rf", "mlp"]
         importance_weights_model_type: Literal["logreg", "gbm", "rf", "mlp"]
-    scaler: Optional[Union[TransformerMixin, Dict[str, TransformerMixin]]] = None
-    n_trials: Optional[int] = 100
+    scaler: TransformerMixin | dict[str, TransformerMixin] | None = None
+    n_trials: int | None = 100
     fast_fit: bool = False
-    ope_estimators: Optional[List[BaseOfflinePolicyEstimator]]
+    ope_estimators: list[BaseOfflinePolicyEstimator] | None
     shuffle: bool = False
     batch_feature: str
     action_feature: str
-    reward_feature: Union[str, List[str]]
-    contextual_features: Optional[List[str]] = None
-    cost_feature: Optional[str] = None
-    group_feature: Optional[str] = None
-    true_reward_feature: Optional[Union[str, List[str]]] = None
-    propensity_score_feature: Optional[str] = None
+    reward_feature: str | list[str]
+    contextual_features: list[str] | None = None
+    cost_feature: str | None = None
+    group_feature: str | None = None
+    true_reward_feature: str | list[str] | None = None
+    propensity_score_feature: str | None = None
     verbose: bool = False
     _action_one_hot_encoder = OneHotEncoder(sparse_output=False)
     _clip_epsilon = 1e-08
@@ -620,7 +620,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         return values
 
     @classmethod
-    def _check_argument_required_by_estimators(cls, argument: str, ope_estimators: List[BaseOfflinePolicyEstimator]):
+    def _check_argument_required_by_estimators(cls, argument: str, ope_estimators: list[BaseOfflinePolicyEstimator]):
         """
         Check if argument is required by OPE estimators.
 
@@ -628,7 +628,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         argument : str
             Argument to check if required by OPE estimators.
-        ope_estimators : List[BaseOfflinePolicyEstimator]
+        ope_estimators : list[BaseOfflinePolicyEstimator]
             List of OPE estimators.
 
         Returns
@@ -679,7 +679,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         if self.contextual_features is not None and not set(self.contextual_features).issubset(logged_data.columns):
             raise AttributeError("contextual_features missing from logged data.")
 
-    def _extract_batches(self, logged_data: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _extract_batches(self, logged_data: pd.DataFrame) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         Create training and test sets in dictionary form.
 
@@ -787,18 +787,18 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         return train_data, test_data
 
     def _estimate_propensity_score_empirical(
-        self, batch: Dict[str, Any], groupby_cols: List[str], inner_groupby_cols: Optional[List[str]] = None
+        self, batch: dict[str, Any], groupby_cols: list[str], inner_groupby_cols: list[str] | None = None
     ) -> np.ndarray:
         """
         Empirical propensity score computation based on batches average
 
         Parameters
         ----------
-        batch: Dict[str, Any]
+        batch: dict[str, Any]
             Dataset dictionary
-        groupby_cols : List[str]
+        groupby_cols : list[str]
             Columns to group by
-        inner_groupby_cols : Optional[List[str]]
+        inner_groupby_cols : list[str] | None
             Columns to group by after the first groupby
 
         Returns
@@ -845,13 +845,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         return propensity_score
 
-    def _empirical_averaged_propensity_score(self, batch: Dict[str, Any]) -> np.ndarray:
+    def _empirical_averaged_propensity_score(self, batch: dict[str, Any]) -> np.ndarray:
         """
         Empirical propensity score computation based on batches average
 
         Parameters
         ----------
-        batch : Dict[str, Any]
+        batch : dict[str, Any]
             dataset.
 
         Returns
@@ -864,13 +864,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             batch=batch, groupby_cols=[self.action_feature], inner_groupby_cols=[self.batch_feature]
         )
 
-    def _empirical_propensity_score(self, batch: Dict[str, Any]) -> np.ndarray:
+    def _empirical_propensity_score(self, batch: dict[str, Any]) -> np.ndarray:
         """
         Propensity score empirical computation based on data set average
 
         Parameters
         ----------
-        batch : Dict[str, Any]
+        batch : dict[str, Any]
             dataset.
 
         Return
@@ -881,7 +881,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
 
         return self._estimate_propensity_score_empirical(batch=batch, groupby_cols=[self.action_feature])
 
-    def _estimate_propensity_score(self, train_data: Dict[str, Any], test_data: Dict[str, Any]) -> None:
+    def _estimate_propensity_score(self, train_data: dict[str, Any], test_data: dict[str, Any]) -> None:
         """
         Compute/approximate propensity score based on different methods in the train and test set.
         Different approaches may be evaluated when logging policy is unknown.
@@ -943,7 +943,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         train_data["propensity_score"] = train_propensity_score
         test_data["propensity_score"] = test_propensity_score
 
-    def _estimate_expected_reward(self, train_data: Dict[str, Any], test_data: Dict[str, Any]) -> Dict[str, np.ndarray]:
+    def _estimate_expected_reward(self, train_data: dict[str, Any], test_data: dict[str, Any]) -> dict[str, np.ndarray]:
         """
         Compute expected reward for each round and action.
         """
@@ -970,7 +970,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         return estimated_expected_reward
 
     def _estimate_importance_weight(
-        self, mab: BaseMab, train_data: Dict[str, Any], test_data: Dict[str, Any]
+        self, mab: BaseMab, train_data: dict[str, Any], test_data: dict[str, Any]
     ) -> np.ndarray:
         """
         Compute importance weights induced by the behavior and evaluation policies.
@@ -984,9 +984,9 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit to be evaluated
-        train_data : Dict[str, Any]
+        train_data : dict[str, Any]
             Training data dictionary
-        test_data : Dict[str, Any]
+        test_data : dict[str, Any]
             Test data dictionary
 
         Return
@@ -1031,9 +1031,9 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
     def estimate_policy(
         self,
         mab: BaseMab,
-        test_data: Dict[str, Any],
+        test_data: dict[str, Any],
         n_mc_experiments: PositiveInt = 1000,
-        n_cores: Optional[NonNegativeInt] = None,
+        n_cores: NonNegativeInt | None = None,
     ) -> pd.DataFrame:
         """
         Estimate policy via Monte Carlo (MC) sampling based on sampling distribution of each action a in the test set.
@@ -1051,11 +1051,11 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit to be evaluated
-        test_data : Dict[str, Any]
+        test_data : dict[str, Any]
             Test data dictionary
         n_mc_experiments: PositiveInt
             Number of MC sampling rounds. Default: 1000
-        n_cores: Optional[NonNegativeInt], all available cores if not specified.
+        n_cores: NonNegativeInt | None, all available cores if not specified.
             Number of cores used for multiprocessing
 
         Returns
@@ -1108,12 +1108,12 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
     def _evaluate(
         self,
         mab: BaseMab,
-        train_data: Dict[str, Any],
-        test_data: Dict[str, Any],
+        train_data: dict[str, Any],
+        test_data: dict[str, Any],
         n_mc_experiments: int = 1000,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         visualize: bool = True,
-        n_cores: Optional[NonNegativeInt] = None,
+        n_cores: NonNegativeInt | None = None,
     ) -> pd.DataFrame:
         """
         Execute the OPE process on already-extracted train/test data.
@@ -1122,17 +1122,17 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit model to be evaluated
-        train_data : Dict[str, Any]
+        train_data : dict[str, Any]
             Training data dictionary produced by _extract_batches
-        test_data : Dict[str, Any]
+        test_data : dict[str, Any]
             Test data dictionary produced by _extract_batches
         n_mc_experiments : int
             Number of Monte Carlo experiments for policy estimation
-        save_path : Optional[str], defaults to None.
+        save_path : str | None, defaults to None.
             Path to save the results. Nothing is saved if not specified.
         visualize : bool, defaults to True.
             Whether to visualize the results of the OPE process
-        n_cores : Optional[NonNegativeInt], all available cores if not specified.
+        n_cores : NonNegativeInt | None, all available cores if not specified.
             Number of cores used for multiprocessing. If None, uses all available cores.
 
         Returns
@@ -1213,9 +1213,9 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         mab: BaseMab,
         logged_data: pd.DataFrame,
         n_mc_experiments: int = 1000,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         visualize: bool = True,
-        n_cores: Optional[NonNegativeInt] = None,
+        n_cores: NonNegativeInt | None = None,
     ) -> pd.DataFrame:
         """
         Execute the OPE process with multiple estimators simultaneously.
@@ -1228,11 +1228,11 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             Logging data set
         n_mc_experiments : int
             Number of Monte Carlo experiments for policy estimation
-        save_path : Optional[str], defaults to None.
+        save_path : str | None, defaults to None.
             Path to save the results. Nothing is saved if not specified.
         visualize : bool, defaults to True.
             Whether to visualize the results of the OPE process
-        n_cores : Optional[NonNegativeInt], all available cores if not specified.
+        n_cores : NonNegativeInt | None, all available cores if not specified.
             Number of cores used for multiprocessing. If None, uses all available cores.
 
         Returns
@@ -1248,10 +1248,10 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         mab: BaseMab,
         logged_data: pd.DataFrame,
         n_mc_experiments: int = 1000,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         visualize: bool = True,
         with_test: bool = False,
-        n_cores: Optional[NonNegativeInt] = None,
+        n_cores: NonNegativeInt | None = None,
     ) -> pd.DataFrame:
         """
         Execute update of the multi-armed bandit based on the logged data,
@@ -1265,13 +1265,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             Logging data set
         n_mc_experiments : int
             Number of Monte Carlo experiments for policy estimation
-        save_path : Optional[str]
+        save_path : str | None
             Path to save the results. Nothing is saved if not specified.
         visualize : bool
             Whether to visualize the results of the OPE process
         with_test : bool
             Whether to update the bandit model with the test data
-        n_cores : Optional[NonNegativeInt], all available cores if not specified.
+        n_cores : NonNegativeInt | None, all available cores if not specified.
             Number of cores used for multiprocessing. If None, uses all available cores.
 
         Returns
@@ -1285,7 +1285,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
             self._update_mab(mab, test_data)
         return self._evaluate(mab, train_data, test_data, n_mc_experiments, save_path, visualize, n_cores)
 
-    def _update_mab(self, mab: BaseMab, data: Dict[str, Any]):
+    def _update_mab(self, mab: BaseMab, data: dict[str, Any]):
         """
         Update the multi-armed bandit model based on the logged data.
 
@@ -1293,7 +1293,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         ----------
         mab : BaseMab
             Multi-armed bandit model to be updated.
-        data : Dict[str, Any]
+        data : dict[str, Any]
             Data used to update the bandit model.
         """
         if self.verbose:
@@ -1301,13 +1301,13 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         kwargs = {"context": data["context"]} if self.contextual_features else {}
         mab.update(actions=data["action_ids"].tolist(), rewards=np.squeeze(data["reward"]).tolist(), **kwargs)
 
-    def _visualize_results(self, save_path: Optional[str], multi_objective_estimated_policy_value_df: pd.DataFrame):
+    def _visualize_results(self, save_path: str | None, multi_objective_estimated_policy_value_df: pd.DataFrame):
         """
         Visualize the results of the OPE process.
 
         Parameters
         ----------
-        save_path : Optional[str]
+        save_path : str | None
             Path to save the visualization results. Required if not running in a Jupyter notebook.
         multi_objective_estimated_policy_value_df : pd.DataFrame
             Estimated confidence intervals
@@ -1358,7 +1358,7 @@ class OfflinePolicyEvaluator(PyBanditsBaseModel, arbitrary_types_allowed=True):
         visualize_via_bokeh(tabs=tabs, output_path=output_path)
 
 
-_WORKER_INIT_DATA: Dict[str, Any] = {}
+_WORKER_INIT_DATA: dict[str, Any] = {}
 
 
 def _pool_initializer(mab_class_name: str, mab_state: str, mab_data: Any, verbose: bool) -> None:
@@ -1369,7 +1369,7 @@ def _pool_initializer(mab_class_name: str, mab_state: str, mab_data: Any, verbos
     )
 
 
-def _mab_predict_worker(mc_experiment: int) -> List[ActionId]:
+def _mab_predict_worker(mc_experiment: int) -> list[ActionId]:
     """Worker function that uses process-local data set by _pool_initializer."""
     return _mab_predict_serialized(
         _WORKER_INIT_DATA["mab_class_name"],
@@ -1380,7 +1380,7 @@ def _mab_predict_worker(mc_experiment: int) -> List[ActionId]:
     )
 
 
-def _mab_predict(mab: BaseMab, mab_data: Union[np.ndarray, PositiveInt], mc_experiment: int = 0) -> List[ActionId]:
+def _mab_predict(mab: BaseMab, mab_data: np.ndarray | PositiveInt, mc_experiment: int = 0) -> list[ActionId]:
     """
     bandit action probabilities prediction in test set
 
@@ -1388,14 +1388,14 @@ def _mab_predict(mab: BaseMab, mab_data: Union[np.ndarray, PositiveInt], mc_expe
     ----------
     mab : BaseMab
         Multi-armed bandit model
-    mab_data : Union[np.ndarray, PositiveInt]
+    mab_data : np.ndarray | PositiveInt
         test data used to update the bandit model; context or number of samples.
     mc_experiment : int
         placeholder for multiprocessing
 
     Returns
     -------
-    actions: List[ActionId] of shape (n_samples,)
+    actions: list[ActionId] of shape (n_samples,)
         The actions selected by the multi-armed bandit model.
     """
     mab_output = mab.predict(context=mab_data) if type(mab_data) is np.ndarray else mab.predict(n_samples=mab_data)
@@ -1406,10 +1406,10 @@ def _mab_predict(mab: BaseMab, mab_data: Union[np.ndarray, PositiveInt], mc_expe
 def _mab_predict_serialized(
     mab_class_name: str,
     mab_state: str,
-    mab_data: Union[np.ndarray, PositiveInt],
+    mab_data: np.ndarray | PositiveInt,
     verbose: bool,
     mc_experiment: int = 0,
-) -> List[ActionId]:
+) -> list[ActionId]:
     """
     bandit action probabilities prediction in test set using serialized MAB state.
     This function recreates the MAB from its serialized state to avoid pickling issues
@@ -1421,7 +1421,7 @@ def _mab_predict_serialized(
         The class name of the MAB model.
     mab_state : str
         The serialized state of the MAB model (JSON string).
-    mab_data : Union[np.ndarray, PositiveInt]
+    mab_data : np.ndarray | PositiveInt
         test data used to update the bandit model; context or number of samples.
     verbose : bool
         Whether to log detailed information during the prediction process.
@@ -1430,7 +1430,7 @@ def _mab_predict_serialized(
 
     Returns
     -------
-    actions: List[ActionId] of shape (n_samples,)
+    actions: list[ActionId] of shape (n_samples,)
         The actions selected by the multi-armed bandit model.
     """
     if verbose:

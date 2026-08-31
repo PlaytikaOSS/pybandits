@@ -21,14 +21,14 @@
 # SOFTWARE.
 """Independent per-action meta-model (the smab / per-action cmab dispatch pattern).
 
-``SmabMetaModel[T]`` wraps a ``Dict[ActionId, T]`` and routes each ``sample_proba`` /
+``SmabMetaModel[T]`` wraps a ``dict[ActionId, T]`` and routes each ``sample_proba`` /
 ``update`` / ``reset`` call to the relevant action's own model — no coordinated cross-action state.
 This is the historical smab/cmab pattern lifted into the meta-model abstraction without any
 behavioural change. Shared-state algorithms (e.g. the neural-linear cmab) live in
 ``cmab_meta_model.py`` instead.
 """
 
-from typing import Any, Dict, Generic, List, Optional, Set, Union
+from typing import Any, Generic
 
 import numpy as np
 
@@ -41,7 +41,7 @@ from pybandits.quantitative_model import Zooming, ZoomingCC, ZoomingDP
 class SmabMetaModel(BaseMetaModel, Generic[ActionModelType]):
     """Meta-model that dispatches independently to per-action models.
 
-    Wraps a ``Dict[ActionId, ActionModelType]`` and routes each ``sample_proba`` /
+    Wraps a ``dict[ActionId, ActionModelType]`` and routes each ``sample_proba`` /
     ``update`` / ``reset`` call to the relevant action's model. This is the
     historical cmab/smab pattern, lifted into the meta-model abstraction without
     any behavioural change.
@@ -57,14 +57,14 @@ class SmabMetaModel(BaseMetaModel, Generic[ActionModelType]):
     subclasses, not here.
     """
 
-    actions: Dict[ActionId, ActionModelType]  # type: ignore[valid-type]
+    actions: dict[ActionId, ActionModelType]  # type: ignore[valid-type]
 
     def sample_proba(
         self,
         rng: np.random.Generator,
-        valid_action_ids: Optional[Set[ActionId]] = None,
+        valid_action_ids: set[ActionId] | None = None,
         **kwargs: Any,
-    ) -> Dict[ActionId, SampleProbaResult]:
+    ) -> dict[ActionId, SampleProbaResult]:
         return {
             action_id: model.sample_proba(rng=rng, **kwargs)
             for action_id, model in self.actions.items()
@@ -73,9 +73,9 @@ class SmabMetaModel(BaseMetaModel, Generic[ActionModelType]):
 
     def update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None = None,
         **kwargs: Any,
     ) -> None:
         """Group rows by action and dispatch to each action's ``update``.
@@ -94,10 +94,10 @@ class SmabMetaModel(BaseMetaModel, Generic[ActionModelType]):
 # These are required for pickling: Python's pickle resolves a class by looking
 # up ``cls.__qualname__`` on ``sys.modules[cls.__module__]``.  Pydantic sets the
 # qualname of a parameterised generic to e.g.
-# ``SmabMetaModel[Union[Beta, Zooming]]``; defining the alias here (co-located with
+# ``SmabMetaModel[Beta | Zooming]``; defining the alias here (co-located with
 # ``SmabMetaModel``) makes that attribute accessible on this module.
-SmabMetaModelSO = SmabMetaModel[Union[Beta, Zooming]]
-SmabMetaModelCC = SmabMetaModel[Union[BetaCC, ZoomingCC]]
-SmabMetaModelDP = SmabMetaModel[Union[BetaDP, ZoomingDP]]
+SmabMetaModelSO = SmabMetaModel[Beta | Zooming]
+SmabMetaModelCC = SmabMetaModel[BetaCC | ZoomingCC]
+SmabMetaModelDP = SmabMetaModel[BetaDP | ZoomingDP]
 SmabMetaModelMO = SmabMetaModel[BetaMO]
 SmabMetaModelMOCC = SmabMetaModel[BetaMOCC]

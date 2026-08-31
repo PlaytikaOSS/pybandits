@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, List, Optional, Self, Tuple, Union
+from typing import Any, ClassVar, Self
 
 import jax.numpy as jnp
 import numpy as np
@@ -47,23 +47,23 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
 
     Parameters
     ----------
-    mu : Union[List[float], List[List[float]]]
+    mu : list[float] | list[list[float]]
         The mean values of the distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
-    sigma : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+    sigma : list[PositiveFloat] | list[list[PositiveFloat]]
         The scale (standard deviation) values of the distributions. Must be strictly positive.
         Can be a 1D or 2D list.
     """
 
-    mu: Union[List[float], List[List[float]]]
-    sigma: Union[List[PositiveFloat], List[List[PositiveFloat]]]
+    mu: list[float] | list[list[float]]
+    sigma: list[PositiveFloat] | list[list[PositiveFloat]]
 
     _mu_array: np.ndarray = PrivateAttr()
     _sigma_array: np.ndarray = PrivateAttr()
-    _params: Dict[str, np.ndarray] = PrivateAttr()
+    _params: dict[str, np.ndarray] = PrivateAttr()
     _numpyro_dist_class: ClassVar[type]
     _sampler: ClassVar[str]  # name of the numpy Generator method
-    _sampler_kwargs: ClassVar[Dict[str, str]] = {}  # internal param name → numpy kwarg name
-    param_map: ClassVar[Dict[str, str]] = {"mu": "loc", "sigma": "scale"}
+    _sampler_kwargs: ClassVar[dict[str, str]] = {}  # internal param name → numpy kwarg name
+    param_map: ClassVar[dict[str, str]] = {"mu": "loc", "sigma": "scale"}
 
     def to_numpyro_distribution(self) -> npdist.Distribution:
         """
@@ -104,20 +104,20 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         return self.__class__.model_validate(updated_dict)
 
     def _draw(
-        self, params: Dict[str, np.ndarray], rng: np.random.Generator, size: Optional[Tuple[int, ...]] = None
+        self, params: dict[str, np.ndarray], rng: np.random.Generator, size: tuple[int, ...] | None = None
     ) -> np.ndarray:
         """Apply the loc-scale transform: ``mu + sigma * rng.<_sampler>(**_sampler_kwargs)``."""
         _size = size if size is not None else params["mu"].shape
         extra = {rng_key: params[param_key] for param_key, rng_key in self._sampler_kwargs.items()}
         return params["mu"] + params["sigma"] * getattr(rng, self._sampler)(size=_size, **extra)
 
-    def sample_rvs(self, size: Tuple[int, ...], rng: np.random.Generator) -> np.ndarray:
+    def sample_rvs(self, size: tuple[int, ...], rng: np.random.Generator) -> np.ndarray:
         """
         Sample random variates from this distribution.
 
         Parameters
         ----------
-        size : Tuple[int, ...]
+        size : tuple[int, ...]
             Shape of the output array.
         rng : np.random.Generator
             Numpy random generator.
@@ -129,9 +129,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         """
         return self._draw(self._params, rng, size=size)
 
-    def sample_at_indices(
-        self, indices: Union[List[NonNegativeInt], np.ndarray], rng: np.random.Generator
-    ) -> np.ndarray:
+    def sample_at_indices(self, indices: list[NonNegativeInt] | np.ndarray, rng: np.random.Generator) -> np.ndarray:
         """
         Sample one row-vector per entry in ``indices`` from a 2-D distribution matrix.
 
@@ -142,7 +140,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        indices : Union[List[NonNegativeInt], np.ndarray] of shape (n,) with dtype int
+        indices : list[NonNegativeInt] | np.ndarray of shape (n,) with dtype int
             Row indices to sample from.
         rng : np.random.Generator
             Numpy random generator.
@@ -156,13 +154,13 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         return self._draw(sliced, rng)
 
     @staticmethod
-    def maybe_convert_list_to_array(input_list: Union[List[float], List[List[float]]]) -> np.ndarray:
+    def maybe_convert_list_to_array(input_list: list[float] | list[list[float]]) -> np.ndarray:
         """
         Convert a list or list of lists to a numpy array.
 
         Parameters
         ----------
-        input_list : Union[List[float], List[List[float]]]
+        input_list : list[float] | list[list[float]]
             Input list to convert.
 
         Returns
@@ -278,25 +276,25 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         self._params = dict(mu=self._mu_array, sigma=self._sigma_array)
 
     @property
-    def shape(self) -> Tuple[PositiveInt, ...]:
+    def shape(self) -> tuple[PositiveInt, ...]:
         """
         Get the shape of the mu array.
 
         Returns
         -------
-        Tuple[PositiveInt, ...]
+        tuple[PositiveInt, ...]
             The shape of the mu array.
         """
         return self._mu_array.shape
 
     @property
-    def params(self) -> Dict[str, np.ndarray]:
+    def params(self) -> dict[str, np.ndarray]:
         """
         Get the parameters as a dictionary of numpy arrays.
 
         Returns
         -------
-        Dict[str, np.ndarray]
+        dict[str, np.ndarray]
             Dictionary containing 'mu' and 'sigma' as numpy arrays.
         """
         return self._params
@@ -305,7 +303,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
     @validate_call
     def cold_start(
         cls,
-        shape: Union[PositiveInt, Tuple[PositiveInt, ...]],
+        shape: PositiveInt | tuple[PositiveInt, ...],
         mu: float = 0.0,
         sigma: PositiveFloat = 10.0,
         use_layerwise_scaling: bool = False,
@@ -320,7 +318,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        shape : Union[PositiveInt, Tuple[PositiveInt, ...]]
+        shape : PositiveInt | tuple[PositiveInt, ...]
             Dimensions of the distribution array.
         mu : float
             Mean of the distribution, by default 0.0.
@@ -360,7 +358,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
 
     @classmethod
     @abstractmethod
-    def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...], **kwargs) -> Dict[str, np.ndarray]:
+    def _get_distribution_specific_params(cls, shape: tuple[PositiveInt, ...], **kwargs) -> dict[str, np.ndarray]:
         """
         Get distribution-specific parameters for cold start initialization.
 
@@ -373,7 +371,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        shape : Tuple[PositiveInt, ...]
+        shape : tuple[PositiveInt, ...]
             Shape of the distribution array.
         **kwargs
             Additional keyword arguments containing distribution-specific parameters.
@@ -381,7 +379,7 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        Dict[str, np.ndarray]
+        dict[str, np.ndarray]
             Dictionary mapping parameter names to numpy arrays of the specified shape.
         """
         pass
@@ -395,23 +393,23 @@ class StudentTArray(BaseLocationScaleArray):
 
     Parameters
     ----------
-    mu : Union[List[float], List[List[float]]]
+    mu : list[float] | list[list[float]]
         The mean values of the Student's t-distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
-    sigma : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+    sigma : list[PositiveFloat] | list[list[PositiveFloat]]
         The scale (standard deviation) values of the Student's t-distributions. Must be strictly positive (> 0).
         Can be a 1D or 2D list.
-    nu : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+    nu : list[PositiveFloat] | list[list[PositiveFloat]]
         The degrees of freedom of the Student's t-distributions. Must be positive.
         Can be a 1D or 2D list.
     """
 
-    nu: Union[List[PositiveFloat], List[List[PositiveFloat]]]
+    nu: list[PositiveFloat] | list[list[PositiveFloat]]
 
     _nu_array: np.ndarray = PrivateAttr()
     _numpyro_dist_class: ClassVar[type] = NumpyroStudentT
     _sampler: ClassVar[str] = "standard_t"
-    _sampler_kwargs: ClassVar[Dict[str, str]] = {"nu": "df"}
-    param_map: ClassVar[Dict[str, str]] = {**BaseLocationScaleArray.param_map, "nu": "df"}
+    _sampler_kwargs: ClassVar[dict[str, str]] = {"nu": "df"}
+    param_map: ClassVar[dict[str, str]] = {**BaseLocationScaleArray.param_map, "nu": "df"}
 
     @model_validator(mode="before")
     @classmethod
@@ -422,21 +420,21 @@ class StudentTArray(BaseLocationScaleArray):
 
     @classmethod
     def _get_distribution_specific_params(
-        cls, shape: Tuple[PositiveInt, ...], nu: PositiveFloat = 5.0
-    ) -> Dict[str, np.ndarray]:
+        cls, shape: tuple[PositiveInt, ...], nu: PositiveFloat = 5.0
+    ) -> dict[str, np.ndarray]:
         """
         Get distribution-specific parameters for Student's t-distribution.
 
         Parameters
         ----------
-        shape : Tuple[PositiveInt, ...]
+        shape : tuple[PositiveInt, ...]
             Shape of the distribution array.
         nu : PositiveFloat
             Degrees of freedom of the Student's t-distribution, by default 5.0.
 
         Returns
         -------
-        Dict[str, np.ndarray]
+        dict[str, np.ndarray]
             Dictionary containing 'nu' parameter as a numpy array.
         """
         return {"nu": np.full(shape, nu)}
@@ -455,13 +453,13 @@ class StudentTArray(BaseLocationScaleArray):
         self._params["nu"] = self._nu_array
 
     @property
-    def shape(self) -> Tuple[PositiveInt, ...]:
+    def shape(self) -> tuple[PositiveInt, ...]:
         """
         Get the shape of the mu array.
 
         Returns
         -------
-        Tuple[PositiveInt, ...]
+        tuple[PositiveInt, ...]
             The shape of the mu array.
         """
         return self._mu_array.shape
@@ -478,9 +476,9 @@ class NormalArray(BaseLocationScaleArray):
 
     Parameters
     ----------
-    mu : Union[List[float], List[List[float]]]
+    mu : list[float] | list[list[float]]
         The mean values of the Normal distributions. Can be a 1D (for the layer bias term) or 2D list (for the layer weight term).
-    sigma : Union[List[PositiveFloat], List[List[PositiveFloat]]]
+    sigma : list[PositiveFloat] | list[list[PositiveFloat]]
         The standard deviation values of the Normal distributions. Must be strictly positive (> 0).
         Can be a 1D or 2D list.
 
@@ -498,10 +496,10 @@ class NormalArray(BaseLocationScaleArray):
 
     _numpyro_dist_class: ClassVar[type] = NumpyroNormal
     _sampler: ClassVar[str] = "standard_normal"
-    _sampler_kwargs: ClassVar[Dict[str, str]] = {}
+    _sampler_kwargs: ClassVar[dict[str, str]] = {}
 
     @classmethod
-    def _get_distribution_specific_params(cls, shape: Tuple[PositiveInt, ...]) -> Dict[str, np.ndarray]:
+    def _get_distribution_specific_params(cls, shape: tuple[PositiveInt, ...]) -> dict[str, np.ndarray]:
         """
         Get distribution-specific parameters for Normal distribution.
 
@@ -510,12 +508,12 @@ class NormalArray(BaseLocationScaleArray):
 
         Parameters
         ----------
-        shape : Tuple[PositiveInt, ...]
+        shape : tuple[PositiveInt, ...]
             Shape of the distribution array.
 
         Returns
         -------
-        Dict[str, np.ndarray]
+        dict[str, np.ndarray]
             Empty dictionary (no additional parameters needed for Normal distribution).
         """
         return {}

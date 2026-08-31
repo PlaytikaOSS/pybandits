@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 from abc import ABC, abstractmethod
-from typing import Callable, ClassVar, List, Tuple, Union
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
 from numpy.random import Generator
@@ -54,14 +55,14 @@ class BaseModel(PyBanditsBaseModel, ABC):
     @abstractmethod
     def sample_proba(
         self, rng: Generator, **kwargs
-    ) -> Union[
-        List[Probability],
-        List[MOProbability],
-        List[ProbabilityWeight],
-        List[QuantitativeProbability],
-        List[QuantitativeMOProbability],
-        List[QuantitativeProbabilityWeight],
-    ]:
+    ) -> (
+        list[Probability]
+        | list[MOProbability]
+        | list[ProbabilityWeight]
+        | list[QuantitativeProbability]
+        | list[QuantitativeMOProbability]
+        | list[QuantitativeProbabilityWeight]
+    ):
         """
         Sample the probability of getting a positive reward.
 
@@ -72,13 +73,13 @@ class BaseModel(PyBanditsBaseModel, ABC):
         """
 
     @abstractmethod
-    def update(self, rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
+    def update(self, rewards: list[BinaryReward] | list[list[BinaryReward]], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards : list[BinaryReward] | list[list[BinaryReward]],
             if nested list, len() should follow shape of (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
@@ -113,18 +114,18 @@ class BaseModelSO(BaseModel, ABC):
     n_failures: PositiveInt = _prior_pseudo_count
 
     # --- Transfer learning keys (own contributions for this class) ---
-    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("n_successes", "n_failures")
-    _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
-    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ()
+    _transfer_learned_keys: ClassVar[tuple[str, ...]] = ("n_successes", "n_failures")
+    _transfer_extendable_keys: ClassVar[tuple[str, ...]] = ()
+    _transfer_structural_keys: ClassVar[tuple[str, ...]] = ()
 
     # --- Transfer learning keys (accumulated up the MRO, used by transfer.py) ---
     # For BaseModelSO itself these equal the own contributions above.
     # For subclasses they are auto-computed by __init_subclass__.
-    transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("n_successes", "n_failures")
+    transfer_learned_keys: ClassVar[tuple[str, ...]] = ("n_successes", "n_failures")
     """Accumulated learned-state keys from all classes in the MRO.  Used by transfer.py to decide which keys to copy from source to target."""
-    transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
+    transfer_extendable_keys: ClassVar[tuple[str, ...]] = ()
     """Accumulated extendable keys from all classes in the MRO.  Changes to these emit warnings (but not errors) during transfer."""
-    transfer_structural_keys: ClassVar[Tuple[str, ...]] = ()
+    transfer_structural_keys: ClassVar[tuple[str, ...]] = ()
     """Accumulated structural keys from all classes in the MRO.  Mismatches in these raise ValueError during transfer."""
 
     def __init_subclass__(cls, **kwargs: object) -> None:
@@ -134,7 +135,7 @@ class BaseModelSO(BaseModel, ABC):
             ("transfer_extendable_keys", "_transfer_extendable_keys"),
             ("transfer_structural_keys", "_transfer_structural_keys"),
         ):
-            accumulated: Tuple[str, ...] = ()
+            accumulated: tuple[str, ...] = ()
             for base in reversed(cls.__mro__):
                 if priv in base.__dict__:
                     accumulated += base.__dict__[priv]
@@ -143,9 +144,12 @@ class BaseModelSO(BaseModel, ABC):
     @abstractmethod
     def sample_proba(
         self, rng: Generator, **kwargs
-    ) -> Union[
-        List[Probability], List[ProbabilityWeight], List[QuantitativeProbability], List[QuantitativeProbabilityWeight]
-    ]:
+    ) -> (
+        list[Probability]
+        | list[ProbabilityWeight]
+        | list[QuantitativeProbability]
+        | list[QuantitativeProbabilityWeight]
+    ):
         """
         Sample the probability of getting a positive reward.
 
@@ -156,19 +160,19 @@ class BaseModelSO(BaseModel, ABC):
         """
 
     @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
-    def update(self, rewards: List[BinaryReward], **kwargs):
+    def update(self, rewards: list[BinaryReward], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards : List[BinaryReward],
+        rewards : list[BinaryReward],
             The binary reward for each sample.
         """
         self._update(rewards=rewards, **kwargs)
         self.record_rewards(rewards)
 
-    def record_rewards(self, rewards: List[BinaryReward]) -> None:
+    def record_rewards(self, rewards: list[BinaryReward]) -> None:
         """Tally binary rewards into the success/failure counters.
 
         The canonical success/failure bookkeeping, factored out of ``update`` so callers that train
@@ -177,7 +181,7 @@ class BaseModelSO(BaseModel, ABC):
 
         Parameters
         ----------
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             The binary reward for each sample.
         """
         successes = sum(rewards)
@@ -185,13 +189,13 @@ class BaseModelSO(BaseModel, ABC):
         self.n_failures += len(rewards) - successes
 
     @abstractmethod
-    def _update(self, rewards: List[BinaryReward], **kwargs):
+    def _update(self, rewards: list[BinaryReward], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards: List[BinaryReward]
+        rewards: list[BinaryReward]
             A list of binary rewards.
         """
 
@@ -230,13 +234,13 @@ class BaseModelMO(BaseModel, ABC):
 
     Parameters
     ----------
-    models : List[BaseModelSO]
+    models : list[BaseModelSO]
         The list of models for each objective.
     """
 
     models: conlist(BaseModelSO, min_length=1)
 
-    def sample_proba(self, rng: Generator, **kwargs) -> Union[List[MOProbability], List[QuantitativeMOProbability]]:
+    def sample_proba(self, rng: Generator, **kwargs) -> list[MOProbability] | list[QuantitativeMOProbability]:
         """
         Sample the probability of getting a positive reward.
 
@@ -248,13 +252,13 @@ class BaseModelMO(BaseModel, ABC):
         return [list(p) for p in zip(*[model.sample_proba(rng=rng, **kwargs) for model in self.models])]
 
     @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
-    def update(self, rewards: List[List[BinaryReward]], **kwargs):
+    def update(self, rewards: list[list[BinaryReward]], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards : List[List[BinaryReward]],
+        rewards : list[list[BinaryReward]],
             if nested list, len() should follow shape of (n_samples, n_objectives)
             The binary rewards for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
@@ -282,11 +286,11 @@ class BaseModelCC(PyBanditsBaseModel, ABC):
 
     Parameters
     ----------
-    cost: Union[NonNegativeFloat, Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]]
+    cost: NonNegativeFloat | Callable[[float | NonNegativeFloat], NonNegativeFloat]
         Cost associated to the Beta distribution.
     """
 
-    cost: Union[NonNegativeFloat, Callable[[Union[float, np.ndarray]], NonNegativeFloat]]
+    cost: NonNegativeFloat | Callable[[float | np.ndarray], NonNegativeFloat]
 
 
 class BaseModelDP(PyBanditsBaseModel, ABC):
@@ -295,8 +299,8 @@ class BaseModelDP(PyBanditsBaseModel, ABC):
 
     Parameters
     ----------
-    price: Union[NonNegativeFloat, Callable[[Union[float, np.ndarray]], NonNegativeFloat]]
+    price: NonNegativeFloat | Callable[[float | np.ndarray], NonNegativeFloat]
         Price associated to the action.
     """
 
-    price: Union[NonNegativeFloat, Callable[[Union[float, np.ndarray]], NonNegativeFloat]]
+    price: NonNegativeFloat | Callable[[float | np.ndarray], NonNegativeFloat]

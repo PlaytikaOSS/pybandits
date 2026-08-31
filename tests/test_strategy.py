@@ -20,8 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from collections.abc import Callable
 from math import comb
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Literal
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -63,8 +64,8 @@ DEFAULT_SUBSIDY_FACTOR = 0.5
 
 
 class DummyQuantitativeModelCC(QuantitativeModel):
-    cost: Optional[Callable[[np.ndarray], float]] = None
-    models: Optional[List[BaseModel]] = None
+    cost: Callable[[np.ndarray], float] | None = None
+    models: list[BaseModel] | None = None
 
     def reset(self) -> None:
         pass
@@ -114,8 +115,8 @@ def create_mock_quantitative_model(
 
 
 class DummyQuantitativeModelDP(QuantitativeModel):
-    price: Optional[Callable[[np.ndarray], float]] = None
-    models: Optional[List[BaseModel]] = None
+    price: Callable[[np.ndarray], float] | None = None
+    models: list[BaseModel] | None = None
 
     def reset(self) -> None:
         pass
@@ -225,36 +226,36 @@ def action_probability_pairs(draw, min_actions: int = 2, max_actions: int = 10, 
 
 
 @pytest.fixture(scope="session")
-def prob_dict_two_actions() -> Dict[str, float]:
+def prob_dict_two_actions() -> dict[str, float]:
     """Fixture providing a probability dictionary with two actions.
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Probability dictionary with two actions (a1: 0.5, a2: 0.7).
     """
     return {"a1": 0.5, "a2": 0.7}
 
 
 @pytest.fixture(scope="session")
-def prob_dict_three_actions() -> Dict[str, float]:
+def prob_dict_three_actions() -> dict[str, float]:
     """Fixture providing a probability dictionary with three actions.
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Probability dictionary with three actions (a1: 0.5, a2: 0.7, a3: 0.3).
     """
     return {"a1": 0.5, "a2": 0.7, "a3": 0.3}
 
 
 @pytest.fixture(scope="session")
-def prob_dict_single_action() -> Dict[str, float]:
+def prob_dict_single_action() -> dict[str, float]:
     """Fixture providing a probability dictionary with a single action.
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Probability dictionary with one action (a1: 0.5).
     """
     return {"a1": 0.5}
@@ -269,8 +270,8 @@ class ConcreteStrategy(BaseStrategy):
 
     def select_action(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
         **kwargs,
     ) -> UnifiedActionId:
         """Select the first action."""
@@ -283,12 +284,12 @@ def test_base_strategy_abstract():
         BaseStrategy()
 
 
-def test_base_strategy_concrete_implementation(prob_dict_two_actions: Dict[str, float], expected_result: str = "a1"):
+def test_base_strategy_concrete_implementation(prob_dict_two_actions: dict[str, float], expected_result: str = "a1"):
     """Test that concrete implementations of BaseStrategy work.
 
     Parameters
     ----------
-    prob_dict_two_actions : Dict[str, float]
+    prob_dict_two_actions : dict[str, float]
         Probability dictionary with two actions.
     expected_result : str
         Expected result of the strategy.
@@ -310,11 +311,11 @@ class ConcreteSingleObjectiveStrategy(SingleObjectiveStrategy):
 
     def get_prerequisites(
         self,
-        p: Dict[ActionId, Union[float, Callable]],
-        actions: Dict[ActionId, BaseModel],
-        constraint_list: Optional[List[Callable]],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable]]] = None,
-    ) -> Dict[str, Any]:
+        p: dict[ActionId, float | Callable],
+        actions: dict[ActionId, BaseModel],
+        constraint_list: list[Callable] | None,
+        forbidden_regions: dict[ActionId, list[Callable]] | None = None,
+    ) -> dict[str, Any]:
         """Return empty prerequisites."""
         return {"test_value": 42}
 
@@ -326,17 +327,17 @@ class ConcreteSingleObjectiveStrategy(SingleObjectiveStrategy):
         self,
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
         **kwargs,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Return a simple quantity vector."""
         return np.array([0.5, 0.5])
 
     def _select_from_refined_actions(
         self,
-        refined_p: Dict[UnifiedActionId, float],
-        actions: Dict[ActionId, BaseModel],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        refined_p: dict[UnifiedActionId, float],
+        actions: dict[ActionId, BaseModel],
+        constraint: Callable[[np.ndarray], bool] | None = None,
     ) -> UnifiedActionId:
         """Select the first action."""
         return list(refined_p.keys())[0] if refined_p else None
@@ -348,12 +349,12 @@ def test_single_objective_strategy_abstract():
         SingleObjectiveStrategy()
 
 
-def test_single_objective_strategy_select_action(prob_dict_two_actions: Dict[str, float]):
+def test_single_objective_strategy_select_action(prob_dict_two_actions: dict[str, float]):
     """Test SingleObjectiveStrategy select_action method.
 
     Parameters
     ----------
-    prob_dict_two_actions : Dict[str, float]
+    prob_dict_two_actions : dict[str, float]
         Probability dictionary with two actions.
     """
     strategy = ConcreteSingleObjectiveStrategy()
@@ -366,7 +367,7 @@ def test_single_objective_strategy_select_action(prob_dict_two_actions: Dict[str
 
 @pytest.mark.parametrize("constraint_returns", [True, False])
 def test_single_objective_strategy_with_constraints(
-    constraint_returns: bool, prob_dict_single_action: Dict[str, float], expected_result: str = "a1"
+    constraint_returns: bool, prob_dict_single_action: dict[str, float], expected_result: str = "a1"
 ):
     """Test SingleObjectiveStrategy with constraints.
 
@@ -374,7 +375,7 @@ def test_single_objective_strategy_with_constraints(
     ----------
     constraint_returns : bool
         Whether the constraint should return True or False.
-    prob_dict_single_action : Dict[str, float]
+    prob_dict_single_action : dict[str, float]
         Probability dictionary with one action.
     expected_result : str
         Expected result of the strategy.
@@ -534,12 +535,12 @@ def test_select_action_classic_bandit(a_list_str, a_list_float):
     assert max(p, key=p.get) == c.select_action(p=p, actions=actions)
 
 
-def test_classic_bandit_prerequisites(prob_dict_single_action: Dict[str, float]):
+def test_classic_bandit_prerequisites(prob_dict_single_action: dict[str, float]):
     """Test that ClassicBandit returns empty prerequisites.
 
     Parameters
     ----------
-    prob_dict_single_action : Dict[str, float]
+    prob_dict_single_action : dict[str, float]
         Probability dictionary with one action.
     """
     bandit = ClassicBandit()
@@ -950,7 +951,7 @@ def test_bai_all_probs_equal(equal_prob: float = 0.5, exploit_p_max: float = 1.0
     exploit_p=st.floats(min_value=0.01, max_value=0.99), expected_result1=st.just("a1"), expected_result2=st.just("a2")
 )
 def test_bai_probabilistic_selection(
-    exploit_p: float, expected_result1: str, expected_result2: str, prob_dict_three_actions: Dict[str, float]
+    exploit_p: float, expected_result1: str, expected_result2: str, prob_dict_three_actions: dict[str, float]
 ):
     """Test BAI probabilistic selection between best and second-best.
 
@@ -958,7 +959,7 @@ def test_bai_probabilistic_selection(
     ----------
     exploit_p : float
         Exploitation probability.
-    prob_dict_three_actions : Dict[str, float]
+    prob_dict_three_actions : dict[str, float]
         Probability dictionary with three actions.
     expected_result1 : str
         Expected result of the strategy when random > exploit_p.
@@ -1134,7 +1135,7 @@ def test_cost_control_logic(subsidy_factor: float, expected_action: str):
     ],
 )
 def test_cost_control_logic_callable_cost_and_proba(
-    subsidy_factor: float, expected_action: Tuple[str, Tuple[float, ...]]
+    subsidy_factor: float, expected_action: tuple[str, tuple[float, ...]]
 ):
     """Test CostControlBandit select_action when cost and proba are callables.
 
@@ -1335,7 +1336,7 @@ class RejectAllStrategy(SingleObjectiveStrategy):
     ],
     ids=["both_empty", "only_p_empty", "only_actions_empty"],
 )
-def test_refine_p_empty_inputs(p: Dict[str, float], actions: Dict) -> None:
+def test_refine_p_empty_inputs(p: dict[str, float], actions: dict) -> None:
     """Test refine_p returns {} when p or actions is empty."""
     strategy = ConcreteSingleObjectiveStrategy()
     assert strategy.refine_p(p, actions, None) == {}
@@ -1348,7 +1349,7 @@ def test_refine_p_empty_inputs(p: Dict[str, float], actions: Dict) -> None:
         max_size=5,
     )
 )
-def test_refine_p_all_actions_filtered_raises(p_values: List[float]) -> None:
+def test_refine_p_all_actions_filtered_raises(p_values: list[float]) -> None:
     """Test refine_p raises ValueError when all actions are rejected by the strategy."""
     strategy = RejectAllStrategy()
     p = {f"a{i}": v for i, v in enumerate(p_values)}
@@ -1415,7 +1416,7 @@ def test_solve_nc_subproblem_runs_objective_function(weight_primary: float) -> N
     """Test _solve_nc_subproblem invokes objective_function via real optimization (covers the closure body)."""
     m = MultiObjectiveBandit()
 
-    def func(x: np.ndarray) -> List[float]:
+    def func(x: np.ndarray) -> list[float]:
         return [float(x[0]), float(1 - x[0])]
 
     weight = np.array([weight_primary, 1.0 - weight_primary])
@@ -1434,7 +1435,7 @@ def test_solve_nc_subproblem_feasible_solution(weight_primary: float) -> None:
     """Test _solve_nc_subproblem returns a solution when optimization succeeds and constraint is met."""
     m = MultiObjectiveBandit()
 
-    def func(x: np.ndarray) -> List[float]:
+    def func(x: np.ndarray) -> list[float]:
         return [float(x[0]), float(1 - x[0])]
 
     expected = np.array([weight_primary])
@@ -1459,7 +1460,7 @@ def test_solve_nc_subproblem_infeasible_solution(far_out: float) -> None:
     """Test _solve_nc_subproblem returns None when the solution is far outside the feasible region."""
     m = MultiObjectiveBandit()
 
-    def func(x: np.ndarray) -> List[float]:
+    def func(x: np.ndarray) -> list[float]:
         return [float(x[0]), float(1 - x[0])]
 
     weight = np.array([DEFAULT_PROBABILITY, DEFAULT_PROBABILITY])
@@ -1481,7 +1482,7 @@ def test_solve_nc_subproblem_exception(weight_primary: float) -> None:
     """Test _solve_nc_subproblem returns None when the inner optimization raises."""
     m = MultiObjectiveBandit()
 
-    def func(x: np.ndarray) -> List[float]:
+    def func(x: np.ndarray) -> list[float]:
         return [float(x[0]), float(1 - x[0])]
 
     weight = np.array([weight_primary, 1.0 - weight_primary])
@@ -1514,7 +1515,7 @@ def test_solve_nc_subproblem_exception(weight_primary: float) -> None:
     ),
 )
 @settings(max_examples=10)
-def test_find_utopia_reference_point_normal(anchors: List[List[float]], weight_vals: List[float]) -> None:
+def test_find_utopia_reference_point_normal(anchors: list[list[float]], weight_vals: list[float]) -> None:
     """Test _find_utopia_reference_point returns an array of the correct shape for generic inputs."""
     transformed_anchors = np.array(anchors)
     weight = np.array(weight_vals) / sum(weight_vals)
@@ -1554,7 +1555,7 @@ def test_find_utopia_reference_point_zero_denominator(transformed_anchors: np.nd
     ),
 )
 @settings(max_examples=5)
-def test_find_utopia_reference_point_linalg_error(anchors: List[List[float]], weight_vals: List[float]) -> None:
+def test_find_utopia_reference_point_linalg_error(anchors: list[list[float]], weight_vals: list[float]) -> None:
     """Test _find_utopia_reference_point falls back to dot-product on LinAlgError."""
     transformed_anchors = np.array(anchors)
     weight = np.array(weight_vals) / sum(weight_vals)
@@ -1574,8 +1575,8 @@ class ConcreteMultiObjectiveStrategy(MultiObjectiveStrategy):
     objective_selector_class = ClassicBandit
 
     def _get_feasible_solutions(
-        self, p: Dict[ActionId, List[float]], actions: Dict[ActionId, BaseModel]
-    ) -> Dict[UnifiedActionId, List[float]]:
+        self, p: dict[ActionId, list[float]], actions: dict[ActionId, BaseModel]
+    ) -> dict[UnifiedActionId, list[float]]:
         """Return all solutions as feasible."""
         return p
 
@@ -1611,12 +1612,12 @@ def test_can_init_multiobjective():
         min_size=2,
     )
 )
-def test_select_action_mo(p: Dict[ActionId, List[Probability]]):
+def test_select_action_mo(p: dict[ActionId, list[Probability]]):
     """Test MultiObjectiveBandit selects from Pareto front.
 
     Parameters
     ----------
-    p : Dict[ActionId, List[Probability]]
+    p : dict[ActionId, list[Probability]]
         Dictionary of actions and their multi-objective probabilities.
     """
     # Ensure all actions have same number of objectives
@@ -1677,14 +1678,14 @@ def test_select_action_mo(p: Dict[ActionId, List[Probability]]):
         ),
     ],
 )
-def test_exact_pareto_front(p_dict: Dict[str, List[float]], expected_front: List[str]):
+def test_exact_pareto_front(p_dict: dict[str, list[float]], expected_front: list[str]):
     """Test exact Pareto front computation.
 
     Parameters
     ----------
-    p_dict : Dict[str, List[float]]
+    p_dict : dict[str, list[float]]
         Dictionary of actions and their multi-objective values.
-    expected_front : List[str]
+    expected_front : list[str]
         Expected Pareto front actions.
     """
     n_objectives = len(list(p_dict.values())[0])
@@ -1727,10 +1728,10 @@ def test_approximate_pareto_front(
     m = MultiObjectiveBandit()
 
     # Create mock quantitative actions
-    def func1(x: np.ndarray) -> List[float]:
+    def func1(x: np.ndarray) -> list[float]:
         return [x[0], 1 - x[0]]  # Trade-off between objectives
 
-    def func2(x: np.ndarray) -> List[float]:
+    def func2(x: np.ndarray) -> list[float]:
         return [func2_coeff * x[0], func2_coeff * (1 - x[0]) + func2_offset]  # Different trade-off
 
     p = {
@@ -1831,7 +1832,7 @@ def test_find_pareto_front_normal_constraint(
     m = MultiObjectiveBandit()
 
     # Simple 2-objective function with known Pareto front
-    def test_func(x: np.ndarray) -> List[float]:
+    def test_func(x: np.ndarray) -> list[float]:
         return [x[0], 1 - x[0]]  # Linear trade-off
 
     model = create_mock_quantitative_model(dimension=dimension)
@@ -1981,7 +1982,7 @@ def test_mo_cc_get_feasible_solutions(subsidy_factor: float = 0.5, fixed_prob_va
 )
 def test_strategy_integration(
     strategy: BaseStrategy,
-    action_data: Tuple,
+    action_data: tuple,
     mock_return_value: np.ndarray,
 ):
     """Integration test for strategies with mixed action types.

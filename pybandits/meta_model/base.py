@@ -38,7 +38,9 @@ optional shared backbone) in ``cmab_meta_model.py``.
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union, get_args, get_origin
+from collections.abc import Callable
+from types import UnionType
+from typing import Any, TypeVar, Union, get_args, get_origin
 
 import numpy as np
 from pydantic import ConfigDict, field_validator
@@ -64,16 +66,16 @@ from pybandits.quantitative_model import QuantitativeModel
 from pybandits.utils import classproperty, extract_argument_names_from_function
 
 # Possible return shapes from a per-action sample_proba call.
-SampleProbaResult = Union[
-    List[Probability],
-    List[MOProbability],
-    List[ProbabilityWeight],
-    List[MOProbabilityWeight],
-    List[QuantitativeProbability],
-    List[QuantitativeMOProbability],
-    List[QuantitativeProbabilityWeight],
-    List[QuantitativeMOProbabilityWeight],
-]
+SampleProbaResult = (
+    list[Probability]
+    | list[MOProbability]
+    | list[ProbabilityWeight]
+    | list[MOProbabilityWeight]
+    | list[QuantitativeProbability]
+    | list[QuantitativeMOProbability]
+    | list[QuantitativeProbabilityWeight]
+    | list[QuantitativeMOProbabilityWeight]
+)
 
 ActionModelType = TypeVar("ActionModelType", bound=BaseModel)
 
@@ -87,27 +89,27 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     they are dispatched independently or with coordinated shared state.
 
     Subclasses may narrow the value type of ``actions`` (e.g.
-    ``Dict[ActionId, BayesianNeuralNetwork]``); Pydantic preserves identity of
+    ``dict[ActionId, BayesianNeuralNetwork]``); Pydantic preserves identity of
     nested model instances, so mutations via ``update()`` remain visible to
     holders of the original references.
     """
 
-    actions: Dict[ActionId, BaseModel]
+    actions: dict[ActionId, BaseModel]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator("actions", mode="after")
     @classmethod
-    def _at_least_one_action_is_defined(cls, v: Dict[ActionId, BaseModel]) -> Dict[ActionId, BaseModel]:
+    def _at_least_one_action_is_defined(cls, v: dict[ActionId, BaseModel]) -> dict[ActionId, BaseModel]:
         cls._check_action_count(v)
         return v
 
     def __init__(
         self,
-        actions: Optional[Dict[ActionId, BaseModel]] = None,
-        action_ids: Optional[Set[ActionId]] = None,
-        quantitative_action_ids: Optional[Set[ActionId]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
+        actions: dict[ActionId, BaseModel] | None = None,
+        action_ids: set[ActionId] | None = None,
+        quantitative_action_ids: set[ActionId] | None = None,
+        kwargs: dict[str, Any] | None = None,
     ):
         """Construct from a pre-built ``actions`` dict or cold-start specs.
 
@@ -138,7 +140,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         super().__init__(actions=actions_dict, **field_kwargs)
 
     @property
-    def action_ids(self) -> List[ActionId]:
+    def action_ids(self) -> list[ActionId]:
         """Action identifiers covered by this meta-model."""
         return list(self.actions.keys())
 
@@ -146,16 +148,16 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     def sample_proba(
         self,
         rng: np.random.Generator,
-        valid_action_ids: Optional[Set[ActionId]] = None,
+        valid_action_ids: set[ActionId] | None = None,
         **kwargs: Any,
-    ) -> Dict[ActionId, SampleProbaResult]:
+    ) -> dict[ActionId, SampleProbaResult]:
         """Sample per-action probabilities/scores under the current context.
 
         Parameters
         ----------
         rng : numpy.random.Generator
             Central random generator from the bandit (for reproducibility).
-        valid_action_ids : Optional[Set[ActionId]]
+        valid_action_ids : set[ActionId] | None
             If provided, restrict sampling to these action ids (the bandit's
             allowed actions after removing ``forbidden_actions``). When
             ``None`` all action ids are sampled. Meta-models with shared
@@ -166,7 +168,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        Dict[ActionId, SampleProbaResult]
+        dict[ActionId, SampleProbaResult]
             Per-action probability/score collection in whatever shape the
             underlying model returns from its ``sample_proba``.
         """
@@ -174,21 +176,21 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     @abstractmethod
     def update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None = None,
         **kwargs: Any,
     ) -> None:
         """Update per-action state from a batch of (action, reward, ...) tuples.
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : list[ActionId]
             Selected action per sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards : list[BinaryReward] | list[list[BinaryReward]]
             Reward per sample (scalar for single-objective; list per sample
             for multi-objective).
-        quantities : Optional[List[Union[float, List[float], None]]]
+        quantities : list[float | list[float] | None] | None
             Per-sample quantity for quantitative actions; ``None`` for
             non-quantitative actions in the same batch.
         **kwargs
@@ -201,7 +203,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         """Reset every per-action model to its cold-start state."""
 
     @staticmethod
-    def _check_action_count(actions: Dict[ActionId, BaseModel]) -> None:
+    def _check_action_count(actions: dict[ActionId, BaseModel]) -> None:
         """Shared action-count guard: at least one action; a single action is deterministic."""
         if len(actions) == 0:
             raise AttributeError("At least one action should be defined.")
@@ -210,9 +212,9 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
 
     def _dispatch_per_action_update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None = None,
         **row_aligned_kwargs: Any,
     ) -> None:
         """Group rows by action and dispatch to each action's own ``update`` — independent per-action training.
@@ -223,11 +225,11 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        actions : List[ActionId]
+        actions : list[ActionId]
             The selected action per sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards : list[BinaryReward] | list[list[BinaryReward]]
             The reward per sample (or per-objective list of rewards per sample).
-        quantities : Optional[List[Union[float, List[float], None]]]
+        quantities : list[float | list[float] | None] | None
             Per-sample quantity for quantitative actions; ``None`` for non-quantitative actions.
         **row_aligned_kwargs : Any
             Additional per-sample data, row-aligned with ``actions``, forwarded (sliced to that
@@ -235,7 +237,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
             ``CmabMetaModel``. ``smab`` passes none of these, so this base method carries no
             knowledge of any cmab-specific parameter.
         """
-        rewards_dict: Dict[ActionId, List[Any]] = defaultdict(list)
+        rewards_dict: dict[ActionId, list[Any]] = defaultdict(list)
         extra_dicts = {name: defaultdict(list) for name in row_aligned_kwargs}
         quantities_dict = defaultdict(list) if quantities is not None else None
 
@@ -247,7 +249,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
                 quantities_dict[a].append(quantities[i])
 
         for a in set(actions):
-            call_kwargs: Dict[str, Any] = {"rewards": rewards_dict[a]}
+            call_kwargs: dict[str, Any] = {"rewards": rewards_dict[a]}
             for name, values in row_aligned_kwargs.items():
                 action_values = extra_dicts[name][a]
                 call_kwargs[name] = np.array(action_values) if isinstance(values, np.ndarray) else action_values
@@ -258,11 +260,11 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     @classmethod
     def _instantiate_actions(
         cls,
-        actions: Optional[Dict[ActionId, BaseModel]],
-        action_ids: Optional[Set[ActionId]],
-        quantitative_action_ids: Optional[Set[ActionId]],
-        kwargs: Dict[str, Any],
-    ) -> Dict[ActionId, BaseModel]:
+        actions: dict[ActionId, BaseModel] | None,
+        action_ids: set[ActionId] | None,
+        quantitative_action_ids: set[ActionId] | None,
+        kwargs: dict[str, Any],
+    ) -> dict[ActionId, BaseModel]:
         """Construct per-action model instances from cold-start kwargs, or pass through a pre-built dict."""
         if actions is not None:
             return actions
@@ -292,7 +294,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         return actions
 
     @staticmethod
-    def _extract_action_specific_kwargs(kwargs: Dict[str, Any]) -> Tuple[Dict[str, Dict], Dict[str, Dict]]:
+    def _extract_action_specific_kwargs(kwargs: dict[str, Any]) -> tuple[dict[str, dict], dict[str, dict]]:
         """Split ``kwargs`` into per-action and per-quantitative-action sub-dicts, removing them from ``kwargs``."""
         action_specific_kwargs = defaultdict(dict)
         quantitative_action_specific_kwargs = defaultdict(dict)
@@ -311,8 +313,8 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
 
     @classmethod
     def _extract_action_model_class_and_attributes(
-        cls, kwargs: Dict[str, Any]
-    ) -> Tuple[Callable, Callable, Dict[str, Any], Dict[str, Any]]:
+        cls, kwargs: dict[str, Any]
+    ) -> tuple[Callable, Callable, dict[str, Any], dict[str, Any]]:
         """Extract cold-start callables and their kwargs from the manager's ``kwargs`` dict."""
         action_model_classes = cls._action_model_classes
         if len(action_model_classes) > 2:
@@ -352,8 +354,8 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         )
 
     @classproperty
-    def _action_model_classes(cls) -> Tuple[Type[BaseModel], ...]:
-        """Extract concrete action-model classes from the ``actions`` field annotation (``Dict[ActionId, T]`` → ``T``).
+    def _action_model_classes(cls) -> tuple[type[BaseModel], ...]:
+        """Extract concrete action-model classes from the ``actions`` field annotation (``dict[ActionId, T]`` → ``T``).
 
         Raises ``TypeError`` when the annotation is unparameterised or still a TypeVar,
         since cold-starting from kwargs needs a concrete class to call ``cold_start`` on.
@@ -371,6 +373,6 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
                 f"{cls.__name__}.actions value type is still a TypeVar ({action_model_type}); "
                 "parameterise the meta-model with a concrete model class before cold-starting."
             )
-        if get_origin(action_model_type) is Union:
+        if get_origin(action_model_type) in (Union, UnionType):
             return get_args(action_model_type)
         return (action_model_type,)

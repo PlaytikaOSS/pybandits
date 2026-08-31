@@ -23,7 +23,7 @@ import importlib
 import random
 import sys
 from tempfile import TemporaryDirectory
-from typing import List, Optional, Union, get_args, get_type_hints
+from typing import get_args, get_type_hints
 from unittest.mock import patch
 
 import numpy as np
@@ -128,7 +128,7 @@ def test_initialization_extreme_split_prop(
     logged_data: MockerFixture,
     split_prop: float,
     n_trials: PositiveInt,
-    ope_estimators: Optional[List[BaseOfflinePolicyEstimator]],
+    ope_estimators: list[BaseOfflinePolicyEstimator] | None,
     verbose: bool,
     batch_feature: str,
     action_feature: str,
@@ -250,11 +250,11 @@ def test_running_configuration(
     importance_weights_model_type: str,
     batch_feature: str,
     action_feature: str,
-    reward_feature: Union[str, List[int]],
+    reward_feature: str | list[int],
     context: bool,
-    group_feature: Optional[str],
-    cost_feature: Optional[str],
-    propensity_score_feature: Optional[str],
+    group_feature: str | None,
+    cost_feature: str | None,
+    propensity_score_feature: str | None,
     n_mc_experiments: int,
     monkeymodule,
 ):
@@ -376,12 +376,12 @@ def test_initialization_when_xgboost_not_available(
     importance_weights_model_type: str,
     batch_feature: str,
     action_feature: str,
-    reward_feature: Union[str, List[str]],
+    reward_feature: str | list[str],
     context: bool,
-    group_feature: Optional[str],
-    cost_feature: Optional[str],
-    propensity_score_feature: Optional[str],
-    ope_estimators: Optional[List[BaseOfflinePolicyEstimator]],
+    group_feature: str | None,
+    cost_feature: str | None,
+    propensity_score_feature: str | None,
+    ope_estimators: list[BaseOfflinePolicyEstimator] | None,
     monkeymodule,
 ) -> None:
     """Test that other model types still work when XGBoost is not available."""
@@ -679,7 +679,7 @@ class TestOfflinePolicyEvaluatorPipeline:
     """Tests for OfflinePolicyEvaluator pipeline paths not covered by the integration tests."""
 
     @pytest.fixture(scope="module")
-    def contextual_features(self, logged_data: pd.DataFrame) -> List[str]:
+    def contextual_features(self, logged_data: pd.DataFrame) -> list[str]:
         """All context_* column names present in logged_data."""
         return [col for col in logged_data.columns if col.startswith("context_")]
 
@@ -706,7 +706,7 @@ class TestOfflinePolicyEvaluatorPipeline:
 
     @pytest.fixture(scope="module")
     def dict_scaler_evaluator(
-        self, logged_data: pd.DataFrame, contextual_features: List[str], first_reward_feature: str
+        self, logged_data: pd.DataFrame, contextual_features: list[str], first_reward_feature: str
     ) -> OfflinePolicyEvaluator:
         """Evaluator configured with a per-feature dict scaler over contextual_features."""
         return OfflinePolicyEvaluator(
@@ -728,7 +728,7 @@ class TestOfflinePolicyEvaluatorPipeline:
         self,
         logged_data: pd.DataFrame,
         dict_scaler_evaluator: OfflinePolicyEvaluator,
-        contextual_features: List[str],
+        contextual_features: list[str],
     ) -> None:
         """_extract_batches applies a per-feature dict scaler and produces correct context shape."""
         train_data, test_data = dict_scaler_evaluator._extract_batches(logged_data)

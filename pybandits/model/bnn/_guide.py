@@ -19,8 +19,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from collections.abc import Callable
 from contextlib import ExitStack
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -66,7 +67,7 @@ class ParameterizedScaleAutoNormal(AutoNormal):
     init_scale : float, optional
         Global initial scale used when ``init_scale_fn`` is ``None``, by
         default ``0.1``.
-    init_scale_fn : Optional[Callable[[str], Union[float, np.ndarray, jax.Array]]], optional
+    init_scale_fn : Callable[[str], float | np.ndarray | jax.Array] | None, optional
         Callable with signature ``(site_name: str) -> scale`` where ``scale``
         is a scalar or an array broadcast-compatible with the site's shape.
         When provided, ``init_scale`` is ignored.  ``None`` (default) falls
@@ -103,8 +104,8 @@ class ParameterizedScaleAutoNormal(AutoNormal):
         prefix: str = "auto",
         init_loc_fn: Callable = init_to_uniform,
         init_scale: float = 0.1,
-        init_scale_fn: Optional[Callable[[str], Union[float, np.ndarray, jax.Array]]] = None,
-        create_plates: Optional[Callable] = None,
+        init_scale_fn: Callable[[str], float | np.ndarray | jax.Array] | None = None,
+        create_plates: Callable | None = None,
     ) -> None:
         if init_scale_fn is not None and not callable(init_scale_fn):
             raise ValueError("init_scale_fn must be callable or None.")
@@ -138,7 +139,7 @@ class ParameterizedScaleAutoNormal(AutoNormal):
             return jnp.broadcast_to(jnp.array(raw), jnp.shape(init_loc))
         return jnp.full(jnp.shape(init_loc), self._init_scale)
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Dict[str, jax.Array]:
+    def __call__(self, *args: Any, **kwargs: Any) -> dict[str, jax.Array]:
         """Sample the variational posterior and register variational parameters.
 
         On the first call the prototype trace is built via
@@ -160,7 +161,7 @@ class ParameterizedScaleAutoNormal(AutoNormal):
 
         Returns
         -------
-        Dict[str, jax.Array]
+        dict[str, jax.Array]
             Mapping from site name to the sampled value in the *constrained*
             space.
         """
@@ -168,7 +169,7 @@ class ParameterizedScaleAutoNormal(AutoNormal):
             self._setup_prototype(*args, **kwargs)
 
         plates = self._create_plates(*args, **kwargs)
-        result: Dict[str, jax.Array] = {}
+        result: dict[str, jax.Array] = {}
         for name, site in self.prototype_trace.items():
             if site["type"] != "sample" or site["is_observed"]:
                 continue

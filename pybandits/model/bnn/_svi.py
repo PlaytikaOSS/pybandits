@@ -33,8 +33,9 @@ Backend-agnostic helpers live here so they can be reused without importing the h
   per-step ``run_one_epoch`` closure, so the explicit-arg ``jax.jit`` pattern is preserved.
 """
 
+from collections.abc import Callable, Sequence
 from types import ModuleType
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -50,7 +51,7 @@ from pybandits.model.bnn._typing import _Array
 def forward_layers(
     *,
     next_layer_input: _Array,
-    weights_biases: Sequence[Tuple[_Array, _Array]],
+    weights_biases: Sequence[tuple[_Array, _Array]],
     activation_fn: Callable[[_Array], _Array],
     linear_fn: Callable[[_Array, _Array, _Array], _Array],
     backend: ModuleType,
@@ -67,7 +68,7 @@ def forward_layers(
     ----------
     next_layer_input : _Array
         Network input, shape ``(batch, input_dim)``. May be a JAX or NumPy array.
-    weights_biases : List[Tuple[_Array, _Array]]
+    weights_biases : list[tuple[_Array, _Array]]
         Per-layer ``(weights, biases)``.
     activation_fn : Callable[[_Array], _Array]
         Activation function matching the backend.
@@ -131,14 +132,14 @@ def per_sample_linear(t: jax.Array, w: jax.Array, b: jax.Array) -> jax.Array:
 
 
 def run_svi_epochs(
-    run_one_epoch: Callable[[Any, jax.Array], Tuple[Any, jax.Array]],
+    run_one_epoch: Callable[[Any, jax.Array], tuple[Any, jax.Array]],
     init_state: Any,
-    epoch_factor_arrays: List[jax.Array],
+    epoch_factor_arrays: list[jax.Array],
     *,
     restore_best: bool = True,
-    early_stopping_callback: Optional[Any] = None,
+    early_stopping_callback: Any | None = None,
     desc: str = "SVI",
-) -> Tuple[Any, np.ndarray]:
+) -> tuple[Any, np.ndarray]:
     """Drive an SVI training run epoch-by-epoch, returning ``(final_state, approx_history)``.
 
     The caller supplies ``run_one_epoch(svi_state, epoch_factors) -> (svi_state, per_step_losses)``
@@ -148,17 +149,17 @@ def run_svi_epochs(
 
     Parameters
     ----------
-    run_one_epoch : Callable[[Any, jax.Array], Tuple[Any, jax.Array]]
+    run_one_epoch : Callable[[Any, jax.Array], tuple[Any, jax.Array]]
         Runs one epoch of SVI steps; takes ``(svi_state, epoch_factors)`` and returns the updated
         state and the per-step loss array for that epoch.
     init_state : Any
         The initialized ``SVIState`` (from ``svi.init(...)``).
-    epoch_factor_arrays : List[jax.Array]
+    epoch_factor_arrays : list[jax.Array]
         Per-epoch arrays of the per-step KL-annealing factor; one entry per epoch. Their lengths
         determine the number of SVI steps per epoch.
     restore_best : bool, optional
         If True, return the state with the lowest epoch-mean loss, by default True.
-    early_stopping_callback : Optional[Any], optional
+    early_stopping_callback : Any | None, optional
         Object exposing ``should_stop(loss) -> bool`` plus ``tolerance`` / ``diff_type`` /
         ``patience`` for logging. ``None`` disables early stopping. Note: the caller is
         responsible for ``reset()`` before invoking this function.
@@ -167,7 +168,7 @@ def run_svi_epochs(
 
     Returns
     -------
-    Tuple[Any, np.ndarray]
+    tuple[Any, np.ndarray]
         ``(final_state, approx_history)`` where *approx_history* is the concatenated per-step
         losses across all epochs that ran.
     """
@@ -223,12 +224,12 @@ def run_svi(
     optimizer: Any,
     loss: Any,
     rng_key: jax.Array,
-    model_args: Tuple[Any, ...],
-    epoch_factor_arrays: List[jax.Array],
+    model_args: tuple[Any, ...],
+    epoch_factor_arrays: list[jax.Array],
     restore_best: bool = True,
-    early_stopping_callback: Optional[Any] = None,
+    early_stopping_callback: Any | None = None,
     desc: str = "SVI",
-) -> Tuple[SVI, dict, np.ndarray, jax.Array]:
+) -> tuple[SVI, dict, np.ndarray, jax.Array]:
     """Build and drive an SVI training run around ``model``/``guide``, returning the fitted params.
 
     Wraps ``guide`` for symmetric KL annealing, constructs the :class:`SVI` object, initialises it,
@@ -251,20 +252,20 @@ def run_svi(
         The ELBO loss instance (e.g. ``TraceMeanField_ELBO(num_particles=...)``).
     rng_key : jax.Array
         PRNG key; a fresh split is consumed for ``svi.init`` and the updated key is returned.
-    model_args : Tuple[Any, ...]
+    model_args : tuple[Any, ...]
         Positional arguments threaded into ``model`` on every step (e.g. ``(x, y)`` or ``(x, arm_data)``).
-    epoch_factor_arrays : List[jax.Array]
+    epoch_factor_arrays : list[jax.Array]
         Per-epoch arrays of the per-step KL-annealing factor.
     restore_best : bool, optional
         Return the lowest-loss state, by default True.
-    early_stopping_callback : Optional[Any], optional
+    early_stopping_callback : Any | None, optional
         Early-stopping callback (already ``reset()`` by the caller), by default None.
     desc : str, optional
         Progress-bar description, by default ``"SVI"``.
 
     Returns
     -------
-    Tuple[SVI, dict, np.ndarray, jax.Array]
+    tuple[SVI, dict, np.ndarray, jax.Array]
         ``(svi, params, approx_history, rng_key)`` — the SVI object, the final variational params,
         the per-step loss history, and the advanced PRNG key.
     """
@@ -276,13 +277,13 @@ def run_svi(
     # Pass model_args as explicit jit arguments (not closure captures) so JAX treats them as abstract
     # buffers rather than embedding them as XLA constants (which OOMs the compiler on large data).
     @jax.jit
-    def _run_epoch(state: Any, margs: Tuple[Any, ...], factors: jax.Array) -> Tuple[Any, jax.Array]:
-        def _body(s: Any, factor: jax.Array) -> Tuple[Any, jax.Array]:
+    def _run_epoch(state: Any, margs: tuple[Any, ...], factors: jax.Array) -> tuple[Any, jax.Array]:
+        def _body(s: Any, factor: jax.Array) -> tuple[Any, jax.Array]:
             return svi.update(s, *margs, factor)
 
         return jax.lax.scan(_body, state, factors)
 
-    def _run_one_epoch(state: Any, epoch_factors: jax.Array) -> Tuple[Any, jax.Array]:
+    def _run_one_epoch(state: Any, epoch_factors: jax.Array) -> tuple[Any, jax.Array]:
         return _run_epoch(state, model_args, epoch_factors)
 
     final_state, approx_history = run_svi_epochs(

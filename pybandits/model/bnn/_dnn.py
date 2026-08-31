@@ -30,7 +30,7 @@ resolution, so the two component families stay in lockstep.
 field; concrete subclasses supply the default value for their domain.
 """
 
-from typing import Any, ClassVar, Dict
+from typing import Any, ClassVar
 
 import jax
 import numpy as np
@@ -49,13 +49,13 @@ class DNNMixin(PyBanditsBaseModel):
     # output width, since both are "pick a reasonable embedding size" defaults for a DNN component.
     embedding_dim_divisor: ClassVar[int] = 4
 
-    _numpy_activations: ClassVar[Dict[str, Any]] = {
+    _numpy_activations: ClassVar[dict[str, Any]] = {
         "tanh": np.tanh,
         "relu": _numpy_relu,
         "sigmoid": _numpy_sigmoid,
         "gelu": _numpy_gelu,
     }
-    _jax_activations: ClassVar[Dict[str, Any]] = {
+    _jax_activations: ClassVar[dict[str, Any]] = {
         "tanh": jax.nn.tanh,
         "relu": jax.nn.relu,
         "sigmoid": jax.nn.sigmoid,

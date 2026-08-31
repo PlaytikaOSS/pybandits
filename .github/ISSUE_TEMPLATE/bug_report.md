@@ -24,7 +24,7 @@ Paste logs or screenshots here.
 
 **Environment (please complete the following information):**
  - OS: [e.g. Ubuntu 22.04]
- - Python version: [e.g. 3.10]
+ - Python version: [e.g. 3.12]
  - pybandits version: [e.g. 0.2.1]
 
 **Additional context**

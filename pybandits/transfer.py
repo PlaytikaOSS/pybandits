@@ -28,7 +28,7 @@ automatically handling input dimension changes for contextual MABs.
 """
 
 import json
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any
 
 from loguru import logger
 from pydantic import validate_call
@@ -40,25 +40,25 @@ from pybandits.model import BaseBayesianNeuralNetwork
 from pybandits.quantitative_model import QuantitativeModel
 
 
-def _pick_learned_state(source_state: Dict[str, Any], model_cls: Type[BaseModelSO]) -> Dict[str, Any]:
+def _pick_learned_state(source_state: dict[str, Any], model_cls: type[BaseModelSO]) -> dict[str, Any]:
     """Extract transferable learned parameters from a source state dict.
 
     Parameters
     ----------
-    source_state : Dict[str, Any]
+    source_state : dict[str, Any]
         Source action state dictionary.
-    model_cls : Type[BaseModelSO]
+    model_cls : type[BaseModelSO]
         Model class whose transfer_learned_keys declares which keys to extract.
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         Subset of source_state containing only the declared learned keys.
     """
     return {k: source_state[k] for k in model_cls.transfer_learned_keys if k in source_state}
 
 
-def _get_state_dict(mab: BaseMab) -> Dict[str, Any]:
+def _get_state_dict(mab: BaseMab) -> dict[str, Any]:
     """Convert MAB to dictionary via JSON serialization.
 
     Parameters
@@ -68,21 +68,21 @@ def _get_state_dict(mab: BaseMab) -> Dict[str, Any]:
 
     Returns
     -------
-    state_dict : Dict[str, Any]
+    state_dict : dict[str, Any]
         Dictionary representation of MAB state.
     """
     _, state_json = mab.get_state()
     return json.loads(state_json)
 
 
-def _reconstruct_mab(mab_class: Type[BaseMab], state_dict: Dict[str, Any]) -> BaseMab:
+def _reconstruct_mab(mab_class: type[BaseMab], state_dict: dict[str, Any]) -> BaseMab:
     """Reconstruct MAB from state dictionary.
 
     Parameters
     ----------
-    mab_class : Type[BaseMab]
+    mab_class : type[BaseMab]
         MAB class to instantiate.
-    state_dict : Dict[str, Any]
+    state_dict : dict[str, Any]
         State dictionary to reconstruct from.
 
     Returns
@@ -101,7 +101,7 @@ _VARIANT_LABELS = (
 )
 
 
-def _mab_variant(mab: BaseMab) -> Tuple[bool, bool, bool]:
+def _mab_variant(mab: BaseMab) -> tuple[bool, bool, bool]:
     """Return (is_cmab, is_mo, is_quantitative) for a MAB based on its type and action models."""
     first_model = next(iter(mab.actions.values()), None)
     return (
@@ -210,10 +210,10 @@ def _validate_model_compatibility(
 
 
 def _transfer_learned_state(
-    target_action_state: Dict[str, Any],
-    source_action_state: Dict[str, Any],
+    target_action_state: dict[str, Any],
+    source_action_state: dict[str, Any],
     model_instance: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Transfer learned state from source to target action.
 
     Takes the target action's structure and configuration,
@@ -226,9 +226,9 @@ def _transfer_learned_state(
 
     Parameters
     ----------
-    target_action_state : Dict[str, Any]
+    target_action_state : dict[str, Any]
         Target action state (defines structure and configuration).
-    source_action_state : Dict[str, Any]
+    source_action_state : dict[str, Any]
         Source action state (provides learned state to transfer).
     model_instance : Any
         The actual model object from the source MAB for this action. Used to dispatch
@@ -236,7 +236,7 @@ def _transfer_learned_state(
 
     Returns
     -------
-    merged_action_state : Dict[str, Any]
+    merged_action_state : dict[str, Any]
         Action state with target's configuration and source's learned state.
     """
     result = target_action_state.copy()
@@ -382,8 +382,8 @@ def _merge_mabs(
 
 
 def _sync_and_expand_dist_params(
-    current_params: Dict[str, Any],
-    template_params: Dict[str, Any],
+    current_params: dict[str, Any],
+    template_params: dict[str, Any],
 ) -> None:
     """Synchronize distribution parameter fields and expand dimensions in-place.
 
@@ -392,9 +392,9 @@ def _sync_and_expand_dist_params(
 
     Parameters
     ----------
-    current_params : Dict[str, Any]
+    current_params : dict[str, Any]
         Distribution parameters dict (weight or bias) to modify in-place.
-    template_params : Dict[str, Any]
+    template_params : dict[str, Any]
         Template distribution parameters providing target fields and expansion values.
     """
     # Align fields to template dist_type: drop extra fields, add missing ones
@@ -437,8 +437,8 @@ def _sync_and_expand_dist_params(
 
 
 def _expand_bnn_weights(
-    current_model_params: Dict[str, Any],
-    template_model_params: Dict[str, Any],
+    current_model_params: dict[str, Any],
+    template_model_params: dict[str, Any],
 ) -> None:
     """Expand BNN model parameters in-place to match template dimensions.
 
@@ -456,9 +456,9 @@ def _expand_bnn_weights(
 
     Parameters
     ----------
-    current_model_params : Dict[str, Any]
+    current_model_params : dict[str, Any]
         Model parameters dict to expand (modified in-place).
-    template_model_params : Dict[str, Any]
+    template_model_params : dict[str, Any]
         Template model parameters providing initial values for new connections.
     """
     for params_key in ["bnn_layer_params", "bnn_layer_params_init"]:
@@ -478,12 +478,12 @@ def _expand_bnn_weights(
 
 
 def _expand_embedding_params(
-    current_model_params: Dict[str, Any],
-    template_model_params: Dict[str, Any],
-    current_feature_config: Dict[str, Any],
-    template_feature_config: Dict[str, Any],
+    current_model_params: dict[str, Any],
+    template_model_params: dict[str, Any],
+    current_feature_config: dict[str, Any],
+    template_feature_config: dict[str, Any],
     action_id: str,
-    obj_idx: Optional[int] = None,
+    obj_idx: int | None = None,
 ) -> None:
     """Expand embedding parameters in-place to match template's categorical features.
 
@@ -496,17 +496,17 @@ def _expand_embedding_params(
 
     Parameters
     ----------
-    current_model_params : Dict[str, Any]
+    current_model_params : dict[str, Any]
         Current action model_params dict, modified in-place.
-    template_model_params : Dict[str, Any]
+    template_model_params : dict[str, Any]
         Template action model_params dict.
-    current_feature_config : Dict[str, Any]
+    current_feature_config : dict[str, Any]
         Current action feature_config dict.
-    template_feature_config : Dict[str, Any]
+    template_feature_config : dict[str, Any]
         Template action feature_config dict.
     action_id : str
         Action ID for error messages.
-    obj_idx : Optional[int]
+    obj_idx : int | None
         Objective index for MO models, or None for SO models.
 
     Raises
@@ -579,22 +579,22 @@ def _expand_embedding_params(
 
 
 def _validate_hidden_dims(
-    src_dims: List[int],
-    tgt_dims: List[int],
+    src_dims: list[int],
+    tgt_dims: list[int],
     action_id: str,
-    obj_idx: Optional[int] = None,
+    obj_idx: int | None = None,
 ) -> None:
     """Validate that hidden layer dimensions are compatible for expansion.
 
     Parameters
     ----------
-    src_dims : List[int]
+    src_dims : list[int]
         Source hidden layer dimensions.
-    tgt_dims : List[int]
+    tgt_dims : list[int]
         Target hidden layer dimensions.
     action_id : str
         Action ID for error messages.
-    obj_idx : Optional[int]
+    obj_idx : int | None
         Objective index for MO models, or None for SO models.
 
     Raises

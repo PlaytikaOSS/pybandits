@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Set, Tuple, Union
 from unittest.mock import MagicMock
 
 import hypothesis.strategies as st
@@ -41,27 +40,27 @@ _rng = np.random.default_rng(seed=42)
 
 
 class DummyMab(BaseMab):
-    epsilon: Optional[Float01] = None
-    default_action: Optional[UnifiedActionId] = None
+    epsilon: Float01 | None = None
+    default_action: UnifiedActionId | None = None
     actions_manager: DummyActionsManager
 
     def _update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]],
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None,
         **kwargs,
     ):
         pass
 
     def predict(
         self,
-        forbidden_actions: Optional[Set[ActionId]] = None,
+        forbidden_actions: set[ActionId] | None = None,
     ):
         valid_actions = self._get_valid_actions(forbidden_actions)
         return _rng.choice(valid_actions)
 
-    def get_state(self) -> Tuple[str, dict]:
+    def get_state(self) -> tuple[str, dict]:
         model_name = self.__class__.__name__
         state: dict = {"actions": self.actions}
         return model_name, state
@@ -118,18 +117,18 @@ def test_base_mab_update_ok(r1, r2):
 
 
 @pytest.fixture
-def p() -> Dict[ActionId, Probability]:
+def p() -> dict[ActionId, Probability]:
     return {"a1": 0.5, "a2": 0.5}
 
 
-def test_valid_epsilon_value(mocker: MockerFixture, p: Dict[ActionId, Probability]):
+def test_valid_epsilon_value(mocker: MockerFixture, p: dict[ActionId, Probability]):
     mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
     mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.1, default_action="a1")
     selected_action = mab._select_epsilon_greedy_action(p)
     assert selected_action in p.keys()
 
 
-def test_epsilon_boundary_values(mocker: MockerFixture, p: Dict[ActionId, Probability]):
+def test_epsilon_boundary_values(mocker: MockerFixture, p: dict[ActionId, Probability]):
     mocker.patch.object(ClassicBandit, "select_action", return_value="a2")
 
     mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.0)
@@ -141,12 +140,12 @@ def test_epsilon_boundary_values(mocker: MockerFixture, p: Dict[ActionId, Probab
     assert selected_action == "a1"
 
 
-def test_default_action_not_in_actions(p: Dict[ActionId, Probability]):
+def test_default_action_not_in_actions(p: dict[ActionId, Probability]):
     with pytest.raises(AttributeError):
         DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=1.0, default_action="a3")
 
 
-def test_select_action_raises_exception(mocker: MockerFixture, p: Dict[ActionId, Probability]):
+def test_select_action_raises_exception(mocker: MockerFixture, p: dict[ActionId, Probability]):
     mocker.patch.object(ClassicBandit, "select_action", side_effect=Exception("Test Exception"))
     mab = DummyMab(actions={"a1": Beta(), "a2": Beta()}, strategy=ClassicBandit(), epsilon=0.0, default_action=None)
 
@@ -229,8 +228,8 @@ class TestDefaultActionFraction:
     @pytest.mark.parametrize("fraction", [None, 1.0])
     def test_always_returns_default_action(
         self,
-        p: Dict[ActionId, Probability],
-        fraction: Optional[float],
+        p: dict[ActionId, Probability],
+        fraction: float | None,
         epsilon=1.0,
     ):
         """When fraction is None or 1.0, exploration must always return default_action.
@@ -248,7 +247,7 @@ class TestDefaultActionFraction:
         for _ in range(_N_REPEATS):
             assert mab._select_epsilon_greedy_action(p) == "a1"
 
-    def test_mix_distribution(self, p: Dict[ActionId, Probability], epsilon=1.0):
+    def test_mix_distribution(self, p: dict[ActionId, Probability], epsilon=1.0):
         """Empirical share of default_action under explore must approximate default_action_fraction.
 
         epsilon=1.0 always fires the explore branch. A seeded real rng is used for the fraction
@@ -413,7 +412,7 @@ class TestLimitedActions:
         return _factory
 
     @pytest.fixture(scope="class")
-    def p(self) -> Dict[ActionId, Probability]:
+    def p(self) -> dict[ActionId, Probability]:
         """Sampled probabilities where the limited arm strictly wins whenever it is allowed to compete."""
         return {self.other_arm: self.other_p, self.limited_arm: self.limited_p}
 
@@ -460,7 +459,7 @@ class TestLimitedActions:
         other_arm=st.just(other_arm),
     )
     def test_masks_when_gate_closed(
-        self, make_mab, p: Dict[ActionId, Probability], fraction: float, limited_arm: ActionId, other_arm: ActionId
+        self, make_mab, p: dict[ActionId, Probability], fraction: float, limited_arm: ActionId, other_arm: ActionId
     ) -> None:
         """When the gate draw is 0 the limited arm is masked out, so the strategy picks the other arm."""
         mab = make_mab(limited_actions={limited_arm}, limited_action_fraction=fraction)
@@ -473,7 +472,7 @@ class TestLimitedActions:
         limited_arm=st.just(limited_arm),
     )
     def test_competes_when_gate_open(
-        self, make_mab, p: Dict[ActionId, Probability], fraction: float, limited_arm: ActionId
+        self, make_mab, p: dict[ActionId, Probability], fraction: float, limited_arm: ActionId
     ) -> None:
         """When the gate draw is 1 the limited arm competes normally and wins on probability."""
         mab = make_mab(limited_actions={limited_arm}, limited_action_fraction=fraction)
@@ -484,7 +483,7 @@ class TestLimitedActions:
     def test_never_masks_entire_set(
         self,
         make_mab,
-        p: Dict[ActionId, Probability],
+        p: dict[ActionId, Probability],
         fraction: float = mix_fraction,
         limited_arm: ActionId = limited_arm,
         other_arm: ActionId = other_arm,
@@ -498,7 +497,7 @@ class TestLimitedActions:
     def test_mix_distribution(
         self,
         make_mab,
-        p: Dict[ActionId, Probability],
+        p: dict[ActionId, Probability],
         fraction: float = mix_fraction,
         seed: int = mix_seed,
         n_draws: int = n_draws,
@@ -537,7 +536,7 @@ class TestActionKindDisjoint:
         ],
     )
     def test_rejects_shared_action_id(
-        self, action_ids: Set[ActionId], quantitative_action_ids: Set[ActionId], match: str = overlap_match
+        self, action_ids: set[ActionId], quantitative_action_ids: set[ActionId], match: str = overlap_match
     ) -> None:
         """An id present in both the regular and quantitative sets is rejected, whatever else is declared."""
         with pytest.raises(AttributeError, match=match):

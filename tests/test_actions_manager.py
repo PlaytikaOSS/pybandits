@@ -22,7 +22,7 @@
 
 import math
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import numpy as np
 import pytest
@@ -47,13 +47,13 @@ REFERENCE_DELTA = 0.0001
 
 
 class DummyActionsManager(ActionsManager):
-    meta_model: SmabMetaModel[Union[Beta, BetaMO, Zooming]]
+    meta_model: SmabMetaModel[Beta | BetaMO | Zooming]
 
     def _update_actions(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None = None,
         **kwargs,
     ):
         rewards_dict = defaultdict(list)
@@ -178,7 +178,7 @@ def test_smab_mixed_action_types_error():
     with pytest.raises(ValidationError):
         SmabActionsManager[Beta](actions=actions)
 
-    SmabActionsManager[Union[Beta, Zooming]](actions=actions)
+    SmabActionsManager[Beta | Zooming](actions=actions)
 
 
 def test_cmab_mixed_action_types_error(n_features=1):
@@ -197,10 +197,10 @@ def test_cmab_mixed_action_types_error(n_features=1):
 
     actions = {"a1": bnn_model, "a2": quant_model2}
     with pytest.raises(AttributeError):
-        CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
+        CmabActionsManager[BayesianNeuralNetwork | QuantitativeBayesianNeuralNetwork](actions=actions)
 
     actions = {"a1": bnn_model, "a2": quant_model}
-    CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
+    CmabActionsManager[BayesianNeuralNetwork | QuantitativeBayesianNeuralNetwork](actions=actions)
 
 
 @given(
@@ -279,7 +279,7 @@ def test_smab_actions_different_number_of_objectives(n_objectives, other_n_objec
     }
 
     with pytest.raises(ValueError, match="All actions should have the same number of objectives"):
-        SmabActionsManager[Union[Beta, BetaMO]](actions=actions)
+        SmabActionsManager[Beta | BetaMO](actions=actions)
 
 
 ########################################################################################################################
@@ -942,7 +942,7 @@ _batch_size_strategy = st.integers(min_value=1, max_value=10)
 def manager_factory(request):
     """Yield ``build(n_actions, n_features) -> (actions_dict, manager, ctx_builder)``.
 
-    ``ctx_builder(batch_size, rng) -> Optional[np.ndarray]`` is ``None`` for smab and
+    ``ctx_builder(batch_size, rng) -> np.ndarray | None`` is ``None`` for smab and
     a context-matrix builder for cmab. Tests use it to compose batch inputs without
     knowing the manager kind.
     """
@@ -988,7 +988,7 @@ def test_manager_update_delegates_to_meta_model(monkeypatch, rng, manager_factor
     """`ActionsManager.update` forwards actions/rewards/quantities/context to the meta-model."""
     _, manager, ctx_builder = manager_factory(n_actions=n_actions, n_features=n_features)
     action_ids = list(manager.actions.keys())
-    captured: List[Dict[str, Any]] = []
+    captured: list[dict[str, Any]] = []
     monkeypatch.setattr(manager_factory.meta_model_cls, "update", lambda self, **kw: captured.append(kw), raising=True)
 
     sampled_actions = [action_ids[i % len(action_ids)] for i in range(batch_size)]

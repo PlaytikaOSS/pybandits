@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Type, Union
+from collections.abc import Callable, Generator
+from typing import Any, ClassVar
 
 import numpy as np
 from loguru import logger
@@ -44,7 +45,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
     """
 
     # Class variable to define how to select the best action for each objective
-    objective_selector_class: ClassVar[Type[SingleObjectiveStrategy]]
+    objective_selector_class: ClassVar[type[SingleObjectiveStrategy]]
     _objective_selector: SingleObjectiveStrategy = PrivateAttr()
 
     def __init__(self, **data):
@@ -54,10 +55,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
     @validate_call
     def select_action(
         self,
-        p: Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
-        actions: Dict[ActionId, BaseModel],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-        rng: Optional[Any] = None,
+        p: dict[ActionId, list[float] | Callable[[np.ndarray], list[float]]],
+        actions: dict[ActionId, BaseModel],
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+        rng: Any | None = None,
     ) -> UnifiedActionId:
         """
         Select an action from the Pareto front.
@@ -67,15 +68,15 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]]
+        p : dict[ActionId, list[float] | Callable[[np.ndarray], list[float]]]
             Dictionary mapping action IDs to either:
-            - List[float]: Fixed reward vector for multiple objectives
+            - list[float]: Fixed reward vector for multiple objectives
             - Callable: Function that computes reward vector given quantity
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible) restricting a quantitative arm's quantity space.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
@@ -88,10 +89,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
     def _get_feasible_solutions(
         self,
-        p: Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
-        actions: Dict[ActionId, BaseModel],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-    ) -> Dict[UnifiedActionId, List[float]]:
+        p: dict[ActionId, list[float] | Callable[[np.ndarray], list[float]]],
+        actions: dict[ActionId, BaseModel],
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+    ) -> dict[UnifiedActionId, list[float]]:
         """
         Get feasible solutions for each objective.
 
@@ -99,14 +100,14 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, List[float]]
+        p : dict[ActionId, list[float]]
             Dictionary mapping action IDs to reward vectors.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models.
 
         Returns
         -------
-        Dict[UnifiedActionId, List[float]]
+        dict[UnifiedActionId, list[float]]
             Feasible actions considering logic for each objective.
         """
         action_id = list(p.keys())[0]
@@ -146,10 +147,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
     def _get_exact_pareto_front(
         self,
-        p: Dict[UnifiedActionId, List[float]],
-        actions: Dict[ActionId, BaseModel],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-    ) -> List[UnifiedActionId]:
+        p: dict[UnifiedActionId, list[float]],
+        actions: dict[ActionId, BaseModel],
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+    ) -> list[UnifiedActionId]:
         """
         Compute the exact Pareto front for discrete action sets.
 
@@ -158,14 +159,14 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[UnifiedActionId, List[float]]
+        p : dict[UnifiedActionId, list[float]]
             Dictionary mapping unified action IDs to their reward vectors.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models.
 
         Returns
         -------
-        List[UnifiedActionId]
+        list[UnifiedActionId]
             List of Pareto-optimal action IDs.
         """
         feasible_solutions = self._get_feasible_solutions(p, actions, forbidden_regions)
@@ -203,12 +204,12 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
     def _get_approximate_pareto_front(
         self,
-        p: Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]],
-        actions: Dict[ActionId, BaseModel],
+        p: dict[ActionId, list[float] | Callable[[np.ndarray], list[float]]],
+        actions: dict[ActionId, BaseModel],
         n_divisions: int = 10,
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-        rng: Optional[Any] = None,
-    ) -> List[UnifiedActionId]:
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+        rng: Any | None = None,
+    ) -> list[UnifiedActionId]:
         """
         Approximate the Pareto front for continuous/quantitative actions.
 
@@ -217,22 +218,22 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[List[float], Callable[[np.ndarray], List[float]]]]
+        p : dict[ActionId, list[float] | Callable[[np.ndarray], list[float]]]
             Dictionary mapping action IDs to reward vectors or functions.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models.
         n_divisions : int, default=10
             Number of divisions for weight vector generation. Higher values
             provide better approximation but increase computation.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible) passed into the optimization for each
             quantitative arm.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator forwarded to the quantity optimizer for reproducibility.
 
         Returns
         -------
-        List[UnifiedActionId]
+        list[UnifiedActionId]
             List of approximately Pareto-optimal actions.
         """
         if not p:
@@ -277,14 +278,14 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
     @validate_call
     def _find_pareto_front_normal_constraint(
         self,
-        func: Callable[[np.ndarray], List[float]],
+        func: Callable[[np.ndarray], list[float]],
         input_dim: int,
         n_objectives: int,
         n_divisions: int,
         model: BaseModel,
-        constraints: Optional[List[Callable[[np.ndarray], float]]] = None,
-        rng: Optional[Any] = None,
-    ) -> List[np.ndarray]:
+        constraints: list[Callable[[np.ndarray], float]] | None = None,
+        rng: Any | None = None,
+    ) -> list[np.ndarray]:
         """
         Find Pareto front using Normal Constraint method with Das-Dennis weight generation for a single function.
 
@@ -293,7 +294,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        func : Callable[[np.ndarray], List[float]]
+        func : Callable[[np.ndarray], list[float]]
             Function mapping quantity vectors to reward vectors.
         input_dim : int
             Dimension of the input quantity vector.
@@ -303,15 +304,15 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
             Number of divisions for weight generation (controls approximation quality).
         model : BaseModel
             The model for this quantitative action.
-        constraints : Optional[List[Callable[[np.ndarray], float]]], default=None
+        constraints : list[Callable[[np.ndarray], float]] | None, default=None
             Forbidden-region feasibility constraints (``>= 0`` feasible). Applied to both the anchor-point
             optimization and every NC subproblem so the front is feasible by construction.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator forwarded to the quantity optimizer for reproducibility.
 
         Returns
         -------
-        List[np.ndarray]
+        list[np.ndarray]
             List of Pareto-optimal quantity vectors.
 
         References
@@ -373,7 +374,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         """
 
         def generate_recursive(
-            n_obj: int, n_div: int, current_weight: List[int], depth: int = 0
+            n_obj: int, n_div: int, current_weight: list[int], depth: int = 0
         ) -> Generator[np.ndarray, None, None]:
             """
             Recursively generate weight combinations for Das-Dennis method.
@@ -384,7 +385,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
                 Number of objectives.
             n_div : int
                 Remaining divisions to allocate.
-            current_weight : List[int]
+            current_weight : list[int]
                 Current partial weight vector being built.
             depth : int
                 Current recursion depth (objective index).
@@ -415,10 +416,10 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         utopia: np.ndarray,
         weight: np.ndarray,
         model: BaseModel,
-        arm_constraints: Optional[List[Callable[[np.ndarray], float]]] = None,
-        rng: Optional[Any] = None,
+        arm_constraints: list[Callable[[np.ndarray], float]] | None = None,
+        rng: Any | None = None,
         epsilon: float = 1e-10,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Solve a single Normal Constraint optimization subproblem.
 
@@ -437,17 +438,17 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
             Weight vector determining the reference point and primary objective.
         model : BaseModel
             The model for constraint evaluation.
-        arm_constraints : Optional[List[Callable[[np.ndarray], float]]], default=None
+        arm_constraints : list[Callable[[np.ndarray], float]] | None, default=None
             Forbidden-region feasibility constraints (``>= 0`` feasible) appended to the NC boundaries so
             the solution is feasible by construction.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator forwarded to the quantity optimizer for reproducibility.
         epsilon : float, default=1e-10
             Numerical tolerance for constraint satisfaction.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray | None
             Optimal solution if found and feasible, None otherwise.
         """
         n_objectives = len(weight)
@@ -465,7 +466,7 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
         # Step #3: Create Normal Constraint boundaries using utopia geometry.
         # Each boundary is a float constraint feasible where >= 0 (the reference-point side), matching the
         # convention the optimizer and forbidden regions use, so the NC subproblem is solved feasibly.
-        nc_constraints: List[Callable[[np.ndarray], float]] = []
+        nc_constraints: list[Callable[[np.ndarray], float]] = []
 
         for i in range(n_objectives):
             if i != primary_obj:
@@ -571,11 +572,11 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
     def _get_pareto_front(
         self,
-        p: Dict[ActionId, Union[List[float], List[Callable[[np.ndarray], float]]]],
-        actions: Dict[ActionId, BaseModel],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-        rng: Optional[Any] = None,
-    ) -> List[UnifiedActionId]:
+        p: dict[ActionId, list[float] | list[Callable[[np.ndarray], float]]],
+        actions: dict[ActionId, BaseModel],
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+        rng: Any | None = None,
+    ) -> list[UnifiedActionId]:
         """
         Compute the Pareto front, using exact or approximate methods as appropriate.
 
@@ -584,18 +585,18 @@ class MultiObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[List[float], List[Callable[[np.ndarray], float]]]]
+        p : dict[ActionId, list[float] | list[Callable[[np.ndarray], float]]]
             Dictionary mapping action IDs to reward vectors or functions.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible) restricting a quantitative arm's quantity space.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator forwarded to the quantity optimizer for reproducibility.
 
         Returns
         -------
-        List[UnifiedActionId]
+        list[UnifiedActionId]
             List of Pareto-optimal actions.
         """
         includes_quantitative_actions = any(isinstance(actions[a], QuantitativeModel) for a in p.keys())
@@ -626,7 +627,7 @@ class MultiObjectiveBandit(MultiObjectiveStrategy):
     """
 
     # Use ClassicBandit's selection strategy for finding extreme points
-    objective_selector_class: ClassVar[Type[SingleObjectiveStrategy]] = ClassicBandit
+    objective_selector_class: ClassVar[type[SingleObjectiveStrategy]] = ClassicBandit
 
 
 class MultiObjectiveCostControlBandit(MultiObjectiveStrategy, CostControlStrategy):
@@ -645,4 +646,4 @@ class MultiObjectiveCostControlBandit(MultiObjectiveStrategy, CostControlStrateg
     """
 
     # Use CostControlBandit's selection strategy for finding extreme points
-    objective_selector_class: ClassVar[Type[SingleObjectiveStrategy]] = CostControlBandit
+    objective_selector_class: ClassVar[type[SingleObjectiveStrategy]] = CostControlBandit

@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 import random
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -41,8 +40,8 @@ from pybandits.utils import (
     maximize_by_quantity,
 )
 
-CmabProbabilityValue = Union[ParametricActionProbability, DoubleParametricActionProbability]
-CmabActionProbabilityGroundTruth = Dict[ActionId, CmabProbabilityValue]
+CmabProbabilityValue = ParametricActionProbability | DoubleParametricActionProbability
+CmabActionProbabilityGroundTruth = dict[ActionId, CmabProbabilityValue]
 
 
 class CmabSimulator(Simulator):
@@ -59,17 +58,17 @@ class CmabSimulator(Simulator):
         Contextual multi-armed bandit model
     context : np.ndarray of shape (n_samples, n_feature)
         Context matrix of samples features.
-    group : Optional[List] with length=n_samples
+    group : list | None with length=n_samples
         Group to which each sample belongs. Samples which belongs to the same group have features that come from the
         same distribution and they have the same probability to receive a positive/negative feedback from each action.
         If not supplied, all samples are assigned to the group.
     """
 
-    probs_reward: Optional[Union[CmabActionProbabilityGroundTruth, Dict[str, CmabActionProbabilityGroundTruth]]] = None
+    probs_reward: CmabActionProbabilityGroundTruth | dict[str, CmabActionProbabilityGroundTruth] | None = None
     mab: BaseCmabBernoulli = Field(validation_alias="cmab")
     context: np.ndarray
-    group: Optional[List] = None
-    _base_columns: List[str] = ["batch", "action", "reward", "group"]
+    group: list | None = None
+    _base_columns: list[str] = ["batch", "action", "reward", "group"]
 
     @classmethod
     def _validate_probs_reward_values(cls, probability: CmabProbabilityValue, is_quantitative_action: bool):
@@ -136,21 +135,21 @@ class CmabSimulator(Simulator):
         )
 
     def _draw_rewards(
-        self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
-    ) -> List[BinaryReward]:
+        self, actions: list[UnifiedActionId], metadata: dict[str, list], update_kwargs: dict[str, np.ndarray]
+    ) -> list[BinaryReward]:
         """
         Draw rewards for the selected actions based on metadata according to probs_reward
 
         Parameters
         ----------
-        actions : List[UnifiedActionId]
+        actions : list[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
-        metadata : Dict[str, List]
+        metadata : dict[str, list]
             The metadata for the selected actions; should contain the batch groups association.
 
         Returns
         -------
-        reward : List[BinaryReward]
+        reward : list[BinaryReward]
             A list of binary rewards.
         """
         rewards = [
@@ -187,7 +186,7 @@ class CmabSimulator(Simulator):
 
     def _get_batch_step_kwargs_and_metadata(
         self, batch_index
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, List]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, list]]:
         """
         Extract context required for the cMAB's update and predict functionality,
         as well as metadata for sample group.
@@ -199,11 +198,11 @@ class CmabSimulator(Simulator):
 
         Returns
         -------
-        predict_kwargs : Dict[str, np.ndarray]
+        predict_kwargs : dict[str, np.ndarray]
             Dictionary containing the context for the batch.
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Dictionary containing the context for the batch.
-        metadata : Dict[str, List]
+        metadata : dict[str, list]
             Dictionary containing the group information for the batch.
         """
         idx_batch_min = batch_index * self.batch_size
@@ -212,7 +211,7 @@ class CmabSimulator(Simulator):
         metadata = {"group": self.group[idx_batch_min:idx_batch_max]}
         return predict_and_update_kwargs, predict_and_update_kwargs, metadata
 
-    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]):
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: dict[str, np.ndarray]):
         """
         Finalize the step by adding additional information to the batch results.
 
@@ -220,7 +219,7 @@ class CmabSimulator(Simulator):
         ----------
         batch_results : pd.DataFrame
             Raw batch results
-        update_kwargs : Dict[str, np.ndarray]
+        update_kwargs : dict[str, np.ndarray]
             Context for the batch
 
         Returns

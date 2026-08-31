@@ -27,7 +27,8 @@ This module provides a complete set of estimators for OPE.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, ClassVar, Dict, Optional, Tuple, Type
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import (
@@ -55,7 +56,7 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -65,19 +66,19 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
 
     alpha: Float01 = 0.05
     n_bootstrap_samples: int = 10000
-    random_state: Optional[int] = None
-    bootstrap_batch_size: Optional[PositiveInt] = 1
+    random_state: int | None = None
+    bootstrap_batch_size: PositiveInt | None = 1
     name: ClassVar
 
     @classmethod
     def _check_array(
         cls,
         name: str,
-        data: Dict[str, np.ndarray],
+        data: dict[str, np.ndarray],
         ndim: PositiveInt,
         dtype: type,
         n_samples: PositiveInt,
-        n_actions: Optional[PositiveInt] = None,
+        n_actions: PositiveInt | None = None,
     ):
         if name in data:
             array = data[name]
@@ -99,7 +100,7 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
                     raise ValueError(f"{name} must have at least number of actions as the action array.")
 
     @classmethod
-    def _check_sum(cls, name: str, data: Dict[str, np.ndarray]):
+    def _check_sum(cls, name: str, data: dict[str, np.ndarray]):
         if name in data:
             array = data[name]
             if not array.sum(axis=-1).all():
@@ -132,7 +133,7 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
             cls._check_sum(name, kwargs)
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def estimate_policy_value_with_confidence_interval(self, **kwargs) -> Tuple[float, float, float, float]:
+    def estimate_policy_value_with_confidence_interval(self, **kwargs) -> tuple[float, float, float, float]:
         """
         Estimate the policy value with a confidence interval.
 
@@ -143,7 +144,7 @@ class BaseOfflinePolicyEstimator(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        Tuple[float, float, float, float]
+        tuple[float, float, float, float]
             Estimated policy value, mean, lower bound, and upper bound of the confidence interval.
         """
         self._check_inputs(**kwargs)
@@ -192,7 +193,7 @@ class ReplayMethod(BaseOfflinePolicyEstimator):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -249,7 +250,7 @@ class GeneralizedInverseProbabilityWeighting(BaseOfflinePolicyEstimator, ABC):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -268,7 +269,7 @@ class GeneralizedInverseProbabilityWeighting(BaseOfflinePolicyEstimator, ABC):
             Array of importance weights.
         """
 
-    def estimate_sample_rewards(self, reward: np.ndarray, shrinkage_method: Optional[Callable], **kwargs) -> np.ndarray:
+    def estimate_sample_rewards(self, reward: np.ndarray, shrinkage_method: Callable | None, **kwargs) -> np.ndarray:
         """
         Estimate the sample rewards.
 
@@ -276,7 +277,7 @@ class GeneralizedInverseProbabilityWeighting(BaseOfflinePolicyEstimator, ABC):
         ----------
         reward : np.ndarray
             Array of rewards corresponding to each action.
-        shrinkage_method : Optional[Callable]
+        shrinkage_method : Callable | None
             Shrinkage method for the importance weights.
 
         Returns
@@ -307,7 +308,7 @@ class InverseProbabilityWeighting(GeneralizedInverseProbabilityWeighting):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -323,7 +324,7 @@ class InverseProbabilityWeighting(GeneralizedInverseProbabilityWeighting):
         reward: np.ndarray,
         propensity_score: np.ndarray,
         estimated_policy: np.ndarray,
-        shrinkage_method: Optional[Callable] = None,
+        shrinkage_method: Callable | None = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -399,7 +400,7 @@ class SelfNormalizedInverseProbabilityWeighting(InverseProbabilityWeighting):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -415,7 +416,7 @@ class SelfNormalizedInverseProbabilityWeighting(InverseProbabilityWeighting):
         reward: np.ndarray,
         propensity_score: np.ndarray,
         estimated_policy: np.ndarray,
-        shrinkage_method: Optional[Callable] = None,
+        shrinkage_method: Callable | None = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -431,7 +432,7 @@ class SelfNormalizedInverseProbabilityWeighting(InverseProbabilityWeighting):
             Array of propensity scores.
         estimated_policy : np.ndarray
             Array of action distributions.
-        shrinkage_method : Optional[Callable]
+        shrinkage_method : Callable | None
             Shrinkage method for the importance weights.
 
         Returns
@@ -476,7 +477,7 @@ class DirectMethod(BaseOfflinePolicyEstimator):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -539,7 +540,7 @@ class GeneralizedDoublyRobust(BaseOfflinePolicyEstimator, ABC):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -547,7 +548,7 @@ class GeneralizedDoublyRobust(BaseOfflinePolicyEstimator, ABC):
         reduce peak memory usage at the cost of slightly more overhead.
     """
 
-    _alternative_method_cls: Type[InverseProbabilityWeighting]
+    _alternative_method_cls: type[InverseProbabilityWeighting]
     _dm: DirectMethod = PrivateAttr()
     _other_method: BaseOfflinePolicyEstimator = PrivateAttr()
 
@@ -627,7 +628,7 @@ class DoublyRobust(GeneralizedDoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -658,7 +659,7 @@ class SelfNormalizedDoublyRobust(GeneralizedDoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -687,11 +688,11 @@ class SwitchDoublyRobust(DoublyRobust):
         Significance level for confidence interval estimation.
     n_bootstrap_samples : int, default=10000
         Number of bootstrap samples for confidence interval estimation.
-    random_state : Optional[int], default=None
+    random_state : int | None, default=None
         Random seed for bootstrap sampling.
     switch_threshold : float, default=inf
         Threshold for the importance weight to switch between the DR and IPS estimators.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -726,7 +727,7 @@ class DoublyRobustWithOptimisticShrinkage(DoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -767,7 +768,7 @@ class DoublyRobustWithPessimisticShrinkage(DoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, default=None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -802,7 +803,7 @@ class SubGaussianInverseProbabilityWeighting(InverseProbabilityWeighting):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, defaults to None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -837,7 +838,7 @@ class SubGaussianDoublyRobust(GeneralizedDoublyRobust):
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, defaults to None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM
@@ -866,7 +867,7 @@ class BalancedInverseProbabilityWeighting(GeneralizedInverseProbabilityWeighting
         Number of bootstrap samples for confidence interval estimation.
     random_state : int, defaults to None
         Random seed for bootstrap sampling.
-    bootstrap_batch_size : Optional[int], default=1
+    bootstrap_batch_size : int | None, default=1
         Number of resamples to process per batch in the bootstrap call.
         Memory usage is O(bootstrap_batch_size * n_samples). When None,
         all resamples are processed in a single batch which can cause OOM

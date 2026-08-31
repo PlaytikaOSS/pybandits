@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import List, Optional, Union
 
 from pydantic import PositiveInt, validate_call
 
@@ -58,19 +57,19 @@ class BaseSmabBernoulli(BaseMab, ABC):
 
     Parameters
     ----------
-    actions: Dict[ActionId, Union[BaseBeta, BaseZooming]]
+    actions: dict[ActionId, BaseBeta | BaseZooming]
         The list of possible actions, and their associated Model.
     strategy: Strategy
         The strategy used to select actions.
     """
 
-    actions_manager: SmabActionsManager[Union[BaseBeta, BaseZooming]]
+    actions_manager: SmabActionsManager[BaseBeta | BaseZooming]
 
     @validate_call
     def predict(
         self,
         n_samples: PositiveInt = 1,
-        forbidden_actions: Optional[ForbiddenActions] = None,
+        forbidden_actions: ForbiddenActions | None = None,
     ) -> SmabPredictions:
         """
         Predict actions.
@@ -79,18 +78,18 @@ class BaseSmabBernoulli(BaseMab, ABC):
         ----------
         n_samples : PositiveInt, default=1
             Number of samples to predict.
-        forbidden_actions : Optional[ForbiddenActions], default=None
-            Actions to forbid. Either a ``Set[ActionId]`` of wholly-forbidden arms, or a
-            ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` where ``None`` forbids the whole arm
+        forbidden_actions : ForbiddenActions | None, default=None
+            Actions to forbid. Either a ``set[ActionId]`` of wholly-forbidden arms, or a
+            ``dict[ActionId, None | ForbiddenRegion | list[ForbiddenRegion]]`` where ``None`` forbids the whole arm
             and region callable(s) forbid part of a quantitative arm's quantity space (``region(x) > 0`` => forbidden).
             By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
         -------
-        actions: List[UnifiedActionId]
+        actions: list[UnifiedActionId]
             The actions selected by the multi-armed bandit model.
-        probs: Union[List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, MOProbability]]]
+        probs: list[dict[UnifiedActionId, Probability]] | list[dict[UnifiedActionId, MOProbability]]
             The probabilities of getting a positive reward for each action.
         """
 
@@ -106,11 +105,11 @@ class BaseSmabBernoulli(BaseMab, ABC):
     @validate_call
     def update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
-        actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
+        quantities: list[float | list[float] | None] | None = None,
+        actions_memory: list[ActionId] | None = None,
+        rewards_memory: list[BinaryReward] | list[list[BinaryReward]] | None = None,
     ):
         """
         Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
@@ -118,19 +117,19 @@ class BaseSmabBernoulli(BaseMab, ABC):
 
         Parameters
         ----------
-        actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
+        actions : list[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : list[BinaryReward | list[BinaryReward]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
-        quantities : Optional[List[Union[float, List[float], None]]]
+        quantities : list[float | list[float] | None] | None
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        actions_memory : Optional[List[ActionId]]
+        actions_memory : list[ActionId] | None
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : list[BinaryReward] | list[list[BinaryReward]] | None
             List of previously collected rewards.
         """
         super().update(

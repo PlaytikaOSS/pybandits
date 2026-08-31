@@ -23,7 +23,7 @@
 """Tests for the meta-model abstraction layer (pybandits.meta_model)."""
 
 import pickle
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -70,9 +70,9 @@ def make_beta_meta(make_beta_actions):
 
 
 @pytest.fixture
-def spy_beta_update(monkeypatch) -> List[Dict[str, Any]]:
+def spy_beta_update(monkeypatch) -> list[dict[str, Any]]:
     """Replace ``BaseBeta.update`` with a kwargs-capturing spy; return the captured list."""
-    captured: List[Dict[str, Any]] = []
+    captured: list[dict[str, Any]] = []
     monkeypatch.setattr(model_mod.BaseBeta, "update", lambda self, **kw: captured.append(kw), raising=True)
     return captured
 

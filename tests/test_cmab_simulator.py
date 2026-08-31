@@ -21,8 +21,8 @@
 # SOFTWARE.
 
 import os
+from collections.abc import Callable
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -82,7 +82,7 @@ def test_validate_probs_reward_values(probability, is_quantitative, should_pass)
 
     Parameters
     ----------
-    probability : Union[float, callable]
+    probability : float | callable
         The probability value to test
     is_quantitative : bool
         Whether the action is quantitative
@@ -126,9 +126,9 @@ def test_validate_probs_reward_values(probability, is_quantitative, should_pass)
 )
 def test_cmab_simulator_with_explicit_probs_reward(
     mocker: MockerFixture,
-    probs_reward_config: Dict[str, Dict[str, Union[Callable, float]]],
-    expected_values: Dict[str, Dict[str, float]],
-    groups: List[str],
+    probs_reward_config: dict[str, dict[str, Callable | float]],
+    expected_values: dict[str, dict[str, float]],
+    groups: list[str],
     context_shape: tuple,
     rng: np.random.Generator,
     dimension: int = 2,
@@ -145,12 +145,12 @@ def test_cmab_simulator_with_explicit_probs_reward(
     ----------
     mocker : MockerFixture
         Pytest mock fixture for mocking objects.
-    probs_reward_config : Dict[str, Dict[str, Union[Callable, float]]]
+    probs_reward_config : dict[str, dict[str, Callable | float]]
         Explicit probs_reward configuration with group-based dictionaries containing
         callable functions that take context as input.
-    expected_values : Dict[str, Dict[str, float]]
+    expected_values : dict[str, dict[str, float]]
         Expected probability values for verification per group.
-    groups : List[str]
+    groups : list[str]
         List of group identifiers.
     context_shape : tuple
         Shape of the context array (n_samples, n_features).
@@ -222,13 +222,13 @@ def test_non_matching_context_and_group_shape(
 ):
     context = rng.random((n_samples, n_features))
     # Create a group list with a different length than n_samples
-    group: List[str] = [str(i) for i in range(n_samples + group_extra)]
+    group: list[str] = [str(i) for i in range(n_samples + group_extra)]
     cmab = CmabBernoulli(actions=dict(zip(action_ids, models)))
     with pytest.raises(ValueError):
         CmabSimulator(mab=cmab, context=context, group=group)
 
 
-def _get_context_and_group(n_features, n_updates, batch_size, num_groups) -> Tuple[np.ndarray, Optional[List[str]]]:
+def _get_context_and_group(n_features, n_updates, batch_size, num_groups) -> tuple[np.ndarray, list[str] | None]:
     context = np.repeat(np.arange(n_features).reshape(1, -1), n_updates * batch_size, axis=0)
     if num_groups is not None:
         base_groups = list(range(num_groups))

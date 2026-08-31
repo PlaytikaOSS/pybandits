@@ -22,8 +22,8 @@
 
 import functools
 import json
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pytest
@@ -94,17 +94,17 @@ def test_add_nonadjacent_segments():
 
 
 class DummyZooming(BaseZooming):
-    cost: Optional[Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]] = None
+    cost: Callable[[float | NonNegativeFloat], NonNegativeFloat] | None = None
 
     def _init_base_model(self):
         self._base_model = Beta()
 
-    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward], **kwargs):
+    def _inner_update(self, segments: list[Segment], rewards: list[BinaryReward], **kwargs):
         pass
 
     def _to_quantitative_probabilities(
-        self, segment_probabilities: Dict[Segment, List[UnifiedProbability]]
-    ) -> List[QuantitativeProbability]:
+        self, segment_probabilities: dict[Segment, list[UnifiedProbability]]
+    ) -> list[QuantitativeProbability]:
         max_samples = max(len(probas) for probas in segment_probabilities.values())
         return [lambda x: np.random.uniform(0, 1) for _ in range(max_samples)]
 
@@ -527,7 +527,7 @@ def simple_cost(value: float) -> float:
     return value * 2
 
 
-def complex_cost(value: Union[float, NonNegativeFloat], factor: float = 1.0) -> NonNegativeFloat:
+def complex_cost(value: float | NonNegativeFloat, factor: float = 1.0) -> NonNegativeFloat:
     return value * factor
 
 
@@ -568,7 +568,7 @@ def simple_price(value: float) -> float:
     return value * 10
 
 
-def complex_price(value: Union[float, NonNegativeFloat], factor: float = 1.0) -> NonNegativeFloat:
+def complex_price(value: float | NonNegativeFloat, factor: float = 1.0) -> NonNegativeFloat:
     return value * factor
 
 

@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Tuple
 from unittest import mock
 
 import numpy as np
@@ -142,7 +141,7 @@ def invalid_inputs(draw, n_samples: int = 10, n_actions: int = 2):
 @mock.patch.multiple(BaseOfflinePolicyEstimator, __abstractmethods__=set())
 @given(invalid_inputs())
 def test_shape_mismatches(
-    inputs: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    inputs: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ):
     """Test shape mismatches with configurable inputs."""
     action, reward, propensity_score, estimated_policy, expected_reward, expected_importance_weight = inputs

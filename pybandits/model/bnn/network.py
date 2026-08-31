@@ -21,11 +21,12 @@
 # SOFTWARE.
 import inspect
 from abc import ABC
+from collections.abc import Callable
 from contextlib import nullcontext
 from copy import deepcopy
 from math import ceil
 from types import ModuleType
-from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Self, Tuple, Union
+from typing import Any, ClassVar, Literal, Self
 
 import jax
 import jax.numpy as jnp
@@ -97,7 +98,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     ----------
     model_params : BnnParams
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
-    update_kwargs : Optional[Union[VIUpdateKwargs, dict]], optional
+    update_kwargs : VIUpdateKwargs | dict | None, optional
         Keyword arguments for VI training. May be passed as a plain dict (validated and coerced
         at construction) or as the typed :class:`VIUpdateKwargs` model (``num_steps``/``epochs``,
         ``method``, ``optimizer_type``, ``optimizer_kwargs``, ``batch_size``,
@@ -108,7 +109,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     use_residual_connections : bool, optional
         Whether to use residual connections in the network. Residual connections are only added when
         the layer output dimension is greater than or equal to the input dimension (default is False).
-    early_stopping_config : Optional[EarlyStoppingConfig], optional
+    early_stopping_config : EarlyStoppingConfig | None, optional
         Configuration for early stopping during VI training. If None, no early stopping is used (default is None).
 
     Examples
@@ -144,7 +145,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     weight_var_name: ClassVar[str] = "weight"
     bias_var_name: ClassVar[str] = "bias"
     _embedding_var_name: ClassVar[str] = "embedding"
-    _distribution_mapping: ClassVar[Dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
+    _distribution_mapping: ClassVar[dict[str, type]] = {"normal": NormalArray, "studentt": StudentTArray}
     _numerical_eps: ClassVar[float] = 1e-6
     _optax_return_types: ClassVar[dict] = {
         "optimizer": optax.GradientTransformation,
@@ -203,11 +204,11 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             )
         return fn
 
-    update_kwargs: Optional[VIUpdateKwargs] = None
+    update_kwargs: VIUpdateKwargs | None = None
     activation: ActivationFunctions = "tanh"
     use_residual_connections: bool = False
     feature_config: FeaturesConfig
-    random_seed: Optional[NonNegativeInt] = None
+    random_seed: NonNegativeInt | None = None
     calibrate_output_bias: bool = False
     bias_calibrated: bool = False
 
@@ -227,15 +228,15 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     _approx_history: np.ndarray = PrivateAttr(None)
     _numpy_activation_fn: Callable = PrivateAttr(None)
     _jax_activation_fn: Callable = PrivateAttr(None)
-    _obj_optimizer: Optional[Any] = PrivateAttr(None)
-    _early_stopping_callback: Optional[EarlyStopping] = PrivateAttr(None)
-    _update_kwargs: Dict[str, Any] = PrivateAttr(default_factory=dict)
+    _obj_optimizer: Any | None = PrivateAttr(None)
+    _early_stopping_callback: EarlyStopping | None = PrivateAttr(None)
+    _update_kwargs: dict[str, Any] = PrivateAttr(default_factory=dict)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("model_params",)
-    _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
-    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("activation", "use_residual_connections")
+    _transfer_learned_keys: ClassVar[tuple[str, ...]] = ("model_params",)
+    _transfer_extendable_keys: ClassVar[tuple[str, ...]] = ()
+    _transfer_structural_keys: ClassVar[tuple[str, ...]] = ("activation", "use_residual_connections")
 
     @field_validator("activation")
     @classmethod
@@ -258,7 +259,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         return f"{cls._embedding_var_name}_{feat_index}"
 
     @property
-    def approx_history(self) -> Optional[np.ndarray]:
+    def approx_history(self) -> np.ndarray | None:
         return self._approx_history
 
     @property
@@ -266,7 +267,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         """The optax optimizer built from ``update_kwargs``, wrapped via ``optax_to_numpyro``."""
         return self._obj_optimizer
 
-    def _prepare_context_arrays(self, context: np.ndarray) -> Tuple[np.ndarray, Dict[int, np.ndarray]]:
+    def _prepare_context_arrays(self, context: np.ndarray) -> tuple[np.ndarray, dict[int, np.ndarray]]:
         """
         Split a numpy context array into numerical and categorical index arrays.
 
@@ -282,7 +283,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         -------
         numerical_arr : np.ndarray of shape (n_samples, n_numerical)
             Numerical features, same dtype as input. Empty ``(n_samples, 0)`` if none.
-        cat_indices_dict : Dict[int, np.ndarray]
+        cat_indices_dict : dict[int, np.ndarray]
             Mapping from feature index (0-based) to int32 array of shape ``(n_samples,)``
             containing integer category codes.
         """
@@ -299,7 +300,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         return numerical_arr, cat_indices_dict
 
-    def build_optax_optimizer(self, step_size: Optional[float] = None) -> optax.GradientTransformation:
+    def build_optax_optimizer(self, step_size: float | None = None) -> optax.GradientTransformation:
         """Build the raw optax optimizer from ``update_kwargs`` (learning-rate schedule included).
 
         Gradient clipping and the ``optax_to_numpyro`` wrapping are *not* applied here, so callers
@@ -308,7 +309,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        step_size : Optional[float], default=None
+        step_size : float | None, default=None
             Learning rate override; ``None`` uses ``optimizer_kwargs["step_size"]`` (default ``0.01``).
         """
         optimizer_kwargs = dict(self.update_kwargs.optimizer_kwargs or {})
@@ -341,7 +342,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         """The single-model optimizer: ``build_optax_optimizer`` plus clipping and numpyro wrapping."""
         return self.clip_and_wrap_optimizer(self.build_optax_optimizer())
 
-    def _get_early_stopping_callback(self) -> Optional[EarlyStopping]:
+    def _get_early_stopping_callback(self) -> EarlyStopping | None:
         early_stopping_kwargs = self.update_kwargs.early_stopping_kwargs
         if early_stopping_kwargs is not None:
             try:
@@ -351,7 +352,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         return None
 
     @classmethod
-    def get_layer_params_name(cls, layer_ind: PositiveInt) -> Tuple[str, str]:
+    def get_layer_params_name(cls, layer_ind: PositiveInt) -> tuple[str, str]:
         """NumPyro site names for a layer's weight/bias."""
         weight_layer_params_name = f"{cls.weight_var_name}_{layer_ind}"
         bias_layer_params_name = f"{cls.bias_var_name}_{layer_ind}"
@@ -361,10 +362,10 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     def create_model_params(
         cls,
         feature_config: FeaturesConfig,
-        hidden_dim_list: Optional[List[PositiveInt]],
+        hidden_dim_list: list[PositiveInt] | None,
         use_layerwise_scaling: bool = False,
         dist_class: type[BaseLocationScaleArray] = StudentTArray,
-        bias_std: Optional[PositiveFloat] = None,
+        bias_std: PositiveFloat | None = None,
         **dist_params_init,
     ) -> BnnParams:
         """
@@ -378,13 +379,13 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         feature_config : FeaturesConfig
             Full input layout description. First-layer input dimension is ``feature_config.total_output_dim``.
             ``EmbeddingParams`` are created when ``feature_config.categorical_features_configs`` is non-empty.
-        hidden_dim_list : Optional[List[PositiveInt]]
+        hidden_dim_list : list[PositiveInt] | None
             Number of hidden units per hidden layer. If None, no hidden layers are added.
         use_layerwise_scaling : bool
             Whether to use layerwise scaling in the network (default is False).
         dist_class : type
             The distribution class to use for weights, biases, and embeddings, by default ``StudentTArray``.
-        bias_std : Optional[PositiveFloat]
+        bias_std : PositiveFloat | None
             If provided, overrides ``sigma`` from ``dist_params_init`` for all layers' bias priors.
             Applied to every layer's bias (including the output layer's logit bias), leaving weight priors unchanged.
             Default is None (use ``sigma`` from ``dist_params_init``).
@@ -487,7 +488,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         return self.feature_config.n_features
 
     @property
-    def resolved_update_kwargs(self) -> Dict[str, Any]:
+    def resolved_update_kwargs(self) -> dict[str, Any]:
         """The resolved training config (``update_kwargs.model_dump()``, defaults included).
 
         The public ``update_kwargs`` field is what the user passed (possibly ``None`` or partial);
@@ -497,19 +498,19 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             The resolved update kwargs used by the SVI training path.
         """
         return self._update_kwargs
 
     @property
-    def hidden_dim_list(self) -> List[int]:
+    def hidden_dim_list(self) -> list[int]:
         """
         Returns the hidden layer dimensions of the model.
 
         Returns
         -------
-        List[int]
+        list[int]
             Output dimension of each layer except the final output layer.
             Empty list when no hidden layers are present.
         """
@@ -517,7 +518,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_update_kwargs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _coerce_update_kwargs(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Coerce ``update_kwargs`` into the typed ``VIUpdateKwargs`` model.
 
         Accepts a raw dict (the public API, and the form stored in serialized state), ``None``
@@ -578,7 +579,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     def _forward_layers(
         self,
         next_layer_input: _Array,
-        weights_biases: List[Tuple[_Array, _Array]],
+        weights_biases: list[tuple[_Array, _Array]],
         activation_fn: Callable[[_Array], _Array],
         linear_fn: Callable[[_Array, _Array, _Array], _Array],
         backend: ModuleType,
@@ -590,7 +591,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         ----------
         next_layer_input : _Array
             Network input, shape ``(batch, input_dim)``. May be a JAX or NumPy array.
-        weights_biases : List[Tuple[_Array, _Array]]
+        weights_biases : list[tuple[_Array, _Array]]
             Per-layer ``(weights, biases)``. Shapes depend on the backend:
             NumPyro — ``(input_dim, output_dim)`` / ``(output_dim,)``;
             NumPy — ``(n_samples, input_dim, output_dim)`` / ``(n_samples, output_dim)``.
@@ -657,7 +658,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         batch_size = self._update_kwargs.get("batch_size")
 
-        def model(x: jax.Array, y: jax.Array, kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0):
+        def model(x: jax.Array, y: jax.Array, kl_annealing_factor: PositiveFloat01 | jax.Array = 1.0):
             self.emit_submodel(x=x, y=y, kl_annealing_factor=kl_annealing_factor, batch_size=batch_size)
 
         return model
@@ -666,8 +667,8 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         self,
         x: jax.Array,
         y: jax.Array,
-        kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0,
-        batch_size: Optional[PositiveInt] = None,
+        kl_annealing_factor: PositiveFloat01 | jax.Array = 1.0,
+        batch_size: PositiveInt | None = None,
     ) -> None:
         """Emit this BNN's NumPyro sites on the supplied input array.
 
@@ -684,17 +685,17 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             Network input — raw context (standalone / no-backbone head) or a backbone embedding.
         y : jax.Array
             Binary rewards for these rows.
-        kl_annealing_factor : Union[PositiveFloat01, jax.Array]
+        kl_annealing_factor : PositiveFloat01 | jax.Array
             Scales the prior-site log-probabilities (KL term); ``1.0`` is a no-op.
-        batch_size : Optional[PositiveInt]
+        batch_size : PositiveInt | None
             Minibatch size for the data plate; ``None`` (or ≥ n_samples) means full batch.
         """
         weights_biases, embedding_matrices = self.sample_head_sites(kl_annealing_factor)
         self._observe(x, y, weights_biases, embedding_matrices, batch_size)
 
     def sample_head_sites(
-        self, kl_annealing_factor: Union[PositiveFloat01, jax.Array] = 1.0
-    ) -> Tuple[List[Tuple[jax.Array, jax.Array]], List[jax.Array]]:
+        self, kl_annealing_factor: PositiveFloat01 | jax.Array = 1.0
+    ) -> tuple[list[tuple[jax.Array, jax.Array]], list[jax.Array]]:
         """Sample this BNN's global latent sites (layer weights/biases + categorical embeddings).
 
         These are the parameters shared across all rows, so they live *outside* the data plate. The
@@ -705,19 +706,19 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        kl_annealing_factor : Union[PositiveFloat01, jax.Array]
+        kl_annealing_factor : PositiveFloat01 | jax.Array
             Scales the prior-site log-probabilities (KL term); ``1.0`` is a no-op.
 
         Returns
         -------
-        Tuple[List[Tuple[jax.Array, jax.Array]], List[jax.Array]]
+        tuple[list[tuple[jax.Array, jax.Array]], list[jax.Array]]
             ``(weights_biases, embedding_matrices)`` — per-layer ``(weight, bias)`` and one embedding
             matrix per categorical feature (empty when the head has no categorical embeddings).
         """
         cat_configs = self.feature_config.categorical_features_configs
         has_embeddings = self.model_params.embedding_params is not None and len(cat_configs) > 0
-        weights_biases: List[Tuple[jax.Array, jax.Array]] = []
-        embedding_matrices: List[jax.Array] = []
+        weights_biases: list[tuple[jax.Array, jax.Array]] = []
+        embedding_matrices: list[jax.Array] = []
         with numpyro.handlers.scale(scale=kl_annealing_factor):
             for layer_ind, layer_params in enumerate(self.model_params.bnn_layer_params):
                 weight_name, bias_name = self.get_layer_params_name(layer_ind)
@@ -735,9 +736,9 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         self,
         x: jax.Array,
         y: jax.Array,
-        weights_biases: List[Tuple[jax.Array, jax.Array]],
-        embedding_matrices: List[jax.Array],
-        batch_size: Optional[PositiveInt] = None,
+        weights_biases: list[tuple[jax.Array, jax.Array]],
+        embedding_matrices: list[jax.Array],
+        batch_size: PositiveInt | None = None,
     ) -> None:
         """Forward the (optionally minibatched) input through the sampled sites and observe ``out``.
 
@@ -752,11 +753,11 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             Network input — raw context (standalone / no-backbone head) or a backbone embedding.
         y : jax.Array
             Binary rewards for these rows.
-        weights_biases : List[Tuple[jax.Array, jax.Array]]
+        weights_biases : list[tuple[jax.Array, jax.Array]]
             Per-layer ``(weight, bias)`` from :meth:`sample_head_sites`.
-        embedding_matrices : List[jax.Array]
+        embedding_matrices : list[jax.Array]
             Categorical embedding matrices from :meth:`sample_head_sites` (empty if none).
-        batch_size : Optional[PositiveInt]
+        batch_size : PositiveInt | None
             Minibatch size for the data plate; ``None`` (or ≥ n_samples) means full batch.
         """
         numerical_indices = self.feature_config.numerical_indices
@@ -805,7 +806,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             )  # "The observed reward follows a Bernoulli distribution given the network output"
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_weights(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def sample_weights(self, n_samples: PositiveInt, rng: np.random.Generator) -> list[tuple[np.ndarray, np.ndarray]]:
         """
         Sample weights and biases for each sample and each layer.
 
@@ -819,7 +820,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Returns
         -------
-        List[Tuple[np.ndarray, np.ndarray]]
+        list[tuple[np.ndarray, np.ndarray]]
             A list of length num_layers, where each element is (weights, biases) for that layer.
             - weights shape: (n_samples, input_dim, output_dim)
             - biases shape: (n_samples, output_dim)
@@ -836,7 +837,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         return sampled_weights
 
-    def sample_embeddings(self, context: np.ndarray, rng: np.random.Generator) -> Optional[List[np.ndarray]]:
+    def sample_embeddings(self, context: np.ndarray, rng: np.random.Generator) -> list[np.ndarray] | None:
         """
         Sample embedding vectors for each categorical feature given the context.
 
@@ -853,7 +854,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Returns
         -------
-        Optional[List[np.ndarray]]
+        list[np.ndarray] | None
             One array per categorical feature, each of shape ``(n_samples, emb_dim)``.
             ``None`` when the model has no categorical features.
         """
@@ -870,19 +871,19 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     @staticmethod
     def extract_sample(
-        sampled_weights: List[Tuple[np.ndarray, np.ndarray]],
-        sampled_embeddings: Optional[List[np.ndarray]],
+        sampled_weights: list[tuple[np.ndarray, np.ndarray]],
+        sampled_embeddings: list[np.ndarray] | None,
         sample_idx: NonNegativeInt,
-    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], Optional[List[np.ndarray]]]:
+    ) -> tuple[list[tuple[np.ndarray, np.ndarray]], list[np.ndarray] | None]:
         """
         Extract the weights, biases, and embeddings for a specific sample.
 
         Parameters
         ----------
-        sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
+        sampled_weights : list[tuple[np.ndarray, np.ndarray]]
             List of (weights, biases) per layer.
             Each weights has shape (n_samples, input_dim, output_dim), biases (n_samples, output_dim).
-        sampled_embeddings : Optional[List[np.ndarray]]
+        sampled_embeddings : list[np.ndarray] | None
             Pre-sampled embedding vectors, one per categorical feature, each of shape
             ``(n_samples, emb_dim)``. ``None`` when no categorical features.
         sample_idx : NonNegativeInt
@@ -890,7 +891,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Returns
         -------
-        Tuple[List[Tuple[np.ndarray, np.ndarray]], Optional[List[np.ndarray]]]
+        tuple[list[tuple[np.ndarray, np.ndarray]], list[np.ndarray] | None]
             ``(weights_idx, embeddings_idx)`` sliced to a single sample (batch dim = 1).
         """
         weights_idx = [(w[sample_idx : sample_idx + 1], b[sample_idx : sample_idx + 1]) for w, b in sampled_weights]
@@ -899,7 +900,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         )
         return weights_idx, embeddings_idx
 
-    def _prepare_forward_input(self, context: np.ndarray, sampled_embeddings: Optional[List[np.ndarray]]) -> np.ndarray:
+    def _prepare_forward_input(self, context: np.ndarray, sampled_embeddings: list[np.ndarray] | None) -> np.ndarray:
         """
         Replace categorical columns with pre-sampled embedding vectors.
 
@@ -907,7 +908,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         ----------
         context : np.ndarray
             Context matrix, shape ``(n_samples, feature_config.n_features)``.
-        sampled_embeddings : Optional[List[np.ndarray]]
+        sampled_embeddings : list[np.ndarray] | None
             One array per categorical feature, each of shape ``(n_samples, emb_dim)``.
             ``None`` when the model has no categorical features.
 
@@ -927,10 +928,10 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     def forward_pass(
         self,
-        sampled_weights: List[Tuple[np.ndarray, np.ndarray]],
+        sampled_weights: list[tuple[np.ndarray, np.ndarray]],
         context: np.ndarray,
-        sampled_embeddings: Optional[List[np.ndarray]] = None,
-    ) -> List[ProbabilityWeight]:
+        sampled_embeddings: list[np.ndarray] | None = None,
+    ) -> list[ProbabilityWeight]:
         """
         Apply the neural network forward pass using pre-sampled weights, biases, and embeddings.
 
@@ -939,20 +940,20 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        sampled_weights : List[Tuple[np.ndarray, np.ndarray]]
+        sampled_weights : list[tuple[np.ndarray, np.ndarray]]
             List of (weights, biases) per layer from ``sample_weights``.
             Each weights has shape (n_samples, input_dim, output_dim), biases (n_samples, output_dim).
         context : np.ndarray
             Context matrix, shape (n_samples, feature_config.n_features).
             Categorical columns contain integer indices into the embedding vocabulary.
-        sampled_embeddings : Optional[List[np.ndarray]]
+        sampled_embeddings : list[np.ndarray] | None
             Pre-sampled embedding vectors from ``sample_embeddings``, one array per
             categorical feature, each of shape ``(n_samples, emb_dim)``.
             ``None`` when the model has no categorical features.
 
         Returns
         -------
-        List[ProbabilityWeight]
+        list[ProbabilityWeight]
             Each element is (probability, weighted_sum) per sample.
         """
         next_layer_input = self._prepare_forward_input(context, sampled_embeddings)
@@ -970,7 +971,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         return list(zip(prob, weighted_sum))
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[ProbabilityWeight]:
+    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> list[ProbabilityWeight]:
         """
         Samples probabilities and logits from the prior predictive distribution.
 
@@ -984,7 +985,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Returns
         -------
-        List[ProbabilityWeight]
+        list[ProbabilityWeight]
             Each element is a tuple containing the probability of a positive reward and
             the network logit.
         """
@@ -1077,7 +1078,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         values, site_sigmas, all_mus, all_sigmas = self.collect_guide_init_arrays()
         return self.build_guide_init_fns(values, site_sigmas, all_mus, all_sigmas)
 
-    def collect_guide_init_arrays(self) -> Tuple[dict, dict, list, list]:
+    def collect_guide_init_arrays(self) -> tuple[dict, dict, list, list]:
         """Collect this BNN's guide-init contributions, keyed by (namespace-free) site name.
 
         Returns ``(values, site_sigmas, all_mus, all_sigmas)``. A joint multi-arm meta-model collects
@@ -1120,7 +1121,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         init_scale_fn = lambda name: site_sigmas.get(name, avg_sigma)  # noqa: E731
         return init_loc_fn, init_scale_fn
 
-    def compute_epoch_steps(self, n_samples: int) -> List[int]:
+    def compute_epoch_steps(self, n_samples: int) -> list[int]:
         """Epoch-step partition for the SVI run from this BNN's ``_update_kwargs``.
 
         Shared by the standalone ``_run_svi_training_loop`` and the joint cMAB engine so that
@@ -1137,7 +1138,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             epoch_steps_list.append(remaining)
         return epoch_steps_list or [1]
 
-    def build_kl_annealing_factors(self, epoch_steps_list: List[int]) -> List[jnp.ndarray]:
+    def build_kl_annealing_factors(self, epoch_steps_list: list[int]) -> list[jnp.ndarray]:
         """Build the per-step KL annealing factor schedule, split into per-epoch chunks.
 
         The factor ``β(step)`` multiplies the KL portion of the ELBO at each SVI step:
@@ -1152,12 +1153,12 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        epoch_steps_list : List[int]
+        epoch_steps_list : list[int]
             Number of SVI steps per epoch. Their sum is the total number of training steps.
 
         Returns
         -------
-        List[jnp.ndarray]
+        list[jnp.ndarray]
             One 1-D ``jnp.ndarray`` per epoch, fed as the ``xs`` argument of ``jax.lax.scan``
             in the training loop. Each element holds the per-step factor for that epoch.
         """
@@ -1313,7 +1314,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             offset += n
         return site_mu, site_sigma
 
-    def _extract_vi_params(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> List:
+    def _extract_vi_params(self, x_jnp: jnp.ndarray, y_jnp: jnp.ndarray, n_samples: int) -> list:
         """
         Run SVI, extract per-site posteriors, and return updated layer params.
 
@@ -1348,7 +1349,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         self.update_embedding_params_from_vi(site_mu, site_sigma)
         return updated_layer_params_list
 
-    def layer_params_from_posterior(self, site_mu: dict, site_sigma: dict) -> List:
+    def layer_params_from_posterior(self, site_mu: dict, site_sigma: dict) -> list:
         """Build updated ``BnnLayerParams`` from a per-site posterior dict keyed by (namespace-free) name.
 
         Reused by the joint multi-arm meta-model: after one SVI pass, the meta-model slices each arm's
@@ -1372,7 +1373,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         return updated_layer_params_list
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
+    def _update(self, context: np.ndarray, rewards: list[BinaryReward]):
         """
         Update the model_params with new context and rewards.
 
@@ -1380,7 +1381,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         ----------
         context : np.ndarray
             The context matrix where each row represents a context vector.
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             A list of binary rewards corresponding to each context vector.
 
         Notes
@@ -1439,18 +1440,18 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     def cold_start(
         cls,
         n_features: PositiveInt,
-        hidden_dim_list: Optional[List[PositiveInt]] = None,
-        update_kwargs: Optional[dict] = None,
+        hidden_dim_list: list[PositiveInt] | None = None,
+        update_kwargs: dict | None = None,
         dist_type: Literal["normal", "studentt"] = "studentt",
-        dist_params_init: Optional[Dict[str, float]] = None,
+        dist_params_init: dict[str, float] | None = None,
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
-        bias_std: Optional[PositiveFloat] = None,
-        categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
-        random_seed: Optional[NonNegativeInt] = None,
+        bias_std: PositiveFloat | None = None,
+        categorical_features: dict[NonNegativeInt, NonNegativeInt] | None = None,
+        random_seed: NonNegativeInt | None = None,
         calibrate_output_bias: bool = False,
-        decay_factor: Optional[PositiveFloat01] = None,
+        decay_factor: PositiveFloat01 | None = None,
         **kwargs,
     ) -> Self:
         """
@@ -1460,13 +1461,13 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         ----------
         n_features : PositiveInt
             Total number of columns in the context array, including any categorical columns.
-        hidden_dim_list : Optional[List[PositiveInt]], optional
+        hidden_dim_list : list[PositiveInt] | None, optional
             List of dimensions for the hidden layers of the network. If None, no hidden layers are added.
-        update_kwargs : Optional[dict], optional
+        update_kwargs : dict | None, optional
             Additional keyword arguments for VI training. Default is None.
         dist_type : Literal["normal", "studentt"]
             Type of distribution to use for priors. Default is "studentt".
-        dist_params_init : Optional[Dict[str, float]], optional
+        dist_params_init : dict[str, float] | None, optional
             Initial distribution parameters for the network weights and biases. Default is None.
             For Student-t distributions: requires "mu", "sigma", and "nu" parameters.
             For Normal distributions: requires "mu" and "sigma" parameters (no "nu" needed).
@@ -1478,7 +1479,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             Whether to use layerwise scaling in the network (default is False).
             When applied, the sigma is scaled by the square root of the input dimension.
             This is useful to enable smoother convergence with Gaussian Process-like behavior.
-        bias_std : Optional[PositiveFloat]
+        bias_std : PositiveFloat | None
             If provided, overrides ``sigma`` from ``dist_params_init`` for all layers' bias priors,
             leaving weight priors untouched. Useful to restrain the prior on the output-layer logit
             (which otherwise pushes mass towards p=0 / p=1 after sigmoid at cold start). Default is None.
@@ -1488,15 +1489,15 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             (logit 0 ≈ 50 % reward rate) with a data-driven intercept, preventing optimistic over-exploration
             of arms that have accumulated little data. The calibration fires only once per arm lifetime
             (or after a ``_reset()``). Default is False.
-        categorical_features : Optional[Dict[int, int]], optional
+        categorical_features : dict[int, int] | None, optional
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
             to ``ceil(cardinality / embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
-        random_seed : Optional[NonNegativeInt], optional
+        random_seed : NonNegativeInt | None, optional
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.
             Pass an explicit integer for fully reproducible runs.
-        decay_factor : Optional[PositiveFloat01]
+        decay_factor : PositiveFloat01 | None
             Per-update forgetting factor in (0, 1]. When set, the weight/bias/embedding posterior
             variances are inflated by ``1 / decay_factor`` before each re-fit. Default is None.
         **kwargs
@@ -1546,7 +1547,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             **kwargs,
         )
 
-    def _calibrate_output_bias(self, rewards: List[BinaryReward]) -> None:
+    def _calibrate_output_bias(self, rewards: list[BinaryReward]) -> None:
         """Set the output-layer bias mu to ``logit(empirical_reward_rate)`` on the first update call.
 
         Replaces the cold-start prior mean (logit 0 ≈ 50 % reward rate) with a data-driven intercept
@@ -1559,7 +1560,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             Binary rewards (0/1) observed in the current update batch.  The empirical reward rate
             (mean of ``rewards``) is clipped to ``[_numerical_eps, 1 - _numerical_eps]`` before
             the logit transform to avoid ``log(0)`` / ``log(inf)`` instability.
@@ -1610,7 +1611,7 @@ class BayesianNeuralNetworkCC(BaseBayesianNeuralNetwork, ModelCC):
     ----------
     model_params : BnnParams
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
-    update_kwargs : Optional[dict], optional
+    update_kwargs : dict | None, optional
         A dictionary of keyword arguments for VI training.
     cost : NonNegativeFloat
         Cost associated to the Bayesian Neural Network model.
@@ -1633,7 +1634,7 @@ class BayesianNeuralNetworkDP(BaseBayesianNeuralNetwork, ModelDP):
     ----------
     model_params : BnnParams
         The parameters of the Bayesian Neural Network, including weights and biases for each layer and their initial values for resetting
-    update_kwargs : Optional[dict], optional
+    update_kwargs : dict | None, optional
         A dictionary of keyword arguments for VI training.
     price : NonNegativeFloat
         Price associated to the Bayesian Neural Network model.
@@ -1652,7 +1653,7 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
 
     Parameters
     ----------
-    models : List[BayesianNeuralNetwork]
+    models : list[BayesianNeuralNetwork]
         The list of Bayesian Neural Network models for each objective.
     """
 
@@ -1681,13 +1682,13 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         return self.models[0].input_dim
 
     @property
-    def hidden_dim_list(self) -> List[int]:
+    def hidden_dim_list(self) -> list[int]:
         """
         Returns the hidden layer dimensions of the model.
 
         Returns
         -------
-        List[int]
+        list[int]
             The output dimension of each layer except the last, derived from
             the shape of the weight matrices in the layer parameters.
         """
@@ -1699,16 +1700,16 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         cls,
         n_objectives: PositiveInt,
         n_features: PositiveInt,
-        hidden_dim_list: Optional[List[PositiveInt]] = None,
-        update_kwargs: Optional[dict] = None,
+        hidden_dim_list: list[PositiveInt] | None = None,
+        update_kwargs: dict | None = None,
         dist_type: Literal["normal", "studentt"] = "studentt",
-        dist_params: Optional[Dict[str, float]] = None,
+        dist_params: dict[str, float] | None = None,
         activation: ActivationFunctions = "tanh",
         use_residual_connections: bool = False,
         use_layerwise_scaling: bool = False,
-        bias_std: Optional[PositiveFloat] = None,
-        categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
-        decay_factor: Optional[PositiveFloat01] = None,
+        bias_std: PositiveFloat | None = None,
+        categorical_features: dict[NonNegativeInt, NonNegativeInt] | None = None,
+        decay_factor: PositiveFloat01 | None = None,
         **kwargs,
     ) -> Self:
         """
@@ -1720,13 +1721,13 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Number of objectives (models) to create.
         n_features : PositiveInt
             Number of input features for each network.
-        hidden_dim_list : Optional[List[PositiveInt]], optional
+        hidden_dim_list : list[PositiveInt] | None, optional
             List of dimensions for the hidden layers of each network.
-        update_kwargs : Optional[dict], optional
+        update_kwargs : dict | None, optional
             Additional keyword arguments for VI training.
         dist_type : Literal["normal", "studentt"]
             Type of distribution to use for priors. Default is "studentt".
-        dist_params : Optional[Dict[str, float]], optional
+        dist_params : dict[str, float] | None, optional
             Initial distribution parameters for the network weights and biases.
         activation : str
             The activation function to use for hidden layers. Supported values are: "tanh", "relu", "sigmoid", "gelu" (default is "tanh").
@@ -1734,12 +1735,12 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Whether to use residual connections in the network (default is False).
         use_layerwise_scaling : bool
             Whether to use layerwise scaling in the network (default is False).
-        bias_std : Optional[PositiveFloat]
+        bias_std : PositiveFloat | None
             If provided, overrides ``sigma`` from ``dist_params`` for all layers' bias priors,
             leaving weight priors untouched. Default is None.
-        categorical_features : Optional[Dict[int, int]], optional
+        categorical_features : dict[int, int] | None, optional
             Categorical columns as ``{column_index: cardinality}``, forwarded to each per-objective BNN.
-        decay_factor : Optional[PositiveFloat01]
+        decay_factor : PositiveFloat01 | None
             Per-update forgetting factor forwarded to each per-objective BNN.
         **kwargs
             Additional keyword arguments.
@@ -1775,7 +1776,7 @@ class BayesianNeuralNetworkMO(BaseBayesianNeuralNetworkMO):
 
     Parameters
     ----------
-    models : List[BayesianNeuralNetwork]
+    models : list[BayesianNeuralNetwork]
         The list of Bayesian Neural Network models for each objective.
     """
 
@@ -1786,7 +1787,7 @@ class BayesianNeuralNetworkMOCC(BaseBayesianNeuralNetworkMO, ModelMO, ModelCC):
 
     Parameters
     ----------
-    models : List[BayesianNeuralNetwork]
+    models : list[BayesianNeuralNetwork]
         The list of Bayesian Neural Network models for each objective.
     cost : NonNegativeFloat
         Cost associated to the Bayesian Neural Network model.

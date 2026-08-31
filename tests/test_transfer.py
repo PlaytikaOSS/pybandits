@@ -24,7 +24,7 @@
 
 import json
 import math
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 import pytest
@@ -55,13 +55,13 @@ _ACTION_ID = "a1"
 
 # Contrasting value pairs for each structural key — both must produce valid CmabBernoulli models.
 # Keyed by the attribute name as it appears in transfer_structural_keys AND in cold_start kwargs.
-_BNN_STRUCTURAL_KEY_VALUES: Dict[str, Tuple[Any, Any]] = {
+_BNN_STRUCTURAL_KEY_VALUES: dict[str, tuple[Any, Any]] = {
     "activation": ("relu", "tanh"),
     "use_residual_connections": (False, True),
 }
 
 # Contrasting value pairs for each extendable key (currently none — the BNN is VI-only).
-_BNN_EXTENDABLE_KEY_VALUES: Dict[str, Tuple[Any, Any]] = {}
+_BNN_EXTENDABLE_KEY_VALUES: dict[str, tuple[Any, Any]] = {}
 
 # Guard: these dicts must stay in sync with the actual ClassVar declarations.
 assert set(_BNN_STRUCTURAL_KEY_VALUES) == set(BaseBayesianNeuralNetwork.transfer_structural_keys), (
@@ -723,7 +723,7 @@ _hidden_dim_multiplier_strategy = st.integers(min_value=2, max_value=4)
 _extra_features_strategy = st.integers(min_value=1, max_value=4)
 
 
-def _scaled_hidden(dims: List[int], factor: int) -> List[int]:
+def _scaled_hidden(dims: list[int], factor: int) -> list[int]:
     """Return each dimension multiplied by factor."""
     return [d * factor for d in dims]
 
@@ -742,7 +742,7 @@ class TestHiddenDimExpansion:
         n_features=n_features_strategy,
     )
     def test_hidden_dim_increase_only_so(
-        self, current_hidden: List[int], factor: int, action_id: str, n_features: int
+        self, current_hidden: list[int], factor: int, action_id: str, n_features: int
     ) -> None:
         """Increasing hidden dims with unchanged input features succeeds for SO CMAB."""
         new_hidden = _scaled_hidden(current_hidden, factor)
@@ -764,7 +764,7 @@ class TestHiddenDimExpansion:
         n_features=n_features_strategy,
     )
     def test_hidden_dim_increase_only_mo(
-        self, current_hidden: List[int], factor: int, n_objectives: int, action_id: str, n_features: int
+        self, current_hidden: list[int], factor: int, n_objectives: int, action_id: str, n_features: int
     ) -> None:
         """Increasing hidden dims with unchanged input features succeeds for MO CMAB."""
         new_hidden = _scaled_hidden(current_hidden, factor)
@@ -800,7 +800,7 @@ class TestHiddenDimExpansion:
     )
     def test_features_and_hidden_dim_increase_combined_so(
         self,
-        current_hidden: List[int],
+        current_hidden: list[int],
         factor: int,
         n_features: int,
         extra_features: int,
@@ -829,7 +829,7 @@ class TestHiddenDimExpansion:
     )
     def test_features_and_hidden_dim_increase_combined_mo(
         self,
-        current_hidden: List[int],
+        current_hidden: list[int],
         factor: int,
         n_features: int,
         extra_features: int,
@@ -872,8 +872,8 @@ class TestHiddenDimExpansion:
     )
     def test_learned_weight_block_preserved_after_expansion(
         self,
-        current_hidden: List[int],
-        new_hidden: List[int],
+        current_hidden: list[int],
+        new_hidden: list[int],
         n_features: int,
         extra_features: int,
     ) -> None:
@@ -931,7 +931,7 @@ class TestHiddenDimExpansion:
             ([64], [32]),
         ],
     )
-    def test_hidden_dim_decrease_raises(self, current_hidden: List[int], new_hidden: List[int]) -> None:
+    def test_hidden_dim_decrease_raises(self, current_hidden: list[int], new_hidden: list[int]) -> None:
         """Reducing any hidden layer dimension raises ValueError."""
         current = CmabBernoulli.cold_start(
             action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=current_hidden, strategy=ClassicBandit()
@@ -950,7 +950,7 @@ class TestHiddenDimExpansion:
             ([8], [8, 8, 8]),
         ],
     )
-    def test_different_layer_count_raises(self, current_hidden: List[int], new_hidden: List[int]) -> None:
+    def test_different_layer_count_raises(self, current_hidden: list[int], new_hidden: list[int]) -> None:
         """Changing the number of hidden layers raises ValueError."""
         current = CmabBernoulli.cold_start(
             action_ids={_ACTION_ID}, n_features=_N_FEATURES, hidden_dim_list=current_hidden, strategy=ClassicBandit()
@@ -968,7 +968,7 @@ class TestHiddenDimExpansion:
             ([16, 8], [8, 4]),
         ],
     )
-    def test_hidden_dim_decrease_mo_raises(self, current_hidden: List[int], new_hidden: List[int]) -> None:
+    def test_hidden_dim_decrease_mo_raises(self, current_hidden: list[int], new_hidden: list[int]) -> None:
         """Reducing hidden dims in a MO CMAB raises ValueError."""
         current = CmabBernoulliMO.cold_start(
             action_ids={_ACTION_ID},
@@ -999,7 +999,7 @@ class TestHiddenDimExpansion:
         ],
     )
     def test_incompatible_hidden_dims_non_overlapping_no_error(
-        self, current_hidden: List[int], new_hidden: List[int]
+        self, current_hidden: list[int], new_hidden: list[int]
     ) -> None:
         """Incompatible hidden dims on non-overlapping actions do not raise errors."""
         current = CmabBernoulli.cold_start(
@@ -1020,7 +1020,7 @@ class TestCategoricalFeatureExpansion:
     _CAT_INCOMPATIBLE_CARDINALITY = 4  # embedding_dim = ceil(4/4) = 1 — different from old=5
 
     @st.composite
-    def _compatible_grow_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int, int]:
+    def _compatible_grow_scenario(draw: st.DrawFn) -> tuple[str, int, int, int, int]:
         """Draw (action_id, n_features, cat_col, old_cardinality, new_cardinality) with same embedding_dim."""
         action_id = draw(single_action_id_strategy)
         n_features = draw(st.integers(min_value=2, max_value=6))
@@ -1033,7 +1033,7 @@ class TestCategoricalFeatureExpansion:
         return action_id, n_features, cat_col, old_cardinality, new_cardinality
 
     @st.composite
-    def _add_cat_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int]:
+    def _add_cat_scenario(draw: st.DrawFn) -> tuple[str, int, int, int]:
         """Draw (action_id, n_features, new_cat_col, new_cat_cardinality) for adding a new categorical."""
         action_id = draw(single_action_id_strategy)
         n_features = draw(st.integers(min_value=2, max_value=6))
@@ -1042,7 +1042,7 @@ class TestCategoricalFeatureExpansion:
         return action_id, n_features, new_cat_col, new_cat_cardinality
 
     @st.composite
-    def _incompatible_cardinality_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int, int]:
+    def _incompatible_cardinality_scenario(draw: st.DrawFn) -> tuple[str, int, int, int, int]:
         """Draw (action_id, n_features, cat_col, old_cardinality, new_cardinality) with DIFFERENT embedding_dims."""
         action_id = draw(single_action_id_strategy)
         n_features = draw(st.integers(min_value=2, max_value=6))
@@ -1058,7 +1058,7 @@ class TestCategoricalFeatureExpansion:
     # ------------------------------------------------------------------
 
     @given(scenario=_compatible_grow_scenario())
-    def test_grow_cardinality_embedding_shape_correct_so(self, scenario: Tuple[str, int, int, int, int]) -> None:
+    def test_grow_cardinality_embedding_shape_correct_so(self, scenario: tuple[str, int, int, int, int]) -> None:
         """Grown cardinality produces an embedding of the correct shape for SO CMAB."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1080,7 +1080,7 @@ class TestCategoricalFeatureExpansion:
 
     @given(scenario=_compatible_grow_scenario(), n_objectives=n_objectives_strategy)
     def test_grow_cardinality_embedding_shape_correct_mo(
-        self, scenario: Tuple[str, int, int, int, int], n_objectives: int
+        self, scenario: tuple[str, int, int, int, int], n_objectives: int
     ) -> None:
         """Grown cardinality produces an embedding of the correct shape for MO CMAB."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
@@ -1105,7 +1105,7 @@ class TestCategoricalFeatureExpansion:
             assert result_emb.shape == (new_cardinality, expected_dim)
 
     @given(scenario=_compatible_grow_scenario())
-    def test_grow_cardinality_preserves_existing_rows(self, scenario: Tuple[str, int, int, int, int]) -> None:
+    def test_grow_cardinality_preserves_existing_rows(self, scenario: tuple[str, int, int, int, int]) -> None:
         """Embedding rows for existing categories are preserved unchanged after cardinality grows."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1127,7 +1127,7 @@ class TestCategoricalFeatureExpansion:
         assert result_emb.sigma[:old_cardinality] == current_emb.sigma
 
     @given(scenario=_compatible_grow_scenario())
-    def test_grow_cardinality_new_rows_from_template(self, scenario: Tuple[str, int, int, int, int]) -> None:
+    def test_grow_cardinality_new_rows_from_template(self, scenario: tuple[str, int, int, int, int]) -> None:
         """Rows for new categories come from the template embedding."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1149,7 +1149,7 @@ class TestCategoricalFeatureExpansion:
         assert result_emb.sigma[old_cardinality:] == template_emb.sigma[old_cardinality:]
 
     @given(scenario=_compatible_grow_scenario())
-    def test_grow_cardinality_feature_config_updated(self, scenario: Tuple[str, int, int, int, int]) -> None:
+    def test_grow_cardinality_feature_config_updated(self, scenario: tuple[str, int, int, int, int]) -> None:
         """feature_config cardinality reflects the template's new cardinality."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1174,7 +1174,7 @@ class TestCategoricalFeatureExpansion:
     # ------------------------------------------------------------------
 
     @given(scenario=_add_cat_scenario())
-    def test_add_new_categorical_embedding_created_so(self, scenario: Tuple[str, int, int, int]) -> None:
+    def test_add_new_categorical_embedding_created_so(self, scenario: tuple[str, int, int, int]) -> None:
         """Adding a new categorical feature creates embedding_params where there were none for SO."""
         action_id, n_features, new_cat_col, new_cat_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1195,7 +1195,7 @@ class TestCategoricalFeatureExpansion:
 
     @given(scenario=_add_cat_scenario(), n_objectives=n_objectives_strategy)
     def test_add_new_categorical_embedding_created_mo(
-        self, scenario: Tuple[str, int, int, int], n_objectives: int
+        self, scenario: tuple[str, int, int, int], n_objectives: int
     ) -> None:
         """Adding a new categorical feature creates embedding_params for each objective in MO."""
         action_id, n_features, new_cat_col, new_cat_cardinality = scenario
@@ -1220,7 +1220,7 @@ class TestCategoricalFeatureExpansion:
             assert len(obj_model.model_params.embedding_params.embeddings) == 1
 
     @given(scenario=_add_cat_scenario())
-    def test_add_new_categorical_embedding_values_from_template(self, scenario: Tuple[str, int, int, int]) -> None:
+    def test_add_new_categorical_embedding_values_from_template(self, scenario: tuple[str, int, int, int]) -> None:
         """New categorical feature embedding values are copied exactly from the template."""
         action_id, n_features, new_cat_col, new_cat_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1241,7 +1241,7 @@ class TestCategoricalFeatureExpansion:
         assert result_emb.sigma == template_emb.sigma
 
     @given(scenario=_add_cat_scenario())
-    def test_add_new_categorical_embedding_shape_correct(self, scenario: Tuple[str, int, int, int]) -> None:
+    def test_add_new_categorical_embedding_shape_correct(self, scenario: tuple[str, int, int, int]) -> None:
         """New categorical embedding has shape (cardinality, embedding_dim)."""
         action_id, n_features, new_cat_col, new_cat_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1295,7 +1295,7 @@ class TestCategoricalFeatureExpansion:
     # ------------------------------------------------------------------
 
     @given(scenario=_incompatible_cardinality_scenario())
-    def test_embedding_dim_change_raises_value_error(self, scenario: Tuple[str, int, int, int, int]) -> None:
+    def test_embedding_dim_change_raises_value_error(self, scenario: tuple[str, int, int, int, int]) -> None:
         """Changing embedding_dim (incompatible cardinalities on the same column) raises ValueError."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
         current = CmabBernoulli.cold_start(
@@ -1314,7 +1314,7 @@ class TestCategoricalFeatureExpansion:
             edit_model_on_the_fly(current, template)
 
     @given(scenario=_incompatible_cardinality_scenario())
-    def test_embedding_dim_change_raises_value_error_mo(self, scenario: Tuple[str, int, int, int, int]) -> None:
+    def test_embedding_dim_change_raises_value_error_mo(self, scenario: tuple[str, int, int, int, int]) -> None:
         """MO: changing embedding_dim on the same column raises ValueError through the MO loop."""
         action_id, n_features, cat_col, old_cardinality, new_cardinality = scenario
         current = CmabBernoulliMO.cold_start(

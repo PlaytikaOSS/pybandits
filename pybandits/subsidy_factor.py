@@ -40,7 +40,8 @@ never the decision. The knee of that curve is then located robustly by bootstrap
 and taking the median knee.
 """
 
-from typing import Callable, Dict, List, NamedTuple, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -53,7 +54,7 @@ from pybandits.strategy import CostControlBandit, MultiObjectiveCostControlBandi
 
 # A single Monte-Carlo draw maps each action to its sampled reward: a scalar for discrete actions
 # or a callable ``quantity -> reward`` for quantitative actions.
-ProbDraw = Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+ProbDraw = dict[ActionId, float | Callable[[np.ndarray], float]]
 
 
 class SubsidyFactorTuningResult(NamedTuple):
@@ -64,7 +65,7 @@ class SubsidyFactorTuningResult(NamedTuple):
     ----------
     subsidy_factor : float
         The discovered subsidy factor (bootstrap-median knee of the mean-reward curve).
-    subsidy_factor_ci : Tuple[float, float]
+    subsidy_factor_ci : tuple[float, float]
         Bootstrap confidence interval for the knee, at the requested confidence level.
     mab : BaseMab
         A copy of the input bandit with ``strategy.with_subsidy_factor(subsidy_factor)`` applied.
@@ -76,7 +77,7 @@ class SubsidyFactorTuningResult(NamedTuple):
     """
 
     subsidy_factor: float
-    subsidy_factor_ci: Tuple[float, float]
+    subsidy_factor_ci: tuple[float, float]
     mab: BaseMab
     frontier: pd.DataFrame
 
@@ -113,7 +114,7 @@ def _detect_knee(subsidy_factors: np.ndarray, rewards: np.ndarray) -> float:
     return float(x[int(np.argmax(distance))])
 
 
-def _sample_prob_draws(mab: BaseMab, context: Optional[np.ndarray], n_samples: int, contextual: bool) -> List[ProbDraw]:
+def _sample_prob_draws(mab: BaseMab, context: np.ndarray | None, n_samples: int, contextual: bool) -> list[ProbDraw]:
     """
     Draw Monte-Carlo posterior samples as a flat list of per-action reward dicts.
 
@@ -126,7 +127,7 @@ def _sample_prob_draws(mab: BaseMab, context: Optional[np.ndarray], n_samples: i
     ----------
     mab : BaseMab
         The bandit to sample from (its ``_rng`` is advanced).
-    context : Optional[np.ndarray]
+    context : np.ndarray | None
         Context matrix for contextual bandits; ignored otherwise.
     n_samples : int
         Number of posterior draws (contextual: posterior passes over the whole context).
@@ -135,13 +136,13 @@ def _sample_prob_draws(mab: BaseMab, context: Optional[np.ndarray], n_samples: i
 
     Returns
     -------
-    List[ProbDraw]
+    list[ProbDraw]
         One dict per draw mapping each action to its sampled reward (scalar or callable).
     """
     valid_actions = set(mab.actions.keys())
     if not contextual:
         return list(mab._get_action_probabilities(valid_actions=valid_actions, n_samples=n_samples))
-    draws: List[ProbDraw] = []
+    draws: list[ProbDraw] = []
     for _ in range(n_samples):
         for row in mab._get_action_probabilities(valid_actions=valid_actions, context=context):
             draws.append({a: (v[0] if isinstance(v, tuple) else v) for a, v in row.items()})
@@ -174,12 +175,12 @@ def _credit(p_cred_draw: ProbDraw, selected: UnifiedActionId) -> float:
 @validate_call(config=dict(arbitrary_types_allowed=True))
 def tune_subsidy_factor(
     mab: BaseMab,
-    context: Optional[np.ndarray] = None,
+    context: np.ndarray | None = None,
     n_samples: PositiveInt = 1000,
     n_points: PositiveInt = 100,
     n_bootstrap: PositiveInt = 1000,
     confidence_level: confloat(gt=0, lt=1) = 0.9,
-    random_seed: Optional[NonNegativeInt] = None,
+    random_seed: NonNegativeInt | None = None,
 ) -> SubsidyFactorTuningResult:
     """
     Discover a cost-control ``subsidy_factor`` from a fitted cost-control bandit.
@@ -195,7 +196,7 @@ def tune_subsidy_factor(
         A fitted cost-control bandit (``strategy`` must be a ``CostControlBandit``), e.g.
         ``SmabBernoulliCC`` or ``CmabBernoulliCC``. Discrete, quantitative and mixed action sets
         are supported. The input bandit is not modified.
-    context : Optional[np.ndarray], default=None
+    context : np.ndarray | None, default=None
         Context matrix of shape ``(n_rows, n_features)``. Required for contextual bandits and must
         be ``None`` otherwise. The mean reward is averaged over these rows, so they should be
         representative of the target population.
@@ -210,7 +211,7 @@ def tune_subsidy_factor(
         Number of bootstrap replicates used to stabilise the knee and form its confidence interval.
     confidence_level : float, default=0.9
         Confidence level (in ``(0, 1)``) for the knee's bootstrap interval.
-    random_seed : Optional[NonNegativeInt], default=None
+    random_seed : NonNegativeInt | None, default=None
         Seed for the sampling and bootstrap generators. With a seed the result is reproducible.
 
     Returns

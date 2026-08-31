@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 from random import choice
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -43,13 +42,13 @@ class DummySimulator(Simulator):
     def _validate_probs_reward_values(cls, probability: ProbabilityValue, is_quantitative_action: bool):
         pass
 
-    def _draw_rewards(self, actions: List[ActionId], metadata: Dict[str, List]) -> List[BinaryReward]:
+    def _draw_rewards(self, actions: list[ActionId], metadata: dict[str, list]) -> list[BinaryReward]:
         return choice([0, 1], k=len(actions))
 
-    def _get_batch_step_kwargs_and_metadata(self, batch_index: int) -> Tuple[Dict[str, np.ndarray], Dict[str, List]]:
+    def _get_batch_step_kwargs_and_metadata(self, batch_index: int) -> tuple[dict[str, np.ndarray], dict[str, list]]:
         return {}, {}
 
-    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: Dict[str, np.ndarray]) -> pd.DataFrame:
+    def _finalize_step(self, batch_results: pd.DataFrame, update_kwargs: dict[str, np.ndarray]) -> pd.DataFrame:
         return batch_results
 
     def _extract_ground_truth(self, *args, **kwargs) -> Probability:

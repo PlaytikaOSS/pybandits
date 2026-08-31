@@ -21,8 +21,6 @@
 # SOFTWARE.
 """Unit tests for the unified joint-VI cMAB engine: MLPBackbone + CmabMetaModel."""
 
-from typing import List, Optional, Set
-
 import numpy as np
 import pytest
 from hypothesis import given, settings
@@ -60,7 +58,7 @@ class TestMLPBackbone:
         embedding_dim=st.integers(min_value=1, max_value=6),
         hidden_dims=_HIDDEN_DIMS,
     )
-    def test_embed_output_shape(self, n_rows: int, n_features: int, embedding_dim: int, hidden_dims: List[int]) -> None:
+    def test_embed_output_shape(self, n_rows: int, n_features: int, embedding_dim: int, hidden_dims: list[int]) -> None:
         """``embed`` maps ``(n_rows, n_features)`` to ``(n_rows, embedding_dim)``."""
         rng = np.random.default_rng(0)
         bb = MLPBackbone.cold_start(
@@ -78,7 +76,7 @@ class TestMLPBackbone:
 
     @pytest.mark.parametrize("activation", ["relu", "tanh", "gelu", "sigmoid"])
     @given(hidden_dims=_HIDDEN_DIMS)
-    def test_serialization_round_trip(self, activation: str, hidden_dims: List[int], rng: np.random.Generator) -> None:
+    def test_serialization_round_trip(self, activation: str, hidden_dims: list[int], rng: np.random.Generator) -> None:
         """A backbone survives ``model_dump_json`` / ``model_validate`` with identical embeddings."""
         bb = MLPBackbone.cold_start(
             n_features=self.n_features,
@@ -94,7 +92,7 @@ class TestMLPBackbone:
     @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
     @given(data=st.data(), hidden_dims=_HIDDEN_DIMS)
     def test_training_knobs_survive_reset_and_serialization(
-        self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject, hidden_dims: List[int]
+        self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject, hidden_dims: list[int]
     ) -> None:
         """A knob set at ``cold_start`` persists through ``reset`` and a JSON round-trip, at any value."""
         value = data.draw(value_strategy)
@@ -120,8 +118,8 @@ class TestCmabMetaModel:
     backbone_hidden_dims = [8]
     embedding_dim = 4
     n_rows = 9
-    action_ids: Set[ActionId] = {"a", "b", "c"}
-    valid_subset: Set[ActionId] = {"a", "b"}
+    action_ids: set[ActionId] = {"a", "b", "c"}
+    valid_subset: set[ActionId] = {"a", "b"}
     absent_arm: ActionId = "c"
     n_objectives = 2
     quantity_dim = 1
@@ -149,9 +147,9 @@ class TestCmabMetaModel:
     def _build_meta(
         self,
         with_backbone: bool,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         l2_anchoring: float = 0.0,
-        lr: Optional[float] = None,
+        lr: float | None = None,
     ) -> CmabMetaModelSO:
         """Build a meta-model, optionally with a shared backbone and/or a minibatch ``batch_size``.
 
@@ -178,7 +176,7 @@ class TestCmabMetaModel:
             )
         return CmabMetaModelSO(action_ids=self.action_ids, kwargs=kwargs)
 
-    def _n_rows(self, batch_size: Optional[int]) -> int:
+    def _n_rows(self, batch_size: int | None) -> int:
         """Enough rows to trigger the minibatch path (batch_size < N) when set, else the small default."""
         return self.minibatch_n if batch_size is not None else self.n_rows
 
@@ -251,7 +249,7 @@ class TestCmabMetaModel:
 
     # ----------------------------------------------------------------- training
     @pytest.mark.parametrize("batch_size", [None, minibatch_size])
-    def test_update_changes_heads(self, batch_size: Optional[int], rng: np.random.Generator) -> None:
+    def test_update_changes_heads(self, batch_size: int | None, rng: np.random.Generator) -> None:
         """A joint update moves at least one head's posterior (no backbone), full-batch and minibatched.
 
         ``batch_size`` set (< N) exercises the single global ``data`` plate + arm-indexing minibatch path.
@@ -263,9 +261,7 @@ class TestCmabMetaModel:
         assert any(not np.allclose(before[a], self._head_mu(meta, a)) for a in meta.action_ids)
 
     @pytest.mark.parametrize("batch_size", [None, minibatch_size])
-    def test_backbone_update_changes_backbone_and_heads(
-        self, batch_size: Optional[int], rng: np.random.Generator
-    ) -> None:
+    def test_backbone_update_changes_backbone_and_heads(self, batch_size: int | None, rng: np.random.Generator) -> None:
         """A joint update trains both the shared backbone and the per-arm heads, full-batch and minibatched.
 
         With ``batch_size`` set the backbone runs on the minibatch (not all N) via the single ``data`` plate.
@@ -436,7 +432,7 @@ class TestCmabMetaModel:
     ) -> None:
         """An arm absent from the update batch keeps its head posterior unchanged."""
         mu_before = self._head_mu(meta_no_backbone, self.absent_arm).copy()
-        actions: List[ActionId] = sorted(self.valid_subset) * (self.n_rows // 2)
+        actions: list[ActionId] = sorted(self.valid_subset) * (self.n_rows // 2)
         rewards = rng.integers(0, 2, size=len(actions)).tolist()
         meta_no_backbone.update(actions=actions, rewards=rewards, context=self._context(rng, n_rows=len(actions)))
         np.testing.assert_array_equal(self._head_mu(meta_no_backbone, self.absent_arm), mu_before)
@@ -444,7 +440,7 @@ class TestCmabMetaModel:
     @pytest.mark.parametrize("batch_size", [None, minibatch_size])
     @pytest.mark.parametrize("with_backbone", [False, True])
     def test_zero_lr_leaves_posteriors_and_backbone_unchanged(
-        self, with_backbone: bool, batch_size: Optional[int], rng: np.random.Generator
+        self, with_backbone: bool, batch_size: int | None, rng: np.random.Generator
     ) -> None:
         """With SGD step_size=0 the joint pass leaves every head's posterior and the backbone as-is.
 
@@ -531,7 +527,7 @@ class TestCmabMetaModel:
 
     # ----------------------------------------------------------------- MO + quantitative heads
     @pytest.mark.parametrize("batch_size", [None, minibatch_size])
-    def test_mo_update_trains_objectives(self, batch_size: Optional[int], rng: np.random.Generator) -> None:
+    def test_mo_update_trains_objectives(self, batch_size: int | None, rng: np.random.Generator) -> None:
         """MO heads train via the joint pass and sample MO tuples; ``batch_size`` is ignored (full-batch).
 
         Minibatching is single-objective only, so an MO head with ``batch_size`` set falls back to the

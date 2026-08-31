@@ -19,13 +19,13 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from typing import Literal, Union
+from typing import Literal
 
 import jax
 import numpy as np
 from scipy.special import erf
 
-_Array = Union[np.ndarray, jax.Array]
+_Array = np.ndarray | jax.Array
 
 VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]

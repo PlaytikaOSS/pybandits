@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Any, Dict, List, Optional, Self, Tuple, Union, get_args
+from typing import Any, Self, get_args
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -66,8 +66,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         cls,
         dimension: PositiveInt = 1,
         n_features: NonNegativeInt = 1,
-        categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
-        base_model_cold_start_kwargs: Optional[Dict[str, Any]] = None,
+        categorical_features: dict[NonNegativeInt, NonNegativeInt] | None = None,
+        base_model_cold_start_kwargs: dict[str, Any] | None = None,
         **kwargs,
     ) -> Self:
         """
@@ -80,9 +80,9 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         n_features : NonNegativeInt
             Total number of columns in the context array, including any categorical columns.
             Default is 1.
-        categorical_features : Optional[Dict[NonNegativeInt, NonNegativeInt]]
+        categorical_features : dict[NonNegativeInt, NonNegativeInt] | None
             Categorical context columns as ``{column_index: cardinality}``.
-        base_model_cold_start_kwargs : Optional[Dict[str, Any]], optional
+        base_model_cold_start_kwargs : dict[str, Any] | None, optional
             Keyword arguments passed to BayesianNeuralNetwork.cold_start. May include e.g.
             hidden_dim_list, update_kwargs, dist_type, dist_params_init,
             activation, use_residual_connections, use_layerwise_scaling, decay_factor. Default is None.
@@ -131,9 +131,9 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     def _to_quantitative_probabilities(
         self,
         context: np.ndarray,
-        sampled_weights: List[List[Tuple[np.ndarray, np.ndarray]]],
-        sampled_embeddings: Optional[List[np.ndarray]] = None,
-    ) -> List[QuantitativeProbabilityWeight]:
+        sampled_weights: list[list[tuple[np.ndarray, np.ndarray]]],
+        sampled_embeddings: list[np.ndarray] | None = None,
+    ) -> list[QuantitativeProbabilityWeight]:
         """
         Convert the sampled weights to quantitative probabilities and weights.
 
@@ -141,16 +141,16 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         ----------
         context : np.ndarray
             The context at which to evaluate the probability.
-        sampled_weights : List[List[Tuple[np.ndarray, np.ndarray]]]
+        sampled_weights : list[list[tuple[np.ndarray, np.ndarray]]]
             The sampled weights.
-        sampled_embeddings : Optional[List[np.ndarray]]
+        sampled_embeddings : list[np.ndarray] | None
             Pre-sampled embedding vectors, one per categorical feature, each of shape
             ``(n_samples, emb_dim)``.  ``None`` when no categorical features are configured.
             Passed as-is to ``forward_pass`` to guarantee a deterministic forward pass per
             sample — the embeddings are fixed for all quantity evaluations of that sample.
         """
         n_samples = len(context)
-        # QuantitativeProbabilityWeight is a Tuple[QuantitativeProbability, QuantitativeWeight];
+        # QuantitativeProbabilityWeight is a tuple[QuantitativeProbability, QuantitativeWeight];
         # the number of network outputs equals the number of elements in that tuple.
         n_outputs = len(get_args(QuantitativeProbabilityWeight))
 
@@ -163,8 +163,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
                 output_index: NonNegativeInt,
                 weights_idx=weights_idx,
                 emb_idx=emb_idx,
-            ) -> Union[QuantitativeProbability, QuantitativeWeight]:
-                def probability_or_weight_function(quantity: Union[float, np.ndarray]) -> Union[Probability, float]:
+            ) -> QuantitativeProbability | QuantitativeWeight:
+                def probability_or_weight_function(quantity: float | np.ndarray) -> Probability | float:
                     bnn_input = self._prepare_network_input([quantity], context[sample_idx])
                     return self.bnn.forward_pass(
                         sampled_weights=weights_idx,
@@ -182,7 +182,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         return result
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[QuantitativeProbabilityWeight]:
+    def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> list[QuantitativeProbabilityWeight]:
         """
         Create probability functions which receive the context and creates a function that evaluates the probability given a quantity for each sample.
 
@@ -195,8 +195,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         Returns
         -------
-        List[QuantitativeProbabilityWeight]
-            A list of (probability, weight) callables per sample, each taking a quantity (Union[float, np.ndarray]).
+        list[QuantitativeProbabilityWeight]
+            A list of (probability, weight) callables per sample, each taking a quantity (float | np.ndarray).
         """
         _context = np.atleast_2d(context)
         n_samples = _context.shape[0]
@@ -216,14 +216,14 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
     @staticmethod
     def _prepare_network_input(
-        quantity: List[Union[float, np.ndarray, List[float], Tuple[float, ...]]], context: ArrayLike
+        quantity: list[float | np.ndarray | list[float] | tuple[float, ...]], context: ArrayLike
     ) -> np.ndarray:
         """
         Prepare the input for the network, concatenating quantity and context. Quantity can be a float, a 1D array, or a tuple of floats.
 
         Parameters
         ----------
-        quantity : List[Union[float, np.ndarray, List[float], Tuple[float, ...]]]
+        quantity : list[float | np.ndarray | list[float] | tuple[float, ...]]
             The quantity value(s) associated with each observation.
             Each element can be a float (for 1D quantities) or a list (for multi-dimensional).
         context : ArrayLike
@@ -253,8 +253,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def _quantitative_update(
         self,
-        quantities: List[Union[float, List[float]]],
-        rewards: List[BinaryReward],
+        quantities: list[float | list[float]],
+        rewards: list[BinaryReward],
         context: np.ndarray,
     ):
         """
@@ -262,9 +262,9 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         Parameters
         ----------
-        quantities : List[Union[float, List[float]]]
+        quantities : list[float | list[float]]
             The quantity values associated with each observation (None entries are skipped).
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             The binary reward for each observation.
         context : np.ndarray
             The context at which to evaluate the probability.
@@ -299,9 +299,9 @@ class QuantitativeBayesianNeuralNetwork(BaseQuantitativeBayesianNeuralNetwork):
         Number of quantity dimensions (input features for the BNN).
     bnn : BayesianNeuralNetwork
         The underlying Bayesian Neural Network model.
-    hidden_dim_list : Optional[List[PositiveInt]]
+    hidden_dim_list : list[PositiveInt] | None
         List of hidden layer dimensions for the BNN. None means no hidden layers.
-    update_kwargs : Optional[dict]
+    update_kwargs : dict | None
         Additional keyword arguments for the update method.
 
     Examples
@@ -337,11 +337,11 @@ class QuantitativeBayesianNeuralNetworkCC(BaseQuantitativeBayesianNeuralNetwork,
         Number of quantity dimensions (input features for the BNN).
     bnn : BayesianNeuralNetwork
         The underlying Bayesian Neural Network model.
-    hidden_dim_list : Optional[List[PositiveInt]]
+    hidden_dim_list : list[PositiveInt] | None
         List of hidden layer dimensions for the BNN. None means no hidden layers.
-    update_kwargs : Optional[dict]
+    update_kwargs : dict | None
         Additional keyword arguments for the update method.
-    cost : Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+    cost : Callable[[float | NonNegativeFloat], NonNegativeFloat]
         Cost function that takes a quantity value and returns the associated cost.
 
     Examples
@@ -368,11 +368,11 @@ class QuantitativeBayesianNeuralNetworkDP(BaseQuantitativeBayesianNeuralNetwork,
         Number of quantity dimensions (input features for the BNN).
     bnn : BayesianNeuralNetwork
         The underlying Bayesian Neural Network model.
-    hidden_dim_list : Optional[List[PositiveInt]]
+    hidden_dim_list : list[PositiveInt] | None
         List of hidden layer dimensions for the BNN. None means no hidden layers.
-    update_kwargs : Optional[dict]
+    update_kwargs : dict | None
         Additional keyword arguments for the update method.
-    price : Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+    price : Callable[[float | np.ndarray], NonNegativeFloat]
         Price function that takes a quantity value or array and returns the associated price.
 
     Examples

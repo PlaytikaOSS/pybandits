@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Dict, List, Optional, Union, cast
+from typing import cast
 
 import numpy as np
 from pydantic import validate_call
@@ -67,7 +67,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
     Parameters
     ----------
-    actions : Dict[ActionId, Union[BaseBayesianNeuralNetwork, BaseQuantitativeBayesianNeuralNetwork]]
+    actions : dict[ActionId, BaseBayesianNeuralNetwork | BaseQuantitativeBayesianNeuralNetwork]
         The list of possible actions, and their associated Model.
     strategy : Strategy
         The strategy used to select actions.
@@ -83,8 +83,8 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
     @staticmethod
     def _extract_element_from_probability_weight(
-        index: int, prob_weight: Union[ProbabilityWeight, MOProbabilityWeight]
-    ) -> Union[float, List[float]]:
+        index: int, prob_weight: ProbabilityWeight | MOProbabilityWeight
+    ) -> float | list[float]:
         """
         Extract the element from the probability weight.
         """
@@ -101,7 +101,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
     def predict(
         self,
         context: np.ndarray,
-        forbidden_actions: Optional[ForbiddenActions] = None,
+        forbidden_actions: ForbiddenActions | None = None,
     ) -> CmabPredictions:
         """
         Predict actions.
@@ -110,20 +110,20 @@ class BaseCmabBernoulli(BaseMab, ABC):
         ----------
         context: ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
-        forbidden_actions : Optional[ForbiddenActions], default=None
-            Actions to forbid. Either a ``Set[ActionId]`` of wholly-forbidden arms, or a
-            ``Dict[ActionId, None | ForbiddenRegion | List[ForbiddenRegion]]`` where ``None`` forbids the whole arm
+        forbidden_actions : ForbiddenActions | None, default=None
+            Actions to forbid. Either a ``set[ActionId]`` of wholly-forbidden arms, or a
+            ``dict[ActionId, None | ForbiddenRegion | list[ForbiddenRegion]]`` where ``None`` forbids the whole arm
             and region callable(s) forbid part of a quantitative arm's quantity space (``region(x) > 0`` => forbidden).
             By default, the model considers all actions as allowed_actions.
             Note that: actions = allowed_actions U forbidden_actions.
 
         Returns
         -------
-        actions: List[ActionId] of shape (n_samples,)
+        actions: list[ActionId] of shape (n_samples,)
             The actions selected by the multi-armed bandit model.
-        probs: Union[List[Dict[UnifiedActionId, Probability]], List[Dict[UnifiedActionId, MOProbability]]]
+        probs: list[dict[UnifiedActionId, Probability]] | list[dict[UnifiedActionId, MOProbability]]
             The probabilities of getting a positive reward for each action.
-        ws : Union[List[Dict[UnifiedActionId, float]], List[Dict[UnifiedActionId, List[float]]]]
+        ws : list[dict[UnifiedActionId, float]] | list[dict[UnifiedActionId, list[float]]]
             The weighted sum of logistic regression logits.
         """
 
@@ -161,13 +161,13 @@ class BaseCmabBernoulli(BaseMab, ABC):
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def update(
         self,
-        actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        actions: list[ActionId],
+        rewards: list[BinaryReward] | list[list[BinaryReward]],
         context: np.ndarray,
-        quantities: Optional[List[Union[float, List[float], None]]] = None,
-        actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
-        context_memory: Optional[np.ndarray] = None,
+        quantities: list[float | list[float] | None] | None = None,
+        actions_memory: list[ActionId] | None = None,
+        rewards_memory: list[BinaryReward] | list[list[BinaryReward]] | None = None,
+        context_memory: np.ndarray | None = None,
     ):
         """
         Update the contextual Bernoulli bandit given the list of selected actions and their corresponding binary
@@ -175,9 +175,9 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
         Parameters
         ----------
-        actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
+        actions : list[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : list[BinaryReward | list[BinaryReward]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
@@ -185,13 +185,13 @@ class BaseCmabBernoulli(BaseMab, ABC):
                     rewards = [[1, 1], [1, 0], [1, 1], [1, 0], [1, 1], ...]
         context: ArrayLike of shape (n_samples, n_features)
             Matrix of contextual features.
-        quantities : Optional[List[Union[float, List[float], None]]]
+        quantities : list[float | list[float] | None] | None
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        actions_memory : Optional[List[ActionId]]
+        actions_memory : list[ActionId] | None
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : list[BinaryReward] | list[list[BinaryReward]] | None
             List of previously collected rewards.
-        context_memory : Optional[ArrayLike] of shape (n_samples, n_features)
+        context_memory : ArrayLike | None of shape (n_samples, n_features)
             Matrix of contextual features.
         """
         super().update(
@@ -205,20 +205,20 @@ class BaseCmabBernoulli(BaseMab, ABC):
         )
 
     @classmethod
-    def update_old_state(cls, state: Dict[str, Serializable]) -> Dict[str, Serializable]:
+    def update_old_state(cls, state: dict[str, Serializable]) -> dict[str, Serializable]:
         """
         Update the model state to the current version.
         Besides the updates in the MAB class, it also adapts internal Bayesian Neural Network models.
 
         Parameters
         ----------
-        state : Dict[str, Serializable]
+        state : dict[str, Serializable]
             The internal state of a model (actions, strategy, etc.) of the same type.
             The state is expected to be in the old format of PyBandits below the current supported version.
 
         Returns
         -------
-        state : Dict[str, Serializable]
+        state : dict[str, Serializable]
             The updated state of the model.
             The state is in the current format of PyBandits, with actions_manager and delta added if needed.
         """
@@ -226,12 +226,12 @@ class BaseCmabBernoulli(BaseMab, ABC):
 
         # Migrate update_kwargs from old PyMC format to new NumPyro format
         # Support both old format (actions_manager.actions) and current format (actions_manager.meta_model.actions).
-        actions_manager = cast(Dict, state["actions_manager"])
+        actions_manager = cast(dict, state["actions_manager"])
         if "actions" in actions_manager:
-            actions_dict = cast(Dict, actions_manager["actions"])
+            actions_dict = cast(dict, actions_manager["actions"])
             _old_format = True
         else:
-            actions_dict = cast(Dict, actions_manager["meta_model"]["actions"])
+            actions_dict = cast(dict, actions_manager["meta_model"]["actions"])
             _old_format = False
 
         for action_id, action_state in actions_dict.items():
@@ -239,7 +239,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
                 layer_params = action_state["model_params"]["bnn_layer_params"]
                 if not layer_params:
                     raise ValueError("Cannot infer feature_config: bnn_layer_params is empty.")
-                # weight.mu is List[List[float]]; outer length == input_dim == n_features for numerical-only models
+                # weight.mu is list[list[float]]; outer length == input_dim == n_features for numerical-only models
                 n_features = len(layer_params[0][BaseBayesianNeuralNetwork.weight_var_name]["mu"])
                 fc = FeaturesConfig(n_features=n_features, categorical_features_configs=[])
                 action_state["feature_config"] = fc.model_dump()

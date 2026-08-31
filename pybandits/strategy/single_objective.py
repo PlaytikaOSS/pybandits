@@ -20,8 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from collections.abc import Callable
 from random import random
-from typing import Any, Callable, Dict, List, Optional, Self, Tuple, Union
+from typing import Any, Self
 
 import numpy as np
 from loguru import logger
@@ -52,11 +53,11 @@ class ClassicBandit(SingleObjectiveStrategy):
 
     def get_prerequisites(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-    ) -> Dict[str, Any]:
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+    ) -> dict[str, Any]:
         """
         Compute prerequisites for classic bandit strategy.
 
@@ -65,18 +66,18 @@ class ClassicBandit(SingleObjectiveStrategy):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary mapping action IDs to probability functions or values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions (unused in classic bandit).
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (unused in classic bandit).
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             Empty dictionary as no prerequisites are needed.
         """
         return {}
@@ -103,10 +104,10 @@ class ClassicBandit(SingleObjectiveStrategy):
         self,
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        rng: Optional[Any] = None,
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        rng: Any | None = None,
         **kwargs,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Find optimal quantity for a quantitative action.
 
@@ -119,14 +120,14 @@ class ClassicBandit(SingleObjectiveStrategy):
             Function that computes probability given a quantity vector.
         model : BaseModel
             The model associated with this quantitative action.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions that quantity must satisfy.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the optimizer for reproducibility.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray | None
             Optimal quantity vector that maximizes the score function, or None if optimization fails.
         """
         try:
@@ -137,9 +138,9 @@ class ClassicBandit(SingleObjectiveStrategy):
 
     def _select_from_refined_actions(
         self,
-        refined_p: Dict[UnifiedActionId, float],
-        actions: Dict[ActionId, BaseModel],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        refined_p: dict[UnifiedActionId, float],
+        actions: dict[ActionId, BaseModel],
+        constraint: Callable[[np.ndarray], bool] | None = None,
     ) -> UnifiedActionId:
         """
         Select the action with the highest probability.
@@ -149,11 +150,11 @@ class ClassicBandit(SingleObjectiveStrategy):
 
         Parameters
         ----------
-        refined_p : Dict[UnifiedActionId, float]
+        refined_p : dict[UnifiedActionId, float]
             Dictionary of unified action IDs to their probability values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models (unused).
-        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+        constraint : Callable[[np.ndarray], bool] | None, default=None
             Optional constraint function (unused).
 
         Returns
@@ -187,11 +188,11 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
 
     def get_prerequisites(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModelDP],
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-    ) -> Dict[str, Any]:
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModelDP],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+    ) -> dict[str, Any]:
         """
         Compute prerequisites for the dynamic pricing strategy.
 
@@ -200,18 +201,18 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary mapping action IDs to probability functions or values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions (unused in dynamic pricing).
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (unused in dynamic pricing).
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             Empty dictionary as no prerequisites are needed.
         """
         return {}
@@ -235,7 +236,7 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
         return True
 
     @staticmethod
-    def _revenue(model: BaseModelDP, quantity: Optional[np.ndarray], proba: float) -> float:
+    def _revenue(model: BaseModelDP, quantity: np.ndarray | None, proba: float) -> float:
         """
         Compute expected revenue for an action.
 
@@ -243,7 +244,7 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
         ----------
         model : BaseModelDP
             The action model providing the price (scalar or callable).
-        quantity : Optional[np.ndarray]
+        quantity : np.ndarray | None
             Quantity vector for quantitative actions; None for discrete actions.
         proba : float
             Purchase probability.
@@ -260,10 +261,10 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
         self,
         score_func: Callable[[np.ndarray], float],
         model: BaseModelDP,
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        rng: Optional[Any] = None,
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        rng: Any | None = None,
         **kwargs,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Find the revenue-maximizing quantity for a quantitative action.
 
@@ -275,14 +276,14 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
             Function that computes the purchase probability given a quantity vector.
         model : BaseModelDP
             The model associated with this quantitative action (provides the ``price`` callable).
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions that quantity must satisfy.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the optimizer for reproducibility.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray | None
             Optimal quantity vector that maximizes revenue, or None if optimization fails.
         """
         try:
@@ -298,9 +299,9 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
 
     def _select_from_refined_actions(
         self,
-        refined_p: Dict[UnifiedActionId, float],
-        actions: Dict[ActionId, BaseModelDP],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        refined_p: dict[UnifiedActionId, float],
+        actions: dict[ActionId, BaseModelDP],
+        constraint: Callable[[np.ndarray], bool] | None = None,
     ) -> UnifiedActionId:
         """
         Select the action with the highest expected revenue.
@@ -311,11 +312,11 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
 
         Parameters
         ----------
-        refined_p : Dict[UnifiedActionId, float]
+        refined_p : dict[UnifiedActionId, float]
             Dictionary of unified action IDs to their probability values.
-        actions : Dict[ActionId, BaseModelDP]
+        actions : dict[ActionId, BaseModelDP]
             Dictionary mapping action IDs to their models (for price information).
-        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+        constraint : Callable[[np.ndarray], bool] | None, default=None
             Optional constraint function (unused).
 
         Returns
@@ -326,7 +327,7 @@ class DynamicPricingBandit(SingleObjectiveStrategy):
         if not refined_p:
             raise ValueError("Cannot select action from empty refined_p dictionary")
 
-        def revenue(item: Tuple[UnifiedActionId, float]) -> float:
+        def revenue(item: tuple[UnifiedActionId, float]) -> float:
             action, proba = item
             model = actions[action[0]] if isinstance(action, tuple) else actions[action]
             quantity = np.array(action[1]) if isinstance(action, tuple) else None
@@ -346,7 +347,7 @@ class BestActionIdentificationBandit(ClassicBandit):
 
     Parameters
     ----------
-    exploit_p : Optional[Float01], default=0.5
+    exploit_p : Float01 | None, default=0.5
         Probability of selecting the best action versus the second-best action.
         - If exploit_p = 1: Always selects the best action (pure exploitation/greedy).
         - If exploit_p = 0: Always selects the second-best action.
@@ -358,7 +359,7 @@ class BestActionIdentificationBandit(ClassicBandit):
     https://arxiv.org/pdf/1602.08448.pdf
     """
 
-    exploit_p: Optional[Float01] = 0.5
+    exploit_p: Float01 | None = 0.5
 
     @field_validator("exploit_p", mode="before")
     @classmethod
@@ -379,13 +380,13 @@ class BestActionIdentificationBandit(ClassicBandit):
         return cls._normalize_field(v, "exploit_p")
 
     @validate_call
-    def with_exploit_p(self, exploit_p: Optional[Float01]) -> Self:
+    def with_exploit_p(self, exploit_p: Float01 | None) -> Self:
         """
         Create a new instance with a different exploitation probability.
 
         Parameters
         ----------
-        exploit_p : Optional[Float01], default=0.5
+        exploit_p : Float01 | None, default=0.5
             Probability of selecting the best action versus the second-best action.
             - If exploit_p = 1: Always selects the best action (pure exploitation).
             - If exploit_p = 0: Always selects the second-best action.
@@ -401,9 +402,9 @@ class BestActionIdentificationBandit(ClassicBandit):
 
     def _select_from_refined_actions(
         self,
-        refined_p: Dict[UnifiedActionId, float],
-        actions: Dict[ActionId, BaseModel],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        refined_p: dict[UnifiedActionId, float],
+        actions: dict[ActionId, BaseModel],
+        constraint: Callable[[np.ndarray], bool] | None = None,
     ) -> UnifiedActionId:
         """
         Select action based on BAI strategy.
@@ -413,11 +414,11 @@ class BestActionIdentificationBandit(ClassicBandit):
 
         Parameters
         ----------
-        refined_p : Dict[UnifiedActionId, float]
+        refined_p : dict[UnifiedActionId, float]
             Dictionary of unified action IDs to their probability values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models (unused).
-        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+        constraint : Callable[[np.ndarray], bool] | None, default=None
             Optional constraint function (unused).
 
         Returns
@@ -456,7 +457,7 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
 
     Parameters
     ----------
-    subsidy_factor : Optional[Float01], default=0.5
+    subsidy_factor : Float01 | None, default=0.5
         Tolerance factor defining the feasible action set.
         - If subsidy_factor = 1: Always selects minimum cost action.
         - If subsidy_factor = 0: Always selects highest reward action (classic bandit).
@@ -473,11 +474,11 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
 
     def get_prerequisites(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-    ) -> Dict[str, Any]:
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+    ) -> dict[str, Any]:
         """
         Compute the best available reward for defining the feasible action set.
 
@@ -486,19 +487,19 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary mapping action IDs to probability functions or values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions for quantitative actions.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible). Passed through so the reward threshold is
             computed over the feasible quantity space, not the forbidden regions.
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             Dictionary containing 'best_value': the maximum reward value.
         """
         classic_bandit = ClassicBandit()
@@ -517,9 +518,9 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
 
     def _select_from_refined_actions(
         self,
-        refined_p: Dict[UnifiedActionId, float],
-        actions: Dict[ActionId, BaseModel],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        refined_p: dict[UnifiedActionId, float],
+        actions: dict[ActionId, BaseModel],
+        constraint: Callable[[np.ndarray], bool] | None = None,
     ) -> UnifiedActionId:
         """
         Select the lowest-cost action from the feasible set.
@@ -529,11 +530,11 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
 
         Parameters
         ----------
-        refined_p : Dict[UnifiedActionId, float]
+        refined_p : dict[UnifiedActionId, float]
             Dictionary of feasible actions and their probability values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their models (for cost information).
-        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+        constraint : Callable[[np.ndarray], bool] | None, default=None
             Optional constraint function (unused).
 
         Returns
@@ -582,11 +583,11 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
         self,
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
         best_value: float,
-        rng: Optional[Any] = None,
+        rng: Any | None = None,
         **kwargs,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Find the minimum-cost quantity that meets the reward threshold.
 
@@ -599,16 +600,16 @@ class CostControlBandit(SingleObjectiveStrategy, CostControlStrategy):
             Function that computes reward given a quantity vector.
         model : BaseModel
             The model associated with this quantitative action.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of existing constraint functions.
         best_value : float
             The maximum reward across all actions.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the optimizer for reproducibility.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray | None
             Optimal quantity vector that minimizes cost while meeting the
             reward threshold, or None if no feasible solution exists.
         """

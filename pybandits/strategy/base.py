@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Self, TypeVar, Union
+from collections.abc import Callable
+from typing import Any, ClassVar, Self, TypeVar
 
 import numpy as np
 from pydantic import field_validator, validate_call
@@ -45,8 +46,8 @@ class BaseStrategy(PyBanditsBaseModel, ABC):
     @abstractmethod
     def select_action(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
         **kwargs,
     ) -> UnifiedActionId:
         """
@@ -54,11 +55,11 @@ class BaseStrategy(PyBanditsBaseModel, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary mapping action IDs to either:
             - float: Fixed probability of positive reward
             - Callable: Function that computes probability given quantity vector
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
         **kwargs
             Additional strategy-specific parameters.
@@ -86,30 +87,30 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
     @validate_call
     def select_action(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-        rng: Optional[Any] = None,
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
+        constraint: Callable[[np.ndarray], bool] | None = None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+        rng: Any | None = None,
     ) -> UnifiedActionId:
         """
         Select an action for single-objective optimization.
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary mapping action IDs to either:
             - float: Fixed probability of positive reward
             - Callable: Function that computes probability given quantity vector
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+        constraint : Callable[[np.ndarray], bool] | None, default=None
             Optional constraint function that returns True if a quantity vector
             satisfies the constraints.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible) restricting a quantitative arm's quantity space.
             Merged with ``constraint`` for the relevant arm during quantity optimization.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
@@ -125,12 +126,12 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
 
     def refine_p(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-        rng: Optional[Any] = None,
-    ) -> Dict[UnifiedActionId, float]:
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+        rng: Any | None = None,
+    ) -> dict[UnifiedActionId, float]:
         """
         Refine action probabilities by evaluating quantitative actions and filtering.
 
@@ -140,22 +141,22 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary of actions and their probability functions or values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary of actions and their associated models.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of (global) constraint functions for quantitative actions.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible). For each quantitative arm, its forbidden-region
             constraints are appended to ``constraint_list`` so the optimizer avoids the forbidden quantity space.
             An arm whose quantity space is fully forbidden fails optimization and is dropped from the result.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
         -------
-        refined_p: Dict[UnifiedActionId, float]
+        refined_p: dict[UnifiedActionId, float]
             Dictionary mapping unified action IDs to their refined probability values.
         """
         if not p or not actions:
@@ -184,11 +185,11 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
     @abstractmethod
     def get_prerequisites(
         self,
-        p: Dict[ActionId, Union[float, Callable[[np.ndarray], float]]],
-        actions: Dict[ActionId, BaseModel],
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        forbidden_regions: Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]] = None,
-    ) -> Dict[str, Any]:
+        p: dict[ActionId, float | Callable[[np.ndarray], float]],
+        actions: dict[ActionId, BaseModel],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        forbidden_regions: dict[ActionId, list[Callable[[np.ndarray], float]]] | None = None,
+    ) -> dict[str, Any]:
         """
         Compute prerequisites needed for strategy-specific action selection.
 
@@ -197,39 +198,39 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
 
         Parameters
         ----------
-        p : Dict[ActionId, Union[float, Callable[[np.ndarray], float]]]
+        p : dict[ActionId, float | Callable[[np.ndarray], float]]
             Dictionary mapping action IDs to probability functions or values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions for quantitative actions.
-        forbidden_regions : Optional[Dict[ActionId, List[Callable[[np.ndarray], float]]]], default=None
+        forbidden_regions : dict[ActionId, list[Callable[[np.ndarray], float]]] | None, default=None
             Per-arm feasibility constraints (``>= 0`` feasible) so prerequisites are computed over the
             feasible quantity space only.
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             Dictionary of prerequisite values needed by the strategy.
         """
 
     @abstractmethod
     def _select_from_refined_actions(
         self,
-        refined_p: Dict[UnifiedActionId, float],
-        actions: Dict[ActionId, BaseModel],
-        constraint: Optional[Callable[[np.ndarray], bool]] = None,
+        refined_p: dict[UnifiedActionId, float],
+        actions: dict[ActionId, BaseModel],
+        constraint: Callable[[np.ndarray], bool] | None = None,
     ) -> UnifiedActionId:
         """
         Apply strategy-specific logic to select from refined actions.
 
         Parameters
         ----------
-        refined_p : Dict[UnifiedActionId, float]
+        refined_p : dict[UnifiedActionId, float]
             Dictionary of unified action IDs to their refined probability values.
-        actions : Dict[ActionId, BaseModel]
+        actions : dict[ActionId, BaseModel]
             Dictionary mapping action IDs to their associated models.
-        constraint : Optional[Callable[[np.ndarray], bool]], default=None
+        constraint : Callable[[np.ndarray], bool] | None, default=None
             Optional constraint function for additional filtering.
 
         Returns
@@ -262,9 +263,9 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         self,
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
         **kwargs,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Find optimal quantity for a quantitative action if it meets criteria.
 
@@ -274,14 +275,14 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
             Function that computes probability/score given a quantity vector.
         model : BaseModel
             The model associated with this quantitative action.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions that quantity must satisfy.
         **kwargs
             Additional strategy-specific parameters from prerequisites.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray | None
             Optimal quantity vector if the action meets criteria,
             None if it should not be considered.
         """
@@ -290,9 +291,9 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
         self,
         score_func: Callable[[np.ndarray], float],
         model: BaseModel,
-        constraint_list: Optional[List[Callable[[np.ndarray], bool]]],
-        rng: Optional[Any] = None,
-    ) -> Optional[np.ndarray]:
+        constraint_list: list[Callable[[np.ndarray], bool]] | None,
+        rng: Any | None = None,
+    ) -> np.ndarray | None:
         """
         Public interface for verifying and selecting from quantitative actions.
 
@@ -305,14 +306,14 @@ class SingleObjectiveStrategy(BaseStrategy, ABC):
             Function that computes probability/score given a quantity vector.
         model : BaseModel
             The model associated with this quantitative action.
-        constraint_list : Optional[List[Callable[[np.ndarray], bool]]]
+        constraint_list : list[Callable[[np.ndarray], bool]] | None
             List of constraint functions that quantity must satisfy.
-        rng : Optional[Any], default=None
+        rng : Any | None, default=None
             Random generator passed to the quantity optimizer for reproducibility.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray | None
             Optimal quantity vector if found, None otherwise.
         """
         p = {self._dummy_quantitative_action: score_func}
@@ -333,7 +334,7 @@ class CostControlStrategy(PyBanditsBaseModel):
 
     Parameters
     ----------
-    subsidy_factor : Optional[Float01], default=0.5
+    subsidy_factor : Float01 | None, default=0.5
         Tolerance factor defining the feasible action set as those with rewards
         in the range [(1-subsidy_factor)*max_reward, max_reward].
         - If subsidy_factor = 1: Selects minimum cost action (ignores rewards).
@@ -349,7 +350,7 @@ class CostControlStrategy(PyBanditsBaseModel):
     https://arxiv.org/abs/2011.01488
     """
 
-    subsidy_factor: Optional[Float01] = 0.5
+    subsidy_factor: Float01 | None = 0.5
 
     @field_validator("subsidy_factor", mode="before")
     @classmethod
@@ -370,13 +371,13 @@ class CostControlStrategy(PyBanditsBaseModel):
         return cls._normalize_field(v, "subsidy_factor")
 
     @validate_call
-    def with_subsidy_factor(self, subsidy_factor: Optional[Float01]) -> Self:
+    def with_subsidy_factor(self, subsidy_factor: Float01 | None) -> Self:
         """
         Create a new instance with a different subsidy factor.
 
         Parameters
         ----------
-        subsidy_factor : Optional[Float01], default=0.5
+        subsidy_factor : Float01 | None, default=0.5
             Tolerance factor defining the feasible action set.
             - If subsidy_factor = 1: Selects minimum cost action (ignores rewards).
             - If subsidy_factor = 0: Selects highest reward action (ignores costs).

@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Tuple, Union
 
 import numpy as np
 from pydantic import field_validator
@@ -35,11 +34,11 @@ class Segment(PyBanditsBaseModel):
 
     Parameters
     ----------
-    intervals: Tuple[Tuple[Float01, Float01], ...]
+    intervals: tuple[tuple[Float01, Float01], ...]
         Intervals of the segment.
     """
 
-    intervals: Tuple[Tuple[Float01, Float01], ...]
+    intervals: tuple[tuple[Float01, Float01], ...]
 
     @property
     def mins(self) -> np.ndarray:
@@ -67,7 +66,7 @@ class Segment(PyBanditsBaseModel):
             return tuple(tuple(v) for v in value)
         return value
 
-    def split(self) -> Tuple["Segment", "Segment"]:
+    def split(self) -> tuple["Segment", "Segment"]:
         middles = (self.mins + self.maxs) / 2
         left_intervals = np.concatenate([np.atleast_2d(self.mins).T, np.atleast_2d(middles).T], axis=1)
         right_intervals = np.concatenate([np.atleast_2d(middles).T, np.atleast_2d(self.maxs).T], axis=1)
@@ -122,13 +121,13 @@ class Segment(PyBanditsBaseModel):
     def __hash__(self) -> int:
         return hash(tuple(tuple(interval) for interval in self.intervals))
 
-    def __contains__(self, value: Union[float, np.ndarray]) -> bool:
+    def __contains__(self, value: float | np.ndarray) -> bool:
         """
         Check if a value is contained in segment.
 
         Parameters
         ----------
-        value : Union[float, np.ndarray]
+        value : float | np.ndarray
             Value to check.
 
         Returns

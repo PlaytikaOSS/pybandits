@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Callable, Dict, List, Tuple, Type, Union
+from collections.abc import Callable
 from unittest.mock import patch
 
 import numpy as np
@@ -37,9 +37,9 @@ from pybandits.subsidy_factor import SubsidyFactorTuningResult, _detect_knee, tu
 
 # Three actions with a reward/cost trade-off: the priciest action is best, a much cheaper action is
 # almost as good (creates an early knee), and the free action is poor.
-ACTION_COSTS: Dict[str, float] = {"best": 3.0, "cheap_good": 1.0, "cheap_bad": 0.0}
+ACTION_COSTS: dict[str, float] = {"best": 3.0, "cheap_good": 1.0, "cheap_bad": 0.0}
 # action_id -> (n_successes, n_failures) fed via update, so the posteriors differ markedly.
-ACTION_REWARDS: Dict[str, Tuple[int, int]] = {"best": (60, 40), "cheap_good": (55, 45), "cheap_bad": (20, 80)}
+ACTION_REWARDS: dict[str, tuple[int, int]] = {"best": (60, 40), "cheap_good": (55, 45), "cheap_bad": (20, 80)}
 DEFAULT_SUBSIDY_FACTOR: float = 0.5
 
 N_SAMPLES: int = 10
@@ -70,7 +70,7 @@ PLATEAU_MIN: float = 0.1
 PLATEAU_MAX: float = 2.0
 
 # Cheap configuration for guard / smoke tests that must not pay for a full sweep.
-CC_COSTS_AB: Dict[str, float] = {"a": 1.0, "b": 2.0}
+CC_COSTS_AB: dict[str, float] = {"a": 1.0, "b": 2.0}
 NON_CC_ACTION_IDS = {"a", "b"}
 N_OBJECTIVES: int = 2
 CMAB_N_FEATURES: int = 2
@@ -79,21 +79,21 @@ CMAB_SAMPLES: int = 3
 CMAB_POINTS: int = 5
 CMAB_BOOTSTRAP: int = 10
 CMAB_SEED: int = 0
-FAST_TUNE_KWARGS: Dict[str, int] = {"n_samples": 10, "n_points": 5, "n_bootstrap": 5}
+FAST_TUNE_KWARGS: dict[str, int] = {"n_samples": 10, "n_points": 5, "n_bootstrap": 5}
 MIN_POINTS_INVALID: int = 2
 MISUSE_CONTEXT = np.zeros((3, CMAB_N_FEATURES))
 
 # Quantitative action smoke-test constants.
 # QUANT_SEGMENT_QUANTITIES covers all 4 initial ZoomingCC segments so failures suppress the whole space.
 QUANT_ACTION_ID: str = "q"
-QUANT_SEGMENT_QUANTITIES: List[float] = [0.1, 0.3, 0.5, 0.7, 0.9]
+QUANT_SEGMENT_QUANTITIES: list[float] = [0.1, 0.3, 0.5, 0.7, 0.9]
 QUANT_N_FAILURES: int = 5
 QUANT_N_SUCCESSES_PER_ACTION: int = 50
 QUANT_FAST_N_POINTS: int = FAST_TUNE_KWARGS["n_points"]
 QUANT_SEED: int = 42
 
 
-def QUANT_COST_CALLABLE(x: Union[float, np.ndarray]) -> float:
+def QUANT_COST_CALLABLE(x: float | np.ndarray) -> float:
     """Cost function for the quantitative ZoomingCC action (average quantity)."""
     return float(np.asarray(x).mean())
 
@@ -103,8 +103,8 @@ def fitted_smab_cc() -> Callable[..., SmabBernoulliCC]:
     """Factory building a cold-started ``SmabBernoulliCC`` updated into distinct per-action posteriors."""
 
     def _build(
-        costs: Dict[str, float] = ACTION_COSTS,
-        rewards: Dict[str, Tuple[int, int]] = ACTION_REWARDS,
+        costs: dict[str, float] = ACTION_COSTS,
+        rewards: dict[str, tuple[int, int]] = ACTION_REWARDS,
         subsidy_factor: float = DEFAULT_SUBSIDY_FACTOR,
         seed: int = RANDOM_SEED,
     ) -> SmabBernoulliCC:
@@ -226,7 +226,7 @@ class TestTuneSubsidyFactor:
 
     def test_smoke_cmab_cc(
         self,
-        costs: Dict[str, float] = CC_COSTS_AB,
+        costs: dict[str, float] = CC_COSTS_AB,
         n_features: int = CMAB_N_FEATURES,
         n_rows: int = CMAB_CONTEXT_ROWS,
         n_samples: int = CMAB_SAMPLES,
@@ -250,9 +250,9 @@ class TestTuneSubsidyFactor:
     def test_smoke_quantitative_action(
         self,
         quant_action_id: str = QUANT_ACTION_ID,
-        discrete_costs: Dict[str, float] = CC_COSTS_AB,
-        quant_cost: Callable[[Union[float, np.ndarray]], float] = QUANT_COST_CALLABLE,
-        segment_quantities: List[float] = QUANT_SEGMENT_QUANTITIES,
+        discrete_costs: dict[str, float] = CC_COSTS_AB,
+        quant_cost: Callable[[float | np.ndarray], float] = QUANT_COST_CALLABLE,
+        segment_quantities: list[float] = QUANT_SEGMENT_QUANTITIES,
         n_failures: int = QUANT_N_FAILURES,
         n_successes_per_action: int = QUANT_N_SUCCESSES_PER_ACTION,
         n_fast_points: int = QUANT_FAST_N_POINTS,
@@ -328,7 +328,7 @@ class TestTuneSubsidyFactor:
         ],
     )
     def test_rejects_invalid_inputs(
-        self, build_mab: Callable[[], BaseMab], call_kwargs: Dict[str, object], expected_exception: Type[Exception]
+        self, build_mab: Callable[[], BaseMab], call_kwargs: dict[str, object], expected_exception: type[Exception]
     ) -> None:
         """Misconfigured bandits and arguments raise before any sampling work is done."""
         mab = build_mab()

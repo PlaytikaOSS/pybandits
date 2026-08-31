@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Literal, Optional, Tuple, get_args
+from typing import Literal, get_args
 from unittest.mock import patch
 
 import jax
@@ -164,7 +164,7 @@ class TestBetaDecayFactor:
         n_failures=counts,
     )
     def test_seeds_effective_counts_only_when_enabled(
-        self, decay_factor: Optional[float], n_successes: int, n_failures: int
+        self, decay_factor: float | None, n_successes: int, n_failures: int
     ) -> None:
         """Effective counts are seeded from the raw counts only when decay is enabled."""
         b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
@@ -181,7 +181,7 @@ class TestBetaDecayFactor:
         prior=st.just(PRIOR),
     )
     def test_update_keeps_raw_counts_and_decays_effective_counts(
-        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int, prior: float
+        self, rewards: list[int], decay_factor: float, n_successes: int, n_failures: int, prior: float
     ) -> None:
         """Update accumulates raw counts unchanged and decays the effective counts towards the prior."""
         b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
@@ -195,7 +195,7 @@ class TestBetaDecayFactor:
 
     @given(rewards=binary_rewards, decay_factor=st.just(NO_DECAY_FACTOR), n_successes=counts, n_failures=counts)
     def test_factor_one_tracks_raw_counts(
-        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int
+        self, rewards: list[int], decay_factor: float, n_successes: int, n_failures: int
     ) -> None:
         """With decay_factor == 1 the effective counts equal the raw counts (no forgetting)."""
         b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
@@ -211,7 +211,7 @@ class TestBetaDecayFactor:
         n_samples=st.just(N_SAMPLES),
     )
     def test_sampling_uses_effective_counts(
-        self, rng, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int, n_samples: int
+        self, rng, rewards: list[int], decay_factor: float, n_successes: int, n_failures: int, n_samples: int
     ) -> None:
         """Sampling draws from the effective counts, not the raw counts, when decay is enabled."""
         b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
@@ -250,7 +250,7 @@ class TestBetaDecayFactor:
         prior=st.just(PRIOR),
     )
     def test_reset_restores_prior_effective_counts(
-        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int, prior: float
+        self, rewards: list[int], decay_factor: float, n_successes: int, n_failures: int, prior: float
     ) -> None:
         """Resetting the model restores both the raw and effective counts to the prior."""
         b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
@@ -261,7 +261,7 @@ class TestBetaDecayFactor:
 
     @given(rewards=binary_rewards, decay_factor=decay_factors, n_successes=counts, n_failures=counts)
     def test_serialization_roundtrip(
-        self, rewards: List[int], decay_factor: float, n_successes: int, n_failures: int
+        self, rewards: list[int], decay_factor: float, n_successes: int, n_failures: int
     ) -> None:
         """get_state/from_state preserves the decay factor and the (non-recomputable) effective counts."""
         b = Beta(n_successes=n_successes, n_failures=n_failures, decay_factor=decay_factor)
@@ -302,7 +302,7 @@ class TestBnnDecayFactor:
         self,
         decay_factor: float = DECAY_FACTOR,
         n_features: int = N_FEATURES,
-        hidden_dim_list: Tuple[int, ...] = HIDDEN,
+        hidden_dim_list: tuple[int, ...] = HIDDEN,
     ) -> None:
         """Weight/bias sigma are scaled by 1 / decay_factor while the means (mu) are left unchanged."""
         bnn = BayesianNeuralNetwork.cold_start(
@@ -322,7 +322,7 @@ class TestBnnDecayFactor:
         self,
         make_bnn,
         n_features: int = N_FEATURES,
-        hidden_dim_list: Tuple[int, ...] = HIDDEN,
+        hidden_dim_list: tuple[int, ...] = HIDDEN,
     ) -> None:
         """With decay disabled, _inflate_prior_variance is a no-op."""
         bnn = make_bnn(n_features=n_features, hidden_dim_list=list(hidden_dim_list))
@@ -335,7 +335,7 @@ class TestBnnDecayFactor:
         self,
         decay_factor: float = DECAY_FACTOR,
         n_features: int = N_FEATURES,
-        hidden_dim_list: Tuple[int, ...] = HIDDEN,
+        hidden_dim_list: tuple[int, ...] = HIDDEN,
         cat_column: int = CAT_COLUMN,
         cardinality: int = CARDINALITY,
     ) -> None:
@@ -1056,12 +1056,12 @@ def test_bnn_vi_update(
 
 
 def _create_update_kwargs(
-    batch_size: Optional[int] = None,
-    optimizer_type: Optional[str] = None,
-    lr: Optional[float] = None,
-    early_stopping_diff: Optional[Literal["absolute", "relative"]] = None,
-    early_stopping_tol: Optional[float] = None,
-    early_stopping_patience: Optional[int] = None,
+    batch_size: int | None = None,
+    optimizer_type: str | None = None,
+    lr: float | None = None,
+    early_stopping_diff: Literal["absolute", "relative"] | None = None,
+    early_stopping_tol: float | None = None,
+    early_stopping_patience: int | None = None,
     method: str = "advi",
 ) -> dict:
     """Create update_kwargs dictionary with vi sub-dict from individual parameters."""
@@ -1101,13 +1101,13 @@ def _create_update_kwargs(
 def test_bnn_vi_update_parameters(
     n_features: int,
     hidden_dim_list: list[int],
-    batch_size: Optional[int],
-    optimizer_type: Optional[str],
-    lr: Optional[float],
-    early_stopping_diff: Optional[Literal["absolute", "relative"]],
-    early_stopping_tol: Optional[float],
-    early_stopping_patience: Optional[int],
-    restore_best_svi_state: Optional[bool],
+    batch_size: int | None,
+    optimizer_type: str | None,
+    lr: float | None,
+    early_stopping_diff: Literal["absolute", "relative"] | None,
+    early_stopping_tol: float | None,
+    early_stopping_patience: int | None,
+    restore_best_svi_state: bool | None,
 ) -> None:
     """Test BNN VI update with various valid parameters."""
     update_kwargs = _create_update_kwargs(
@@ -1148,8 +1148,8 @@ def test_bnn_vi_update_parameters(
 def test_bnn_vi_update_parameters_dummy_optimizer_failure(
     n_features: int,
     hidden_dim_list: list[int],
-    batch_size: Optional[int],
-    optimizer_type: Optional[str],
+    batch_size: int | None,
+    optimizer_type: str | None,
 ) -> None:
     """Test that dummy_optimizer raises ValueError for BNN VI update."""
     update_kwargs = _create_update_kwargs(batch_size, optimizer_type)
@@ -1325,9 +1325,9 @@ def test_vi_training_options(
     rng,
     optimizer_type: str,
     num_particles: int,
-    gradient_clip_norm: Optional[float],
-    lr_scheduler_type: Optional[str],
-    kl_annealing_fraction: Optional[float],
+    gradient_clip_norm: float | None,
+    lr_scheduler_type: str | None,
+    kl_annealing_fraction: float | None,
     num_steps: int,
     n_features: int,
     n_samples: int,
@@ -1381,7 +1381,7 @@ class TestKLAnnealing:
     """
 
     @staticmethod
-    def _build_bnn(kl_annealing_fraction: Optional[float], num_steps: int = 4, n_features: int = 2):
+    def _build_bnn(kl_annealing_fraction: float | None, num_steps: int = 4, n_features: int = 2):
         update_kwargs: dict = {"num_steps": num_steps}
         if kl_annealing_fraction is not None:
             update_kwargs["kl_annealing_fraction"] = kl_annealing_fraction

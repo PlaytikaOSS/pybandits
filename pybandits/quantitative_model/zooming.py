@@ -24,7 +24,7 @@ import ast
 from abc import ABC
 from collections import Counter, defaultdict
 from itertools import product
-from typing import Any, ClassVar, Dict, List, Optional, Self, Tuple, Union
+from typing import Any, ClassVar, Self
 
 import numpy as np
 from pydantic import (
@@ -77,7 +77,7 @@ class BaseZooming(QuantitativeModel, ABC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+    sub_actions: dict[tuple[tuple[Float01, Float01], ...], Beta | None]
         Mapping of segments to Beta models.
     base_model: Beta
         Template Beta model copied for every new segment. Carries the per-segment configuration
@@ -88,11 +88,11 @@ class BaseZooming(QuantitativeModel, ABC):
     comparison_threshold: Float01 = 0.1
     segment_update_factor: Float01 = 0.1
     n_comparison_points: PositiveInt = 1000
-    n_max_segments: Optional[PositiveInt] = 32
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+    n_max_segments: PositiveInt | None = 32
+    sub_actions: dict[tuple[tuple[Float01, Float01], ...], Beta | None]
     base_model: Beta = Field(default_factory=Beta)
     _n_initial_segments: ClassVar = 4
-    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("sub_actions",)
+    _transfer_learned_keys: ClassVar[tuple[str, ...]] = ("sub_actions",)
 
     @field_serializer("sub_actions")
     def serialize_sub_actions(self, value):
@@ -110,7 +110,7 @@ class BaseZooming(QuantitativeModel, ABC):
         return value
 
     @staticmethod
-    def _deserialize_sub_action_key(key: str) -> Tuple[Tuple[Float01, Float01], ...]:
+    def _deserialize_sub_action_key(key: str) -> tuple[tuple[Float01, Float01], ...]:
         try:
             key = ast.literal_eval(key)
         except (ValueError, SyntaxError) as e:
@@ -142,7 +142,7 @@ class BaseZooming(QuantitativeModel, ABC):
             )
 
     @property
-    def segmented_actions(self) -> Dict[Segment, Optional[Beta]]:
+    def segmented_actions(self) -> dict[Segment, Beta | None]:
         return {Segment(intervals=segment): model for segment, model in self.sub_actions.items()}
 
     @classmethod
@@ -152,8 +152,8 @@ class BaseZooming(QuantitativeModel, ABC):
         dimension: PositiveInt = 1,
         comparison_threshold: Float01 = 0.1,
         n_comparison_points: PositiveInt = 1000,
-        n_max_segments: Optional[PositiveInt] = 32,
-        base_model_cold_start_kwargs: Optional[Dict[str, Any]] = None,
+        n_max_segments: PositiveInt | None = 32,
+        base_model_cold_start_kwargs: dict[str, Any] | None = None,
         **kwargs,
     ) -> Self:
         """
@@ -161,7 +161,7 @@ class BaseZooming(QuantitativeModel, ABC):
 
         Parameters
         ----------
-        base_model_cold_start_kwargs : Optional[Dict[str, Any]]
+        base_model_cold_start_kwargs : dict[str, Any] | None
             Keyword arguments forwarded to the per-segment Beta model (e.g. ``decay_factor``).
 
         Returns
@@ -181,12 +181,12 @@ class BaseZooming(QuantitativeModel, ABC):
         )
 
     @classmethod
-    def _generate_initial_segments(cls, dimension: PositiveInt) -> List[Tuple[Tuple[Float01, Float01], ...],]:
+    def _generate_initial_segments(cls, dimension: PositiveInt) -> list[tuple[tuple[Float01, Float01], ...],]:
         interval_points = np.linspace(0, 1, cls._n_initial_segments + 1)
         intervals = [(interval_points[i], interval_points[i + 1]) for i in range(cls._n_initial_segments)]
         return [tuple(segment) for segment in product(intervals, repeat=dimension)]
 
-    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> List[QuantitativeProbability]:
+    def sample_proba(self, n_samples: PositiveInt, rng: np.random.Generator) -> list[QuantitativeProbability]:
         """
         Sample probability functions from the model.
 
@@ -197,7 +197,7 @@ class BaseZooming(QuantitativeModel, ABC):
 
         Returns
         -------
-        List[QuantitativeProbability]
+        list[QuantitativeProbability]
             A list of functions that evaluate probability at any given location.
         """
         # Get sampled probabilities from each segment model
@@ -207,19 +207,19 @@ class BaseZooming(QuantitativeModel, ABC):
         return self._to_quantitative_probabilities(segment_probabilities)
 
     def _to_quantitative_probabilities(
-        self, segment_probabilities: Dict[Segment, List[Probability]]
-    ) -> List[QuantitativeProbability]:
+        self, segment_probabilities: dict[Segment, list[Probability]]
+    ) -> list[QuantitativeProbability]:
         """
         Convert the segment probabilities to quantitative probabilities.
 
         Parameters
         ----------
-        segment_probabilities : Dict[Segment, List[Probability]]
+        segment_probabilities : dict[Segment, list[Probability]]
             The probabilities of each segment.
 
         Returns
         -------
-        List[QuantitativeProbability]
+        list[QuantitativeProbability]
             The quantitative probabilities.
         """
         result = []
@@ -243,15 +243,15 @@ class BaseZooming(QuantitativeModel, ABC):
         return result
 
     @validate_call
-    def _quantitative_update(self, quantities: Union[List[float], List[List[float]]], rewards: List[BinaryReward]):
+    def _quantitative_update(self, quantities: list[float] | list[list[float]], rewards: list[BinaryReward]):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        quantities : Union[List[float], List[List[float]]],
+        quantities : list[float] | list[list[float]],
             The value associated with each action.
-        rewards: List[BinaryReward]
+        rewards: list[BinaryReward]
             The reward for each sample.
         """
 
@@ -259,36 +259,36 @@ class BaseZooming(QuantitativeModel, ABC):
         self._update_segmentation(quantities, segments, rewards)
 
     def _map_and_update_segment_models(
-        self, quantities: Union[List[float], List[List[float]]], rewards: List[BinaryReward]
-    ) -> List[Segment]:
+        self, quantities: list[float] | list[list[float]], rewards: list[BinaryReward]
+    ) -> list[Segment]:
         """
         Map and update the segment models.
 
         Parameters
         ----------
-        quantities : Union[List[float], List[List[float]]]
+        quantities : list[float] | list[list[float]]
             The value associated with each action.
-        rewards: List[BinaryReward]
+        rewards: list[BinaryReward]
             The reward for each sample.
 
         Returns
         -------
-        List[Segment]
+        list[Segment]
             Segments to update.
         """
         segments = self._map_values_to_segments(quantities)
         self._inner_update(segments, rewards)
         return segments
 
-    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward]):
+    def _inner_update(self, segments: list[Segment], rewards: list[BinaryReward]):
         """
         Update the segments models.
 
         Parameters
         ----------
-        segments : List[Segment]
+        segments : list[Segment]
             Segments to update.
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             Rewards for update.
         """
         rewards_by_segment = defaultdict(list)
@@ -300,16 +300,16 @@ class BaseZooming(QuantitativeModel, ABC):
 
     def _map_values_to_segments(
         self,
-        quantities: Union[List[float], List[List[float]]],
-    ) -> List[Segment]:
+        quantities: list[float] | list[list[float]],
+    ) -> list[Segment]:
         segments = [segment for value in quantities for segment in self.segmented_actions.keys() if value in segment]
         return segments
 
     def _update_segmentation(
         self,
-        quantities: Union[List[float], List[List[float]]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
+        quantities: list[float] | list[list[float]],
+        segments: list[Segment],
+        rewards: list[BinaryReward],
     ):
         """
         Sort segments into three categories: interest (good), nuisance (bad), and all others (neutral).
@@ -318,11 +318,11 @@ class BaseZooming(QuantitativeModel, ABC):
 
         Parameters
         ----------
-        quantities : Union[List[float], List[List[float]]]
+        quantities : list[float] | list[list[float]]
             The value associated with each action.
-        segments : List[Segment]
+        segments : list[Segment]
             All segments in the model.
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             Rewards for update.
         """
         segments_counts = Counter(segments)
@@ -341,23 +341,23 @@ class BaseZooming(QuantitativeModel, ABC):
 
     def _merge_adjacent_nuisance_segments(
         self,
-        nuisance_segments: List[Segment],
-        quantities: Union[List[float], List[List[float]]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
+        nuisance_segments: list[Segment],
+        quantities: list[float] | list[list[float]],
+        segments: list[Segment],
+        rewards: list[BinaryReward],
     ):
         """
         Merge adjacent segments that have similar performance.
 
         Parameters
         ----------
-        nuisance_segments : List[Segment]
+        nuisance_segments : list[Segment]
             List of segments to consider for merging.
-        quantities : Union[List[float], List[List[float]]]
+        quantities : list[float] | list[list[float]]
             The value associated with each action.
-        segments : List[Segment]
+        segments : list[Segment]
             All segments in the model.
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             The reward for each sample.
         """
         i = 0
@@ -383,23 +383,23 @@ class BaseZooming(QuantitativeModel, ABC):
 
     def _split_segments_of_interest(
         self,
-        interest_segments: List[Segment],
-        quantities: Union[List[float], List[List[float]]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
+        interest_segments: list[Segment],
+        quantities: list[float] | list[list[float]],
+        segments: list[Segment],
+        rewards: list[BinaryReward],
     ):
         """
         Split segments of interest into two sub-segments if possible.
 
         Parameters
         ----------
-        interest_segments : List[Segment]
+        interest_segments : list[Segment]
             List of segments to consider for splitting.
-        quantities : Union[List[float], List[List[float]]]
+        quantities : list[float] | list[list[float]]
             The value associated with each action.
-        segments : List[Segment]
+        segments : list[Segment]
             All segments in the model.
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             The reward for each sample.
         """
         i = 0
@@ -440,31 +440,31 @@ class BaseZooming(QuantitativeModel, ABC):
 
     def _filter_by_segment(
         self,
-        reference_segment: Union[Segment, List[Segment]],
-        quantities: Union[List[float], List[List[float]]],
-        segments: List[Segment],
-        rewards: List[BinaryReward],
-    ) -> Tuple[Union[List[float], List[List[float]]], List[BinaryReward]]:
+        reference_segment: Segment | list[Segment],
+        quantities: list[float] | list[list[float]],
+        segments: list[Segment],
+        rewards: list[BinaryReward],
+    ) -> tuple[list[float] | list[list[float]], list[BinaryReward]]:
         """
         Filter and update the segments models.
 
         Parameters
         ----------
-        reference_segment : Union[Segment, List[Segment]]
+        reference_segment : Segment | list[Segment]
             Reference segment(s) to filter upon. Pass a list when multiple source
             segments should be included (e.g. after a merge).
-        segments : List[Segment]
+        segments : list[Segment]
             Segments to filter.
-        quantities : Union[List[float], List[List[float]]]
+        quantities : list[float] | list[list[float]]
             Values to filter.
-        rewards : List[BinaryReward]
+        rewards : list[BinaryReward]
             Rewards to filter.
 
         Returns
         -------
-        filtered_values : Union[List[float], List[List[float]]]
+        filtered_values : list[float] | list[list[float]]
             Filtered quantities.
-        filtered_rewards : List[BinaryReward]
+        filtered_rewards : list[BinaryReward]
             Filtered rewards.
         """
         reference_segments = reference_segment if isinstance(reference_segment, list) else [reference_segment]
@@ -506,7 +506,7 @@ class Zooming(BaseZooming):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+    sub_actions: dict[tuple[tuple[Float01, Float01], ...], Beta | None]
         Mapping of segments to Beta models.
     """
 
@@ -530,9 +530,9 @@ class ZoomingCC(BaseZooming, QuantitativeModelCC):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+    sub_actions: dict[tuple[tuple[Float01, Float01], ...], Beta | None]
         Mapping of segments to Beta models.
-    cost: Callable[[Union[float, NonNegativeFloat]], NonNegativeFloat]
+    cost: Callable[[float | NonNegativeFloat], NonNegativeFloat]
         Cost associated to the Beta distribution.
     """
 
@@ -556,8 +556,8 @@ class ZoomingDP(BaseZooming, QuantitativeModelDP):
         Number of comparison points.
     n_max_segments: PositiveInt
         Maximum number of segments.
-    sub_actions: Dict[Tuple[Tuple[Float01, Float01], ...], Optional[Beta]]
+    sub_actions: dict[tuple[tuple[Float01, Float01], ...], Beta | None]
         Mapping of segments to Beta models.
-    price: Callable[[Union[float, np.ndarray]], NonNegativeFloat]
+    price: Callable[[float | np.ndarray], NonNegativeFloat]
         Price associated to the Beta distribution.
     """

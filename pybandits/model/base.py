@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
 
 import numpy as np
 from pydantic import (
@@ -47,18 +46,18 @@ class Model(BaseModelSO, ABC):
         Counter of the number of successes.
     n_failures: PositiveInt = 1
         Counter of the number of failures.
-    decay_factor: Optional[PositiveFloat01] = None
+    decay_factor: PositiveFloat01 | None = None
         Per-update forgetting factor in (0, 1]. When set, historical evidence is discounted on each
         update so the model adapts faster to non-stationary environments. None (default) and 1.0
         preserve the standard, non-decaying behavior.
     """
 
-    decay_factor: Optional[PositiveFloat01] = None
+    decay_factor: PositiveFloat01 | None = None
 
     @abstractmethod
     def sample_proba(
         self, rng: np.random.Generator, **kwargs
-    ) -> Union[List[Probability], List[MOProbability], List[ProbabilityWeight]]:
+    ) -> list[Probability] | list[MOProbability] | list[ProbabilityWeight]:
         """
         Sample the probability of getting a positive reward.
 
@@ -101,7 +100,7 @@ class ModelMO(BaseModelMO, ABC):
 
     Parameters
     ----------
-    models : List[Model]
+    models : list[Model]
         The list of models for each objective.
     """
 
