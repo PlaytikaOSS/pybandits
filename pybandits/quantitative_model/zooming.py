@@ -24,7 +24,7 @@ import ast
 from abc import ABC
 from collections import Counter, defaultdict
 from itertools import product
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Self, Tuple, Union
 
 import numpy as np
 from pydantic import (
@@ -36,7 +36,6 @@ from pydantic import (
 )
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import beta
-from typing_extensions import Self
 
 from pybandits.base import (
     BinaryReward,

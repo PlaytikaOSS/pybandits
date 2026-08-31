@@ -26,7 +26,7 @@ import re
 from abc import ABC, abstractmethod
 from inspect import isclass
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Set, Tuple, Union, get_origin
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Self, Set, Tuple, Union, get_origin
 
 import numpy as np
 from packaging import version
@@ -35,7 +35,6 @@ from pydantic import (
     PrivateAttr,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits.actions_manager import ActionsManager
 from pybandits.base import (

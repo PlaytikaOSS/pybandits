@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Self, Tuple, Union
 
 import jax.numpy as jnp
 import numpy as np
@@ -35,7 +35,6 @@ from pydantic import (
     model_validator,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits.base import (
     PyBanditsBaseModel,

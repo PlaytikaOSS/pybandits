@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Any, Dict, List, Optional, Tuple, Union, get_args
+from typing import Any, Dict, List, Optional, Self, Tuple, Union, get_args
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -30,7 +30,6 @@ from pydantic import (
     PositiveInt,
     validate_call,
 )
-from typing_extensions import Self
 
 from pybandits.base import (
     BinaryReward,
