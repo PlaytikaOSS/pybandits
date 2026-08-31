@@ -1598,6 +1598,35 @@ def test_cold_start_with_backbone_reports_raw_input_dim() -> None:
     assert cmab.input_dim == _BACKBONE_N_FEATURES
 
 
+def test_cold_start_with_backbone_ignores_categorical_features() -> None:
+    """``categorical_features`` describes columns of the *raw* context, which the backbone (no
+    categorical-embedding step of its own) already consumes wholesale as plain numeric input; it must
+    not also reach the per-arm heads, which sit purely on the backbone's embedding.
+
+    Regression test: left unfiltered, the raw column indices/cardinalities used to leak into each
+    head's own ``FeaturesConfig`` and silently widen its real first-layer input dimension
+    (``embedding_dim - n_categorical + sum(embedding_dim_c)``) past ``backbone.embedding_dim`` while
+    the nominal ``feature_config.n_features`` (unaffected) still satisfied ``_check_models``'s
+    cross-arm check — passing construction but crashing the joint SVI ``einsum`` on the next update.
+    """
+    embedding_dim = 6
+    cmab = CmabBernoulli.cold_start(
+        action_ids=_BACKBONE_ACTION_IDS,
+        n_features=_BACKBONE_N_FEATURES,
+        categorical_features={1: 9, 2: 7, 3: 4},  # raw-context indices/cardinalities; meaningless post-embedding
+        backbone_hidden_dims=_BACKBONE_HIDDEN_DIMS,
+        backbone_embedding_dim=embedding_dim,
+        update_kwargs={"num_steps": _BACKBONE_NUM_STEPS},
+    )
+    head = next(iter(cmab.actions.values()))
+    assert head.feature_config.categorical_features_configs == []
+    assert head.feature_config.total_output_dim == embedding_dim
+
+    rng = np.random.default_rng(0)
+    context = rng.normal(size=(6, _BACKBONE_N_FEATURES))
+    cmab.update(actions=["a", "b", "a", "b", "a", "b"], rewards=[1, 0, 1, 1, 0, 0], context=context)
+
+
 @pytest.mark.parametrize(
     "kwarg_name, value_strategy",
     [
