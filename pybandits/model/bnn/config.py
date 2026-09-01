@@ -56,7 +56,9 @@ class CategoricalFeatureConfig(PyBanditsBaseModel):
         Number of distinct integer category codes. The context array must contain
         pre-encoded integer indices in the range ``[0, cardinality)``.
     embedding_dim : PositiveInt
-        Dimensionality of the embedding vector for this feature. Default is 8.
+        Dimensionality of the embedding vector for this feature. Required; callers going through
+        ``cold_start`` get :meth:`DNNMixin.default_categorical_embedding_dim`. Set it to ``cardinality``
+        to express a one-hot expansion (an identity embedding), as :class:`MLPBackbone` does.
     """
 
     column_index: NonNegativeInt

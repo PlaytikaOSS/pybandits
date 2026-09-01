@@ -841,83 +841,6 @@ class TestCalibrateOutputBias:
         assert all(np.isfinite(bnn.model_params.bnn_layer_params[-1].bias.params["mu"]))
 
 
-@settings(deadline=500)
-@given(
-    n_samples=st.integers(min_value=1, max_value=1000),
-    n_features=st.integers(min_value=1, max_value=3),
-    hidden_dim_list=st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
-)
-def test_check_context_matrix(rng, n_samples, n_features, hidden_dim_list):
-    bnn = BayesianNeuralNetwork.cold_start(
-        n_features=n_features,
-        hidden_dim_list=hidden_dim_list,
-    )
-
-    # context is numpy array
-    context = rng.uniform(low=-100.0, high=100.0, size=(n_samples, n_features))
-    assert type(context) is np.ndarray
-    bnn.check_context_matrix(context=context)
-
-    # raise an error if len(context) != len(self.betas)
-    with pytest.raises(AttributeError):
-        bnn.check_context_matrix(context=context.loc[:, 1:])
-
-    # check that context is a numeric numpy array
-    context_str = context.copy()
-    context_str = context_str.astype(object)
-    context_str[:, 0] = context_str[:, 0].astype(str)
-    with pytest.raises(ValueError):
-        bnn.check_context_matrix(context=context_str)
-
-
-@pytest.mark.parametrize(
-    "invalid_context",
-    [
-        "not_an_array",
-        None,
-        42,
-        [["not_numeric", 1], [2, "also_not_numeric"]],
-        {1: 2, 3: 4},
-        True,
-        [1, 2, 3],
-        [[1]],
-    ],
-)
-def test_check_context_matrix_bad_input_type(invalid_context) -> None:
-    """Test error handling in check_context_matrix method for non-ArrayLike inputs."""
-    bnn = BayesianNeuralNetwork.cold_start(n_features=2, hidden_dim_list=[])
-
-    with pytest.raises((AttributeError, ValueError)):
-        bnn.check_context_matrix(context=invalid_context)
-
-
-@given(
-    n_features=st.integers(min_value=1, max_value=5),
-    n_rows=st.integers(min_value=1, max_value=3),
-    invalid_col_delta=st.integers(min_value=1, max_value=3),
-)
-def test_check_context_matrix_error_handling(
-    rng: np.random.Generator, n_features: int, n_rows: int, invalid_col_delta: int
-) -> None:
-    """
-    Test error handling in check_context_matrix method for ArrayLike inputs with invalid number of columns.
-
-    This test generates numpy arrays with a number of columns different from n_features,
-    which should trigger a ValidationError.
-    """
-    # Generate invalid context arrays with too many or too few columns
-    for invalid_n_features in [n_features + invalid_col_delta, max(1, n_features - invalid_col_delta)]:
-        if invalid_n_features == n_features:
-            continue  # skip if by chance delta is 0
-        invalid_context = rng.random((n_rows, invalid_n_features))
-        bnn = BayesianNeuralNetwork.cold_start(
-            n_features=n_features,
-            hidden_dim_list=[],
-        )
-        with pytest.raises(AttributeError):
-            bnn.check_context_matrix(context=invalid_context)
-
-
 @settings(deadline=20000)
 @given(
     activation=st.sampled_from(["tanh", "relu", "sigmoid", "gelu"]),
@@ -2263,7 +2186,7 @@ def test_embedding_params_init_is_frozen_copy(n_features, cardinality, embedding
 
 
 # ---------------------------------------------------------------------------
-# BNN with feature_config: cold_start and check_context_matrix
+# BNN with feature_config: cold_start (context validation lives in tests/test_dnn.py)
 # ---------------------------------------------------------------------------
 
 
@@ -2320,29 +2243,6 @@ def test_cold_start_with_feature_config(n_features, cardinality, hidden_dim_list
     assert len(bnn.model_params.embedding_params.embeddings) == len(categorical_features)
     assert bnn.model_params.embedding_params.embeddings[0].shape[0] == cardinality
     assert bnn.model_params.bnn_layer_params[0].weight.shape[0] == expected_input_dim
-
-
-@settings(deadline=None, max_examples=5)
-@given(
-    n_features=st.integers(min_value=2, max_value=5),
-    cardinality=st.integers(min_value=2, max_value=8),
-    n_samples=st.integers(min_value=2, max_value=10),
-)
-def test_check_context_matrix_with_categorical(rng, n_features, cardinality, n_samples):
-    """check_context_matrix validates column count and categorical range for feature_config models."""
-    cat_col = n_features - 1
-    bnn = _make_bnn_with_categoricals(n_features=n_features, categorical_features={cat_col: cardinality})
-    # valid context
-    context = _make_categorical_context(n_samples, n_features, {cat_col: cardinality})
-    bnn.check_context_matrix(context)
-    # too few columns
-    with pytest.raises(AttributeError, match="Shape mismatch"):
-        bnn.check_context_matrix(rng.uniform(size=(n_samples, 1)))
-    # out-of-range category
-    bad_context = _make_categorical_context(1, n_features, {cat_col: cardinality})
-    bad_context[0, cat_col] = cardinality + 2
-    with pytest.raises(ValueError, match="out of range"):
-        bnn.check_context_matrix(bad_context)
 
 
 # ---------------------------------------------------------------------------

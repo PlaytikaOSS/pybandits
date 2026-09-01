@@ -23,6 +23,7 @@
 
 from typing import List, Optional, Set
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from hypothesis import given, settings
@@ -30,15 +31,18 @@ from hypothesis import strategies as st
 
 from pybandits.base import ActionId
 from pybandits.meta_model import CmabMetaModelMO, CmabMetaModelSO
+from pybandits.model import BayesianNeuralNetwork
 from pybandits.model.bnn.backbone import MLPBackbone
 
-# Shared strategies for the backbone's architecture and its joint-training knobs. Used by the tests
-# that only build/serialise a backbone; the SVI-training tests below keep fixed architectures instead,
-# so their runtime stays bounded.
+# Shared strategies for the backbone's architecture and its configuration knobs (the ones that must
+# survive reset / serialization and be reachable as ``backbone_``-prefixed cold-start kwargs). Used by
+# the tests that only build/serialise a backbone; the SVI-training tests below keep fixed architectures
+# instead, so their runtime stays bounded.
 _HIDDEN_DIMS = st.lists(st.integers(min_value=1, max_value=8), min_size=0, max_size=2)
-_TRAINING_KNOBS = [
+_BACKBONE_KNOBS = [
     ("l2_anchoring", st.floats(min_value=0.0, max_value=1e6, allow_nan=False, allow_infinity=False)),
     ("lr", st.one_of(st.none(), st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False))),
+    ("categorical_features", st.just({0: 3})),
 ]
 
 
@@ -51,22 +55,48 @@ class TestMLPBackbone:
     n_rows = 9
     backbone_seed = 1
 
-    def _context(self, rng: np.random.Generator, n_rows: int = None, n_features: int = None) -> np.ndarray:
-        return rng.normal(size=(n_rows or self.n_rows, n_features or self.n_features))
+    # A raw-context column of integer category codes, one-hot expanded by the backbone.
+    categorical_features = {0: 3}
 
+    def _context(
+        self,
+        rng: np.random.Generator,
+        n_rows: int = None,
+        n_features: int = None,
+        categorical_features: Optional[dict] = None,
+    ) -> np.ndarray:
+        """Gaussian context, with valid integer codes written into any declared categorical column."""
+        context = rng.normal(size=(n_rows or self.n_rows, n_features or self.n_features))
+        for column_index, cardinality in (categorical_features or {}).items():
+            context[:, column_index] = rng.integers(0, cardinality, size=len(context))
+        return context
+
+    @pytest.mark.parametrize("with_categorical", [False, True])
     @given(
         n_rows=st.integers(min_value=1, max_value=12),
         n_features=st.integers(min_value=1, max_value=8),
         embedding_dim=st.integers(min_value=1, max_value=6),
         hidden_dims=_HIDDEN_DIMS,
     )
-    def test_embed_output_shape(self, n_rows: int, n_features: int, embedding_dim: int, hidden_dims: List[int]) -> None:
-        """``embed`` maps ``(n_rows, n_features)`` to ``(n_rows, embedding_dim)``."""
+    def test_embed_output_shape(
+        self, with_categorical: bool, n_rows: int, n_features: int, embedding_dim: int, hidden_dims: List[int]
+    ) -> None:
+        """``embed`` maps ``(n_rows, n_features)`` to ``(n_rows, embedding_dim)``.
+
+        The output width is unchanged by a one-hot expanded categorical column: expansion widens the
+        *input* to the first layer only.
+        """
         rng = np.random.default_rng(0)
+        categorical_features = self.categorical_features if with_categorical else None
         bb = MLPBackbone.cold_start(
-            n_features=n_features, hidden_dims=hidden_dims, embedding_dim=embedding_dim, random_seed=1
+            n_features=n_features,
+            hidden_dims=hidden_dims,
+            embedding_dim=embedding_dim,
+            random_seed=1,
+            categorical_features=categorical_features,
         )
-        assert bb.embed(rng.normal(size=(n_rows, n_features))).shape == (n_rows, embedding_dim)
+        x = self._context(rng, n_rows=n_rows, n_features=n_features, categorical_features=categorical_features)
+        assert bb.embed(x).shape == (n_rows, embedding_dim)
 
     def test_embed_is_deterministic(self, rng: np.random.Generator) -> None:
         """``embed`` is a pure function: identical input yields identical output."""
@@ -76,22 +106,27 @@ class TestMLPBackbone:
         x = self._context(rng)
         np.testing.assert_array_equal(bb.embed(x), bb.embed(x))
 
+    @pytest.mark.parametrize("with_categorical", [False, True])
     @pytest.mark.parametrize("activation", ["relu", "tanh", "gelu", "sigmoid"])
     @given(hidden_dims=_HIDDEN_DIMS)
-    def test_serialization_round_trip(self, activation: str, hidden_dims: List[int], rng: np.random.Generator) -> None:
+    def test_serialization_round_trip(
+        self, activation: str, with_categorical: bool, hidden_dims: List[int], rng: np.random.Generator
+    ) -> None:
         """A backbone survives ``model_dump_json`` / ``model_validate`` with identical embeddings."""
+        categorical_features = self.categorical_features if with_categorical else None
         bb = MLPBackbone.cold_start(
             n_features=self.n_features,
             hidden_dims=hidden_dims,
             embedding_dim=self.embedding_dim,
             activation=activation,
             random_seed=1,
+            categorical_features=categorical_features,
         )
         restored = MLPBackbone.model_validate_json(bb.model_dump_json())
-        x = self._context(rng)
+        x = self._context(rng, categorical_features=categorical_features)
         np.testing.assert_allclose(bb.embed(x), restored.embed(x))
 
-    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @pytest.mark.parametrize("knob_name, value_strategy", _BACKBONE_KNOBS)
     @given(data=st.data(), hidden_dims=_HIDDEN_DIMS)
     def test_training_knobs_survive_reset_and_serialization(
         self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject, hidden_dims: List[int]
@@ -108,6 +143,100 @@ class TestMLPBackbone:
         assert getattr(bb, knob_name) == value
         assert getattr(bb.reset(), knob_name) == value
         assert getattr(MLPBackbone.model_validate_json(bb.model_dump_json()), knob_name) == value
+
+    # ----------------------------------------------------------------- one-hot categorical expansion
+    @given(cardinalities=st.lists(st.integers(min_value=2, max_value=5), min_size=1, max_size=3, unique=False))
+    def test_one_hot_expansion_widens_first_layer_only(self, cardinalities: List[int]) -> None:
+        """Each categorical column costs its ``cardinality`` in first-layer inputs, not one column.
+
+        ``n_features`` keeps reporting the *raw* context width — the expansion is internal — while
+        ``input_dim`` (and hence layer 0's fan-in) grows to ``n_numerical + sum(cardinality)``.
+        """
+        categorical_features = {index: cardinality for index, cardinality in enumerate(cardinalities)}
+        bb = MLPBackbone.cold_start(
+            n_features=self.n_features,
+            hidden_dims=self.hidden,
+            embedding_dim=self.embedding_dim,
+            random_seed=self.backbone_seed,
+            categorical_features=categorical_features,
+        )
+        expected = self.n_features - len(categorical_features) + sum(cardinalities)
+        assert bb.n_features == self.n_features
+        assert bb.input_dim == expected
+        assert bb.weight_arrays[0].shape[0] == expected
+
+    def test_one_hot_expansion_matches_between_numpy_and_jax(self, rng: np.random.Generator) -> None:
+        """``embed`` (NumPy, predict path) and ``forward_jax`` (traced, training path) agree.
+
+        Both call the same ``_expand``, so this cannot catch a bad column layout — one implementation
+        cannot diverge from itself. What it does guard is that *both* call sites expand at all: the
+        model must not train on an encoding it does not predict with. The residual it measures is the
+        NumPy path's float64 context meeting float32 weights.
+        """
+        bb = MLPBackbone.cold_start(
+            n_features=self.n_features,
+            hidden_dims=self.hidden,
+            embedding_dim=self.embedding_dim,
+            random_seed=self.backbone_seed,
+            categorical_features=self.categorical_features,
+        )
+        x = self._context(rng, categorical_features=self.categorical_features)
+        weights_biases = [(jnp.asarray(w), jnp.asarray(b)) for w, b in zip(bb.weight_arrays, bb.bias_arrays)]
+        from_jax = np.asarray(bb.forward_jax(jnp.asarray(x, dtype=jnp.float32), weights_biases))
+        np.testing.assert_allclose(bb.embed(x), from_jax, atol=1e-5)
+
+    def test_one_hot_expansion_is_not_ordinal(self, rng: np.random.Generator) -> None:
+        """A categorical column is a lookup, not a magnitude: doubling the code is not doubling the input.
+
+        Guards the whole point of the expansion — with the column consumed as a continuous value, the
+        first layer's response to code ``2`` would be exactly twice its response to code ``1``.
+        """
+        column_index, cardinality = next(iter(self.categorical_features.items()))
+        bb = MLPBackbone.cold_start(
+            n_features=self.n_features,
+            hidden_dims=[],  # no hidden layer: embed is the raw first-layer projection
+            embedding_dim=self.embedding_dim,
+            random_seed=self.backbone_seed,
+            categorical_features=self.categorical_features,
+        )
+        codes = np.zeros((cardinality, self.n_features))
+        codes[:, column_index] = np.arange(cardinality)
+        embedded = bb.embed(codes)
+        steps = np.diff(embedded, axis=0)
+        # Consumed as a magnitude, every unit step in the code would move the projection identically.
+        assert not np.allclose(steps, steps[0])
+
+    def test_high_cardinality_warns_without_hidden_layers(self) -> None:
+        """The high-cardinality warning reports layer 0's fan-out, which is the embedding when
+        ``hidden_dims`` is empty (a legal single-layer backbone)."""
+        cardinality = MLPBackbone._one_hot_warn_cardinality + 1
+        with pytest.warns(UserWarning, match=f"{cardinality} x {self.embedding_dim}"):
+            bb = MLPBackbone.cold_start(
+                n_features=self.n_features,
+                hidden_dims=[],
+                embedding_dim=self.embedding_dim,
+                random_seed=self.backbone_seed,
+                categorical_features={0: cardinality},
+            )
+        assert bb.input_dim == self.n_features - 1 + cardinality
+
+    def test_first_layer_width_mismatch_raises(self) -> None:
+        """A state whose stored weights disagree with its categorical layout is rejected at construction.
+
+        This is the deserialization guard: a backbone saved under one feature layout must not silently
+        load against another and fail later inside the SVI pass.
+        """
+        bb = MLPBackbone.cold_start(
+            n_features=self.n_features,
+            hidden_dims=self.hidden,
+            embedding_dim=self.embedding_dim,
+            random_seed=self.backbone_seed,
+            categorical_features=self.categorical_features,
+        )
+        state = bb.model_dump()
+        state["categorical_features"] = {0: 5}  # widens the expected layer-0 fan-in by 2
+        with pytest.raises(ValueError, match="First layer expects"):
+            MLPBackbone.model_validate(state)
 
 
 class TestCmabMetaModel:
@@ -135,6 +264,8 @@ class TestCmabMetaModel:
     # hypothesis-generated per test.
     l2_anchoring_disabled = 0.0
     lr_freeze = 0.0
+    # One raw-context column carrying integer category codes, for the backbone's one-hot expansion.
+    categorical_features = {0: 3}
 
     # ----------------------------------------------------------------- helpers / fixtures
     def _head_cold_start_kwargs(self, n_features: int = None) -> dict:
@@ -152,11 +283,12 @@ class TestCmabMetaModel:
         batch_size: Optional[int] = None,
         l2_anchoring: float = 0.0,
         lr: Optional[float] = None,
+        categorical_features: Optional[dict] = None,
     ) -> CmabMetaModelSO:
         """Build a meta-model, optionally with a shared backbone and/or a minibatch ``batch_size``.
 
-        The training knobs live on the ``MLPBackbone``, so they go to its ``cold_start`` here rather
-        than into the meta-model's own ``kwargs``.
+        The backbone's own knobs live on the ``MLPBackbone``, so they go to its ``cold_start`` here
+        rather than into the meta-model's own ``kwargs``.
         """
         update_kwargs = {"num_steps": self.num_steps}
         if batch_size is not None:
@@ -175,6 +307,7 @@ class TestCmabMetaModel:
                 random_seed=self.backbone_seed,
                 l2_anchoring=l2_anchoring,
                 lr=lr,
+                categorical_features=categorical_features,
             )
         return CmabMetaModelSO(action_ids=self.action_ids, kwargs=kwargs)
 
@@ -353,7 +486,7 @@ class TestCmabMetaModel:
         assert any(not np.allclose(b, a) for b, a in zip(w_before, meta.backbone.weight_arrays))
         assert not np.allclose(mu_before, self._head_mu(meta, "a"))
 
-    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @pytest.mark.parametrize("knob_name, value_strategy", _BACKBONE_KNOBS)
     @given(data=st.data())
     def test_backbone_training_knobs_serialization_round_trip(
         self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
@@ -365,7 +498,7 @@ class TestCmabMetaModel:
         restored = CmabMetaModelSO.model_validate_json(meta.model_dump_json())
         assert getattr(restored.backbone, knob_name) == value
 
-    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @pytest.mark.parametrize("knob_name, value_strategy", _BACKBONE_KNOBS)
     @given(data=st.data())
     def test_backbone_training_knobs_reach_backbone_via_cold_start_kwargs(
         self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
@@ -383,6 +516,82 @@ class TestCmabMetaModel:
         }
         meta = CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
         assert getattr(meta.backbone, knob_name) == value
+
+    def test_unprefixed_categorical_features_route_to_the_backbone(self) -> None:
+        """A plain ``categorical_features=`` reaches the backbone when one is built, not the heads.
+
+        ``column_index`` addresses raw context columns, and with a backbone only the backbone sees
+        those — the heads sit on the embedding — so the same top-level argument has to mean "one-hot
+        these raw columns" rather than landing on heads that no longer receive them.
+        """
+        kwargs = {
+            "n_features": self.n_features,
+            "hidden_dim_list": self.hidden,
+            "update_kwargs": {"num_steps": self.num_steps},
+            "backbone_hidden_dims": self.backbone_hidden_dims,
+            "backbone_embedding_dim": self.embedding_dim,
+            "categorical_features": self.categorical_features,
+        }
+        meta = CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
+        assert meta.backbone.categorical_features == self.categorical_features
+        assert meta.representative_bnn.feature_config.categorical_features_configs == []
+        assert meta.representative_bnn.feature_config.n_features == self.embedding_dim
+        assert meta.input_dim == self.n_features  # raw context width, expansion is internal
+
+    def test_categorical_features_stay_on_the_heads_without_a_backbone(self) -> None:
+        """The other half of the routing contract: with no backbone the heads keep their own embeddings.
+
+        Nothing is re-routed, because the heads *are* what sees the raw context in that configuration.
+        """
+        kwargs = self._head_cold_start_kwargs()
+        kwargs["categorical_features"] = self.categorical_features
+        meta = CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
+        assert meta.backbone is None
+        head_configs = meta.representative_bnn.feature_config.categorical_features_configs
+        assert [(cfg.column_index, cfg.cardinality) for cfg in head_configs] == list(self.categorical_features.items())
+
+    def test_categorical_features_given_both_ways_raises(self) -> None:
+        """The prefixed and unprefixed spellings mean the same thing here, so asking for both is an error."""
+        kwargs = {
+            "n_features": self.n_features,
+            "hidden_dim_list": self.hidden,
+            "update_kwargs": {"num_steps": self.num_steps},
+            "backbone_hidden_dims": self.backbone_hidden_dims,
+            "backbone_embedding_dim": self.embedding_dim,
+            "categorical_features": self.categorical_features,
+            "backbone_categorical_features": self.categorical_features,
+        }
+        with pytest.raises(TypeError, match="not both"):
+            CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
+
+    def test_backbone_categorical_update_trains_and_validates_codes(self, rng: np.random.Generator) -> None:
+        """A joint update over one-hot expanded context trains everything and rejects invalid codes.
+
+        The update path runs the backbone under a JAX trace, where an out-of-range code would silently
+        one-hot to an all-zero block instead of raising, so the check has to happen before the trace.
+        """
+        kwargs = {
+            "n_features": self.n_features,
+            "hidden_dim_list": self.hidden,
+            "update_kwargs": {"num_steps": self.num_steps},
+            "backbone_hidden_dims": self.backbone_hidden_dims,
+            "backbone_embedding_dim": self.embedding_dim,
+            "backbone_random_seed": self.backbone_seed,
+            "categorical_features": self.categorical_features,
+        }
+        meta = CmabMetaModelSO(action_ids=self.action_ids, kwargs=kwargs)
+        actions, rewards, context = self._balanced_batch(rng)
+        for column_index, cardinality in self.categorical_features.items():
+            context[:, column_index] = rng.integers(0, cardinality, size=len(context))
+        w_before = [w.copy() for w in meta.backbone.weight_arrays]
+        mu_before = self._head_mu(meta, "a").copy()
+        meta.update(actions=actions, rewards=rewards, context=context)
+        assert any(not np.allclose(b, a) for b, a in zip(w_before, meta.backbone.weight_arrays))
+        assert not np.allclose(mu_before, self._head_mu(meta, "a"))
+
+        context[0, 0] = max(self.categorical_features.values())  # one past the largest valid code
+        with pytest.raises(ValueError, match="out of range"):
+            meta.update(actions=actions, rewards=rewards, context=context)
 
     @given(random_seed=st.integers(min_value=0, max_value=2**31 - 1))
     def test_backbone_inherits_meta_model_random_seed(self, random_seed: int) -> None:
@@ -404,7 +613,7 @@ class TestCmabMetaModel:
         )
         assert overridden.backbone.random_seed == self.backbone_seed
 
-    @pytest.mark.parametrize("knob_name, value_strategy", _TRAINING_KNOBS)
+    @pytest.mark.parametrize("knob_name, value_strategy", _BACKBONE_KNOBS)
     @given(data=st.data())
     def test_backbone_training_knobs_require_backbone_hidden_dims(
         self, knob_name: str, value_strategy: st.SearchStrategy, data: st.DataObject
@@ -518,6 +727,29 @@ class TestCmabMetaModel:
         }
         with pytest.raises(NotImplementedError, match="advi"):
             CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
+
+    def test_rejects_head_whose_first_layer_disagrees_with_the_embedding(self) -> None:
+        """A head carrying categorical columns of its own is rejected at construction.
+
+        Its first layer is wider than the ``embedding_dim`` the backbone feeds it (the categorical
+        columns address raw context, which only the backbone sees), so the mismatch is a construction
+        error rather than a shape blow-up inside the joint pass' forward pass.
+        """
+        head = BayesianNeuralNetwork.cold_start(
+            n_features=self.embedding_dim,
+            hidden_dim_list=self.hidden,
+            categorical_features=self.categorical_features,
+            update_kwargs={"num_steps": self.num_steps},
+        )
+        assert head.feature_config.total_output_dim != self.embedding_dim
+        backbone = MLPBackbone.cold_start(
+            n_features=self.n_features,
+            hidden_dims=self.backbone_hidden_dims,
+            embedding_dim=self.embedding_dim,
+            random_seed=self.backbone_seed,
+        )
+        with pytest.raises(AttributeError, match="first layer width"):
+            CmabMetaModelSO(actions={arm: head for arm in self.valid_subset}, backbone=backbone)
 
     def test_no_backbone_allows_non_advi_vi_method(self) -> None:
         """With no shared backbone, a non-advi VI method is allowed (each arm trains independently)."""

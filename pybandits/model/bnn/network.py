@@ -431,48 +431,6 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             embedding_params=embedding_params,
         )
 
-    def check_context_matrix(self, context: np.ndarray):
-        """
-        Validate the context input.
-
-        Context must be an array-like with numeric values and the correct number of columns.
-        Categorical columns are validated to contain valid integer indices within their vocab range.
-
-        Parameters
-        ----------
-        context : np.ndarray
-            Matrix of contextual features of shape ``(n_samples, n_cols)``.
-        """
-        expected_cols = self.feature_config.n_features
-
-        try:
-            n_cols_context = context.shape[1]
-        except Exception as e:
-            raise AttributeError(f"Context must be an ArrayLike with {expected_cols} columns: {e}.")
-
-        if not np.issubdtype(context.dtype, np.number):
-            raise ValueError("Context array must contain only numeric values.")
-
-        if n_cols_context != expected_cols:
-            raise AttributeError(f"Shape mismatch: context must have {expected_cols} columns.")
-
-        configs = self.feature_config.categorical_features_configs
-        if configs:
-            col_indices = [c.column_index for c in configs]
-            cardinalities = np.array([c.cardinality for c in configs])
-            raw_cat_cols = context[:, col_indices]
-            if not np.all(np.isfinite(raw_cat_cols) & (raw_cat_cols == np.floor(raw_cat_cols))):
-                raise ValueError("Categorical feature columns must contain finite integer-valued indices.")
-            cat_cols = raw_cat_cols.astype(int)
-            in_range = (cat_cols >= 0) & (cat_cols < cardinalities[np.newaxis, :])
-            if not np.all(in_range):
-                bad_idx = int(np.argmax(~np.all(in_range, axis=0)))
-                cfg = configs[bad_idx]
-                raise ValueError(
-                    f"Categorical feature at column {cfg.column_index} (index {bad_idx}) has indices out of range "
-                    f"[0, {cfg.cardinality})."
-                )
-
     @property
     def input_dim(self) -> PositiveInt:
         """
@@ -1491,8 +1449,9 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             (or after a ``_reset()``). Default is False.
         categorical_features : Optional[Dict[int, int]], optional
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
-            modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically
-            to ``ceil(cardinality / embedding_dim_divisor)``. Columns absent from this dict are treated as numerical.
+            modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically by
+            :meth:`DNNMixin.default_categorical_embedding_dim` (full rank for small cardinalities,
+            bounded for large ones). Columns absent from this dict are treated as numerical.
         random_seed : Optional[NonNegativeInt], optional
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.
@@ -1512,7 +1471,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             CategoricalFeatureConfig(
                 column_index=col_idx,
                 cardinality=cardinality,
-                embedding_dim=ceil(cardinality / cls.embedding_dim_divisor),
+                embedding_dim=cls.default_categorical_embedding_dim(cardinality),
             )
             for col_idx, cardinality in (categorical_features or {}).items()
         ]

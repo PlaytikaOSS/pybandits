@@ -113,6 +113,10 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     # Cold-start kwargs prefix marking a key as backbone-only: it is popped and forwarded, prefix
     # stripped, to ``MLPBackbone.cold_start`` (so a new backbone knob needs no change here).
     _backbone_kwargs_prefix: ClassVar[str] = "backbone_"
+    # Unprefixed *head* cold-start kwargs that describe raw context columns. Only the backbone sees
+    # those once it exists, so they are re-routed to it under the same name — see
+    # ``_build_backbone_from_kwargs``. Both spellings must reach ``MLPBackbone.cold_start``.
+    _backbone_rerouted_kwargs: ClassVar[Tuple[str, ...]] = ("categorical_features",)
 
     _rng_key: Any = PrivateAttr(default=None)
 
@@ -169,6 +173,13 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         model reproducible. When a backbone is built, ``n_features`` is rewritten to the embedding width
         so the per-arm heads sit on the embedding. Backbone-only knobs without ``hidden_dims`` (i.e. no
         backbone requested) raise, rather than being silently ignored.
+
+        ``_backbone_rerouted_kwargs`` names the exceptions to the prefix rule: head arguments that
+        describe *raw context columns*, which only the backbone sees once it exists (the heads sit on
+        the embedding). Each is popped from the head kwargs and forwarded to the backbone under the same
+        name, so the same top-level argument keeps working with and without a backbone. Currently that
+        is ``categorical_features``, whose ``column_index`` values index the raw context and whose
+        columns the backbone one-hot expands.
         """
         prefix = cls._backbone_kwargs_prefix
         backbone_kwargs = {key[len(prefix) :]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
@@ -180,6 +191,15 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         n_features = kwargs.get("n_features")
         if n_features is None:
             raise ValueError("n_features must be provided to build the shared backbone.")
+        for name in cls._backbone_rerouted_kwargs:
+            head_value = kwargs.pop(name, None)
+            if not head_value:
+                continue
+            if backbone_kwargs.get(name):
+                raise TypeError(
+                    f"Pass either {name} or {prefix}{name}, not both; with a backbone they mean the same thing."
+                )
+            backbone_kwargs[name] = head_value
         backbone_kwargs.setdefault("random_seed", kwargs.get("random_seed"))
         if backbone_kwargs.get("embedding_dim") is None:
             backbone_kwargs["embedding_dim"] = max(1, n_features // BaseBayesianNeuralNetwork.embedding_dim_divisor)
@@ -199,9 +219,10 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     def _check_models(self) -> "CmabMetaModel":
         """Cross-arm consistency: every head must share input size and update kwargs.
 
-        Adapted from the old cmab per-action meta-model's ``check_models``; the heads' input dim must
-        also match the backbone's ``embedding_dim`` when a backbone is present, and the joint engine is
-        ADVI-only, so that VI-method constraint is enforced here at construction time.
+        Adapted from the old cmab per-action meta-model's ``check_models``; the width the heads' first
+        layer consumes must also match the backbone's ``embedding_dim`` when a backbone is present, and
+        the joint engine is ADVI-only, so that VI-method constraint is enforced here at construction
+        time.
 
         Returns
         -------
@@ -216,9 +237,14 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                 raise AttributeError("All actions should have the same input size.")
             if first_bnn.update_kwargs != self._rep_bnn(head).update_kwargs:
                 raise AttributeError("All actions should have the same update kwargs.")
-        if self.backbone is not None and first_dim != self.backbone.embedding_dim:
+        # What must match the embedding is the width the head's first layer consumes, which its own
+        # categorical expansion (if any) widens beyond the context dim.
+        feature_config = first_bnn.feature_config
+        first_layer_dim = first_dim + feature_config.total_output_dim - feature_config.n_features
+        if self.backbone is not None and first_layer_dim != self.backbone.embedding_dim:
             raise AttributeError(
-                f"Head context dim ({first_dim}) must equal backbone.embedding_dim ({self.backbone.embedding_dim})."
+                f"Head first layer width ({first_layer_dim}) must equal "
+                f"backbone.embedding_dim ({self.backbone.embedding_dim})."
             )
         # With no shared backbone there is nothing to train jointly (update() dispatches each arm's
         # head independently), so the joint engine's ADVI-only restriction does not apply.
@@ -337,6 +363,12 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             # own reward-shape check already applies — no need to duplicate it here.
             self._dispatch_per_action_update(actions=actions, rewards=rewards, quantities=quantities, context=context)
             return
+
+        # The no-backbone branch above returns through _dispatch_per_action_update, where each head's
+        # own update() validates its context. The joint pass bypasses head.update() and runs the
+        # backbone under a JAX trace, where a bad category code cannot raise (it would silently one-hot
+        # to an all-zero block), so the same validation has to happen explicitly here.
+        self.backbone.check_context_matrix(context=context)
 
         rewards_arr: np.ndarray = np.asarray(rewards)
         # The joint engine bypasses each head's own update() (and thus BaseModelMO's reward-shape
