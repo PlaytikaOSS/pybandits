@@ -30,6 +30,7 @@ resolution, so the two component families stay in lockstep.
 field; concrete subclasses supply the default value for their domain.
 """
 
+from math import ceil
 from typing import Any, ClassVar, Dict
 
 import jax
@@ -48,6 +49,11 @@ class DNNMixin(PyBanditsBaseModel):
     # (min 1). Shared by BaseBayesianNeuralNetwork's categorical embeddings and MLPBackbone's default
     # output width, since both are "pick a reasonable embedding size" defaults for a DNN component.
     embedding_dim_divisor: ClassVar[int] = 4
+    # Bounds clamping the divisor rule for a *categorical* embedding (see default_categorical_embedding_dim).
+    # embedding_dim_min needs no binary special case: the cardinality - 1 cap dominates it below 5, so a
+    # 2-level feature still gets a single axis and a 3-level one gets two.
+    embedding_dim_min: ClassVar[int] = 4
+    embedding_dim_max: ClassVar[int] = 64
 
     _numpy_activations: ClassVar[Dict[str, Any]] = {
         "tanh": np.tanh,
@@ -61,6 +67,98 @@ class DNNMixin(PyBanditsBaseModel):
         "sigmoid": jax.nn.sigmoid,
         "gelu": lambda x: jax.nn.gelu(x, approximate=False),
     }
+
+    def check_context_matrix(self, context: np.ndarray) -> None:
+        """
+        Validate the context input.
+
+        Context must be an array-like with numeric values and the correct number of columns.
+        Categorical columns are validated to contain valid integer indices within their vocab range.
+
+        Shared by the Bayesian heads and the deterministic backbone, which differ only in what their
+        ``feature_config`` describes: the head's own input for the former, the raw context for the
+        latter. Both checks guard a *silent* failure on the backbone side — its ``_expand`` reads named
+        columns, so a too-wide context would be truncated rather than rejected by the first matmul, and
+        an out-of-range code one-hots to an all-zero block rather than raising.
+
+        Subclasses must expose a ``feature_config``.
+
+        Parameters
+        ----------
+        context : np.ndarray
+            Matrix of contextual features of shape ``(n_samples, n_cols)``.
+
+        Raises
+        ------
+        AttributeError
+            If the context is not array-like or does not have ``feature_config.n_features`` columns.
+        ValueError
+            If the context is non-numeric, or a categorical column holds a non-integer-valued or
+            out-of-range code.
+        """
+        expected_cols = self.feature_config.n_features
+
+        try:
+            n_cols_context = context.shape[1]
+        except Exception as e:
+            raise AttributeError(f"Context must be an ArrayLike with {expected_cols} columns: {e}.")
+
+        if not np.issubdtype(context.dtype, np.number):
+            raise ValueError("Context array must contain only numeric values.")
+
+        if n_cols_context != expected_cols:
+            raise AttributeError(f"Shape mismatch: context must have {expected_cols} columns.")
+
+        configs = self.feature_config.categorical_features_configs
+        if configs:
+            col_indices = [c.column_index for c in configs]
+            cardinalities = np.array([c.cardinality for c in configs])
+            raw_cat_cols = context[:, col_indices]
+            if not np.all(np.isfinite(raw_cat_cols) & (raw_cat_cols == np.floor(raw_cat_cols))):
+                raise ValueError("Categorical feature columns must contain finite integer-valued indices.")
+            cat_cols = raw_cat_cols.astype(int)
+            in_range = (cat_cols >= 0) & (cat_cols < cardinalities[np.newaxis, :])
+            if not np.all(in_range):
+                bad_idx = int(np.argmax(~np.all(in_range, axis=0)))
+                cfg = configs[bad_idx]
+                raise ValueError(
+                    f"Categorical feature at column {cfg.column_index} (index {bad_idx}) has indices out of range "
+                    f"[0, {cfg.cardinality})."
+                )
+
+    @classmethod
+    def default_categorical_embedding_dim(cls, cardinality: int) -> int:
+        """Embedding width for a categorical feature whose ``embedding_dim`` was not given explicitly.
+
+        ``ceil(cardinality / embedding_dim_divisor)``, clamped into
+        ``[embedding_dim_min, embedding_dim_max]`` and then capped at ``cardinality - 1``.
+
+        The ``cardinality - 1`` cap is the point of the rule: an embedding table ``E (K, d)`` followed by
+        a layer ``V (d, h)`` is the map ``onehot_K -> R^h`` constrained to rank ``d``, and since the
+        layer's bias absorbs the mean of the ``K`` rows, ``d = K - 1`` already spans every such map. So
+        ``d >= K - 1`` buys nothing and ``d < K - 1`` costs expressiveness — the divisor rule alone would
+        compress a 4-level feature onto a single learned axis. ``embedding_dim_max`` bounds the other end,
+        where the divisor rule would otherwise grow the table (and its variational parameters) linearly
+        in cardinality.
+
+        The cap is also what handles small cardinalities without a special case: a binary feature gets
+        ``2 - 1 = 1`` and a 3-level one gets 2, regardless of ``embedding_dim_min``.
+
+        Parameters
+        ----------
+        cardinality : int
+            Number of distinct category codes.
+
+        Returns
+        -------
+        int
+            The embedding width to use (always ``>= 1``).
+        """
+        compressed = max(cls.embedding_dim_min, ceil(cardinality / cls.embedding_dim_divisor))
+        # The outer max is load-bearing only for cardinality 1 (a single-level feature, which
+        # _add_cat_scenario in tests/test_transfer.py does draw): cardinality - 1 is then 0, which
+        # CategoricalFeatureConfig.embedding_dim rejects as non-positive.
+        return max(1, min(cardinality - 1, cls.embedding_dim_max, compressed))
 
     @property
     def numpy_activation(self) -> Any:

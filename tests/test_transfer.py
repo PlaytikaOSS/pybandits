@@ -23,7 +23,6 @@
 """Tests for transfer learning functionality."""
 
 import json
-import math
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -1012,12 +1011,40 @@ class TestHiddenDimExpansion:
         assert set(result.actions.keys()) == {"a2"}
 
 
+def _cardinality_bands(stop: int = 25) -> Dict[int, List[int]]:
+    """Cardinalities grouped by the embedding width ``cold_start`` assigns them.
+
+    Derived from the rule rather than restating it: transfer refuses to change ``embedding_dim``, so
+    growing a cardinality within one band is a transferable edit and crossing bands is not. Starts at 2
+    because a one-level "categorical" is degenerate, and drawing it would spend a share of the growth
+    examples on ``1 -> 2``; ``stop`` is far enough past several band boundaries to give distinct widths
+    to cross.
+    """
+    bands: Dict[int, List[int]] = {}
+    for cardinality in range(2, stop):
+        bands.setdefault(BaseBayesianNeuralNetwork.default_categorical_embedding_dim(cardinality), []).append(
+            cardinality
+        )
+    return bands
+
+
+def _growable_dims(bands: Dict[int, List[int]]) -> List[int]:
+    """The bands wide enough to draw a distinct (old < new) cardinality pair from.
+
+    A plain function rather than a comprehension in the class body, which cannot see class-level names.
+    """
+    return [dim for dim in sorted(bands) if len(bands[dim]) >= 2]
+
+
 class TestCategoricalFeatureExpansion:
     """Tests for categorical feature embedding expansion via edit_model_on_the_fly."""
 
-    _CAT_COLUMN = 2  # a valid column index given _N_FEATURES = 5
-    _CAT_OLD_CARDINALITY = 5  # embedding_dim = ceil(5/4) = 2
-    _CAT_INCOMPATIBLE_CARDINALITY = 4  # embedding_dim = ceil(4/4) = 1 — different from old=5
+    _cat_dim_bands = _cardinality_bands()
+    _cat_growable_dims = _growable_dims(_cat_dim_bands)
+    _cat_column = 2  # a valid column index given _N_FEATURES = 5
+    _cat_old_cardinality = _cat_dim_bands[_cat_growable_dims[0]][0]
+    # Sits in a different embedding_dim band from _cat_old_cardinality, so transfer must refuse it.
+    _cat_incompatible_cardinality = _cat_dim_bands[_cat_growable_dims[-1]][-1]
 
     @st.composite
     def _compatible_grow_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int, int]:
@@ -1025,12 +1052,12 @@ class TestCategoricalFeatureExpansion:
         action_id = draw(single_action_id_strategy)
         n_features = draw(st.integers(min_value=2, max_value=6))
         cat_col = draw(st.integers(min_value=0, max_value=n_features - 1))
-        # Pick a dimension bin (divisor=4); draw old < new within that bin so embedding_dim is preserved
-        dim = draw(st.integers(min_value=1, max_value=3))
-        low, high = 4 * (dim - 1) + 1, 4 * dim
-        old_cardinality = draw(st.integers(min_value=low, max_value=high - 1))
-        new_cardinality = draw(st.integers(min_value=old_cardinality + 1, max_value=high))
-        return action_id, n_features, cat_col, old_cardinality, new_cardinality
+        # Draw old < new from one embedding_dim band, so the width is preserved and transfer is allowed.
+        bands = TestCategoricalFeatureExpansion._cat_dim_bands
+        band = draw(st.sampled_from([bands[dim] for dim in TestCategoricalFeatureExpansion._cat_growable_dims]))
+        old_index = draw(st.integers(min_value=0, max_value=len(band) - 2))
+        new_index = draw(st.integers(min_value=old_index + 1, max_value=len(band) - 1))
+        return action_id, n_features, cat_col, band[old_index], band[new_index]
 
     @st.composite
     def _add_cat_scenario(draw: st.DrawFn) -> Tuple[str, int, int, int]:
@@ -1047,10 +1074,12 @@ class TestCategoricalFeatureExpansion:
         action_id = draw(single_action_id_strategy)
         n_features = draw(st.integers(min_value=2, max_value=6))
         cat_col = draw(st.integers(min_value=0, max_value=n_features - 1))
-        dim_old = draw(st.integers(min_value=1, max_value=3))
-        dim_new = draw(st.integers(min_value=1, max_value=3).filter(lambda d: d != dim_old))
-        old_cardinality = draw(st.integers(min_value=4 * (dim_old - 1) + 1, max_value=4 * dim_old))
-        new_cardinality = draw(st.integers(min_value=4 * (dim_new - 1) + 1, max_value=4 * dim_new))
+        bands = TestCategoricalFeatureExpansion._cat_dim_bands
+        dims = sorted(bands)
+        dim_old = draw(st.sampled_from(dims))
+        dim_new = draw(st.sampled_from(dims).filter(lambda d: d != dim_old))
+        old_cardinality = draw(st.sampled_from(bands[dim_old]))
+        new_cardinality = draw(st.sampled_from(bands[dim_new]))
         return action_id, n_features, cat_col, old_cardinality, new_cardinality
 
     # ------------------------------------------------------------------
@@ -1075,7 +1104,7 @@ class TestCategoricalFeatureExpansion:
         )
         result = edit_model_on_the_fly(current, template)
         result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
-        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
+        expected_dim = BaseBayesianNeuralNetwork.default_categorical_embedding_dim(new_cardinality)
         assert result_emb.shape == (new_cardinality, expected_dim)
 
     @given(scenario=_compatible_grow_scenario(), n_objectives=n_objectives_strategy)
@@ -1099,7 +1128,7 @@ class TestCategoricalFeatureExpansion:
             strategy=MultiObjectiveBandit(),
         )
         result = edit_model_on_the_fly(current, template)
-        expected_dim = math.ceil(new_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
+        expected_dim = BaseBayesianNeuralNetwork.default_categorical_embedding_dim(new_cardinality)
         for obj_model in result.actions[action_id].models:
             result_emb = obj_model.model_params.embedding_params.embeddings[0]
             assert result_emb.shape == (new_cardinality, expected_dim)
@@ -1257,7 +1286,7 @@ class TestCategoricalFeatureExpansion:
         )
         result = edit_model_on_the_fly(current, template)
         result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
-        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
+        expected_dim = BaseBayesianNeuralNetwork.default_categorical_embedding_dim(new_cat_cardinality)
         assert result_emb.shape == (new_cat_cardinality, expected_dim)
 
     @given(
@@ -1287,7 +1316,7 @@ class TestCategoricalFeatureExpansion:
         assert result.actions[action_id].input_dim == new_n_features
         assert result.actions[action_id].model_params.embedding_params is not None
         result_emb = result.actions[action_id].model_params.embedding_params.embeddings[0]
-        expected_dim = math.ceil(new_cat_cardinality / BaseBayesianNeuralNetwork.embedding_dim_divisor)
+        expected_dim = BaseBayesianNeuralNetwork.default_categorical_embedding_dim(new_cat_cardinality)
         assert result_emb.shape == (new_cat_cardinality, expected_dim)
 
     # ------------------------------------------------------------------
@@ -1338,9 +1367,9 @@ class TestCategoricalFeatureExpansion:
         self,
         action_id: str = _ACTION_ID,
         n_features: int = _N_FEATURES,
-        cat_col: int = _CAT_COLUMN,
-        old_cardinality: int = _CAT_OLD_CARDINALITY,
-        incompatible_cardinality: int = _CAT_INCOMPATIBLE_CARDINALITY,
+        cat_col: int = _cat_column,
+        old_cardinality: int = _cat_old_cardinality,
+        incompatible_cardinality: int = _cat_incompatible_cardinality,
     ) -> None:
         """Incompatible categoricals on non-overlapping actions do not raise errors."""
         current = CmabBernoulli.cold_start(

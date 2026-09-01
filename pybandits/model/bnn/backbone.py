@@ -29,22 +29,25 @@ Pydantic immutability is preserved by returning a new instance from :meth:`with_
 It shares its activation field, maps and resolvers with the Bayesian heads via :class:`DNNMixin`.
 """
 
-from typing import ClassVar, List, Optional, Tuple
+import warnings
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
 import jax.numpy as jnp
 import numpy as np
-from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt, PositiveInt
+from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
 from typing_extensions import Self
 
 from pybandits.model.bnn._dnn import DNNMixin
 from pybandits.model.bnn._svi import forward_layers
 from pybandits.model.bnn._typing import ActivationFunctions
+from pybandits.model.bnn.config import CategoricalFeatureConfig, FeaturesConfig
 
 
 class MLPBackbone(DNNMixin):
     """A plain MLP backbone with deterministic (point-estimate) weights.
 
-    Architecture is ``[n_features] + hidden_dims + [embedding_dim]``. All layers except the last are
+    Architecture is ``[input_dim] + hidden_dims + [embedding_dim]`` (``input_dim`` is ``n_features``
+    with each categorical column widened to its one-hot block). All layers except the last are
     activated; the final layer is a linear projection to the embedding space (the per-arm Bayesian
     heads supply the decision non-linearity). Point-estimate weights/biases are stored as plain lists
     (``weights``/``biases``) so the model serialises via ``get_state``/``from_state``; numpy views
@@ -65,6 +68,16 @@ class MLPBackbone(DNNMixin):
 
     When cold-starting a :class:`~pybandits.meta_model.cmab_meta_model.CmabMetaModel`, pass these as
     ``backbone_l2_anchoring`` / ``backbone_lr``.
+
+    ``categorical_features`` (``{column_index: cardinality}``, on raw context columns) declares columns
+    holding integer category codes; each is **one-hot expanded** before the first layer instead of being
+    consumed as a continuous value. One-hot into a dense layer *is* a full-rank learned embedding of the
+    category — ``onehot_K @ W`` selects row ``k`` of ``W``, and that row is category ``k``'s learned
+    vector. The Bayesian heads instead use a low-rank embedding table (see
+    :class:`~pybandits.model.bnn.config.CategoricalFeatureConfig`), which buys a *posterior* per
+    category; the backbone's weights are deterministic point estimates, so a table here could only lose
+    rank without buying anything. Cost is ``cardinality x hidden_dims[0]`` extra deterministic weights
+    per feature, which is why very large cardinalities warn (see ``_one_hot_warn_cardinality``).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -73,6 +86,9 @@ class MLPBackbone(DNNMixin):
     _init_limit_numerator: ClassVar[float] = 6.0
     # Activations whose negative-half saturation calls for He init (variance ~ 2/fan_in).
     _he_activations: ClassVar[Tuple[str, ...]] = ("relu", "gelu")
+    # Above this cardinality a one-hot block's first-layer weights get expensive (K x hidden_dims[0]
+    # deterministic weights, all serialised as nested lists) and cold_start warns.
+    _one_hot_warn_cardinality: ClassVar[int] = 500
 
     n_features: PositiveInt
     embedding_dim: PositiveInt
@@ -83,6 +99,7 @@ class MLPBackbone(DNNMixin):
     biases: List[List[float]]  # per layer: (output_dim,)
     l2_anchoring: NonNegativeFloat = 0.0
     lr: Optional[NonNegativeFloat] = None
+    categorical_features: Dict[NonNegativeInt, PositiveInt] = Field(default_factory=dict)
 
     # Site-name prefixes for the backbone's deterministic params inside the joint NumPyro model.
     weight_var_name: ClassVar[str] = "backbone_weight"
@@ -92,6 +109,66 @@ class MLPBackbone(DNNMixin):
     def _as_float32_arrays(nested: List[List[float]]) -> List[np.ndarray]:
         """Convert per-layer nested lists to ``float32`` numpy arrays (JAX's default working precision)."""
         return [np.asarray(arr, dtype=np.float32) for arr in nested]
+
+    @staticmethod
+    def _build_feature_config(n_features: int, categorical_features: Dict[int, int]) -> FeaturesConfig:
+        """Column layout of the raw context, each categorical widened to its one-hot block.
+
+        ``embedding_dim = cardinality`` because a one-hot expansion *is* an identity embedding, so
+        ``FeaturesConfig.total_output_dim`` is exactly the width the first layer sees. Configs are
+        emitted in ``column_index`` order so the expanded column layout does not depend on the order
+        the ``categorical_features`` dict happened to be written (or deserialised) in.
+
+        Parameters
+        ----------
+        n_features : int
+            Raw context width (before expansion).
+        categorical_features : Dict[int, int]
+            ``{column_index: cardinality}`` on raw context columns.
+
+        Returns
+        -------
+        FeaturesConfig
+            The layout, validated (out-of-range ``column_index`` raises).
+        """
+        return FeaturesConfig(
+            n_features=n_features,
+            categorical_features_configs=[
+                CategoricalFeatureConfig(column_index=column_index, cardinality=cardinality, embedding_dim=cardinality)
+                for column_index, cardinality in sorted(categorical_features.items())
+            ],
+        )
+
+    @property
+    def feature_config(self) -> FeaturesConfig:
+        """This backbone's raw-context column layout (see :meth:`_build_feature_config`)."""
+        return self._build_feature_config(self.n_features, self.categorical_features)
+
+    @property
+    def input_dim(self) -> PositiveInt:
+        """Width the first layer sees: numerical columns plus one column per category code."""
+        return self.feature_config.total_output_dim
+
+    @model_validator(mode="after")
+    def _check_input_layer(self) -> Self:
+        """Validate the categorical layout and that layer 0 was built for the expanded width.
+
+        Catches a state whose ``categorical_features`` and stored ``weights`` disagree — e.g. a
+        serialized backbone loaded against a changed feature layout — at construction rather than
+        with a shape error inside the SVI pass.
+
+        Returns
+        -------
+        Self
+            The validated instance.
+        """
+        expected = self.input_dim  # also raises on an out-of-range column_index
+        if self.weights and len(self.weights[0]) != expected:
+            raise ValueError(
+                f"First layer expects {len(self.weights[0])} input columns but the feature layout gives "
+                f"{expected} (n_features={self.n_features}, categorical_features={self.categorical_features})."
+            )
+        return self
 
     @property
     def weight_arrays(self) -> List[np.ndarray]:
@@ -155,7 +232,7 @@ class MLPBackbone(DNNMixin):
     @classmethod
     def _init_params(
         cls,
-        n_features: PositiveInt,
+        input_dim: PositiveInt,
         hidden_dims: List[PositiveInt],
         embedding_dim: PositiveInt,
         activation: ActivationFunctions,
@@ -165,8 +242,9 @@ class MLPBackbone(DNNMixin):
 
         Parameters
         ----------
-        n_features : int
-            Input (context) dimensionality.
+        input_dim : int
+            Width the first layer consumes — the raw context width with each categorical column
+            replaced by its one-hot block (``FeaturesConfig.total_output_dim``).
         hidden_dims : List[int]
             Hidden-layer widths.
         embedding_dim : int
@@ -182,12 +260,12 @@ class MLPBackbone(DNNMixin):
             Per-layer ``(weights, biases)`` arrays.
         """
         rng = np.random.default_rng(random_seed)
-        dims = [n_features, *hidden_dims, embedding_dim]
+        dims = [input_dim, *hidden_dims, embedding_dim]
         weights, biases = [], []
-        for input_dim, output_dim in zip(dims[:-1], dims[1:]):
-            limit = cls._init_limit(input_dim, output_dim, activation)
-            weights.append(rng.uniform(-limit, limit, size=(input_dim, output_dim)))
-            biases.append(np.zeros(output_dim))
+        for fan_in, fan_out in zip(dims[:-1], dims[1:]):
+            limit = cls._init_limit(fan_in, fan_out, activation)
+            weights.append(rng.uniform(-limit, limit, size=(fan_in, fan_out)))
+            biases.append(np.zeros(fan_out))
         return weights, biases
 
     @classmethod
@@ -200,6 +278,7 @@ class MLPBackbone(DNNMixin):
         random_seed: Optional[NonNegativeInt] = None,
         l2_anchoring: NonNegativeFloat = 0.0,
         lr: Optional[NonNegativeFloat] = None,
+        categorical_features: Optional[Dict[NonNegativeInt, PositiveInt]] = None,
     ) -> Self:
         """Initialise an MLP backbone with activation-dependent (He/Xavier) weights and zero biases.
 
@@ -219,13 +298,31 @@ class MLPBackbone(DNNMixin):
             Weight of the per-update anchoring penalty on the backbone's params (``0.0`` disables it).
         lr : Optional[NonNegativeFloat], default=None
             Backbone-only learning rate for joint SVI (``None`` shares the heads'; ``0.0`` freezes).
+        categorical_features : Optional[Dict[NonNegativeInt, PositiveInt]], default=None
+            Raw-context columns holding integer category codes, as ``{column_index: cardinality}``.
+            Each is one-hot expanded before the first layer instead of being consumed as a continuous
+            value; columns absent from this dict are treated as numerical. When cold-starting a
+            ``CmabMetaModel``, pass this as ``categorical_features`` (or ``backbone_categorical_features``).
 
         Returns
         -------
         MLPBackbone
             A freshly initialised backbone.
         """
-        weights, biases = cls._init_params(n_features, list(hidden_dims), embedding_dim, activation, random_seed)
+        categorical_features = dict(categorical_features or {})
+        first_layer_width = hidden_dims[0] if hidden_dims else embedding_dim  # hidden_dims=[] is one linear layer
+        for column_index, cardinality in sorted(categorical_features.items()):
+            if cardinality > cls._one_hot_warn_cardinality:
+                warnings.warn(
+                    f"Categorical column {column_index} has cardinality {cardinality}: one-hot expansion adds "
+                    f"{cardinality} x {first_layer_width} deterministic first-layer weights to the backbone state. "
+                    "Consider hashing or grouping rare levels upstream.",
+                    stacklevel=2,
+                )
+        feature_config = cls._build_feature_config(n_features, categorical_features)
+        weights, biases = cls._init_params(
+            feature_config.total_output_dim, list(hidden_dims), embedding_dim, activation, random_seed
+        )
         return cls(
             n_features=n_features,
             embedding_dim=embedding_dim,
@@ -236,6 +333,7 @@ class MLPBackbone(DNNMixin):
             biases=[b.tolist() for b in biases],
             l2_anchoring=l2_anchoring,
             lr=lr,
+            categorical_features=categorical_features,
         )
 
     def reset(self) -> Self:
@@ -254,7 +352,39 @@ class MLPBackbone(DNNMixin):
             random_seed=self.random_seed,
             l2_anchoring=self.l2_anchoring,
             lr=self.lr,
+            categorical_features=self.categorical_features,
         )
+
+    def _expand(self, x: Any, backend: Any) -> Any:
+        """Replace each declared categorical column with its one-hot block (numerical columns first).
+
+        Backend-agnostic (NumPy for :meth:`embed`, ``jax.numpy`` under the joint SVI trace) and a pure
+        function of ``x``, so it needs no parameters of its own and leaves every caller's signature
+        alone. A no-op when no categorical column is declared.
+
+        Parameters
+        ----------
+        x : np.ndarray or jnp.ndarray of shape (n, n_features)
+            Raw context matrix.
+        backend : module
+            ``numpy`` or ``jax.numpy``.
+
+        Returns
+        -------
+        np.ndarray or jnp.ndarray of shape (n, input_dim)
+            The expanded matrix fed to the first layer.
+        """
+        feature_config = self.feature_config
+        if not feature_config.has_categorical:
+            return x
+        blocks = [x[:, feature_config.numerical_indices]]
+        for config in feature_config.categorical_features_configs:
+            codes = x[:, config.column_index].astype(backend.int32)
+            # ponytail: (n, K) broadcast comparison rather than eye(K)[codes], which would materialise a
+            # K x K identity; switch to a gather on layer 0's weights if a cardinality in the thousands
+            # ever makes the dense (n, K) block itself the problem.
+            blocks.append((codes[:, None] == backend.arange(config.cardinality)).astype(x.dtype))
+        return backend.concatenate(blocks, axis=1)
 
     def embed(self, x: np.ndarray) -> np.ndarray:
         """Deterministic forward pass producing the shared embedding.
@@ -269,10 +399,11 @@ class MLPBackbone(DNNMixin):
         np.ndarray of shape (n, embedding_dim)
             The shared embedding.
         """
+        self.check_context_matrix(context=x)
         weights_biases = list(zip(self.weight_arrays, self.bias_arrays))
         return np.asarray(
             forward_layers(
-                next_layer_input=x,
+                next_layer_input=self._expand(x, np),
                 weights_biases=weights_biases,
                 activation_fn=self.numpy_activation,
                 linear_fn=lambda a, w, b: a @ w + b,
@@ -299,7 +430,7 @@ class MLPBackbone(DNNMixin):
             The shared embedding.
         """
         return forward_layers(
-            next_layer_input=x,
+            next_layer_input=self._expand(x, jnp),
             weights_biases=weights_biases,
             activation_fn=self.jax_activation,
             linear_fn=lambda a, w, b: jnp.dot(a, w) + b,

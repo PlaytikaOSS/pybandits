@@ -95,6 +95,20 @@ def test_cold_start_action_count(
     ...
 ```
 
+**Class-scoped configuration** — shared by every test in one test class — goes on the class as a plain
+lowercase attribute, not an uppercase constant. `UPPER_CASE` signals a module-level constant; a class
+attribute is namespaced by the class and reads as configuration:
+
+```python
+class TestMLPBackbone:
+    n_features = 6
+    embedding_dim = 4
+```
+
+Note that a comprehension in a class body cannot see other class attributes (only its first iterable
+expression is evaluated in the enclosing scope), so derive one class attribute from another with a
+plain function call rather than an inline comprehension.
+
 **Fixtures** are for objects that require construction, teardown, or should be overrideable per-test
 (e.g., a pre-built MAB instance, a seeded RNG, a monkeypatched function):
 
