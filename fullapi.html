@@ -892,15 +892,15 @@ the layer output dimension is greater than or equal to the input dimension (defa
 <span class="gp">&gt;&gt;&gt; </span><span class="n">bnn</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
 <span class="gp">... </span>    <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
 <span class="gp">... </span>    <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
-<span class="gp">... </span>    <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;studentt&quot;</span><span class="p">,</span>
-<span class="gp">... </span>    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>
+<span class="gp">... </span>    <span class="n">dist_type</span><span class="o">=</span><span class="s2">"studentt"</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">"mu"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"sigma"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">"nu"</span><span class="p">:</span> <span class="mi">5</span><span class="p">}</span>
 <span class="gp">... </span><span class="p">)</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="c1"># Create BNN with Normal priors</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="n">bnn</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
 <span class="gp">... </span>    <span class="n">n_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
 <span class="gp">... </span>    <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
-<span class="gp">... </span>    <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
-<span class="gp">... </span>    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+<span class="gp">... </span>    <span class="n">dist_type</span><span class="o">=</span><span class="s2">"normal"</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">"mu"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"sigma"</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
 <span class="gp">... </span><span class="p">)</span>
 </pre></div>
 </div>
@@ -987,19 +987,6 @@ combine per-group optimizers before clipping globally.</p>
 <dd></dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.check_context_matrix">
-<span class="sig-name descname"><span class="pre">check_context_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.check_context_matrix" title="Link to this definition"></a></dt>
-<dd><p>Validate the context input.</p>
-<p>Context must be an array-like with numeric values and the correct number of columns.
-Categorical columns are validated to contain valid integer indices within their vocab range.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>context</strong> (<em>np.ndarray</em>) – Matrix of contextual features of shape <code class="docutils literal notranslate"><span class="pre">(n_samples,</span> <span class="pre">n_cols)</span></code>.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
 <dt class="sig sig-object py" id="pybandits.model.BaseBayesianNeuralNetwork.clip_and_wrap_optimizer">
 <span class="sig-name descname"><span class="pre">clip_and_wrap_optimizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">optimizer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GradientTransformation</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#pybandits.model.BaseBayesianNeuralNetwork.clip_and_wrap_optimizer" title="Link to this definition"></a></dt>
 <dd><p>Chain <code class="docutils literal notranslate"><span class="pre">gradient_clip_norm</span></code> (when set) onto <code class="docutils literal notranslate"><span class="pre">optimizer</span></code> and wrap it for numpyro.</p>
@@ -1033,8 +1020,9 @@ leaving weight priors untouched. Useful to restrain the prior on the output-laye
 of arms that have accumulated little data. The calibration fires only once per arm lifetime
 (or after a <code class="docutils literal notranslate"><span class="pre">_reset()</span></code>). Default is False.</p></li>
 <li><p><strong>categorical_features</strong> (<em>Optional</em><em>[</em><em>Dict</em><em>[</em><em>int</em><em>, </em><em>int</em><em>]</em><em>]</em><em>, </em><em>optional</em>) – Categorical columns as <code class="docutils literal notranslate"><span class="pre">{column_index:</span> <span class="pre">cardinality}</span></code>. Each categorical column is
-modelled with a Bayesian embedding matrix; <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code> is set automatically
-to <code class="docutils literal notranslate"><span class="pre">ceil(cardinality</span> <span class="pre">/</span> <span class="pre">embedding_dim_divisor)</span></code>. Columns absent from this dict are treated as numerical.</p></li>
+modelled with a Bayesian embedding matrix; <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code> is set automatically by
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">DNNMixin.default_categorical_embedding_dim()</span></code> (full rank for small cardinalities,
+bounded for large ones). Columns absent from this dict are treated as numerical.</p></li>
 <li><p><strong>random_seed</strong> (<em>Optional</em><em>[</em><em>NonNegativeInt</em><em>]</em><em>, </em><em>optional</em>) – Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
 and stored on the instance, so the same initial key is reproduced after serialization.
 Pass an explicit integer for fully reproducible runs.</p></li>
@@ -2324,7 +2312,9 @@ in the range <code class="docutils literal notranslate"><span class="pre">[0,</s
 <li><p><strong>column_index</strong> (<em>NonNegativeInt</em>) – Column position of this feature in the input numpy array.</p></li>
 <li><p><strong>cardinality</strong> (<em>PositiveInt</em>) – Number of distinct integer category codes. The context array must contain
 pre-encoded integer indices in the range <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">cardinality)</span></code>.</p></li>
-<li><p><strong>embedding_dim</strong> (<em>PositiveInt</em>) – Dimensionality of the embedding vector for this feature. Default is 8.</p></li>
+<li><p><strong>embedding_dim</strong> (<em>PositiveInt</em>) – Dimensionality of the embedding vector for this feature. Required; callers going through
+<code class="docutils literal notranslate"><span class="pre">cold_start</span></code> get <code class="xref py py-meth docutils literal notranslate"><span class="pre">DNNMixin.default_categorical_embedding_dim()</span></code>. Set it to <code class="docutils literal notranslate"><span class="pre">cardinality</span></code>
+to express a one-hot expansion (an identity embedding), as <code class="xref py py-class docutils literal notranslate"><span class="pre">MLPBackbone</span></code> does.</p></li>
 </ul>
 </dd>
 </dl>
@@ -2690,8 +2680,8 @@ Can be a 1D or 2D list.</p></li>
 <span class="gp">&gt;&gt;&gt; </span><span class="c1"># Use in BNN</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="n">bnn</span> <span class="o">=</span> <span class="n">BayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
 <span class="gp">... </span>    <span class="n">n_features</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
-<span class="gp">... </span>    <span class="n">dist_type</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">,</span>
-<span class="gp">... </span>    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+<span class="gp">... </span>    <span class="n">dist_type</span><span class="o">=</span><span class="s2">"normal"</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">dist_params_init</span><span class="o">=</span><span class="p">{</span><span class="s2">"mu"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"sigma"</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
 <span class="gp">... </span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2760,12 +2750,12 @@ directly to the parent <code class="docutils literal notranslate"><span class="p
 <p>Seed each BNN weight/bias site from the current posterior sigma stored in
 <code class="docutils literal notranslate"><span class="pre">model_params</span></code>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">site_sigmas</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;weight_0&quot;</span><span class="p">:</span> <span class="n">layer_params</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span>
-    <span class="s2">&quot;bias_0&quot;</span><span class="p">:</span>   <span class="n">layer_params</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span>
+    <span class="s2">"weight_0"</span><span class="p">:</span> <span class="n">layer_params</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">"sigma"</span><span class="p">],</span>
+    <span class="s2">"bias_0"</span><span class="p">:</span>   <span class="n">layer_params</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">"sigma"</span><span class="p">],</span>
 <span class="p">}</span>
 <span class="n">guide</span> <span class="o">=</span> <span class="n">ParameterizedScaleAutoNormal</span><span class="p">(</span>
     <span class="n">numpyro_model</span><span class="p">,</span>
-    <span class="n">init_loc_fn</span><span class="o">=</span><span class="n">init_to_value</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;weight_0&quot;</span><span class="p">:</span> <span class="n">w_mu</span><span class="p">,</span> <span class="s2">&quot;bias_0&quot;</span><span class="p">:</span> <span class="n">b_mu</span><span class="p">}),</span>
+    <span class="n">init_loc_fn</span><span class="o">=</span><span class="n">init_to_value</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"weight_0"</span><span class="p">:</span> <span class="n">w_mu</span><span class="p">,</span> <span class="s2">"bias_0"</span><span class="p">:</span> <span class="n">b_mu</span><span class="p">}),</span>
     <span class="n">init_scale_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">name</span><span class="p">:</span> <span class="n">site_sigmas</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">fallback_sigma</span><span class="p">),</span>
 <span class="p">)</span>
 </pre></div>

@@ -136,7 +136,7 @@
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># context</span>
 <span class="n">X</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random_sample</span><span class="p">((</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">n_features</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># random float in the interval (-1, 1)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;X: context matrix of shape (n_samples, n_features)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"X: context matrix of shape (n_samples, n_features)"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">X</span><span class="p">[:</span><span class="mi">10</span><span class="p">])</span>
 </pre></div>
 </div>
@@ -147,16 +147,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.4360675  -0.42460766  0.54240985  0.84032762 -0.12609643]
- [ 0.50947869 -0.28049692  0.75230332  0.88998279 -0.41735652]
- [-0.06692992 -0.67239729  0.55613167 -0.24541905  0.33521254]
- [-0.63081821  0.60249351  0.37460334  0.177017   -0.05016585]
- [-0.68111612 -0.62449323 -0.22825243  0.89448557  0.69527399]
- [-0.39445698  0.89172712  0.17905665  0.71040451  0.08293314]
- [-0.77220675 -0.19272046 -0.73395549 -0.83133909  0.17561734]
- [ 0.15258569 -0.37528884  0.12428065 -0.72046702  0.51286643]
- [-0.06916997 -0.46894142 -0.21721944 -0.87571919  0.77016077]
- [ 0.93265693 -0.01661347 -0.01844189  0.37417589  0.72900784]]
+[[ 0.36756007  0.42705883  0.39265849  0.21047761  0.50669835]
+ [-0.25153978  0.25409975  0.43679212 -0.21209973 -0.09036974]
+ [ 0.03550231 -0.02123978 -0.44910867  0.29698612  0.77894011]
+ [ 0.94990816  0.49288677  0.27125369 -0.35726428 -0.4032978 ]
+ [-0.64443097 -0.40577265 -0.17733091  0.80565374 -0.31567676]
+ [-0.23524478 -0.47819751  0.08128759  0.88364792 -0.36456692]
+ [ 0.8356463  -0.9407115  -0.01474058  0.73093938  0.10289761]
+ [ 0.01801531  0.23183813  0.3791961   0.02017618 -0.10765023]
+ [ 0.44529639 -0.92390029  0.91718731 -0.32884594  0.60167439]
+ [ 0.53444482 -0.36304533 -0.54655775 -0.5490287   0.53264142]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -170,15 +170,15 @@ X: context matrix of shape (n_samples, n_features)
 <span class="n">model_params</span> <span class="o">=</span> <span class="n">BnnParams</span><span class="p">(</span><span class="n">bnn_layer_params</span><span class="o">=</span><span class="p">[</span><span class="n">layer_params</span><span class="p">])</span>
 <span class="n">feature_config</span> <span class="o">=</span> <span class="n">FeaturesConfig</span><span class="p">(</span><span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">)</span>
 
-<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">}</span>
+<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"num_steps"</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">"batch_size"</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span> <span class="s2">"optimizer_type"</span><span class="p">:</span> <span class="s2">"adam"</span><span class="p">}</span>
 
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">BayesianNeuralNetwork</span><span class="p">(</span>
+    <span class="s2">"a1"</span><span class="p">:</span> <span class="n">BayesianNeuralNetwork</span><span class="p">(</span>
         <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span>
         <span class="n">feature_config</span><span class="o">=</span><span class="n">feature_config</span><span class="p">,</span>
         <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
     <span class="p">),</span>
-    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">BayesianNeuralNetwork</span><span class="p">(</span>
+    <span class="s2">"a2"</span><span class="p">:</span> <span class="n">BayesianNeuralNetwork</span><span class="p">(</span>
         <span class="n">model_params</span><span class="o">=</span><span class="n">model_params</span><span class="p">,</span>
         <span class="n">feature_config</span><span class="o">=</span><span class="n">feature_config</span><span class="p">,</span>
         <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
@@ -204,7 +204,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># predict action</span>
 <span class="n">pred_actions</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">cmab</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Recommended action: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">pred_actions</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Recommended action: </span><span class="si">{}</span><span class="s2">"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">pred_actions</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
 </pre></div>
 </div>
 </div>
@@ -213,7 +213,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -223,7 +223,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># simulate reward from environment</span>
 <span class="n">simulated_rewards</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n_samples</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Simulated rewards: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">simulated_rewards</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Simulated rewards: </span><span class="si">{}</span><span class="s2">"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">simulated_rewards</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
 </pre></div>
 </div>
 </div>
@@ -232,7 +232,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [0, 0, 0, 1, 1, 0, 0, 0, 0, 0]
+Simulated rewards: [0, 0, 0, 1, 1, 0, 0, 1, 0, 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>

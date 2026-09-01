@@ -161,12 +161,12 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span><span class="n">quantity</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read a quantity vector [p_1, ..., p_{N-1}, price] into (portions, price).</span>
+<span class="w">    </span><span class="sd">"""Read a quantity vector [p_1, ..., p_{N-1}, price] into (portions, price).</span>
 
 <span class="sd">    The first N_ITEMS - 1 coordinates are the item portions; the final</span>
 <span class="sd">    portion is the leftover so the portions sum to 1. The BNN sees these</span>
 <span class="sd">    coordinates directly, so it learns the reward in real portion space.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">free</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">quantity</span><span class="p">[:</span> <span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
     <span class="n">portions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">free</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">free</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
     <span class="n">price</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">quantity</span><span class="p">[</span><span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
@@ -174,13 +174,13 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">portions_sum_over_one</span><span class="p">(</span><span class="n">quantity</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Forbidden-region margin: &gt; 0 where the free portions exceed 1 (invalid).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Forbidden-region margin: &gt; 0 where the free portions exceed 1 (invalid)."""</span>
     <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">quantity</span><span class="p">[:</span> <span class="n">N_ITEMS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span>
 
 
-<span class="c1"># Passed to predict(): forbids the p_1 + p_2 &gt; 1 corner for the &#39;offer&#39; arm, in</span>
+<span class="c1"># Passed to predict(): forbids the p_1 + p_2 &gt; 1 corner for the 'offer' arm, in</span>
 <span class="c1"># both the optimized (exploit) and Thompson-sampled (explore) branches.</span>
-<span class="n">forbidden_actions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;offer&quot;</span><span class="p">:</span> <span class="n">portions_sum_over_one</span><span class="p">}</span>
+<span class="n">forbidden_actions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"offer"</span><span class="p">:</span> <span class="n">portions_sum_over_one</span><span class="p">}</span>
 </pre></div>
 </div>
 </div>
@@ -193,9 +193,9 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 <span class="n">feasible</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">portions_sum_over_one</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">samples</span><span class="p">])</span>
 <span class="n">portions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">split</span><span class="p">(</span><span class="n">q</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">samples</span><span class="p">[</span><span class="n">feasible</span><span class="p">]])</span>
 
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">),</span> <span class="s2">&quot;portions must sum to 1&quot;</span>
-<span class="k">assert</span> <span class="p">(</span><span class="n">portions</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="s2">&quot;feasible portions must be non-negative&quot;</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">feasible</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> of the cube is feasible; all feasible offers have portions &gt;= 0 summing to 1&quot;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">),</span> <span class="s2">"portions must sum to 1"</span>
+<span class="k">assert</span> <span class="p">(</span><span class="n">portions</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="s2">"feasible portions must be non-negative"</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">feasible</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> of the cube is feasible; all feasible offers have portions &gt;= 0 summing to 1"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -222,7 +222,7 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">make_ideal</span><span class="p">(</span><span class="n">context</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;The customer&#39;s hidden sweet-spot offer, given their context.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""The customer's hidden sweet-spot offer, given their context."""</span>
     <span class="n">affluence</span><span class="p">,</span> <span class="n">pref1</span><span class="p">,</span> <span class="n">pref2</span> <span class="o">=</span> <span class="n">context</span>
     <span class="n">raw</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">pref1</span><span class="p">,</span> <span class="n">pref2</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">pref1</span> <span class="o">+</span> <span class="n">pref2</span><span class="p">)])</span> <span class="o">+</span> <span class="mf">0.1</span>  <span class="c1"># keep every share positive</span>
     <span class="n">ideal_portions</span> <span class="o">=</span> <span class="n">raw</span> <span class="o">/</span> <span class="n">raw</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
@@ -259,18 +259,18 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">n_features</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c1"># [affluence, preference_item_1, preference_item_2]</span>
 <span class="n">dimension</span> <span class="o">=</span> <span class="n">N_ITEMS</span>  <span class="c1"># 2 free portion coordinates + 1 price</span>
 
-<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;epochs&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;optimizer_type&quot;</span><span class="p">:</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">&quot;optimizer_kwargs&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">}}</span>
-<span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mu&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
+<span class="n">update_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"epochs"</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">"optimizer_type"</span><span class="p">:</span> <span class="s2">"adam"</span><span class="p">,</span> <span class="s2">"batch_size"</span><span class="p">:</span> <span class="mi">64</span><span class="p">,</span> <span class="s2">"optimizer_kwargs"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"step_size"</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">}}</span>
+<span class="n">dist_params_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"mu"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"sigma"</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
 
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;offer&quot;</span><span class="p">:</span> <span class="n">QuantitativeBayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
+    <span class="s2">"offer"</span><span class="p">:</span> <span class="n">QuantitativeBayesianNeuralNetwork</span><span class="o">.</span><span class="n">cold_start</span><span class="p">(</span>
         <span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">,</span>
         <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
         <span class="n">base_model_cold_start_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
             <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span>
             <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
             <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
-            <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;gelu&quot;</span><span class="p">,</span>
+            <span class="n">activation</span><span class="o">=</span><span class="s2">"gelu"</span><span class="p">,</span>
             <span class="n">bias_std</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">),</span>
@@ -311,7 +311,7 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 <span class="n">regret</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">get_optimal_reward</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="n">current_context</span><span class="p">])</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">probs</span><span class="p">))</span>
 <span class="n">cmab</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">chosen_actions</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">rewards</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">quantities</span><span class="o">=</span><span class="n">chosen_quantities</span><span class="p">)</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Explored and updated on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">current_context</span><span class="p">)</span><span class="si">}</span><span class="s2"> offers. Avg exploration regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Explored and updated on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">current_context</span><span class="p">)</span><span class="si">}</span><span class="s2"> offers. Avg exploration regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -328,7 +328,7 @@ full-measure region, far friendlier than the measure-zero equality.</p>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Explored and updated on 4096 offers. Avg exploration regret: 0.9545
+Explored and updated on 4096 offers. Avg exploration regret: 0.9496
 </pre></div></div>
 </div>
 </section>
@@ -358,12 +358,12 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9545
     <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
     <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
         <span class="p">{</span>
-            <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-            <span class="s2">&quot;chosen_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="s2">&quot;portion_sum&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span> <span class="mi">6</span><span class="p">),</span>
-            <span class="s2">&quot;chosen_price&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">price</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="s2">&quot;ideal_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ideal_portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="s2">&quot;ideal_price&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">ideal_price</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"context"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="s2">"chosen_portions"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"portion_sum"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"chosen_price"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">price</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"ideal_portions"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ideal_portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"ideal_price"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">ideal_price</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
         <span class="p">}</span>
     <span class="p">)</span>
 
@@ -415,36 +415,36 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9545
     <tr>
       <th>0</th>
       <td>[0.9, 0.9, 0.1]</td>
-      <td>[1.0, 0.0, 0.0]</td>
+      <td>[0.0, 0.331, 0.669]</td>
       <td>1.0</td>
-      <td>0.331</td>
+      <td>1.0</td>
       <td>[0.556, 0.111, 0.333]</td>
       <td>0.74</td>
     </tr>
     <tr>
       <th>1</th>
       <td>[0.9, 0.1, 0.9]</td>
-      <td>[0.0, 1.0, 0.0]</td>
+      <td>[0.706, 0.062, 0.232]</td>
       <td>1.0</td>
-      <td>0.000</td>
+      <td>1.0</td>
       <td>[0.111, 0.556, 0.333]</td>
       <td>0.74</td>
     </tr>
     <tr>
       <th>2</th>
       <td>[0.2, 0.4, 0.4]</td>
-      <td>[0.0, 1.0, -0.0]</td>
+      <td>[0.0, 0.0, 1.0]</td>
       <td>1.0</td>
-      <td>0.000</td>
+      <td>0.0</td>
       <td>[0.294, 0.294, 0.412]</td>
       <td>0.32</td>
     </tr>
     <tr>
       <th>3</th>
       <td>[0.5, 0.1, 0.1]</td>
-      <td>[0.0, 0.0, 1.0]</td>
+      <td>[0.193, 0.0, 0.807]</td>
       <td>1.0</td>
-      <td>0.018</td>
+      <td>0.0</td>
       <td>[0.143, 0.143, 0.714]</td>
       <td>0.50</td>
     </tr>
@@ -461,11 +461,11 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9545
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">PRICE_LEVELS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;price_down&quot;</span><span class="p">:</span> <span class="mf">0.45</span><span class="p">,</span> <span class="s2">&quot;price_same&quot;</span><span class="p">:</span> <span class="mf">0.50</span><span class="p">,</span> <span class="s2">&quot;price_up&quot;</span><span class="p">:</span> <span class="mf">0.55</span><span class="p">}</span>  <span class="c1"># -10%, 0%, +10% of a 0.50 base</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">PRICE_LEVELS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"price_down"</span><span class="p">:</span> <span class="mf">0.45</span><span class="p">,</span> <span class="s2">"price_same"</span><span class="p">:</span> <span class="mf">0.50</span><span class="p">,</span> <span class="s2">"price_up"</span><span class="p">:</span> <span class="mf">0.55</span><span class="p">}</span>  <span class="c1"># -10%, 0%, +10% of a 0.50 base</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">portions_from</span><span class="p">(</span><span class="n">quantity</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Portions from a portions-only quantity (all coords are free portions; last = leftover).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Portions from a portions-only quantity (all coords are free portions; last = leftover)."""</span>
     <span class="n">free</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">quantity</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">free</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">free</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
 
@@ -498,7 +498,7 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9545
             <span class="n">hidden_dim_list</span><span class="o">=</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span>
             <span class="n">update_kwargs</span><span class="o">=</span><span class="n">update_kwargs</span><span class="p">,</span>
             <span class="n">dist_params_init</span><span class="o">=</span><span class="n">dist_params_init</span><span class="p">,</span>
-            <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;gelu&quot;</span><span class="p">,</span>
+            <span class="n">activation</span><span class="o">=</span><span class="s2">"gelu"</span><span class="p">,</span>
             <span class="n">bias_std</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">)</span>
@@ -531,7 +531,7 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9545
 <span class="n">cmab_multi</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">actions</span><span class="o">=</span><span class="n">chosen_arms</span><span class="p">,</span> <span class="n">rewards</span><span class="o">=</span><span class="n">rewards</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">current_context</span><span class="p">,</span> <span class="n">quantities</span><span class="o">=</span><span class="n">chosen_quantities</span><span class="p">)</span>
 
 <span class="n">arm_counts</span> <span class="o">=</span> <span class="p">{</span><span class="n">arm</span><span class="p">:</span> <span class="n">chosen_arms</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">arm</span><span class="p">)</span> <span class="k">for</span> <span class="n">arm</span> <span class="ow">in</span> <span class="n">PRICE_LEVELS</span><span class="p">}</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Explored and updated on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">current_context</span><span class="p">)</span><span class="si">}</span><span class="s2"> offers. Avg regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">. Arm counts: </span><span class="si">{</span><span class="n">arm_counts</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Explored and updated on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">current_context</span><span class="p">)</span><span class="si">}</span><span class="s2"> offers. Avg regret: </span><span class="si">{</span><span class="n">regret</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">. Arm counts: </span><span class="si">{</span><span class="n">arm_counts</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -548,7 +548,7 @@ Explored and updated on 4096 offers. Avg exploration regret: 0.9545
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Explored and updated on 4096 offers. Avg regret: 0.5831. Arm counts: {&#39;price_down&#39;: 1416, &#39;price_same&#39;: 1356, &#39;price_up&#39;: 1324}
+Explored and updated on 4096 offers. Avg regret: 0.5845. Arm counts: {&#39;price_down&#39;: 1410, &#39;price_same&#39;: 1316, &#39;price_up&#39;: 1370}
 </pre></div></div>
 </div>
 </section>
@@ -568,13 +568,13 @@ Explored and updated on 4096 offers. Avg regret: 0.5831. Arm counts: {&#39;price
     <span class="n">ideal_portions</span><span class="p">,</span> <span class="n">ideal_price</span> <span class="o">=</span> <span class="n">make_ideal</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
     <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
         <span class="p">{</span>
-            <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-            <span class="s2">&quot;chosen_price_arm&quot;</span><span class="p">:</span> <span class="n">arm</span><span class="p">,</span>
-            <span class="s2">&quot;chosen_price&quot;</span><span class="p">:</span> <span class="n">PRICE_LEVELS</span><span class="p">[</span><span class="n">arm</span><span class="p">],</span>
-            <span class="s2">&quot;chosen_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="s2">&quot;portion_sum&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span> <span class="mi">6</span><span class="p">),</span>
-            <span class="s2">&quot;ideal_portions&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ideal_portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="s2">&quot;ideal_price&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">ideal_price</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"context"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="s2">"chosen_price_arm"</span><span class="p">:</span> <span class="n">arm</span><span class="p">,</span>
+            <span class="s2">"chosen_price"</span><span class="p">:</span> <span class="n">PRICE_LEVELS</span><span class="p">[</span><span class="n">arm</span><span class="p">],</span>
+            <span class="s2">"chosen_portions"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"portion_sum"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">portions</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"ideal_portions"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">ideal_portions</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"ideal_price"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">ideal_price</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
         <span class="p">}</span>
     <span class="p">)</span>
 
@@ -629,9 +629,9 @@ Explored and updated on 4096 offers. Avg regret: 0.5831. Arm counts: {&#39;price
     <tr>
       <th>0</th>
       <td>[0.9, 0.9, 0.1]</td>
-      <td>price_up</td>
-      <td>0.55</td>
-      <td>[0.206, 0.0, 0.794]</td>
+      <td>price_down</td>
+      <td>0.45</td>
+      <td>[1.0, 0.0, 0.0]</td>
       <td>1.0</td>
       <td>[0.556, 0.111, 0.333]</td>
       <td>0.74</td>
@@ -641,7 +641,7 @@ Explored and updated on 4096 offers. Avg regret: 0.5831. Arm counts: {&#39;price
       <td>[0.9, 0.1, 0.9]</td>
       <td>price_same</td>
       <td>0.50</td>
-      <td>[0.0, 0.0, 1.0]</td>
+      <td>[1.0, 0.0, 0.0]</td>
       <td>1.0</td>
       <td>[0.111, 0.556, 0.333]</td>
       <td>0.74</td>
@@ -651,7 +651,7 @@ Explored and updated on 4096 offers. Avg regret: 0.5831. Arm counts: {&#39;price
       <td>[0.2, 0.4, 0.4]</td>
       <td>price_same</td>
       <td>0.50</td>
-      <td>[0.997, 0.003, 0.0]</td>
+      <td>[0.0, 1.0, 0.0]</td>
       <td>1.0</td>
       <td>[0.294, 0.294, 0.412]</td>
       <td>0.32</td>
@@ -659,9 +659,9 @@ Explored and updated on 4096 offers. Avg regret: 0.5831. Arm counts: {&#39;price
     <tr>
       <th>3</th>
       <td>[0.5, 0.1, 0.1]</td>
-      <td>price_up</td>
-      <td>0.55</td>
-      <td>[0.0, 1.0, -0.0]</td>
+      <td>price_down</td>
+      <td>0.45</td>
+      <td>[0.0, 0.113, 0.887]</td>
       <td>1.0</td>
       <td>[0.143, 0.143, 0.714]</td>
       <td>0.50</td>

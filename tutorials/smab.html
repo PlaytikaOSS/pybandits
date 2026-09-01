@@ -106,7 +106,7 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># define actions</span>
-<span class="n">action_ids</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Action A&quot;</span><span class="p">,</span> <span class="s2">&quot;Action B&quot;</span><span class="p">,</span> <span class="s2">&quot;Action C&quot;</span><span class="p">]</span>
+<span class="n">action_ids</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"Action A"</span><span class="p">,</span> <span class="s2">"Action B"</span><span class="p">,</span> <span class="s2">"Action C"</span><span class="p">]</span>
 </pre></div>
 </div>
 </div>
@@ -145,8 +145,8 @@
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># define action model</span>
 <span class="n">actions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;a1&quot;</span><span class="p">:</span> <span class="n">Beta</span><span class="p">(),</span>
-    <span class="s2">&quot;a2&quot;</span><span class="p">:</span> <span class="n">Beta</span><span class="p">(),</span>
+    <span class="s2">"a1"</span><span class="p">:</span> <span class="n">Beta</span><span class="p">(),</span>
+    <span class="s2">"a2"</span><span class="p">:</span> <span class="n">Beta</span><span class="p">(),</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -168,7 +168,7 @@
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># predict actions</span>
 <span class="n">pred_actions</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">smab</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">n_samples</span><span class="o">=</span><span class="n">n_samples</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Recommended action: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">pred_actions</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Recommended action: </span><span class="si">{}</span><span class="s2">"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">pred_actions</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
 </pre></div>
 </div>
 </div>
@@ -177,7 +177,7 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards from the environment. In this example rewards are randomly simulated.</p>
@@ -187,7 +187,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># simulate reward from environment</span>
 <span class="n">simulated_rewards</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n_samples</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Simulated rewards: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">simulated_rewards</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Simulated rewards: </span><span class="si">{}</span><span class="s2">"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">simulated_rewards</span><span class="p">[:</span><span class="mi">10</span><span class="p">]))</span>
 </pre></div>
 </div>
 </div>
@@ -196,7 +196,7 @@ Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1 1 1 0 1 1 1 0 1 0]
+Simulated rewards: [1 0 0 0 0 1 0 1 1 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (ii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
