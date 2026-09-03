@@ -1450,8 +1450,9 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         categorical_features : Optional[Dict[int, int]], optional
             Categorical columns as ``{column_index: cardinality}``. Each categorical column is
             modelled with a Bayesian embedding matrix; ``embedding_dim`` is set automatically by
-            :meth:`DNNMixin.default_categorical_embedding_dim` (full rank for small cardinalities,
-            bounded for large ones). Columns absent from this dict are treated as numerical.
+            :meth:`DNNMixin.default_categorical_embedding_dim` (``ceil(cardinality / 4)``). Pass a
+            ``CategoricalFeatureConfig`` for another width. Columns absent from this dict are treated
+            as numerical.
         random_seed : Optional[NonNegativeInt], optional
             Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
             and stored on the instance, so the same initial key is reproduced after serialization.

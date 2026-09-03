@@ -49,11 +49,6 @@ class DNNMixin(PyBanditsBaseModel):
     # (min 1). Shared by BaseBayesianNeuralNetwork's categorical embeddings and MLPBackbone's default
     # output width, since both are "pick a reasonable embedding size" defaults for a DNN component.
     embedding_dim_divisor: ClassVar[int] = 4
-    # Bounds clamping the divisor rule for a *categorical* embedding (see default_categorical_embedding_dim).
-    # embedding_dim_min needs no binary special case: the cardinality - 1 cap dominates it below 5, so a
-    # 2-level feature still gets a single axis and a 3-level one gets two.
-    embedding_dim_min: ClassVar[int] = 4
-    embedding_dim_max: ClassVar[int] = 64
 
     _numpy_activations: ClassVar[Dict[str, Any]] = {
         "tanh": np.tanh,
@@ -130,19 +125,14 @@ class DNNMixin(PyBanditsBaseModel):
     def default_categorical_embedding_dim(cls, cardinality: int) -> int:
         """Embedding width for a categorical feature whose ``embedding_dim`` was not given explicitly.
 
-        ``ceil(cardinality / embedding_dim_divisor)``, clamped into
-        ``[embedding_dim_min, embedding_dim_max]`` and then capped at ``cardinality - 1``.
+        ``ceil(cardinality / embedding_dim_divisor)``, at least 1.
 
-        The ``cardinality - 1`` cap is the point of the rule: an embedding table ``E (K, d)`` followed by
-        a layer ``V (d, h)`` is the map ``onehot_K -> R^h`` constrained to rank ``d``, and since the
-        layer's bias absorbs the mean of the ``K`` rows, ``d = K - 1`` already spans every such map. So
-        ``d >= K - 1`` buys nothing and ``d < K - 1`` costs expressiveness — the divisor rule alone would
-        compress a 4-level feature onto a single learned axis. ``embedding_dim_max`` bounds the other end,
-        where the divisor rule would otherwise grow the table (and its variational parameters) linearly
-        in cardinality.
-
-        The cap is also what handles small cardinalities without a special case: a binary feature gets
-        ``2 - 1 = 1`` and a 3-level one gets 2, regardless of ``embedding_dim_min``.
+        This width is part of a fitted model's architecture: it sizes the stored embedding table and,
+        through ``FeaturesConfig.total_output_dim``, the first layer. Changing it therefore changes the
+        shape of every categorical model ever fitted, and ``transfer.edit_model_on_the_fly`` cannot carry
+        a deployed model's embeddings into a template of a different width — it raises instead. So the
+        rule stays as it has been since 7.x. A model that wants a different (e.g. full-rank) width has to
+        say so per feature via ``CategoricalFeatureConfig.embedding_dim``.
 
         Parameters
         ----------
@@ -154,11 +144,9 @@ class DNNMixin(PyBanditsBaseModel):
         int
             The embedding width to use (always ``>= 1``).
         """
-        compressed = max(cls.embedding_dim_min, ceil(cardinality / cls.embedding_dim_divisor))
-        # The outer max is load-bearing only for cardinality 1 (a single-level feature, which
-        # _add_cat_scenario in tests/test_transfer.py does draw): cardinality - 1 is then 0, which
-        # CategoricalFeatureConfig.embedding_dim rejects as non-positive.
-        return max(1, min(cardinality - 1, cls.embedding_dim_max, compressed))
+        # max(1, ...) is load-bearing only for cardinality 1 (a single-level feature, which
+        # _add_cat_scenario in tests/test_transfer.py does draw), where the divisor rule still gives 1.
+        return max(1, ceil(cardinality / cls.embedding_dim_divisor))
 
     @property
     def numpy_activation(self) -> Any:

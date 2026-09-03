@@ -237,14 +237,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                 raise AttributeError("All actions should have the same input size.")
             if first_bnn.update_kwargs != self._rep_bnn(head).update_kwargs:
                 raise AttributeError("All actions should have the same update kwargs.")
-        # What must match the embedding is the width the head's first layer consumes, which its own
-        # categorical expansion (if any) widens beyond the context dim.
-        feature_config = first_bnn.feature_config
-        first_layer_dim = first_dim + feature_config.total_output_dim - feature_config.n_features
-        if self.backbone is not None and first_layer_dim != self.backbone.embedding_dim:
+        if self.backbone is not None and first_dim != self.backbone.embedding_dim:
             raise AttributeError(
-                f"Head first layer width ({first_layer_dim}) must equal "
-                f"backbone.embedding_dim ({self.backbone.embedding_dim})."
+                f"Head context dim ({first_dim}) must equal backbone.embedding_dim ({self.backbone.embedding_dim})."
             )
         # With no shared backbone there is nothing to train jointly (update() dispatches each arm's
         # head independently), so the joint engine's ADVI-only restriction does not apply.
@@ -282,6 +277,25 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         if self.backbone is not None:
             return self.backbone.n_features
         return self._context_dim(next(iter(self.actions.values())))
+
+    def _check_so_head_width(self) -> None:
+        """Reject a joint ``_so_model`` pass whose heads expand their input past the embedding width.
+
+        Only reachable for a state built before ``categorical_features`` was routed to the backbone:
+        the heads then hold categorical configs addressing embedding columns, widening their first
+        layer past ``embedding_dim``. ``sample_proba`` and the full-batch joint pass both apply that
+        expansion themselves and are unaffected, so this is raised per update rather than at
+        construction, where it would stop such a state loading at all.
+        """
+        feature_config = self.representative_bnn.feature_config
+        if self.backbone is None or feature_config.total_output_dim == self.backbone.embedding_dim:
+            return
+        raise AttributeError(
+            f"Head first layer width ({feature_config.total_output_dim}) must equal backbone.embedding_dim "
+            f"({self.backbone.embedding_dim}): the heads carry categorical_features of their own, which a "
+            "shared backbone no longer supports (it one-hot expands the raw categorical columns instead). "
+            "Cold-start the model with this version to re-train it."
+        )
 
     @classmethod
     def _rep_bnn(cls, head: BaseModel) -> BaseBayesianNeuralNetwork:
@@ -450,6 +464,13 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         batch_size = resolved_kwargs.get("batch_size")
 
         if self._heads_support_minibatching:
+            # _so_model feeds the embedding straight into the head's first layer, so that layer's width
+            # has to be the embedding width. The full-batch path below does not need this: it goes
+            # through emit_submodel, which applies each head's own categorical expansion first. Only a
+            # pre-8.2 state can break it, by carrying head-level categorical configs over a backbone —
+            # such a state still loads and serves, so the check belongs here rather than in
+            # _check_models, where it would make the state unloadable.
+            self._check_so_head_width()
             # One shared data plate for every arm's rows pooled together; _so_model subsamples it
             # (the arm-indexing trick) when batch_size < n_samples, else it's a full-batch nullcontext.
             action_index = jnp.asarray(self._build_action_index(arm_to_rows, batch_arms), dtype=jnp.int32)

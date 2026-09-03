@@ -169,12 +169,12 @@ class TestCheckContextMatrix:
 
 @pytest.mark.parametrize(
     "cardinality, expected_embedding_dim",
-    # Full rank (cardinality - 1, since the next layer's bias absorbs the mean of the rows) while the
-    # feature is small; then the divisor rule; then capped so a large table cannot grow without bound.
-    [(1, 1), (2, 1), (3, 2), (4, 3), (5, 4), (9, 4), (32, 8), (100, 25), (256, 64), (10_000, 64)],
+    # ceil(cardinality / 4), floored at 1. These widths are the ones deployed 7.x/8.x states were
+    # fitted with, so they pin an interoperability contract, not just a default.
+    [(1, 1), (2, 1), (3, 1), (4, 1), (5, 2), (9, 3), (32, 8), (100, 25), (256, 64), (10_000, 2_500)],
 )
 def test_default_categorical_embedding_dim(cardinality: int, expected_embedding_dim: int) -> None:
-    """The automatic embedding width neither collapses small cardinalities nor grows unboundedly."""
+    """The automatic embedding width is the divisor rule every fitted model on disk was built with."""
     assert DNNMixin.default_categorical_embedding_dim(cardinality) == expected_embedding_dim
 
 

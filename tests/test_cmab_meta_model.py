@@ -33,6 +33,7 @@ from pybandits.base import ActionId
 from pybandits.meta_model import CmabMetaModelMO, CmabMetaModelSO
 from pybandits.model import BayesianNeuralNetwork
 from pybandits.model.bnn.backbone import MLPBackbone
+from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork
 
 # Shared strategies for the backbone's architecture and its configuration knobs (the ones that must
 # survive reset / serialization and be reachable as ``backbone_``-prefixed cold-start kwargs). Used by
@@ -266,6 +267,9 @@ class TestCmabMetaModel:
     lr_freeze = 0.0
     # One raw-context column carrying integer category codes, for the backbone's one-hot expansion.
     categorical_features = {0: 3}
+    # Cardinality high enough that the head's own embedding (ceil(cardinality / 4) = 2 columns for one
+    # categorical column) widens its first layer past embedding_dim — what a pre-8.2 state looks like.
+    wide_categorical_features = {0: 8}
 
     # ----------------------------------------------------------------- helpers / fixtures
     def _head_cold_start_kwargs(self, n_features: int = None) -> dict:
@@ -728,28 +732,68 @@ class TestCmabMetaModel:
         with pytest.raises(NotImplementedError, match="advi"):
             CmabMetaModelSO(action_ids=self.valid_subset, kwargs=kwargs)
 
-    def test_rejects_head_whose_first_layer_disagrees_with_the_embedding(self) -> None:
-        """A head carrying categorical columns of its own is rejected at construction.
-
-        Its first layer is wider than the ``embedding_dim`` the backbone feeds it (the categorical
-        columns address raw context, which only the backbone sees), so the mismatch is a construction
-        error rather than a shape blow-up inside the joint pass' forward pass.
-        """
-        head = BayesianNeuralNetwork.cold_start(
-            n_features=self.embedding_dim,
-            hidden_dim_list=self.hidden,
-            categorical_features=self.categorical_features,
-            update_kwargs={"num_steps": self.num_steps},
-        )
-        assert head.feature_config.total_output_dim != self.embedding_dim
-        backbone = MLPBackbone.cold_start(
+    def _legacy_backbone(self) -> MLPBackbone:
+        """A backbone matching a pre-8.2 state's: no categorical_features of its own."""
+        return MLPBackbone.cold_start(
             n_features=self.n_features,
             hidden_dims=self.backbone_hidden_dims,
             embedding_dim=self.embedding_dim,
             random_seed=self.backbone_seed,
         )
+
+    def test_legacy_head_categoricals_block_the_so_joint_pass_only(self, rng: np.random.Generator) -> None:
+        """A pre-8.2 state whose heads hold their own categorical configs loads, but cannot train.
+
+        Before ``categorical_features`` was routed to the backbone, the raw column indices landed on the
+        heads instead, where they address *embedding* columns and widen the first layer past
+        ``embedding_dim``. Such a state must still deserialise — refusing it at construction takes a
+        deployed model offline — so the joint ``_so_model`` pass, the one place the width actually has to
+        match (it feeds the embedding straight into that layer), raises per update instead.
+        """
+        head = BayesianNeuralNetwork.cold_start(
+            n_features=self.embedding_dim,
+            hidden_dim_list=self.hidden,
+            categorical_features=self.wide_categorical_features,
+            update_kwargs={"num_steps": self.num_steps},
+        )
+        assert head.feature_config.total_output_dim != self.embedding_dim
+        meta = CmabMetaModelSO(actions={arm: head for arm in self.valid_subset}, backbone=self._legacy_backbone())
+        actions, rewards, context = self._balanced_batch(rng)
         with pytest.raises(AttributeError, match="first layer width"):
-            CmabMetaModelSO(actions={arm: head for arm in self.valid_subset}, backbone=backbone)
+            meta.update(
+                actions=[a for a in actions if a in self.valid_subset][:2], rewards=rewards[:2], context=context[:2]
+            )
+
+    def test_legacy_head_categoricals_still_train_on_the_full_batch_path(self, rng: np.random.Generator) -> None:
+        """The same pre-8.2 state trains as before when its heads take the full-batch path.
+
+        Quantitative (and MO) heads go through ``emit_submodel``, which applies their own categorical
+        expansion to the embedding, so their first layer is fed the width it was built for. These states
+        worked before 8.2 and have to keep working: the ``_so_model`` width check must not reach them.
+        """
+        head = QuantitativeBayesianNeuralNetwork.cold_start(
+            dimension=self.quantity_dim,
+            n_features=self.embedding_dim,
+            categorical_features=self.wide_categorical_features,
+            base_model_cold_start_kwargs={
+                "hidden_dim_list": self.hidden,
+                "update_kwargs": {"num_steps": self.num_steps},
+            },
+        )
+        assert head.bnn.feature_config.total_output_dim != self.embedding_dim
+        meta = CmabMetaModelSO(actions={arm: head for arm in self.valid_subset}, backbone=self._legacy_backbone())
+        actions, rewards, context = self._balanced_batch(rng)
+        rows = [i for i, a in enumerate(actions) if a in self.valid_subset]
+        mu0 = np.array(meta.actions[actions[rows[0]]].bnn.model_params.bnn_layer_params[0].weight.mu).copy()
+        meta.update(
+            actions=[actions[i] for i in rows],
+            rewards=[rewards[i] for i in rows],
+            quantities=rng.random(len(rows)).tolist(),
+            context=context[rows],
+        )
+        assert not np.allclose(
+            mu0, np.array(meta.actions[actions[rows[0]]].bnn.model_params.bnn_layer_params[0].weight.mu)
+        )
 
     def test_no_backbone_allows_non_advi_vi_method(self) -> None:
         """With no shared backbone, a non-advi VI method is allowed (each arm trains independently)."""
