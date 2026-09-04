@@ -22,6 +22,7 @@
 
 """Tests for transfer learning functionality."""
 
+import copy
 import json
 from typing import Any, Dict, List, Tuple
 
@@ -1362,6 +1363,42 @@ class TestCategoricalFeatureExpansion:
         )
         with pytest.raises(ValueError, match="embedding_dim"):
             edit_model_on_the_fly(current, template)
+
+    def test_template_embedding_dim_disagreement_keeps_deployed_width(self) -> None:
+        """Same cardinality, disagreeing embedding_dim: the deployed width wins, no raise.
+
+        This is what a stale/changed default-width rule looks like from transfer's point of view: the
+        template recomputed a different width for a column whose cardinality hasn't actually changed.
+        Since nothing about the real feature changed, the already-fitted model's own width must win --
+        the template's is a re-derivation artifact, not a deliberate request to change architecture.
+        Built by hand-editing a cold-started state (rather than two independently cold-started mabs,
+        which can't disagree on embedding_dim at a fixed cardinality) to simulate that disagreement
+        without depending on an actual code-level formula difference to reproduce it.
+        """
+        current = CmabBernoulli.cold_start(
+            action_ids={_ACTION_ID},
+            n_features=_N_FEATURES,
+            categorical_features={self._cat_column: self._cat_old_cardinality},
+            strategy=ClassicBandit(),
+        )
+        deployed_dim = current.actions[_ACTION_ID].feature_config.categorical_features_configs[0].embedding_dim
+        template_state = copy.deepcopy(json.loads(current.get_state()[1]))
+        action_state = template_state["actions_manager"]["meta_model"]["actions"][_ACTION_ID]
+        action_state["feature_config"]["categorical_features_configs"][0]["embedding_dim"] = deployed_dim + 3
+        for outer_key in ("embedding_params", "embedding_params_init"):
+            for inner_key in ("embeddings", "embeddings_init"):
+                emb = action_state["model_params"][outer_key][inner_key][0]
+                n_rows = len(emb["mu"])
+                for field_name in emb:
+                    if field_name != "dist_type":
+                        emb[field_name] = [[1.0] * (deployed_dim + 3) for _ in range(n_rows)]
+        template = CmabBernoulli.from_state(json.dumps(template_state))
+
+        result = edit_model_on_the_fly(current, template)
+
+        result_cfg = result.actions[_ACTION_ID].feature_config.categorical_features_configs[0]
+        assert result_cfg.embedding_dim == deployed_dim
+        assert result_cfg.cardinality == self._cat_old_cardinality
 
     def test_non_overlapping_action_no_embedding_expansion(
         self,

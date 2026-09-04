@@ -491,8 +491,14 @@ def _expand_embedding_params(
     1. New categorical feature (present in template, absent in current): embedding copied from template.
     2. Grown cardinality with same embedding_dim: new category rows appended from template.
 
-    Raises ValueError if an existing categorical feature's ``embedding_dim`` changes, since that
-    alters the first dense-layer input width and requires retraining from scratch.
+    An existing categorical feature's ``embedding_dim`` always comes from ``current``, never the
+    template: the template's value is freshly re-derived on every build and isn't guaranteed stable
+    across versions, while ``embedding_dim`` is baked into already-fitted weights. Only a genuinely new
+    column (absent from ``current``) takes its width from the template. ``template_feature_config`` is
+    mutated in place so the caller's reconstructed template mab agrees with the resulting weights.
+
+    Still raises ValueError if the cardinality itself changes and lands on an incompatible width —
+    that's a real retrain-from-scratch case, not a re-derivation artifact.
 
     Parameters
     ----------
@@ -503,7 +509,7 @@ def _expand_embedding_params(
     current_feature_config : Dict[str, Any]
         Current action feature_config dict.
     template_feature_config : Dict[str, Any]
-        Template action feature_config dict.
+        Template action feature_config dict, modified in-place (embedding_dim reconciled to current's).
     action_id : str
         Action ID for error messages.
     obj_idx : Optional[int]
@@ -512,7 +518,7 @@ def _expand_embedding_params(
     Raises
     ------
     ValueError
-        If an existing categorical feature's embedding_dim changes.
+        If an existing categorical feature's cardinality changes and its embedding_dim disagrees.
     """
     template_cats = template_feature_config.get("categorical_features_configs", [])
     if not template_cats:
@@ -527,18 +533,26 @@ def _expand_embedding_params(
     # column_index → (list_position, config) for current categorical features
     current_cat_by_col = {cfg["column_index"]: (i, cfg) for i, cfg in enumerate(current_cats)}
 
-    # Validate: embedding_dim must not change for existing categorical features
+    # Reconcile embedding_dim for existing categorical features: current's deployed width wins.
     for tpl_cfg in template_cats:
         col_idx = tpl_cfg["column_index"]
         if col_idx in current_cat_by_col:
             _, cur_cfg = current_cat_by_col[col_idx]
             if tpl_cfg["embedding_dim"] != cur_cfg["embedding_dim"]:
-                raise ValueError(
-                    f"Cannot change embedding_dim for categorical feature at column {col_idx} "
-                    f"in action '{action_id}'{prefix}: "
-                    f"{cur_cfg['embedding_dim']} -> {tpl_cfg['embedding_dim']}. "
-                    "Changing embedding_dim requires retraining from scratch."
+                if tpl_cfg["cardinality"] != cur_cfg["cardinality"]:
+                    raise ValueError(
+                        f"Cannot change embedding_dim for categorical feature at column {col_idx} "
+                        f"in action '{action_id}'{prefix}: "
+                        f"{cur_cfg['embedding_dim']} -> {tpl_cfg['embedding_dim']}. "
+                        "Changing embedding_dim requires retraining from scratch."
+                    )
+                logger.warning(
+                    f"Template's embedding_dim for categorical feature at column {col_idx} in action "
+                    f"'{action_id}'{prefix} ({tpl_cfg['embedding_dim']}) disagrees with the deployed "
+                    f"model's ({cur_cfg['embedding_dim']}) at the same cardinality; keeping the "
+                    "deployed width."
                 )
+                tpl_cfg["embedding_dim"] = cur_cfg["embedding_dim"]
 
     # Expand both embedding_params and embedding_params_init (outer frozen copy)
     for outer_key in ("embedding_params", "embedding_params_init"):
@@ -620,8 +634,13 @@ def _validate_hidden_dims(
 def _expand_with_template_weights(
     current_cmab: BaseCmabBernoulli,
     template_cmab: BaseCmabBernoulli,
-) -> BaseCmabBernoulli:
+) -> Tuple[BaseCmabBernoulli, BaseCmabBernoulli]:
     """Expand current CMAB to match template's input dimension using template's weights for new features.
+
+    Also returns a reconciled template: ``_expand_embedding_params`` mutates the template's
+    ``feature_config`` in place to match the deployed embedding_dim (see its docstring). Use the
+    returned template, not the original ``template_cmab``, for the merge — the mutation lives only in
+    this function's local copy.
 
     Parameters
     ----------
@@ -635,6 +654,9 @@ def _expand_with_template_weights(
     expanded_cmab : BaseCmabBernoulli
         Expanded CMAB where existing feature weights and hidden units are preserved from current,
         and new feature/hidden-unit connections are initialized from template.
+    reconciled_template_cmab : BaseCmabBernoulli
+        ``template_cmab`` with existing categorical columns' ``embedding_dim`` reconciled to
+        ``current_cmab``'s. Use this, not the original ``template_cmab``, for the subsequent merge.
     """
     current_dim = current_cmab.input_dim
     template_dim = template_cmab.input_dim
@@ -711,7 +733,10 @@ def _expand_with_template_weights(
                 "Only BNN-based CMAB models support input dimension expansion."
             )
 
-    return _reconstruct_mab(type(current_cmab), current_state)
+    return (
+        _reconstruct_mab(type(current_cmab), current_state),
+        _reconstruct_mab(type(template_cmab), template_state),
+    )
 
 
 @validate_call
@@ -835,7 +860,7 @@ def edit_model_on_the_fly(
                         f"Template MAB has fewer features ({new_dim}) than current MAB ({current_dim}). "
                         "Cannot reduce feature dimensions. Template must have same or more features."
                     )
-                current_mab = _expand_with_template_weights(current_mab, new_mab)
+                current_mab, new_mab = _expand_with_template_weights(current_mab, new_mab)
             except (StopIteration, AttributeError):
                 # No actions or not a CMAB with input_dim, proceed normally
                 pass
