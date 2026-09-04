@@ -21,6 +21,7 @@
 # SOFTWARE.
 """Unit tests for the unified joint-VI cMAB engine: MLPBackbone + CmabMetaModel."""
 
+import itertools
 from typing import List, Optional, Set
 
 import jax.numpy as jnp
@@ -266,6 +267,12 @@ class TestCmabMetaModel:
     lr_freeze = 0.0
     # One raw-context column carrying integer category codes, for the backbone's one-hot expansion.
     categorical_features = {0: 3}
+    # Smallest cardinality whose derived embedding_dim isn't 1 — derived from the rule itself (as
+    # test_transfer.py's _cardinality_bands does) rather than a hardcoded literal, so a widened-head
+    # test stays valid regardless of default_categorical_embedding_dim's exact formula.
+    _wide_cat_cardinality = next(
+        c for c in itertools.count(1) if BayesianNeuralNetwork.default_categorical_embedding_dim(c) != 1
+    )
 
     # ----------------------------------------------------------------- helpers / fixtures
     def _head_cold_start_kwargs(self, n_features: int = None) -> dict:
@@ -738,7 +745,7 @@ class TestCmabMetaModel:
         head = BayesianNeuralNetwork.cold_start(
             n_features=self.embedding_dim,
             hidden_dim_list=self.hidden,
-            categorical_features=self.categorical_features,
+            categorical_features={0: self._wide_cat_cardinality},
             update_kwargs={"num_steps": self.num_steps},
         )
         assert head.feature_config.total_output_dim != self.embedding_dim
