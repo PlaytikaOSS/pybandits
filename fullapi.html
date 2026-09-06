@@ -1020,9 +1020,10 @@ leaving weight priors untouched. Useful to restrain the prior on the output-laye
 of arms that have accumulated little data. The calibration fires only once per arm lifetime
 (or after a <code class="docutils literal notranslate"><span class="pre">_reset()</span></code>). Default is False.</p></li>
 <li><p><strong>categorical_features</strong> (<em>Optional</em><em>[</em><em>Dict</em><em>[</em><em>int</em><em>, </em><em>int</em><em>]</em><em>]</em><em>, </em><em>optional</em>) – Categorical columns as <code class="docutils literal notranslate"><span class="pre">{column_index:</span> <span class="pre">cardinality}</span></code>. Each categorical column is
-modelled with a Bayesian embedding matrix; <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code> is set automatically by
-<code class="xref py py-meth docutils literal notranslate"><span class="pre">DNNMixin.default_categorical_embedding_dim()</span></code> (full rank for small cardinalities,
-bounded for large ones). Columns absent from this dict are treated as numerical.</p></li>
+modelled with a Bayesian embedding matrix; <code class="docutils literal notranslate"><span class="pre">embedding_dim</span></code> is set automatically to
+<code class="docutils literal notranslate"><span class="pre">ceil(cardinality</span> <span class="pre">/</span> <span class="pre">DNNMixin.embedding_dim_divisor)</span></code> via
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">DNNMixin.default_categorical_embedding_dim()</span></code>. Columns absent from this dict are
+treated as numerical.</p></li>
 <li><p><strong>random_seed</strong> (<em>Optional</em><em>[</em><em>NonNegativeInt</em><em>]</em><em>, </em><em>optional</em>) – Seed for the JAX PRNG key. If None, a seed is drawn from OS entropy at construction time
 and stored on the instance, so the same initial key is reproduced after serialization.
 Pass an explicit integer for fully reproducible runs.</p></li>
