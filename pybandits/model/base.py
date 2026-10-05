@@ -43,10 +43,10 @@ class Model(BaseModelSO, ABC):
 
     Parameters
     ----------
-    n_successes: PositiveInt = 1
-        Counter of the number of successes.
-    n_failures: PositiveInt = 1
-        Counter of the number of failures.
+    n_successes: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the sum of rewards (the success count for binary rewards).
+    n_failures: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the number of trials minus the sum of rewards.
     decay_factor: Optional[PositiveFloat01] = None
         Per-update forgetting factor in (0, 1]. When set, historical evidence is discounted on each
         update so the model adapts faster to non-stationary environments. None (default) and 1.0

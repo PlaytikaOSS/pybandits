@@ -39,10 +39,10 @@ from scipy.stats import beta
 from typing_extensions import Self
 
 from pybandits.base import (
-    BinaryReward,
     Float01,
     Probability,
     QuantitativeProbability,
+    Reward,
 )
 from pybandits.model import Beta
 from pybandits.quantitative_model.base import QuantitativeModel, QuantitativeModelCC, QuantitativeModelDP
@@ -244,7 +244,7 @@ class BaseZooming(QuantitativeModel, ABC):
         return result
 
     @validate_call
-    def _quantitative_update(self, quantities: Union[List[float], List[List[float]]], rewards: List[BinaryReward]):
+    def _quantitative_update(self, quantities: Union[List[float], List[List[float]]], rewards: List[Reward]):
         """
         Update the model parameters.
 
@@ -252,7 +252,7 @@ class BaseZooming(QuantitativeModel, ABC):
         ----------
         quantities : Union[List[float], List[List[float]]],
             The value associated with each action.
-        rewards: List[BinaryReward]
+        rewards: List[Reward]
             The reward for each sample.
         """
 
@@ -260,7 +260,7 @@ class BaseZooming(QuantitativeModel, ABC):
         self._update_segmentation(quantities, segments, rewards)
 
     def _map_and_update_segment_models(
-        self, quantities: Union[List[float], List[List[float]]], rewards: List[BinaryReward]
+        self, quantities: Union[List[float], List[List[float]]], rewards: List[Reward]
     ) -> List[Segment]:
         """
         Map and update the segment models.
@@ -269,7 +269,7 @@ class BaseZooming(QuantitativeModel, ABC):
         ----------
         quantities : Union[List[float], List[List[float]]]
             The value associated with each action.
-        rewards: List[BinaryReward]
+        rewards: List[Reward]
             The reward for each sample.
 
         Returns
@@ -281,7 +281,7 @@ class BaseZooming(QuantitativeModel, ABC):
         self._inner_update(segments, rewards)
         return segments
 
-    def _inner_update(self, segments: List[Segment], rewards: List[BinaryReward]):
+    def _inner_update(self, segments: List[Segment], rewards: List[Reward]):
         """
         Update the segments models.
 
@@ -289,7 +289,7 @@ class BaseZooming(QuantitativeModel, ABC):
         ----------
         segments : List[Segment]
             Segments to update.
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             Rewards for update.
         """
         rewards_by_segment = defaultdict(list)
@@ -310,7 +310,7 @@ class BaseZooming(QuantitativeModel, ABC):
         self,
         quantities: Union[List[float], List[List[float]]],
         segments: List[Segment],
-        rewards: List[BinaryReward],
+        rewards: List[Reward],
     ):
         """
         Sort segments into three categories: interest (good), nuisance (bad), and all others (neutral).
@@ -323,7 +323,7 @@ class BaseZooming(QuantitativeModel, ABC):
             The value associated with each action.
         segments : List[Segment]
             All segments in the model.
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             Rewards for update.
         """
         segments_counts = Counter(segments)
@@ -345,7 +345,7 @@ class BaseZooming(QuantitativeModel, ABC):
         nuisance_segments: List[Segment],
         quantities: Union[List[float], List[List[float]]],
         segments: List[Segment],
-        rewards: List[BinaryReward],
+        rewards: List[Reward],
     ):
         """
         Merge adjacent segments that have similar performance.
@@ -358,7 +358,7 @@ class BaseZooming(QuantitativeModel, ABC):
             The value associated with each action.
         segments : List[Segment]
             All segments in the model.
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             The reward for each sample.
         """
         i = 0
@@ -387,7 +387,7 @@ class BaseZooming(QuantitativeModel, ABC):
         interest_segments: List[Segment],
         quantities: Union[List[float], List[List[float]]],
         segments: List[Segment],
-        rewards: List[BinaryReward],
+        rewards: List[Reward],
     ):
         """
         Split segments of interest into two sub-segments if possible.
@@ -400,7 +400,7 @@ class BaseZooming(QuantitativeModel, ABC):
             The value associated with each action.
         segments : List[Segment]
             All segments in the model.
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             The reward for each sample.
         """
         i = 0
@@ -444,8 +444,8 @@ class BaseZooming(QuantitativeModel, ABC):
         reference_segment: Union[Segment, List[Segment]],
         quantities: Union[List[float], List[List[float]]],
         segments: List[Segment],
-        rewards: List[BinaryReward],
-    ) -> Tuple[Union[List[float], List[List[float]]], List[BinaryReward]]:
+        rewards: List[Reward],
+    ) -> Tuple[Union[List[float], List[List[float]]], List[Reward]]:
         """
         Filter and update the segments models.
 
@@ -458,14 +458,14 @@ class BaseZooming(QuantitativeModel, ABC):
             Segments to filter.
         quantities : Union[List[float], List[List[float]]]
             Values to filter.
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             Rewards to filter.
 
         Returns
         -------
         filtered_values : Union[List[float], List[List[float]]]
             Filtered quantities.
-        filtered_rewards : List[BinaryReward]
+        filtered_rewards : List[Reward]
             Filtered rewards.
         """
         reference_segments = reference_segment if isinstance(reference_segment, list) else [reference_segment]

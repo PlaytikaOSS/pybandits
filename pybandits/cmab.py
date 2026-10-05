@@ -37,11 +37,11 @@ from pybandits.actions_manager import (
 )
 from pybandits.base import (
     ActionId,
-    BinaryReward,
     CmabPredictions,
     ForbiddenActions,
     MOProbabilityWeight,
     ProbabilityWeight,
+    Reward,
     Serializable,
 )
 from pybandits.mab import BaseMab
@@ -162,11 +162,11 @@ class BaseCmabBernoulli(BaseMab, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         context: np.ndarray,
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
         context_memory: Optional[np.ndarray] = None,
     ):
         """
@@ -177,7 +177,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
         ----------
         actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : List[Union[Reward, List[Reward]]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
@@ -189,7 +189,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
             List of previously collected rewards.
         context_memory : Optional[ArrayLike] of shape (n_samples, n_features)
             Matrix of contextual features.

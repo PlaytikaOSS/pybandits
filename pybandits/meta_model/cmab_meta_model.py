@@ -47,7 +47,7 @@ from numpyro.distributions import Bernoulli as NumpyroBernoulli
 from numpyro.infer import TraceMeanField_ELBO
 from pydantic import ConfigDict, NonNegativeInt, PrivateAttr, model_validator
 
-from pybandits.base import ActionId, BinaryReward
+from pybandits.base import ActionId, Reward
 from pybandits.base_model import BaseModel
 from pybandits.meta_model.base import BaseMetaModel, SampleProbaResult
 from pybandits.model import (
@@ -342,7 +342,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         context: np.ndarray,
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         **kwargs: Any,
@@ -453,7 +453,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             # One shared data plate for every arm's rows pooled together; _so_model subsamples it
             # (the arm-indexing trick) when batch_size < n_samples, else it's a full-batch nullcontext.
             action_index = jnp.asarray(self._build_action_index(arm_to_rows, batch_arms), dtype=jnp.int32)
-            y_all = jnp.asarray(rewards_arr, dtype=jnp.int32)
+            y_all = jnp.asarray(rewards_arr, dtype=BaseBayesianNeuralNetwork._reward_dtype)
             model = self._make_so_model(batch_arms, representative_bnn, batch_size, n_samples, declare_backbone)
             model_args: Tuple[Any, ...] = (x, action_index, y_all)
         else:
@@ -463,7 +463,10 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                     "multi-objective / quantitative heads train full-batch (batch_size ignored)."
                 )
             arm_data = {
-                arm: (jnp.asarray(rows, dtype=jnp.int32), jnp.asarray(rewards_arr[rows], dtype=jnp.int32))
+                arm: (
+                    jnp.asarray(rows, dtype=jnp.int32),
+                    jnp.asarray(rewards_arr[rows], dtype=BaseBayesianNeuralNetwork._reward_dtype),
+                )
                 for arm, rows in arm_to_rows.items()
             }
             # Per-arm quantity columns for quantitative heads (constants prepended to the head input);
@@ -901,9 +904,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             if isinstance(head, BaseBayesianNeuralNetworkMO):
                 arm_rewards = rewards_arr[rows]
                 for i, sub in enumerate(head.models):
-                    sub.record_rewards(list(arm_rewards[:, i]))
+                    sub.record_rewards(arm_rewards[:, i].tolist())
             else:  # BNN or quantitative head — both BaseModelSO that own their counters
-                head.record_rewards(list(np.asarray(rewards_arr[rows]).reshape(-1)))
+                head.record_rewards(np.asarray(rewards_arr[rows]).reshape(-1).tolist())
 
 
 # Module-level aliases for concrete parameterisations (required for pickling; see meta_model.py).

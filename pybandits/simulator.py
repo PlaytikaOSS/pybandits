@@ -46,9 +46,9 @@ from scipy.interpolate import make_interp_spline
 
 from pybandits.base import (
     ActionId,
-    BinaryReward,
     Probability,
     PyBanditsBaseModel,
+    Reward,
     UnifiedActionId,
 )
 from pybandits.base_model import BaseModelSO
@@ -327,7 +327,7 @@ class Simulator(PyBanditsBaseModel, ABC):
     @abstractmethod
     def _draw_rewards(
         self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
-    ) -> List[BinaryReward]:
+    ) -> List[Reward]:
         """
         Draw rewards for the selected actions based on metadata according to probs_reward.
 
@@ -342,7 +342,7 @@ class Simulator(PyBanditsBaseModel, ABC):
 
         Returns
         -------
-        reward : List[BinaryReward]
+        reward : List[Reward]
             A list of binary rewards.
         """
 

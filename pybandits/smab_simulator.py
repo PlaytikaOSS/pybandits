@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from pydantic import Field, model_validator
 
-from pybandits.base import ActionId, BinaryReward, Probability, UnifiedActionId
+from pybandits.base import ActionId, Probability, Reward, UnifiedActionId
 from pybandits.quantitative_model import QuantitativeModel
 from pybandits.simulator import Simulator
 from pybandits.smab import BaseSmabBernoulli
@@ -105,7 +105,7 @@ class SmabSimulator(Simulator):
 
     def _draw_rewards(
         self, actions: List[UnifiedActionId], metadata: Dict[str, List], update_kwargs: Dict[str, np.ndarray]
-    ) -> List[BinaryReward]:
+    ) -> List[Reward]:
         """
         Draw rewards for the selected actions according to probs_reward.
 
@@ -118,7 +118,7 @@ class SmabSimulator(Simulator):
 
         Returns
         -------
-        reward : List[BinaryReward]
+        reward : List[Reward]
             A list of binary rewards.
         """
         rewards = [int(random.random() < self._extract_ground_truth(a)) for a in actions]

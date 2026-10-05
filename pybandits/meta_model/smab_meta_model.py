@@ -32,7 +32,7 @@ from typing import Any, Dict, Generic, List, Optional, Set, Union
 
 import numpy as np
 
-from pybandits.base import ActionId, BinaryReward
+from pybandits.base import ActionId, Reward
 from pybandits.meta_model.base import ActionModelType, BaseMetaModel, SampleProbaResult
 from pybandits.model import Beta, BetaCC, BetaDP, BetaMO, BetaMOCC
 from pybandits.quantitative_model import Zooming, ZoomingCC, ZoomingDP
@@ -74,7 +74,7 @@ class SmabMetaModel(BaseMetaModel, Generic[ActionModelType]):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         **kwargs: Any,
     ) -> None:

@@ -35,8 +35,8 @@ from pybandits.actions_manager import (
 )
 from pybandits.base import (
     ActionId,
-    BinaryReward,
     ForbiddenActions,
+    Reward,
     SmabPredictions,
 )
 from pybandits.mab import BaseMab
@@ -107,10 +107,10 @@ class BaseSmabBernoulli(BaseMab, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
     ):
         """
         Update the stochastic Bernoulli bandit given the list of selected actions and their corresponding binary
@@ -120,7 +120,7 @@ class BaseSmabBernoulli(BaseMab, ABC):
         ----------
         actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : List[Union[Reward, List[Reward]]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
@@ -130,7 +130,7 @@ class BaseSmabBernoulli(BaseMab, ABC):
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
             List of previously collected rewards.
         """
         super().update(

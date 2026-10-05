@@ -112,15 +112,19 @@ def test_both_or_neither_models_are_defined():
         Beta(n_successes=None, n_failures=0)
 
 
-@given(st.lists(st.integers(min_value=0, max_value=1)))
+@given(st.lists(st.one_of(st.integers(min_value=0, max_value=1), st.floats(min_value=0, max_value=1))))
 def test_beta_update(rewards):
     b = Beta(n_successes=1, n_failures=2)
     b.update(rewards=rewards)
     assert b == Beta(n_successes=1 + sum(rewards), n_failures=2 + (len(rewards) - sum(rewards)))
 
 
-@given(st.builds(Beta))
+_reward_sums = st.one_of(st.integers(min_value=1, max_value=1000), st.floats(min_value=1, max_value=1000))
+
+
+@given(st.builds(Beta, n_successes=_reward_sums, n_failures=_reward_sums))
 def test_beta_get_stats_is_working(e: Beta):
+    assert e.mean == e.n_successes / (e.n_successes + e.n_failures), "Mean uses the rounded count"
     assert e.mean >= 0, "Mean negative"
     assert e.std >= 0, "Std negative"
     assert e.count >= 2, "Count too low"
@@ -150,7 +154,9 @@ class TestBetaDecayFactor:
 
     counts = st.integers(min_value=1, max_value=MAX_COUNT)
     diverging_counts = st.integers(min_value=2, max_value=MAX_COUNT)  # > prior, so decayed != raw
-    binary_rewards = st.lists(st.integers(min_value=0, max_value=1), min_size=1)
+    binary_rewards = st.lists(
+        st.one_of(st.integers(min_value=0, max_value=1), st.floats(min_value=0, max_value=1)), min_size=1
+    )
     # Highest decay factor that still forgets *measurably*: at 1 - 1e-16 the decayed counts are within
     # one float of the raw ones, so the two Beta(a, b) draws come out bit-identical and any
     # "decayed sampling differs from raw sampling" assertion is vacuously false.

@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
@@ -39,6 +40,7 @@ import numpy as np
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     confloat,
     conint,
     constr,
@@ -103,6 +105,9 @@ CmabPredictions = NewType(
 )
 Predictions = NewType("Predictions", Union[SmabPredictions, CmabPredictions])
 BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
+SoftReward = NewType("SoftReward", Float01)
+# Binary or soft label; left_to_right keeps 0/1 (incl. numpy ints) as int.
+Reward = NewType("Reward", Annotated[Union[BinaryReward, SoftReward], Field(union_mode="left_to_right")])
 ActionRewardLikelihood = NewType(
     "ActionRewardLikelihood",
     Union[

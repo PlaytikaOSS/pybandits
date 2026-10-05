@@ -274,6 +274,7 @@ class ModelTestConfig:
         default_action_fraction: Optional[Float01] = None,
         limited_action_fraction: Optional[Float01] = None,
         backbone_hidden_dims: Optional[List[int]] = None,
+        use_soft_rewards: bool = False,
     ) -> Tuple[BaseCmabBernoulli, Dict[ActionId, CmabModelType], Dict[str, Any]]:
         n_objectives = (
             n_objectives.draw(st.integers(min_value=1, max_value=10))
@@ -300,6 +301,7 @@ class ModelTestConfig:
                 "default_action_fraction": default_action_fraction,
                 "limited_actions": limited_actions,
                 "limited_action_fraction": limited_action_fraction,
+                "use_soft_rewards": use_soft_rewards or None,
             }.items()
             if v is not None
         }
@@ -610,6 +612,7 @@ def test_bad_initialization(
     exploit_p=st.data(),
     memory_len=st.integers(min_value=1, max_value=5),
     backbone_hidden_dims=st.one_of(st.none(), st.just([2])),
+    use_soft_rewards=st.booleans(),
 )
 def test_update(
     config: ModelTestConfig,
@@ -628,12 +631,14 @@ def test_update(
     memory_len,
     rng,
     backbone_hidden_dims,
+    use_soft_rewards,
 ):
     # rng is a session-scoped fixture shared across every Hypothesis example in this run; reseeding
     # here makes each example's random draws depend only on this call, not on how many draws prior
     # examples (or other tests) already consumed — otherwise Hypothesis's shrink/confirm replay can
     # see different random data for the "same" example and flag a spurious FlakyFailure.
     rng = np.random.default_rng(seed=42)
+    use_soft_rewards = use_soft_rewards and delta is None  # the adaptive window rejects soft rewards
     # Create CMAB instance (a shared backbone is exercised when backbone_hidden_dims is drawn and delta is None)
     cmab, _, kwargs = config.create_cmab_and_actions(
         action_ids,
@@ -649,17 +654,15 @@ def test_update(
         default_action_fraction=default_action_fraction,
         limited_action_fraction=limited_action_fraction,
         backbone_hidden_dims=backbone_hidden_dims,
+        use_soft_rewards=use_soft_rewards,
     )
     # create patches
 
     n_objectives = kwargs.get("n_objectives")
     context = rng.uniform(low=-1.0, high=1.0, size=(n_samples, n_features))
-    # Generate random rewards
-    reward_data = (
-        rng.choice([0, 1], size=(n_samples, n_objectives), replace=True)
-        if n_objectives
-        else rng.choice([0, 1], size=n_samples, replace=True)
-    )
+    # Generate random rewards: soft labels uniform in [0, 1], else binary
+    reward_shape = (n_samples, n_objectives) if n_objectives else n_samples
+    reward_data = rng.random(size=reward_shape) if use_soft_rewards else rng.choice([0, 1], size=reward_shape)
     reward_data = reward_data.tolist()
     # Test updates with generated data
     actions_to_update = sample_with_replacement(action_ids, n_samples, rng=rng)
