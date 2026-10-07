@@ -34,9 +34,9 @@ from pydantic import (
 from typing_extensions import Self
 
 from pybandits.base import (
-    BinaryReward,
     PositiveFloat01,
     Probability,
+    Reward,
 )
 from pybandits.model.base import Model, ModelCC, ModelDP, ModelMO
 
@@ -47,10 +47,10 @@ class BaseBeta(Model, ABC):
 
     Parameters
     ----------
-    n_successes: PositiveInt = 1
-        Counter of the number of successes.
-    n_failures: PositiveInt = 1
-        Counter of the number of failures.
+    n_successes: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the sum of rewards (the success count for binary rewards).
+    n_failures: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the number of trials minus the sum of rewards.
     decay_factor: Optional[PositiveFloat01] = None
         Per-update forgetting factor in (0, 1] inherited from Model. When set, sampling is
         driven by the effective (decayed) counts below instead of the raw n_successes/n_failures.
@@ -91,7 +91,7 @@ class BaseBeta(Model, ABC):
         return sqrt((n_s * n_f) / (total * (total - 1)))
 
     @validate_call
-    def _update(self, rewards: List[BinaryReward]):
+    def _update(self, rewards: List[Reward]):
         """
         Update the effective decayed counts (the raw n_successes/n_failures are updated by BaseModelSO).
 
@@ -101,7 +101,7 @@ class BaseBeta(Model, ABC):
 
         Parameters
         ----------
-        rewards: List[BinaryReward]
+        rewards: List[Reward]
             A list of binary rewards.
         """
         if self.decay_factor is not None:
@@ -145,10 +145,10 @@ class Beta(BaseBeta):
 
     Parameters
     ----------
-    n_successes: PositiveInt = 1
-        Counter of the number of successes.
-    n_failures: PositiveInt = 1
-        Counter of the number of failures.
+    n_successes: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the sum of rewards (the success count for binary rewards).
+    n_failures: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the number of trials minus the sum of rewards.
     """
 
 
@@ -158,10 +158,10 @@ class BetaCC(BaseBeta, ModelCC):
 
     Parameters
     ----------
-    n_successes : PositiveInt = 1
-        Counter of the number of successes.
-    n_failures : PositiveInt = 1
-        Counter of the number of failures.
+    n_successes : Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the sum of rewards (the success count for binary rewards).
+    n_failures : Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the number of trials minus the sum of rewards.
     cost : NonNegativeFloat
         Cost associated to the Beta distribution.
     """
@@ -173,10 +173,10 @@ class BetaDP(BaseBeta, ModelDP):
 
     Parameters
     ----------
-    n_successes : PositiveInt = 1
-        Counter of the number of successes.
-    n_failures : PositiveInt = 1
-        Counter of the number of failures.
+    n_successes : Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the sum of rewards (the success count for binary rewards).
+    n_failures : Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the number of trials minus the sum of rewards.
     price : NonNegativeFloat
         Price associated to the Beta distribution.
     """

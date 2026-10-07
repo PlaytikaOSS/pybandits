@@ -33,11 +33,11 @@ from pydantic import (
 from typing_extensions import Self
 
 from pybandits.base import (
-    BinaryReward,
     Probability,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
     QuantitativeWeight,
+    Reward,
 )
 from pybandits.model import BayesianNeuralNetwork
 from pybandits.quantitative_model.base import QuantitativeModel, QuantitativeModelCC, QuantitativeModelDP
@@ -255,7 +255,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
     def _quantitative_update(
         self,
         quantities: List[Union[float, List[float]]],
-        rewards: List[BinaryReward],
+        rewards: List[Reward],
         context: np.ndarray,
     ):
         """
@@ -265,7 +265,7 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         ----------
         quantities : List[Union[float, List[float]]]
             The quantity values associated with each observation (None entries are skipped).
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             The binary reward for each observation.
         context : np.ndarray
             The context at which to evaluate the probability.

@@ -141,12 +141,26 @@ def test_init_with_valid_actions():
     manager = DummyActionsManager(actions=actions)
     assert len(manager.actions) == 2
     assert manager.delta is None
+    assert not manager.use_soft_rewards
+    with pytest.raises(ValueError, match="Soft rewards are not supported"):
+        DummyActionsManager(actions=actions, delta=REFERENCE_DELTA, use_soft_rewards=True)
 
 
-def test_update_with_valid_inputs(action_list=("action1", "action2", "action1"), rewards=(1, 0, 1)):
+@pytest.mark.parametrize("use_soft_rewards", [False, True])
+def test_update_with_valid_inputs(
+    use_soft_rewards: bool,
+    action_list=("action1", "action2", "action1"),
+    rewards=(1, 0, 1),
+    soft_rewards=(0.2, 0.7, 1.0),
+):
     actions = {"action1": Beta(), "action2": Beta()}
-    manager = DummyActionsManager(actions=actions)
+    manager = DummyActionsManager(actions=actions, use_soft_rewards=use_soft_rewards)
     manager.update(actions=list(action_list), rewards=list(rewards))
+    if use_soft_rewards:
+        manager.update(actions=list(action_list), rewards=list(soft_rewards))
+    else:
+        with pytest.raises(ValueError, match="use_soft_rewards"):
+            manager.update(actions=list(action_list), rewards=list(soft_rewards))
 
 
 def test_empty_actions_raises_error():

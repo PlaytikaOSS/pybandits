@@ -52,9 +52,9 @@ from pydantic import (
 
 from pybandits.base import (
     ActionId,
-    BinaryReward,
     PositiveProbability,
     PyBanditsBaseModel,
+    Reward,
 )
 from pybandits.base_model import BaseModel, BaseModelMO, BaseModelSO
 from pybandits.meta_model import (
@@ -123,10 +123,14 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         dict when the manager is instantiated via the ``actions=`` kwarg.
     delta : Optional[PositiveProbability]
         The confidence level for the adaptive window. None for skipping the change point detection.
+    use_soft_rewards : bool
+        If True, rewards may be soft labels in [0, 1]; otherwise they must be binary (0/1).
+        Not supported together with the adaptive window (delta).
     """
 
     meta_model: BaseMetaModel
     delta: Optional[PositiveProbability] = None
+    use_soft_rewards: bool = False
     _no_change_point: ClassVar[NonPositiveInt] = -1
     _min_adaptive_window_size: ClassVar[PositiveInt] = 10000
     _memory_parameters_suffix: ClassVar[str] = "_memory"
@@ -185,6 +189,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         kwargs: Optional[Dict[str, Any]] = None,
         actions_with_change: Optional[Set[Tuple[ActionId, NonNegativeInt]]] = None,
         meta_model: Optional[BaseMetaModel] = None,
+        use_soft_rewards: bool = False,
     ):
         action_args = (actions, action_ids, quantitative_action_ids)
         if meta_model is not None and any(a is not None for a in action_args):
@@ -200,12 +205,24 @@ class ActionsManager(PyBanditsBaseModel, ABC):
                 kwargs=kwargs or {},
             )
         actions_with_change = actions_with_change or set()
-        super().__init__(meta_model=meta_model, delta=delta, actions_with_change=actions_with_change)
+        super().__init__(
+            meta_model=meta_model,
+            delta=delta,
+            actions_with_change=actions_with_change,
+            use_soft_rewards=use_soft_rewards,
+        )
+
+    @model_validator(mode="after")
+    def _check_soft_rewards_delta(self) -> "ActionsManager":
+        """The adaptive window's change-point test and memory checks assume binary rewards."""
+        if self.delta is not None and self.use_soft_rewards:
+            raise ValueError("Soft rewards are not supported with the adaptive window (delta).")
+        return self
 
     def _validate_update_params(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         **kwargs,
     ):
@@ -217,7 +234,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         ----------
         actions : List[ActionId]
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[Reward], List[List[Reward]]]
             The reward for each sample.
         quantities : Optional[List[Union[float, List[float], None]]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
@@ -276,10 +293,10 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
         **kwargs,
     ):
         """
@@ -290,16 +307,18 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         ----------
         actions : List[ActionId]
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[Reward], List[List[Reward]]]
             The reward for each sample.
         quantities : Optional[List[Union[float, List[float], None]]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
             List of previously collected rewards.
         """
         self.actions_with_change.clear()
+        if not self.use_soft_rewards and not all(np.isin(r, (0, 1)).all() for r in (rewards, rewards_memory or [])):
+            raise ValueError("Rewards must be binary (0/1); set use_soft_rewards=True to pass soft rewards in [0, 1].")
         if self.delta is None and (actions_memory or rewards_memory):
             raise AttributeError("Adaptive window size is not set, so memory should not be provided.")
         if self.delta is not None and (actions_memory is None or rewards_memory is None):
@@ -398,9 +417,9 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     def _slice_memory(
         memory_len: NonNegativeInt,
         actions_memory: List[ActionId],
-        rewards_memory: List[BinaryReward],
+        rewards_memory: List[Reward],
         memory_kwargs: Dict[str, Any],
-    ) -> Tuple[List[ActionId], List[BinaryReward], Dict[str, Any]]:
+    ) -> Tuple[List[ActionId], List[Reward], Dict[str, Any]]:
         """
         Slice all memory parameters to memory_len length.
 
@@ -410,7 +429,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             Expected memory length after the slicing.
         actions_memory : List[ActionId]
             List of previously selected actions.
-        rewards_memory : List[BinaryReward]
+        rewards_memory : List[Reward]
             List of previously collected rewards.
         memory_kwargs : Dict[str, Any]
             The memory kwargs.
@@ -419,7 +438,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         -------
         actions_memory : List[ActionId]
             List of previously selected actions with maximum length of memory_len.
-        rewards_memory : List[BinaryReward]
+        rewards_memory : List[Reward]
             List of previously collected rewards with maximum length of memory_len.
         memory_kwargs : Dict[str, Any]
             The memory kwargs with values of maximum length of memory_len.
@@ -435,9 +454,9 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     def _maybe_trim_memory(
         self,
         actions_memory: List[ActionId],
-        rewards_memory: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards_memory: Union[List[Reward], List[List[Reward]]],
         memory_kwargs: Dict[str, Any],
-    ) -> Tuple[List[ActionId], List[BinaryReward], Dict[str, Any]]:
+    ) -> Tuple[List[ActionId], List[Reward], Dict[str, Any]]:
         """
         Trim the memory to the adaptive window size.
 
@@ -445,7 +464,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         ----------
         actions_memory : List[ActionId]
             List of previously selected actions.
-        rewards_memory : Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards_memory : Union[List[Reward], List[List[Reward]]]
             List of previously collected rewards.
         memory_kwargs : Dict[str, Any]
             The memory kwargs.
@@ -454,7 +473,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         -------
         actions_memory : List[ActionId]
             List of previously selected actions with maximum length of memory_len.
-        rewards_memory : List[BinaryReward]
+        rewards_memory : List[Reward]
             List of previously collected rewards with maximum length of memory_len.
         memory_kwargs : Dict[str, Any]
             The memory kwargs with values of maximum length of memory_len.
@@ -535,7 +554,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     def _update_actions(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]],
         **kwargs,
     ):
@@ -546,7 +565,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         ----------
         actions : List[ActionId]
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[Reward], List[List[Reward]]]
             The reward for each sample.
         quantities : Optional[List[Union[float, List[float], None]]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
@@ -556,7 +575,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         self,
         residual_memory_len: NonNegativeInt,
         actions_memory: List[ActionId],
-        rewards_memory: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards_memory: Union[List[Reward], List[List[Reward]]],
     ) -> NonNegativeInt:
         """
         Get the last change point among all actions.
@@ -567,7 +586,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The length of the residual memory.
         actions_memory : List[ActionId]
             List of previously selected actions.
-        rewards_memory : List[BinaryReward]
+        rewards_memory : List[Reward]
             List of previously collected rewards.
 
         Returns
@@ -615,7 +634,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         action_id: ActionId,
         residual_memory_len: NonNegativeInt,
         actions_memory: List[ActionId],
-        rewards_memory: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards_memory: Union[List[Reward], List[List[Reward]]],
     ) -> int:
         """
         Get the last change point for the given action.
@@ -626,7 +645,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             The action ID.
         actions_memory : List[ActionId]
             List of previously selected actions.
-        rewards_memory : List[BinaryReward]
+        rewards_memory : List[Reward]
             List of previously collected rewards.
 
         Returns
@@ -750,10 +769,10 @@ class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
     ):
         """
         Update the models associated with the given actions using the provided rewards.
@@ -763,13 +782,13 @@ class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
         ----------
         actions : List[ActionId]
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[Reward], List[List[Reward]]]
             The reward for each sample.
         quantities : Optional[List[Union[float, List[float], None]]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
             List of previously collected rewards.
         """
         super().update(actions, rewards, quantities, actions_memory, rewards_memory)
@@ -777,7 +796,7 @@ class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
     def _update_actions(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]],
     ):
         """
@@ -788,7 +807,7 @@ class SmabActionsManager(ActionsManager, Generic[SmabModelType]):
         ----------
         actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards : Union[List[Reward], List[List[Reward]]],
             if nested list, len() should follow shape of (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
@@ -832,11 +851,11 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]],
         context: np.ndarray,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
         context_memory: Optional[np.ndarray] = None,
     ):
         """
@@ -847,7 +866,7 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
         ----------
         actions : List[ActionId]
             The selected action for each sample.
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards: Union[List[Reward], List[List[Reward]]]
             The reward for each sample.
         quantities : Optional[List[Union[float, List[float], None]]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
@@ -855,7 +874,7 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
             Matrix of contextual features.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
             List of previously collected rewards.
         context_memory : Optional[ArrayLike] of shape (n_samples, n_features)
             Matrix of contextual features.
@@ -901,7 +920,7 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
     def _update_actions(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]],
         context: np.ndarray,
     ):
@@ -917,7 +936,7 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
         ----------
         actions : List[UnifiedActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : List[Union[BinaryReward, List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : List[Union[Reward, List[Reward]]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]

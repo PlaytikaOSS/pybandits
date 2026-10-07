@@ -35,10 +35,10 @@ from pydantic import (
 )
 
 from pybandits.base import (
-    BinaryReward,
     PyBanditsBaseModel,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
+    Reward,
 )
 from pybandits.base_model import BaseModelCC, BaseModelDP, BaseModelSO
 
@@ -85,7 +85,7 @@ class QuantitativeModel(BaseModelSO, ABC):
     def _update(
         self,
         quantities: Optional[List[Union[float, List[float]]]],
-        rewards: List[BinaryReward],
+        rewards: List[Reward],
         **kwargs,
     ):
         """
@@ -95,7 +95,7 @@ class QuantitativeModel(BaseModelSO, ABC):
         ----------
         quantities : Optional[List[Union[float, List[float], None]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: List[BinaryReward]
+        rewards: List[Reward]
             The reward for each sample.
         """
 
@@ -106,7 +106,7 @@ class QuantitativeModel(BaseModelSO, ABC):
     def _quantitative_update(
         self,
         quantities: List[Union[float, List[float], None]],
-        rewards: List[BinaryReward],
+        rewards: List[Reward],
         **kwargs,
     ):
         """
@@ -116,7 +116,7 @@ class QuantitativeModel(BaseModelSO, ABC):
         ----------
         quantities : Optional[List[Union[float, List[float], None]]
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
-        rewards: List[BinaryReward]
+        rewards: List[Reward]
             The reward for each sample.
         """
 

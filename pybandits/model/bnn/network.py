@@ -51,9 +51,9 @@ from pydantic import (
 from typing_extensions import Self
 
 from pybandits.base import (
-    BinaryReward,
     PositiveFloat01,
     ProbabilityWeight,
+    Reward,
 )
 from pybandits.model.base import Model, ModelCC, ModelDP, ModelMO
 from pybandits.model.bnn._dnn import DNNMixin
@@ -140,6 +140,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     model_params: BnnParams
 
+    _reward_dtype: ClassVar[Any] = jnp.float32  # float, not int: soft rewards are fractional labels
     _logit_var_name: ClassVar[str] = "logit"
     _prob_var_name: ClassVar[str] = "prob"
     weight_var_name: ClassVar[str] = "weight"
@@ -1331,7 +1332,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         return updated_layer_params_list
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def _update(self, context: np.ndarray, rewards: List[BinaryReward]):
+    def _update(self, context: np.ndarray, rewards: List[Reward]):
         """
         Update the model_params with new context and rewards.
 
@@ -1339,7 +1340,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         ----------
         context : np.ndarray
             The context matrix where each row represents a context vector.
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             A list of binary rewards corresponding to each context vector.
 
         Notes
@@ -1354,7 +1355,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         _context = np.atleast_2d(context)
         x_jnp = jnp.array(_context, dtype=jnp.float32)
-        y_jnp = jnp.array(np.array(rewards, dtype=np.int32), dtype=jnp.int32)
+        y_jnp = jnp.asarray(rewards, dtype=self._reward_dtype)
         n_samples = _context.shape[0]
 
         if self.calibrate_output_bias:
@@ -1507,7 +1508,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             **kwargs,
         )
 
-    def _calibrate_output_bias(self, rewards: List[BinaryReward]) -> None:
+    def _calibrate_output_bias(self, rewards: List[Reward]) -> None:
         """Set the output-layer bias mu to ``logit(empirical_reward_rate)`` on the first update call.
 
         Replaces the cold-start prior mean (logit 0 ≈ 50 % reward rate) with a data-driven intercept
@@ -1520,7 +1521,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        rewards : List[BinaryReward]
+        rewards : List[Reward]
             Binary rewards (0/1) observed in the current update batch.  The empirical reward rate
             (mean of ``rewards``) is clipped to ``[_numerical_eps, 1 - _numerical_eps]`` before
             the logit transform to avoid ``log(0)`` / ``log(inf)`` instability.

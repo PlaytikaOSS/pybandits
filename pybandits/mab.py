@@ -41,7 +41,6 @@ from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
     ActionId,
     ActionRewardLikelihood,
-    BinaryReward,
     Float01,
     ForbiddenActions,
     MOProbability,
@@ -55,6 +54,7 @@ from pybandits.base import (
     QuantitativeMOProbabilityWeight,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
+    Reward,
     Serializable,
     UnifiedActionId,
 )
@@ -343,10 +343,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[BinaryReward], List[List[BinaryReward]]]] = None,
+        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
         **kwargs,
     ):
         """
@@ -356,7 +356,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
         ----------
         actions: List[ActionId]
             The selected action for each sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]] of shape (n_samples, n_objectives)
+        rewards : Union[List[Reward], List[List[Reward]]] of shape (n_samples, n_objectives)
             The binary reward for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
@@ -366,7 +366,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[BinaryReward], List[List[BinaryReward]]]]
+        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
             List of previously collected rewards.
         """
         self.actions_manager.update(

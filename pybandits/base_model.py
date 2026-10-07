@@ -28,13 +28,13 @@ from numpy.random import Generator
 from pydantic import (
     NonNegativeFloat,
     NonNegativeInt,
+    PositiveFloat,
     PositiveInt,
     conlist,
     validate_call,
 )
 
 from pybandits.base import (
-    BinaryReward,
     Float01,
     MOProbability,
     Probability,
@@ -43,6 +43,7 @@ from pybandits.base import (
     QuantitativeMOProbability,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
+    Reward,
 )
 
 
@@ -72,15 +73,15 @@ class BaseModel(PyBanditsBaseModel, ABC):
         """
 
     @abstractmethod
-    def update(self, rewards: Union[List[BinaryReward], List[List[BinaryReward]]], **kwargs):
+    def update(self, rewards: Union[List[Reward], List[List[Reward]]], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards : Union[List[Reward], List[List[Reward]]],
             if nested list, len() should follow shape of (n_samples, n_objectives)
-            The binary reward for each sample.
+            The reward (binary or soft) for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
@@ -100,17 +101,17 @@ class BaseModelSO(BaseModel, ABC):
 
     Parameters
     ----------
-    n_successes: PositiveInt = 1
-        Counter of the number of successes.
-    n_failures: PositiveInt = 1
-        Counter of the number of failures.
+    n_successes: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the sum of rewards (the success count for binary rewards).
+    n_failures: Union[PositiveInt, PositiveFloat] = 1
+        Prior pseudo-count plus the number of trials minus the sum of rewards.
     """
 
     # Beta(1, 1) prior pseudo-count: the anchor that raw counts start from and that decay shrinks toward.
     _prior_pseudo_count: ClassVar[int] = 1
 
-    n_successes: PositiveInt = _prior_pseudo_count
-    n_failures: PositiveInt = _prior_pseudo_count
+    n_successes: Union[PositiveInt, PositiveFloat] = _prior_pseudo_count
+    n_failures: Union[PositiveInt, PositiveFloat] = _prior_pseudo_count
 
     # --- Transfer learning keys (own contributions for this class) ---
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("n_successes", "n_failures")
@@ -156,20 +157,20 @@ class BaseModelSO(BaseModel, ABC):
         """
 
     @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
-    def update(self, rewards: List[BinaryReward], **kwargs):
+    def update(self, rewards: List[Reward], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards : List[BinaryReward],
-            The binary reward for each sample.
+        rewards : List[Reward],
+            The reward (binary or soft) for each sample.
         """
         self._update(rewards=rewards, **kwargs)
         self.record_rewards(rewards)
 
-    def record_rewards(self, rewards: List[BinaryReward]) -> None:
-        """Tally binary rewards into the success/failure counters.
+    def record_rewards(self, rewards: List[Reward]) -> None:
+        """Accumulate rewards into n_successes (sum of rewards) and n_failures (trials minus that sum).
 
         The canonical success/failure bookkeeping, factored out of ``update`` so callers that train
         through a different path (e.g. the joint cMAB SVI engine, which bypasses per-model ``update``)
@@ -177,22 +178,22 @@ class BaseModelSO(BaseModel, ABC):
 
         Parameters
         ----------
-        rewards : List[BinaryReward]
-            The binary reward for each sample.
+        rewards : List[Reward]
+            The reward (binary or soft) for each sample.
         """
         successes = sum(rewards)
         self.n_successes += successes
         self.n_failures += len(rewards) - successes
 
     @abstractmethod
-    def _update(self, rewards: List[BinaryReward], **kwargs):
+    def _update(self, rewards: List[Reward], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards: List[BinaryReward]
-            A list of binary rewards.
+        rewards: List[Reward]
+            A list of rewards (binary or soft).
         """
 
     def reset(self):
@@ -214,14 +215,15 @@ class BaseModelSO(BaseModel, ABC):
         """
         The total amount of successes and failures collected.
         """
-        return self.n_successes + self.n_failures
+        # Each reward r adds r + (1 - r) = 1, so the count is a whole number even under soft rewards.
+        return round(self.n_successes + self.n_failures)
 
     @property
     def mean(self) -> Float01:
         """
         The success rate i.e. n_successes / (n_successes + n_failures).
         """
-        return self.n_successes / self.count
+        return self.n_successes / (self.n_successes + self.n_failures)  # not count: that one is rounded
 
 
 class BaseModelMO(BaseModel, ABC):
@@ -248,15 +250,15 @@ class BaseModelMO(BaseModel, ABC):
         return [list(p) for p in zip(*[model.sample_proba(rng=rng, **kwargs) for model in self.models])]
 
     @validate_call(config=dict(arbitrary_types_allowed=True))  # config allows to account for context argument type
-    def update(self, rewards: List[List[BinaryReward]], **kwargs):
+    def update(self, rewards: List[List[Reward]], **kwargs):
         """
         Update the model parameters.
 
         Parameters
         ----------
-        rewards : List[List[BinaryReward]],
+        rewards : List[List[Reward]],
             if nested list, len() should follow shape of (n_samples, n_objectives)
-            The binary rewards for each sample.
+            The rewards (binary or soft) for each sample.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):

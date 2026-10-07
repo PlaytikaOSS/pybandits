@@ -325,15 +325,21 @@ class TestCmabMetaModel:
     def _context(self, rng: np.random.Generator, n_rows: int = None) -> np.ndarray:
         return rng.normal(size=(n_rows or self.n_rows, self.n_features))
 
-    def _balanced_batch(self, rng: np.random.Generator, n_rows: int = None) -> tuple:
+    def _balanced_batch(self, rng: np.random.Generator, n_rows: int = None, soft: bool = False) -> tuple:
         n_rows = n_rows or self.n_rows
         arms = sorted(self.action_ids)
         actions = [arms[i % len(arms)] for i in range(n_rows)]
-        rewards = rng.integers(0, 2, size=n_rows).tolist()
+        rewards = rng.uniform(size=n_rows).tolist() if soft else rng.integers(0, 2, size=n_rows).tolist()
         return actions, rewards, self._context(rng, n_rows)
 
     def _head_mu(self, meta: CmabMetaModelSO, arm: ActionId) -> np.ndarray:
         return np.array(meta.actions[arm].model_params.bnn_layer_params[0].weight.mu)
+
+    def _assert_not_truncated(self, meta: CmabMetaModelSO, actions, rewards, context, **build_kwargs) -> None:
+        """An identically-seeded meta-model trained on int-truncated rewards must end up elsewhere."""
+        truncated = self._build_meta(**build_kwargs)
+        truncated.update(actions=actions, rewards=[int(r) for r in rewards], context=context)
+        assert not np.allclose(self._head_mu(meta, "a"), self._head_mu(truncated, "a"))
 
     @pytest.fixture
     def meta_no_backbone(self) -> CmabMetaModelSO:
@@ -390,21 +396,27 @@ class TestCmabMetaModel:
             meta_no_backbone.update(actions=["a", "b"], rewards=[1, 0], context=bad)
 
     # ----------------------------------------------------------------- training
+    @pytest.mark.parametrize("soft", [False, True])
     @pytest.mark.parametrize("batch_size", [None, minibatch_size])
-    def test_update_changes_heads(self, batch_size: Optional[int], rng: np.random.Generator) -> None:
+    def test_update_changes_heads(self, batch_size: Optional[int], soft: bool, rng: np.random.Generator) -> None:
         """A joint update moves at least one head's posterior (no backbone), full-batch and minibatched.
 
         ``batch_size`` set (< N) exercises the single global ``data`` plate + arm-indexing minibatch path.
         """
         meta = self._build_meta(with_backbone=False, batch_size=batch_size)
         before = {a: self._head_mu(meta, a).copy() for a in meta.action_ids}
-        actions, rewards, context = self._balanced_batch(rng, n_rows=self._n_rows(batch_size))
+        actions, rewards, context = self._balanced_batch(rng, n_rows=self._n_rows(batch_size), soft=soft)
         meta.update(actions=actions, rewards=rewards, context=context)
         assert any(not np.allclose(before[a], self._head_mu(meta, a)) for a in meta.action_ids)
+        a_rewards = [r for act, r in zip(actions, rewards) if act == "a"]
+        assert np.isclose(meta.actions["a"].n_successes, 1 + sum(a_rewards))
+        if soft:
+            self._assert_not_truncated(meta, actions, rewards, context, with_backbone=False, batch_size=batch_size)
 
+    @pytest.mark.parametrize("soft", [False, True])
     @pytest.mark.parametrize("batch_size", [None, minibatch_size])
     def test_backbone_update_changes_backbone_and_heads(
-        self, batch_size: Optional[int], rng: np.random.Generator
+        self, batch_size: Optional[int], soft: bool, rng: np.random.Generator
     ) -> None:
         """A joint update trains both the shared backbone and the per-arm heads, full-batch and minibatched.
 
@@ -413,10 +425,12 @@ class TestCmabMetaModel:
         meta = self._build_meta(with_backbone=True, batch_size=batch_size)
         w_before = [w.copy() for w in meta.backbone.weight_arrays]
         mu_before = self._head_mu(meta, "a").copy()
-        actions, rewards, context = self._balanced_batch(rng, n_rows=self._n_rows(batch_size))
+        actions, rewards, context = self._balanced_batch(rng, n_rows=self._n_rows(batch_size), soft=soft)
         meta.update(actions=actions, rewards=rewards, context=context)
         assert any(not np.allclose(b, a) for b, a in zip(w_before, meta.backbone.weight_arrays))
         assert not np.allclose(mu_before, self._head_mu(meta, "a"))
+        if soft:
+            self._assert_not_truncated(meta, actions, rewards, context, with_backbone=True, batch_size=batch_size)
 
     @settings(deadline=None, max_examples=5)
     @given(l2_anchoring=st.floats(min_value=1e4, max_value=1e8, allow_nan=False, allow_infinity=False))

@@ -47,7 +47,6 @@ from pybandits.base import (
     ACTION_IDS_PREFIX,
     QUANTITATIVE_ACTION_IDS_PREFIX,
     ActionId,
-    BinaryReward,
     MOProbability,
     MOProbabilityWeight,
     Probability,
@@ -57,6 +56,7 @@ from pybandits.base import (
     QuantitativeMOProbabilityWeight,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
+    Reward,
 )
 from pybandits.base_model import BaseModel
 from pybandits.model import Model, ModelMO
@@ -175,7 +175,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         **kwargs: Any,
     ) -> None:
@@ -185,7 +185,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         ----------
         actions : List[ActionId]
             Selected action per sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards : Union[List[Reward], List[List[Reward]]]
             Reward per sample (scalar for single-objective; list per sample
             for multi-objective).
         quantities : Optional[List[Union[float, List[float], None]]]
@@ -211,7 +211,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
     def _dispatch_per_action_update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[BinaryReward], List[List[BinaryReward]]],
+        rewards: Union[List[Reward], List[List[Reward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         **row_aligned_kwargs: Any,
     ) -> None:
@@ -225,7 +225,7 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
         ----------
         actions : List[ActionId]
             The selected action per sample.
-        rewards : Union[List[BinaryReward], List[List[BinaryReward]]]
+        rewards : Union[List[Reward], List[List[Reward]]]
             The reward per sample (or per-objective list of rewards per sample).
         quantities : Optional[List[Union[float, List[float], None]]]
             Per-sample quantity for quantitative actions; ``None`` for non-quantitative actions.
