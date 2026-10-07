@@ -52,6 +52,7 @@ from pydantic import (
 
 from pybandits.base import (
     ActionId,
+    AnyReward,
     PositiveProbability,
     PyBanditsBaseModel,
     Reward,
@@ -78,6 +79,7 @@ from pybandits.model import (
     BetaDP,
     BetaMO,
     BetaMOCC,
+    GaussianBayesianNeuralNetwork,
     Model,
     ModelMO,
 )
@@ -125,7 +127,8 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         The confidence level for the adaptive window. None for skipping the change point detection.
     use_soft_rewards : bool
         If True, rewards may be soft labels in [0, 1]; otherwise they must be binary (0/1).
-        Not supported together with the adaptive window (delta).
+        Not supported together with the adaptive window (delta). Ignored when the models take
+        continuous rewards (``supports_continuous_rewards``), whose rewards may be any finite float.
     """
 
     meta_model: BaseMetaModel
@@ -217,7 +220,37 @@ class ActionsManager(PyBanditsBaseModel, ABC):
         """The adaptive window's change-point test and memory checks assume binary rewards."""
         if self.delta is not None and self.use_soft_rewards:
             raise ValueError("Soft rewards are not supported with the adaptive window (delta).")
+        if self.delta is not None and self.continuous_rewards:
+            raise ValueError("Continuous rewards are not supported with the adaptive window (delta).")
         return self
+
+    @property
+    def continuous_rewards(self) -> bool:
+        """Whether the action models take real-valued rewards rather than binary / soft ones in [0, 1]."""
+        return all(model.supports_continuous_rewards for model in self.actions.values())
+
+    def _check_rewards(self, *rewards: Union[List[AnyReward], List[List[AnyReward]]]) -> None:
+        """Check the rewards against what the action models accept.
+
+        Parameters
+        ----------
+        *rewards : Union[List[AnyReward], List[List[AnyReward]]]
+            Reward lists to check (e.g. the batch and the memory).
+
+        Raises
+        ------
+        ValueError
+            If a reward is not finite (continuous models), outside [0, 1] (soft rewards), or not 0/1.
+        """
+        arrays = [np.asarray(r, dtype=float) for r in rewards]
+        if self.continuous_rewards:
+            if not all(np.isfinite(a).all() for a in arrays):
+                raise ValueError("Rewards must be finite.")
+        elif self.use_soft_rewards:
+            if not all(((a >= 0) & (a <= 1)).all() for a in arrays):
+                raise ValueError("Soft rewards must be in [0, 1].")
+        elif not all(np.isin(a, (0, 1)).all() for a in arrays):
+            raise ValueError("Rewards must be binary (0/1); set use_soft_rewards=True to pass soft rewards in [0, 1].")
 
     def _validate_update_params(
         self,
@@ -293,10 +326,10 @@ class ActionsManager(PyBanditsBaseModel, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[Reward], List[List[Reward]]],
+        rewards: Union[List[AnyReward], List[List[AnyReward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
+        rewards_memory: Optional[Union[List[AnyReward], List[List[AnyReward]]]] = None,
         **kwargs,
     ):
         """
@@ -317,8 +350,7 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             List of previously collected rewards.
         """
         self.actions_with_change.clear()
-        if not self.use_soft_rewards and not all(np.isin(r, (0, 1)).all() for r in (rewards, rewards_memory or [])):
-            raise ValueError("Rewards must be binary (0/1); set use_soft_rewards=True to pass soft rewards in [0, 1].")
+        self._check_rewards(rewards, rewards_memory or [])
         if self.delta is None and (actions_memory or rewards_memory):
             raise AttributeError("Adaptive window size is not set, so memory should not be provided.")
         if self.delta is not None and (actions_memory is None or rewards_memory is None):
@@ -851,11 +883,11 @@ class CmabActionsManager(ActionsManager, Generic[CmabModelType]):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[Reward], List[List[Reward]]],
+        rewards: Union[List[AnyReward], List[List[AnyReward]]],
         quantities: Optional[List[Union[float, List[float], None]]],
         context: np.ndarray,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
+        rewards_memory: Optional[Union[List[AnyReward], List[List[AnyReward]]]] = None,
         context_memory: Optional[np.ndarray] = None,
     ):
         """
@@ -967,3 +999,4 @@ CmabActionsManagerCC = CmabActionsManager[Union[BayesianNeuralNetworkCC, Quantit
 CmabActionsManagerDP = CmabActionsManager[Union[BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP]]
 CmabActionsManagerMO = CmabActionsManager[BayesianNeuralNetworkMO]
 CmabActionsManagerMOCC = CmabActionsManager[BayesianNeuralNetworkMOCC]
+CmabActionsManagerGaussian = CmabActionsManager[GaussianBayesianNeuralNetwork]

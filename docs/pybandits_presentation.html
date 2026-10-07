@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PyBandits — Multi-Armed Bandits in Python</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/theme/white.css" id="theme">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/monokai.css">
+
+  <style>
+    :root { --pb-dark:#1a5276; --pb-mid:#1f618d; --pb-accent:#c0392b; --pb-light:#d6eaf8; }
+    .reveal { font-size: 30px; }
+    .reveal h1 { color: var(--pb-dark); font-size: 2.0em; }
+    .reveal h2 { color: var(--pb-dark); font-size: 1.3em; margin-bottom: 0.3em; }
+    .reveal h3 { color: var(--pb-mid); }
+    .reveal h4 { color: var(--pb-mid); font-weight: 400; }
+    .reveal section { text-align: left; }
+    .reveal .lead, .reveal section.lead { text-align: center; }
+    .reveal table { font-size: 0.6em; margin: 0.3em auto; }
+    .reveal table th { background: var(--pb-dark); color: #fff; padding: 6px 10px; }
+    .reveal table td { padding: 5px 10px; }
+    .reveal table tr:nth-child(even) { background: #f0f4f8; }
+    .reveal pre { width: 100%; box-shadow: none; font-size: 0.5em; }
+    .reveal pre code { padding: 14px; border-radius: 6px; max-height: 520px; }
+    .reveal code { font-size: 0.95em; }
+    .reveal :not(pre) > code { color: var(--pb-accent); background: #f4f4f4; padding: 1px 5px; border-radius: 4px; }
+    .reveal ul, .reveal ol { display: block; margin-left: 0.4em; }
+    .reveal li { margin-bottom: 0.2em; }
+    .reveal blockquote { width: 95%; font-size: 0.8em; background: #fef9e7; border-left: 5px solid #f1c40f; box-shadow: none; padding: 8px 16px; }
+    .reveal svg.diagram { display:block; margin: 0.1em auto; max-height: 440px; width: 100%; height: auto; }
+    .reveal .cap { text-align:center; font-size: 0.62em; color:#566573; margin-top: 0.2em; }
+    .reveal .small { font-size: 0.72em; }
+    .reveal .accent { color: var(--pb-accent); font-weight: 600; }
+    .reveal .twocol { display: flex; gap: 22px; align-items: center; }
+    .reveal .twocol > .col { flex: 1; min-width: 0; }
+  </style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ============ TITLE ============ -->
+<section class="lead" data-background-gradient="linear-gradient(to bottom right, #eaf2f8, #ffffff)">
+  <h1>🎰 PyBandits</h1>
+  <h3>A Python library for Multi-Armed Bandits</h3>
+  <h4>sMAB · cMAB · Bayesian Neural Networks · Quantitative Bandits</h4>
+  <p class="small" style="margin-top:1em;">A walkthrough for Data Scientists</p>
+</section>
+
+<!-- ============ WHAT IS IT ============ -->
+<section>
+  <h2>What is PyBandits?</h2>
+  <p class="small">A <strong>Multi-Armed Bandit (MAB)</strong> library built on <strong>Thompson Sampling</strong> — three flavors:</p>
+  <svg class="diagram" viewBox="0 0 960 250" xmlns="http://www.w3.org/2000/svg" style="max-height:230px">
+    <g font-family="sans-serif">
+      <!-- sMAB -->
+      <rect x="20" y="40" width="290" height="170" rx="14" fill="#eaf2f8" stroke="#1f618d" stroke-width="2"/>
+      <text x="165" y="74" text-anchor="middle" font-size="24" font-weight="bold" fill="#1a5276">sMAB</text>
+      <text x="165" y="104" text-anchor="middle" font-size="15" fill="#1f618d">stochastic · no context</text>
+      <text x="165" y="148" text-anchor="middle" font-size="15" fill="#34495e">Beta–Bernoulli arms</text>
+      <text x="165" y="176" text-anchor="middle" font-size="15" fill="#34495e">conjugate posterior</text>
+      <!-- cMAB -->
+      <rect x="335" y="40" width="290" height="170" rx="14" fill="#d6eaf8" stroke="#1f618d" stroke-width="2"/>
+      <text x="480" y="74" text-anchor="middle" font-size="24" font-weight="bold" fill="#1a5276">cMAB</text>
+      <text x="480" y="104" text-anchor="middle" font-size="15" fill="#1f618d">contextual · features</text>
+      <text x="480" y="148" text-anchor="middle" font-size="15" fill="#34495e">Bayesian Neural Network</text>
+      <text x="480" y="176" text-anchor="middle" font-size="15" fill="#34495e">VI / MCMC posterior</text>
+      <!-- Quantitative -->
+      <rect x="650" y="40" width="290" height="170" rx="14" fill="#fdebd0" stroke="#ca6f1e" stroke-width="2"/>
+      <text x="795" y="74" text-anchor="middle" font-size="24" font-weight="bold" fill="#a04000">Quantitative</text>
+      <text x="795" y="104" text-anchor="middle" font-size="15" fill="#ca6f1e">continuous quantity</text>
+      <text x="795" y="148" text-anchor="middle" font-size="15" fill="#34495e">price · dosage · discount</text>
+      <text x="795" y="176" text-anchor="middle" font-size="15" fill="#34495e">Zooming · QBNN</text>
+    </g>
+  </svg>
+  <pre><code class="language-python" data-trim>smab = SmabBernoulli(actions={"a1": Beta(), "a2": Beta()})
+actions, probs = smab.predict(n_samples=100)   # Thompson sampling
+smab.update(actions=actions, rewards=rewards)  # posterior update</code></pre>
+</section>
+
+<!-- ============ CORE LOOP ============ -->
+<section>
+  <h2>The core loop: <code>predict</code> → act → reward → <code>update</code></h2>
+  <svg class="diagram" viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1f618d"/></marker>
+      <marker id="arR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#c0392b"/></marker>
+    </defs>
+    <g font-family="sans-serif">
+      <rect x="120" y="110" width="260" height="130" rx="16" fill="#1a5276"/>
+      <text x="250" y="150" text-anchor="middle" font-size="24" font-weight="bold" fill="#fff">PyBandits model</text>
+      <text x="250" y="182" text-anchor="middle" font-size="15" fill="#aed6f1">actions_manager + strategy</text>
+      <text x="250" y="208" text-anchor="middle" font-size="15" fill="#aed6f1">posterior over each arm</text>
+
+      <rect x="560" y="110" width="240" height="130" rx="16" fill="#d6eaf8" stroke="#1f618d" stroke-width="2"/>
+      <text x="680" y="160" text-anchor="middle" font-size="22" font-weight="bold" fill="#1a5276">Environment</text>
+      <text x="680" y="192" text-anchor="middle" font-size="15" fill="#1f618d">users / system</text>
+
+      <!-- predict arrow -->
+      <path d="M385,145 L553,145" stroke="#1f618d" stroke-width="3" fill="none" marker-end="url(#arB)"/>
+      <text x="469" y="130" text-anchor="middle" font-size="17" font-weight="bold" fill="#1a5276">predict() → action aₜ</text>
+      <!-- reward arrow -->
+      <path d="M553,210 L385,210" stroke="#c0392b" stroke-width="3" fill="none" marker-end="url(#arR)"/>
+      <text x="469" y="232" text-anchor="middle" font-size="17" font-weight="bold" fill="#c0392b">reward rₜ</text>
+      <!-- update loop -->
+      <path d="M150,240 C40,290 40,80 175,108" stroke="#16a085" stroke-width="3" fill="none" marker-end="url(#arB)"/>
+      <text x="60" y="180" text-anchor="middle" font-size="16" font-weight="bold" fill="#138d75" transform="rotate(-90 60 180)">update() → refresh posterior</text>
+    </g>
+  </svg>
+  <p class="cap">Same <code>predict</code>/<code>update</code> API for every bandit · fully serializable to JSON (<code>get_state</code> / <code>from_state</code>)</p>
+</section>
+
+<!-- ============ SMAB vs CMAB ============ -->
+<section>
+  <h2>sMAB vs. cMAB</h2>
+  <svg class="diagram" viewBox="0 0 920 270" xmlns="http://www.w3.org/2000/svg" style="max-height:250px">
+    <defs><marker id="ar2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#34495e"/></marker></defs>
+    <g font-family="sans-serif" font-size="14" fill="#34495e">
+      <text x="225" y="26" text-anchor="middle" font-size="20" font-weight="bold" fill="#1a5276">sMAB — no context</text>
+      <!-- three arms with beta curves -->
+      <g>
+        <rect x="60" y="55" width="110" height="80" rx="8" fill="#eaf2f8" stroke="#1f618d"/>
+        <path d="M70,120 Q115,70 160,120" fill="none" stroke="#1f618d" stroke-width="2.5"/>
+        <text x="115" y="152" text-anchor="middle">arm a₁ · Beta</text>
+        <rect x="190" y="55" width="110" height="80" rx="8" fill="#eaf2f8" stroke="#1f618d"/>
+        <path d="M200,120 Q245,95 290,120" fill="none" stroke="#1f618d" stroke-width="2.5"/>
+        <text x="245" y="152" text-anchor="middle">arm a₂ · Beta</text>
+        <rect x="320" y="55" width="110" height="80" rx="8" fill="#eaf2f8" stroke="#1f618d"/>
+        <path d="M330,120 Q375,55 420,120" fill="none" stroke="#1f618d" stroke-width="2.5"/>
+        <text x="375" y="152" text-anchor="middle">arm a₃ · Beta</text>
+      </g>
+      <text x="225" y="195" text-anchor="middle" font-size="13">sample each posterior → pick the max draw</text>
+
+      <!-- divider -->
+      <line x1="468" y1="20" x2="468" y2="250" stroke="#ccc" stroke-dasharray="4 4"/>
+
+      <text x="695" y="26" text-anchor="middle" font-size="20" font-weight="bold" fill="#1a5276">cMAB — with context</text>
+      <rect x="510" y="70" width="90" height="60" rx="8" fill="#fdebd0" stroke="#ca6f1e"/>
+      <text x="555" y="96" text-anchor="middle" font-size="13">context</text>
+      <text x="555" y="116" text-anchor="middle" font-size="13">x ∈ ℝⁿ</text>
+      <path d="M600,100 L645,100" stroke="#34495e" stroke-width="2" marker-end="url(#ar2)"/>
+      <rect x="648" y="62" width="110" height="76" rx="8" fill="#d6eaf8" stroke="#1f618d"/>
+      <text x="703" y="94" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a5276">Bayesian</text>
+      <text x="703" y="114" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a5276">Neural Net</text>
+      <path d="M758,100 L800,100" stroke="#34495e" stroke-width="2" marker-end="url(#ar2)"/>
+      <text x="845" y="96" text-anchor="middle" font-size="13">P(reward</text>
+      <text x="845" y="114" text-anchor="middle" font-size="13">| x, arm)</text>
+      <text x="695" y="195" text-anchor="middle" font-size="13">reward depends on user / item features</text>
+    </g>
+  </svg>
+  <p class="cap">Both inherit the <strong>same <code>BaseMab</code> API</strong> — sMAB posterior is exact &amp; O(1); cMAB is an approximate (VI/MCMC), feature-driven model.</p>
+</section>
+
+<!-- ============ TYPE SUFFIXES ============ -->
+<section>
+  <h2>The "type" suffixes — one base, five strategies</h2>
+  <table>
+    <thead><tr><th>Suffix</th><th>Class</th><th>Strategy</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td><em>(none)</em></td><td>…Bernoulli</td><td>ClassicBandit</td><td>Greedy on the Thompson sample — pick highest sampled reward</td></tr>
+      <tr><td><strong>BAI</strong></td><td>…BernoulliBAI</td><td>BestActionIdentification</td><td>Explore/exploit between best &amp; 2nd-best (<code>exploit_p</code>)</td></tr>
+      <tr><td><strong>CC</strong></td><td>…BernoulliCC</td><td>CostControl</td><td>Cheapest action within <code>subsidy_factor</code> of the best reward</td></tr>
+      <tr><td><strong>MO</strong></td><td>…BernoulliMO</td><td>MultiObjective</td><td>Vector rewards → pick from the <strong>Pareto front</strong></td></tr>
+      <tr><td><strong>MOCC</strong></td><td>…BernoulliMOCC</td><td>MO + CostControl</td><td>Pareto front <em>and</em> cost-aware</td></tr>
+    </tbody>
+  </table>
+  <blockquote>The matrix <code>{Smab, Cmab} × {—, BAI, CC, MO, MOCC}</code> generates every concrete bandit class.</blockquote>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section>
+  <h2>Class architecture at a glance</h2>
+  <svg class="diagram" viewBox="0 0 980 470" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arA" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#7f8c8d"/></marker></defs>
+    <g font-family="sans-serif" font-size="15">
+      <!-- edges -->
+      <g stroke="#7f8c8d" stroke-width="2" fill="none">
+        <path d="M490,70 L270,118"/><path d="M490,70 L735,118"/>
+        <path d="M270,162 L270,206"/><path d="M270,270 L270,300"/>
+        <path d="M200,364 L150,392"/><path d="M270,364 L270,392"/><path d="M340,364 L400,392"/>
+        <path d="M735,162 L735,206"/><path d="M735,278 L735,310"/>
+      </g>
+      <!-- BaseMab -->
+      <rect x="350" y="20" width="290" height="52" rx="10" fill="#1a5276"/>
+      <text x="495" y="42" text-anchor="middle" font-size="20" font-weight="bold" fill="#fff">BaseMab</text>
+      <text x="495" y="62" text-anchor="middle" font-size="13" fill="#aed6f1">predict · update · ε-greedy · serialize</text>
+      <!-- actions_manager -->
+      <rect x="100" y="118" width="340" height="46" rx="9" fill="#1f618d"/>
+      <text x="270" y="146" text-anchor="middle" font-size="17" font-weight="bold" fill="#fff">actions_manager</text>
+      <!-- strategy -->
+      <rect x="565" y="118" width="340" height="46" rx="9" fill="#1f618d"/>
+      <text x="735" y="146" text-anchor="middle" font-size="17" font-weight="bold" fill="#fff">strategy</text>
+      <!-- meta_model -->
+      <rect x="120" y="206" width="300" height="42" rx="8" fill="#d6eaf8" stroke="#1f618d"/>
+      <text x="270" y="232" text-anchor="middle" font-size="14" fill="#1a5276">meta_model (BaseMetaModel)</text>
+      <!-- actions dict -->
+      <rect x="120" y="300" width="300" height="42" rx="8" fill="#d6eaf8" stroke="#1f618d"/>
+      <text x="270" y="326" text-anchor="middle" font-size="14" fill="#1a5276">actions: Dict[ActionId → model]</text>
+      <!-- model mixins -->
+      <rect x="95" y="392" width="110" height="64" rx="8" fill="#eaf2f8" stroke="#566573"/>
+      <text x="150" y="418" text-anchor="middle" font-size="13" font-weight="bold" fill="#1a5276">BaseModelSO</text>
+      <text x="150" y="440" text-anchor="middle" font-size="12" fill="#566573">Beta · BNN</text>
+      <rect x="215" y="392" width="110" height="64" rx="8" fill="#eaf2f8" stroke="#566573"/>
+      <text x="270" y="418" text-anchor="middle" font-size="13" font-weight="bold" fill="#1a5276">BaseModelMO</text>
+      <text x="270" y="440" text-anchor="middle" font-size="12" fill="#566573">vector reward</text>
+      <rect x="335" y="392" width="110" height="64" rx="8" fill="#eaf2f8" stroke="#566573"/>
+      <text x="390" y="418" text-anchor="middle" font-size="13" font-weight="bold" fill="#1a5276">BaseModelCC</text>
+      <text x="390" y="440" text-anchor="middle" font-size="12" fill="#566573">+ cost mixin</text>
+      <!-- strategies -->
+      <rect x="565" y="206" width="340" height="64" rx="8" fill="#eaf2f8" stroke="#566573"/>
+      <text x="735" y="232" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a5276">SingleObjectiveStrategy</text>
+      <text x="735" y="254" text-anchor="middle" font-size="13" fill="#566573">Classic · BAI · CostControl</text>
+      <rect x="565" y="310" width="340" height="64" rx="8" fill="#eaf2f8" stroke="#566573"/>
+      <text x="735" y="336" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a5276">MultiObjectiveStrategy</text>
+      <text x="735" y="358" text-anchor="middle" font-size="13" fill="#566573">MO · MOCC</text>
+    </g>
+  </svg>
+  <p class="cap"><strong>Strategy</strong> (how to choose) is decoupled from the <strong>action model</strong> (how to estimate); SO/MO/CC mixins compose orthogonally.</p>
+</section>
+
+<!-- ============ ACTION MODELS ============ -->
+<section>
+  <h2>Action models — the estimators behind each arm</h2>
+  <p class="small"><code>base_model.py</code> defines composable mixins, implemented by two model families:</p>
+  <ul class="small">
+    <li><strong>BaseModelSO</strong> — single objective (<code>n_successes</code> / <code>n_failures</code>, <code>mean</code>, <code>count</code>) · <strong>BaseModelMO</strong> — list of SO models (one per objective) · <strong>BaseModelCC</strong> — adds a <code>cost</code></li>
+  </ul>
+  <table>
+    <thead><tr><th>Family</th><th>Bandit</th><th>Idea</th></tr></thead>
+    <tbody>
+      <tr><td>Beta</td><td>sMAB</td><td>Conjugate Beta-Bernoulli, count-based, closed form</td></tr>
+      <tr><td>Bayesian Neural Network</td><td>cMAB</td><td>Learns reward = f(context) with weight uncertainty</td></tr>
+      <tr><td>Zooming / QBNN</td><td>quantitative</td><td>Continuous action quantity</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ BETA ============ -->
+<section>
+  <h2>Beta model (sMAB) — exact &amp; instant</h2>
+  <svg class="diagram" viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arBeta" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#566573"/></marker></defs>
+    <g font-family="sans-serif">
+      <!-- axes -->
+      <line x1="80" y1="290" x2="840" y2="290" stroke="#566573" stroke-width="2"/>
+      <line x1="80" y1="40" x2="80" y2="290" stroke="#566573" stroke-width="2"/>
+      <text x="80" y="312" text-anchor="middle" font-size="13" fill="#566573">0</text>
+      <text x="450" y="312" text-anchor="middle" font-size="13" fill="#566573">0.5</text>
+      <text x="820" y="312" text-anchor="middle" font-size="13" fill="#566573">1.0</text>
+      <text x="460" y="328" text-anchor="middle" font-size="13" fill="#566573">sampled success probability θ</text>
+      <!-- prior uniform -->
+      <line x1="90" y1="262" x2="830" y2="262" stroke="#95a5a6" stroke-width="2.5" stroke-dasharray="6 5"/>
+      <!-- few data: wide -->
+      <path d="M120,290 Q487,120 800,290" fill="none" stroke="#2980b9" stroke-width="3"/>
+      <!-- many data: narrow tall -->
+      <path d="M430,290 Q539,-150 650,290" fill="none" stroke="#c0392b" stroke-width="3"/>
+      <!-- thompson draw -->
+      <line x1="560" y1="290" x2="560" y2="95" stroke="#16a085" stroke-width="2" stroke-dasharray="4 4"/>
+      <circle cx="560" cy="95" r="5" fill="#16a085"/>
+      <text x="575" y="90" font-size="13" fill="#138d75">θ̃ ~ posterior (a Thompson draw)</text>
+      <!-- legend -->
+      <g font-size="14">
+        <line x1="600" y1="150" x2="630" y2="150" stroke="#95a5a6" stroke-width="2.5" stroke-dasharray="6 5"/><text x="638" y="155" fill="#566573">prior (uniform)</text>
+        <line x1="600" y1="178" x2="630" y2="178" stroke="#2980b9" stroke-width="3"/><text x="638" y="183" fill="#566573">few observations</text>
+        <line x1="600" y1="206" x2="630" y2="206" stroke="#c0392b" stroke-width="3"/><text x="638" y="211" fill="#566573">many observations</text>
+      </g>
+    </g>
+  </svg>
+  <p class="cap">State = <code>n_successes</code> / <code>n_failures</code> · update increments counts · sample = <code>rng.beta(α,β)</code>. More data → sharper posterior → less exploration.</p>
+</section>
+
+<!-- ============ BNN WHY ============ -->
+<section>
+  <h2>Bayesian Neural Network (cMAB)</h2>
+  <svg class="diagram" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arBnn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1a5276"/></marker></defs>
+    <g font-family="sans-serif">
+      <!-- edges input->hidden -->
+      <g stroke="#cbd3d6" stroke-width="1.5">
+        <line x1="160" y1="70" x2="430" y2="110"/><line x1="160" y1="70" x2="430" y2="210"/><line x1="160" y1="70" x2="430" y2="310"/>
+        <line x1="160" y1="150" x2="430" y2="110"/><line x1="160" y1="150" x2="430" y2="210"/><line x1="160" y1="150" x2="430" y2="310"/>
+        <line x1="160" y1="230" x2="430" y2="110"/><line x1="160" y1="230" x2="430" y2="210"/><line x1="160" y1="230" x2="430" y2="310"/>
+        <line x1="160" y1="310" x2="430" y2="110"/><line x1="160" y1="310" x2="430" y2="210"/><line x1="160" y1="310" x2="430" y2="310"/>
+      </g>
+      <!-- highlighted distribution edge -->
+      <line x1="160" y1="150" x2="430" y2="110" stroke="#c0392b" stroke-width="2.5" stroke-dasharray="5 4"/>
+      <g stroke="#cbd3d6" stroke-width="1.5">
+        <line x1="430" y1="110" x2="710" y2="210"/><line x1="430" y1="210" x2="710" y2="210"/><line x1="430" y1="310" x2="710" y2="210"/>
+      </g>
+      <!-- input nodes -->
+      <g>
+        <circle cx="160" cy="70" r="20" fill="#eaf2f8" stroke="#1f618d" stroke-width="2"/>
+        <circle cx="160" cy="150" r="20" fill="#eaf2f8" stroke="#1f618d" stroke-width="2"/>
+        <circle cx="160" cy="230" r="20" fill="#eaf2f8" stroke="#1f618d" stroke-width="2"/>
+        <circle cx="160" cy="310" r="20" fill="#eaf2f8" stroke="#1f618d" stroke-width="2"/>
+        <text x="118" y="76" font-size="15" fill="#34495e">x₁</text><text x="118" y="156" font-size="15" fill="#34495e">x₂</text>
+        <text x="118" y="236" font-size="15" fill="#34495e">x₃</text><text x="118" y="316" font-size="15" fill="#34495e">x₄</text>
+      </g>
+      <!-- hidden nodes -->
+      <g>
+        <circle cx="430" cy="110" r="22" fill="#aed6f1" stroke="#1f618d" stroke-width="2"/>
+        <circle cx="430" cy="210" r="22" fill="#aed6f1" stroke="#1f618d" stroke-width="2"/>
+        <circle cx="430" cy="310" r="22" fill="#aed6f1" stroke="#1f618d" stroke-width="2"/>
+      </g>
+      <!-- output -->
+      <circle cx="710" cy="210" r="26" fill="#1a5276"/>
+      <path d="M736,210 L800,210" stroke="#1a5276" stroke-width="3" marker-end="url(#arBnn)"/>
+      <text x="808" y="205" font-size="16" font-weight="bold" fill="#1a5276">σ(·)</text>
+      <text x="808" y="228" font-size="14" fill="#34495e">P(reward=1)</text>
+      <!-- labels -->
+      <text x="160" y="352" text-anchor="middle" font-size="14" fill="#1f618d">context features</text>
+      <text x="430" y="352" text-anchor="middle" font-size="14" fill="#1f618d">hidden layer(s) — optional</text>
+      <!-- distribution callout -->
+      <path d="M250,40 Q285,5 320,40" fill="none" stroke="#c0392b" stroke-width="2.5"/>
+      <text x="335" y="32" font-size="14" fill="#c0392b">each weight wᵢⱼ ~ N(μ, σ)</text>
+      <text x="335" y="50" font-size="12" fill="#c0392b">(Student-t prior by default)</text>
+    </g>
+  </svg>
+  <p class="cap"><span class="accent">One-layer BNN = Bayesian logistic regression</span> (the cMAB default) · add <code>hidden_dim_list=[16,8]</code> for a deeper net. A distribution over weights is what gives Thompson Sampling its uncertainty.</p>
+</section>
+
+<!-- ============ BNN BLOCKS ============ -->
+<section>
+  <h2>BNN — the building blocks</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>BnnLayerParams</code></td><td>Per layer: a <code>weight</code> distribution (in×out) + a <code>bias</code> distribution (out)</td></tr>
+      <tr><td><code>BnnParams</code></td><td>Whole network: layer params + initial priors (for reset) + embeddings</td></tr>
+      <tr><td><code>NormalArray</code></td><td>Gaussian prior N(μ,σ) — L2-like, fast</td></tr>
+      <tr><td><code>StudentTArray</code></td><td>Heavy-tailed Student-t prior — robust to outliers (<strong>default</strong>)</td></tr>
+      <tr><td><code>FeaturesConfig</code></td><td>Describes mixed numerical + categorical inputs</td></tr>
+      <tr><td><code>EmbeddingParams</code></td><td>Bayesian embedding matrices for categorical features</td></tr>
+    </tbody>
+  </table>
+  <p class="cap">Priors are <strong>location-scale</strong> (μ, σ, optionally ν). <code>cold_start()</code> builds them; <strong>layerwise scaling</strong> divides σ by √(input_dim) for smoother, GP-like behavior.</p>
+</section>
+
+<!-- ============ BNN INFERENCE ============ -->
+<section>
+  <h2>BNN — how inference works (NumPyro / JAX)</h2>
+  <svg class="diagram" viewBox="0 0 920 250" xmlns="http://www.w3.org/2000/svg" style="max-height:215px">
+    <defs><marker id="arInf" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#34495e"/></marker></defs>
+    <g font-family="sans-serif">
+      <rect x="30" y="90" width="150" height="70" rx="10" fill="#fdebd0" stroke="#ca6f1e"/>
+      <text x="105" y="120" text-anchor="middle" font-size="15" font-weight="bold" fill="#a04000">data</text>
+      <text x="105" y="142" text-anchor="middle" font-size="13" fill="#a04000">(context, reward)</text>
+      <path d="M180,125 L235,125" stroke="#34495e" stroke-width="2.5" marker-end="url(#arInf)"/>
+      <!-- two engines -->
+      <rect x="240" y="35" width="300" height="80" rx="10" fill="#d6eaf8" stroke="#1f618d"/>
+      <text x="390" y="62" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a5276">VI  (default)</text>
+      <text x="390" y="84" text-anchor="middle" font-size="12.5" fill="#1f618d">ADVI / full-rank · maximize ELBO</text>
+      <text x="390" y="102" text-anchor="middle" font-size="12.5" fill="#1f618d">optax · mini-batches · jax.lax.scan</text>
+      <rect x="240" y="135" width="300" height="78" rx="10" fill="#eaf2f8" stroke="#1f618d"/>
+      <text x="390" y="162" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a5276">MCMC</text>
+      <text x="390" y="184" text-anchor="middle" font-size="12.5" fill="#1f618d">NUTS sampler · asymptotically exact</text>
+      <text x="390" y="202" text-anchor="middle" font-size="12.5" fill="#1f618d">warmup + samples + chains (slower)</text>
+      <path d="M540,90 L605,118" stroke="#34495e" stroke-width="2.5" marker-end="url(#arInf)"/>
+      <path d="M540,165 L605,135" stroke="#34495e" stroke-width="2.5" marker-end="url(#arInf)"/>
+      <!-- posterior -->
+      <rect x="610" y="90" width="160" height="70" rx="10" fill="#1a5276"/>
+      <text x="690" y="118" text-anchor="middle" font-size="15" font-weight="bold" fill="#fff">posterior</text>
+      <text x="690" y="140" text-anchor="middle" font-size="12.5" fill="#aed6f1">μ, σ per weight</text>
+      <path d="M770,125 L825,125" stroke="#34495e" stroke-width="2.5" marker-end="url(#arInf)"/>
+      <text x="848" y="112" font-size="13" fill="#34495e">sample_proba()</text>
+      <text x="848" y="132" font-size="13" fill="#34495e">forward pass →</text>
+      <text x="848" y="152" font-size="13" fill="#34495e">P(reward)</text>
+    </g>
+  </svg>
+  <p class="cap"><code>update()</code> fits the posterior (VI or MCMC); <code>sample_proba()</code> samples weights once and runs the forward pass. VI guide <code>ParameterizedScaleAutoNormal</code> enables <strong>warm-starting</strong> for online learning.</p>
+</section>
+
+<!-- ============ BNN KNOBS ============ -->
+<section>
+  <h2>BNN — the knobs that matter</h2>
+  <ul class="small">
+    <li><strong>update_method</strong> <code>"VI"</code> / <code>"MCMC"</code>; VI sub-methods <code>advi</code> / <code>fullrank_advi</code></li>
+    <li><strong>Epochs / mini-batches</strong> — <code>epochs</code>, <code>batch_size</code>, <code>num_steps</code></li>
+    <li><strong>Early stopping</strong> — <code>patience</code>, <code>tolerance</code> on ELBO convergence</li>
+    <li><strong>Warm start</strong> — re-init the variational posterior from the last fit (online learning)</li>
+    <li><strong>Bias priors</strong> — <code>bias_std</code> constrains the output logit; <strong>calibrate_output_bias</strong> sets the intercept to <code>logit(empirical reward rate)</code> on first update → avoids over-optimistic exploration</li>
+    <li><strong>Recent VI stability options</strong> — <code>num_particles</code> (ELBO samples/step), <strong>gradient clipping</strong> (<code>gradient_clip_norm</code>), <strong>KL temperature scaling</strong>, LR schedules</li>
+    <li><strong>Categorical embeddings</strong> — learn dense Bayesian vectors for high-cardinality columns</li>
+  </ul>
+</section>
+
+<!-- ============ QUANTITATIVE INTRO ============ -->
+<section>
+  <h2>Quantitative bandits — actions with a <em>value</em></h2>
+  <p class="cap" style="font-size:0.7em">A <strong>quantitative action</strong> = a discrete action <strong>+ a continuous quantity</strong> (promo + discount rate, treatment + dosage, strategy + price).</p>
+  <table>
+    <thead><tr><th></th><th>Zooming</th><th>QBNN (Quantitative BNN)</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Quantity handling</strong></td><td>Adaptively <strong>discretized</strong> into segments</td><td>Fed as an <strong>input feature</strong> to the BNN</td></tr>
+      <tr><td><strong>Exploration</strong></td><td>Per-segment Beta uncertainty</td><td>Full posterior over network weights</td></tr>
+      <tr><td><strong>Scaling</strong></td><td>Capped # of segments</td><td>Single network, high-dim friendly</td></tr>
+      <tr><td><strong>Interpretability</strong></td><td>Clear segment → reward map</td><td>Black-box, but flexible</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ ZOOMING ============ -->
+<section>
+  <h2>Zooming — adaptive discretization</h2>
+  <svg class="diagram" viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arZ" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#16a085"/></marker></defs>
+    <g font-family="sans-serif">
+      <!-- reward curve -->
+      <text x="60" y="40" font-size="14" fill="#566573">reward</text>
+      <path d="M80,120 C250,120 380,55 540,50 C660,46 740,95 820,120" fill="none" stroke="#c0392b" stroke-width="3"/>
+      <text x="540" y="38" text-anchor="middle" font-size="13" fill="#c0392b">true reward vs. quantity</text>
+      <!-- coarse row -->
+      <text x="40" y="172" font-size="14" fill="#566573">coarse</text>
+      <g stroke="#1f618d" stroke-width="2" fill="#eaf2f8">
+        <rect x="80" y="150" width="185" height="44"/><rect x="265" y="150" width="185" height="44"/>
+        <rect x="450" y="150" width="185" height="44"/><rect x="635" y="150" width="185" height="44"/>
+      </g>
+      <!-- arrow -->
+      <path d="M450,200 L450,238" stroke="#16a085" stroke-width="3" marker-end="url(#arZ)"/>
+      <text x="465" y="226" font-size="14" fill="#138d75">split "interesting" · merge "nuisance"</text>
+      <!-- refined row -->
+      <text x="40" y="278" font-size="14" fill="#566573">after</text>
+      <text x="40" y="294" font-size="14" fill="#566573">zooming</text>
+      <g stroke="#1f618d" stroke-width="2">
+        <rect x="80" y="258" width="370" height="44" fill="#d6eaf8"/>
+        <rect x="450" y="258" width="46" height="44" fill="#aed6f1"/><rect x="496" y="258" width="46" height="44" fill="#aed6f1"/>
+        <rect x="542" y="258" width="46" height="44" fill="#aed6f1"/><rect x="588" y="258" width="47" height="44" fill="#aed6f1"/>
+        <rect x="635" y="258" width="185" height="44" fill="#d6eaf8"/>
+      </g>
+      <text x="265" y="285" text-anchor="middle" font-size="12" fill="#1a5276">merged</text>
+      <text x="519" y="285" text-anchor="middle" font-size="12" fill="#1a5276">fine splits</text>
+      <text x="727" y="285" text-anchor="middle" font-size="12" fill="#1a5276">merged</text>
+      <text x="450" y="328" text-anchor="middle" font-size="13" fill="#566573">quantity →   each segment keeps its own Beta model · bounded by n_max_segments</text>
+    </g>
+  </svg>
+  <p class="cap">Refine the grid where it matters: split frequently-sampled segments, merge similar neighbors (Jensen-Shannon divergence).</p>
+</section>
+
+<!-- ============ QBNN ============ -->
+<section>
+  <h2>QBNN — quantity as a learned input</h2>
+  <svg class="diagram" viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arQ" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#34495e"/></marker></defs>
+    <g font-family="sans-serif">
+      <!-- input cells -->
+      <rect x="40" y="40" width="70" height="48" fill="#fdebd0" stroke="#ca6f1e" stroke-width="2"/>
+      <text x="75" y="70" text-anchor="middle" font-size="18" font-weight="bold" fill="#a04000">q</text>
+      <g stroke="#1f618d" stroke-width="2" fill="#eaf2f8">
+        <rect x="110" y="40" width="58" height="48"/><rect x="168" y="40" width="58" height="48"/>
+        <rect x="226" y="40" width="58" height="48"/><rect x="284" y="40" width="58" height="48"/>
+      </g>
+      <g font-size="15" fill="#34495e" font-family="sans-serif">
+        <text x="139" y="70" text-anchor="middle">x₁</text><text x="197" y="70" text-anchor="middle">x₂</text>
+        <text x="255" y="70" text-anchor="middle">x₃</text><text x="313" y="70" text-anchor="middle">…</text>
+      </g>
+      <text x="191" y="112" text-anchor="middle" font-size="14" fill="#566573">[ quantity | context ]</text>
+      <path d="M345,64 L405,64" stroke="#34495e" stroke-width="2.5" marker-end="url(#arQ)"/>
+      <rect x="408" y="34" width="120" height="60" rx="10" fill="#1a5276"/>
+      <text x="468" y="70" text-anchor="middle" font-size="18" font-weight="bold" fill="#fff">BNN</text>
+      <path d="M528,64 L590,64" stroke="#34495e" stroke-width="2.5" marker-end="url(#arQ)"/>
+      <text x="600" y="60" font-size="15" fill="#34495e">P(reward | q, context)</text>
+      <text x="600" y="82" font-size="12.5" fill="#566573">a callable of q</text>
+      <!-- mini plot: P vs q -->
+      <line x1="120" y1="290" x2="540" y2="290" stroke="#566573" stroke-width="2"/>
+      <line x1="120" y1="150" x2="120" y2="290" stroke="#566573" stroke-width="2"/>
+      <text x="100" y="155" font-size="13" fill="#566573">P</text>
+      <text x="330" y="312" text-anchor="middle" font-size="13" fill="#566573">quantity q</text>
+      <path d="M120,280 Q330,150 540,250" fill="none" stroke="#2980b9" stroke-width="3"/>
+      <line x1="300" y1="290" x2="300" y2="183" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 4"/>
+      <circle cx="300" cy="183" r="5" fill="#c0392b"/>
+      <text x="312" y="178" font-size="13" fill="#c0392b">choose q* = argmax P</text>
+    </g>
+  </svg>
+  <p class="cap">Concatenate quantity + context; the bandit <strong>optimizes over q</strong> to pick the best action+value. Enabler (#121): <code>sample_proba</code> split into weight-sampling + forward-pass, so the net is evaluated at many q without resampling weights.</p>
+</section>
+
+<!-- ============ ACTIONS MANAGER ============ -->
+<section>
+  <h2>ActionsManager &amp; the Meta-Model</h2>
+  <p class="small"><strong>ActionsManager</strong> owns the per-action models and adds two concerns:</p>
+  <ul class="small">
+    <li><strong>Adaptive windowing / change detection</strong> — when <code>delta</code> is set, it watches for reward-distribution shifts (KL-based test) and <strong>resets + retrains on a trimmed window</strong> → robust to <strong>non-stationary</strong> environments.</li>
+    <li><strong>Memory</strong> — replays <code>actions_memory</code> / <code>rewards_memory</code> for warm updates.</li>
+  </ul>
+  <p class="small"><strong>BaseMetaModel</strong> (refactor #140) sits <em>between</em> the manager and the per-action models, delegating <code>sample_proba</code> / <code>update</code> / <code>reset</code>. <code>CmabPerActionMetaModel</code> enforces cross-action consistency (same <code>input_dim</code>, same update config) — opening the door to <strong>shared backbones</strong>.</p>
+</section>
+
+<!-- ============ EXTRAS ============ -->
+<section>
+  <h2>Beyond the core: extra capabilities</h2>
+  <ul class="small">
+    <li><strong>Transfer learning</strong> (<code>transfer.py</code>, #120) — merge two MABs, edit actions on the fly, <strong>expand the cMAB feature dimension</strong> or BNN architecture without losing learned state</li>
+    <li><strong>Offline Policy Evaluation</strong> (<code>offline_policy_evaluator.py</code>, #59) — estimate a policy's value from logged data (propensity scoring + estimators), with Optuna tuning &amp; Bokeh visualization</li>
+    <li><strong>Simulators</strong> (<code>smab_simulator.py</code>, <code>cmab_simulator.py</code>) — synthetic environments for testing</li>
+    <li><strong>Serialization everywhere</strong> — JSON state with backward-compatible migration</li>
+  </ul>
+</section>
+
+<!-- ============ OPE 1: WHY & HOW ============ -->
+<section>
+  <h2>Offline Policy Evaluation — test before you ship</h2>
+  <p class="cap" style="font-size:0.7em">Estimate the value (expected reward) of a <strong>candidate policy</strong> from <strong>logged data</strong> collected by a different <strong>logging policy</strong> — <span class="accent">without deploying it online</span>.</p>
+  <svg class="diagram" viewBox="0 0 940 300" xmlns="http://www.w3.org/2000/svg" style="max-height:340px">
+    <defs><marker id="arOpe" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#34495e"/></marker></defs>
+    <g font-family="sans-serif">
+      <!-- candidate policy -->
+      <rect x="360" y="14" width="270" height="56" rx="10" fill="#1a5276"/>
+      <text x="495" y="40" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">candidate policy π_e</text>
+      <text x="495" y="60" text-anchor="middle" font-size="13" fill="#aed6f1">the MAB you want to evaluate</text>
+      <!-- logged data -->
+      <rect x="20" y="110" width="270" height="150" rx="12" fill="#fdebd0" stroke="#ca6f1e" stroke-width="2"/>
+      <text x="155" y="138" text-anchor="middle" font-size="16" font-weight="bold" fill="#a04000">Logged data (from π_b)</text>
+      <text x="155" y="166" text-anchor="middle" font-size="14" fill="#7e5109">context xᵢ</text>
+      <text x="155" y="190" text-anchor="middle" font-size="14" fill="#7e5109">action aᵢ · reward rᵢ</text>
+      <text x="155" y="214" text-anchor="middle" font-size="14" fill="#7e5109">propensity π_b(aᵢ | xᵢ)</text>
+      <text x="155" y="242" text-anchor="middle" font-size="12.5" fill="#a04000">logging / behavior policy</text>
+      <!-- evaluator -->
+      <rect x="350" y="100" width="290" height="160" rx="12" fill="#1f618d"/>
+      <text x="495" y="128" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">OfflinePolicyEvaluator</text>
+      <text x="495" y="156" text-anchor="middle" font-size="13" fill="#d6eaf8">_FunctionEstimator:</text>
+      <text x="495" y="178" text-anchor="middle" font-size="13" fill="#d6eaf8">estimate π̂_b &amp; q̂(x, a)</text>
+      <text x="495" y="200" text-anchor="middle" font-size="13" fill="#d6eaf8">sklearn models + Optuna tuning</text>
+      <text x="495" y="228" text-anchor="middle" font-size="13" fill="#d6eaf8">run estimators · bootstrap CIs</text>
+      <text x="495" y="250" text-anchor="middle" font-size="13" fill="#d6eaf8">Monte-Carlo sample π_e</text>
+      <!-- output -->
+      <rect x="700" y="120" width="220" height="110" rx="12" fill="#1a5276"/>
+      <text x="810" y="160" text-anchor="middle" font-size="20" font-weight="bold" fill="#fff">V̂(π_e) ± CI</text>
+      <text x="810" y="190" text-anchor="middle" font-size="13" fill="#aed6f1">no online risk,</text>
+      <text x="810" y="208" text-anchor="middle" font-size="13" fill="#aed6f1">no live A/B test</text>
+      <!-- arrows -->
+      <path d="M290,185 L345,185" stroke="#34495e" stroke-width="2.5" marker-end="url(#arOpe)"/>
+      <path d="M495,70 L495,96" stroke="#34495e" stroke-width="2.5" marker-end="url(#arOpe)"/>
+      <path d="M640,180 L695,180" stroke="#34495e" stroke-width="2.5" marker-end="url(#arOpe)"/>
+    </g>
+  </svg>
+  <p class="cap">API: <code>evaluator.evaluate(mab, logged_data)</code> → DataFrame of value + CI per estimator · <code>update_and_evaluate(...)</code> updates the MAB on the log first.</p>
+</section>
+
+<!-- ============ OPE 2: ESTIMATORS & RESULTS ============ -->
+<section>
+  <h2>OPE — estimators trade off bias vs. variance</h2>
+  <div class="twocol">
+    <div class="col">
+      <table style="font-size:0.62em">
+        <thead><tr><th>Estimator</th><th>Intuition</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Replay</strong></td><td>Average rewards where π_e would pick the logged action — simple, data-hungry</td></tr>
+          <tr><td><strong>DM</strong></td><td>Plug logged rewards into a reward model q̂(x,a) → <span class="accent">low variance, biased</span></td></tr>
+          <tr><td><strong>IPW</strong></td><td>Reweight by w = π_e/π_b → <span class="accent">unbiased, high variance</span></td></tr>
+          <tr><td><strong>SNIPW</strong></td><td>Self-normalize the weights → less variance, slight bias</td></tr>
+          <tr><td><strong>DR</strong></td><td>DM baseline + IPW correction on the residual → <span class="accent">unbiased &amp; lower variance</span></td></tr>
+          <tr><td><strong>DR variants</strong></td><td>Switch-DR, optimistic/pessimistic shrinkage, SubGaussian, Balanced-IPW — tame extreme weights</td></tr>
+        </tbody>
+      </table>
+      <p class="cap" style="text-align:left">w = π_e(a|x) / π_b(a|x) · DR is unbiased if <em>either</em> q̂ <em>or</em> π̂_b is right.</p>
+    </div>
+    <div class="col">
+      <svg class="diagram" viewBox="0 0 470 330" xmlns="http://www.w3.org/2000/svg" style="max-height:330px">
+        <g font-family="sans-serif">
+          <!-- axes -->
+          <line x1="55" y1="40" x2="55" y2="275" stroke="#566573" stroke-width="2"/>
+          <line x1="55" y1="275" x2="450" y2="275" stroke="#566573" stroke-width="2"/>
+          <text x="20" y="160" font-size="13" fill="#566573" transform="rotate(-90 20 160)">estimated value</text>
+          <!-- ground truth -->
+          <line x1="55" y1="120" x2="450" y2="120" stroke="#16a085" stroke-width="2" stroke-dasharray="6 4"/>
+          <text x="300" y="112" font-size="12" fill="#138d75">ground truth</text>
+          <!-- bars: x centers 90,155,220,285,350,415 ; baseline 275 -->
+          <!-- Replay -->
+          <rect x="72" y="150" width="40" height="125" fill="#2980b9"/>
+          <line x1="92" y1="120" x2="92" y2="185" stroke="#1b2631" stroke-width="2"/>
+          <line x1="84" y1="120" x2="100" y2="120" stroke="#1b2631" stroke-width="2"/><line x1="84" y1="185" x2="100" y2="185" stroke="#1b2631" stroke-width="2"/>
+          <!-- DM -->
+          <rect x="137" y="158" width="40" height="117" fill="#5dade2"/>
+          <line x1="157" y1="146" x2="157" y2="170" stroke="#1b2631" stroke-width="2"/>
+          <line x1="149" y1="146" x2="165" y2="146" stroke="#1b2631" stroke-width="2"/><line x1="149" y1="170" x2="165" y2="170" stroke="#1b2631" stroke-width="2"/>
+          <!-- IPW -->
+          <rect x="202" y="118" width="40" height="157" fill="#2980b9"/>
+          <line x1="222" y1="74" x2="222" y2="164" stroke="#1b2631" stroke-width="2"/>
+          <line x1="214" y1="74" x2="230" y2="74" stroke="#1b2631" stroke-width="2"/><line x1="214" y1="164" x2="230" y2="164" stroke="#1b2631" stroke-width="2"/>
+          <!-- SNIPW -->
+          <rect x="267" y="122" width="40" height="153" fill="#2980b9"/>
+          <line x1="287" y1="96" x2="287" y2="150" stroke="#1b2631" stroke-width="2"/>
+          <line x1="279" y1="96" x2="295" y2="96" stroke="#1b2631" stroke-width="2"/><line x1="279" y1="150" x2="295" y2="150" stroke="#1b2631" stroke-width="2"/>
+          <!-- DR (highlight) -->
+          <rect x="332" y="120" width="40" height="155" fill="#1a5276"/>
+          <line x1="352" y1="104" x2="352" y2="138" stroke="#1b2631" stroke-width="2"/>
+          <line x1="344" y1="104" x2="360" y2="104" stroke="#1b2631" stroke-width="2"/><line x1="344" y1="138" x2="360" y2="138" stroke="#1b2631" stroke-width="2"/>
+          <!-- Switch-DR -->
+          <rect x="397" y="121" width="40" height="154" fill="#1a5276"/>
+          <line x1="417" y1="106" x2="417" y2="138" stroke="#1b2631" stroke-width="2"/>
+          <line x1="409" y1="106" x2="425" y2="106" stroke="#1b2631" stroke-width="2"/><line x1="409" y1="138" x2="425" y2="138" stroke="#1b2631" stroke-width="2"/>
+          <!-- x labels -->
+          <g font-size="11.5" fill="#34495e" text-anchor="middle">
+            <text x="92" y="292">Replay</text><text x="157" y="292">DM</text><text x="222" y="292">IPW</text>
+            <text x="287" y="292">SNIPW</text><text x="352" y="292">DR</text><text x="417" y="292">Sw-DR</text>
+          </g>
+          <text x="252" y="318" text-anchor="middle" font-size="12.5" fill="#566573">whiskers = 95% bootstrap CI</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+  <p class="cap">Output: estimated value ± CI per estimator (Bokeh bar chart) — compare agreement and pick the estimator you trust.</p>
+</section>
+
+<!-- ============ EVOLUTION TIMELINE ============ -->
+<section>
+  <h2>How the package evolved</h2>
+  <svg class="diagram" viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg">
+    <g font-family="sans-serif">
+      <line x1="70" y1="180" x2="860" y2="180" stroke="#1f618d" stroke-width="4"/>
+      <!-- milestones: alternate above/below -->
+      <g font-size="13">
+        <!-- #59 -->
+        <circle cx="110" cy="180" r="8" fill="#1a5276"/>
+        <line x1="110" y1="180" x2="110" y2="120" stroke="#aab7b8"/>
+        <text x="110" y="110" text-anchor="middle" font-weight="bold" fill="#1a5276">#59</text>
+        <text x="110" y="94" text-anchor="middle" fill="#566573">OPE module</text>
+        <!-- #72 -->
+        <circle cx="220" cy="180" r="8" fill="#1a5276"/>
+        <line x1="220" y1="180" x2="220" y2="240" stroke="#aab7b8"/>
+        <text x="220" y="258" text-anchor="middle" font-weight="bold" fill="#1a5276">#72</text>
+        <text x="220" y="274" text-anchor="middle" fill="#566573">Zooming</text>
+        <!-- #89 -->
+        <circle cx="330" cy="180" r="10" fill="#c0392b"/>
+        <line x1="330" y1="180" x2="330" y2="110" stroke="#aab7b8"/>
+        <text x="330" y="100" text-anchor="middle" font-weight="bold" fill="#c0392b">#89</text>
+        <text x="330" y="84" text-anchor="middle" fill="#566573">BNN introduced</text>
+        <text x="330" y="68" text-anchor="middle" font-size="11" fill="#566573">(powers cMAB)</text>
+        <!-- #107 -->
+        <circle cx="430" cy="180" r="8" fill="#1a5276"/>
+        <line x1="430" y1="180" x2="430" y2="240" stroke="#aab7b8"/>
+        <text x="430" y="258" text-anchor="middle" font-weight="bold" fill="#1a5276">#107</text>
+        <text x="430" y="274" text-anchor="middle" fill="#566573">Multi-objective</text>
+        <!-- #120/121/122 -->
+        <circle cx="540" cy="180" r="8" fill="#1a5276"/>
+        <line x1="540" y1="180" x2="540" y2="120" stroke="#aab7b8"/>
+        <text x="540" y="110" text-anchor="middle" font-weight="bold" fill="#1a5276">#120–122</text>
+        <text x="540" y="94" text-anchor="middle" fill="#566573">Transfer · QBNN</text>
+        <text x="540" y="78" text-anchor="middle" fill="#566573">· Embeddings</text>
+        <!-- #129 -->
+        <circle cx="660" cy="180" r="11" fill="#c0392b"/>
+        <line x1="660" y1="180" x2="660" y2="244" stroke="#aab7b8"/>
+        <text x="660" y="262" text-anchor="middle" font-weight="bold" fill="#c0392b">#129 🚀</text>
+        <text x="660" y="278" text-anchor="middle" fill="#566573">PyMC → NumPyro/JAX</text>
+        <!-- #140/141 -->
+        <circle cx="770" cy="180" r="8" fill="#1a5276"/>
+        <line x1="770" y1="180" x2="770" y2="120" stroke="#aab7b8"/>
+        <text x="770" y="110" text-anchor="middle" font-weight="bold" fill="#1a5276">#140/141</text>
+        <text x="770" y="94" text-anchor="middle" fill="#566573">MetaModel ·</text>
+        <text x="770" y="78" text-anchor="middle" fill="#566573">Pydantic v2</text>
+        <!-- latest -->
+        <circle cx="850" cy="180" r="8" fill="#1a5276"/>
+        <line x1="850" y1="180" x2="850" y2="240" stroke="#aab7b8"/>
+        <text x="850" y="258" text-anchor="middle" font-weight="bold" fill="#1a5276">latest</text>
+        <text x="850" y="274" text-anchor="middle" fill="#566573">VI options ·</text>
+        <text x="850" y="290" text-anchor="middle" fill="#566573">py 3.13/3.14</text>
+      </g>
+      <text x="70" y="330" font-size="13" fill="#7f8c8d">early</text>
+      <text x="860" y="330" text-anchor="end" font-size="13" fill="#7f8c8d">now (v7.x)</text>
+    </g>
+  </svg>
+  <p class="cap"><strong>Why PyMC → NumPyro?</strong> JAX JIT/XLA, in-graph mini-batched SVI (<code>lax.scan</code>), faster NUTS, <code>optax</code> optimizers — big speed &amp; scalability gains for the BNN.</p>
+</section>
+
+<!-- ============ TAKEAWAYS ============ -->
+<section>
+  <h2>Takeaways</h2>
+  <ul class="small">
+    <li><strong>One API, many bandits:</strong> <code>predict</code> / <code>update</code> on top of <code>BaseMab</code>, fully serializable.</li>
+    <li><strong>Two axes of choice:</strong> the <em>model</em> (Beta ↔ BNN ↔ Zooming/QBNN) × the <em>strategy</em> (Classic / BAI / CC / MO / MOCC).</li>
+    <li><strong>Beta</strong> = exact &amp; instant for contextless problems; <strong>BNN</strong> = uncertainty-aware deep model for contextual ones; a <strong>one-layer BNN is Bayesian logistic regression</strong>.</li>
+    <li><strong>Quantitative bandits</strong> handle continuous action values — discretized (<strong>Zooming</strong>) or learned (<strong>QBNN</strong>).</li>
+    <li>The codebase moved to a <strong>modern Bayesian stack (NumPyro/JAX + Pydantic v2)</strong> and gained transfer learning, OPE, multi-objective, embeddings, and non-stationarity handling.</li>
+  </ul>
+</section>
+
+<!-- ============ THANKS ============ -->
+<section class="lead" data-background-gradient="linear-gradient(to bottom right, #eaf2f8, #ffffff)">
+  <h1>Thank you 🙏</h1>
+  <h3>Questions?</h3>
+  <p class="small"><code>pip install pybandits</code> · github.com/PlaytikaOSS/pybandits</p>
+  <p class="small">Tutorials: <code>docs/src/tutorials/</code> (smab, cmab, bnn, zooming, quant-bnn, ope, transfer learning)</p>
+</section>
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    slideNumber: 'c/t',
+    width: 1280,
+    height: 720,
+    margin: 0.04,
+    transition: 'slide',
+    plugins: [ RevealHighlight, RevealNotes ]
+  });
+</script>
+</body>
+</html>
