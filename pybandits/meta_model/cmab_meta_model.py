@@ -897,8 +897,8 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     def _prepare_targets(self, arm_to_rows: Dict[ActionId, List[int]], rewards_arr: np.ndarray) -> np.ndarray:
         """Training targets for the joint pass: each single-BNN head maps its own rows' rewards.
 
-        Identity for Bernoulli heads; Gaussian heads standardize with their own (first-batch fitted)
-        location and scale, so arms on different reward scales share one likelihood in the joint ELBO.
+        Identity for Bernoulli heads; Gaussian heads map with their own location and scale (fixed, or fitted on
+        their first batch), so arms on different reward scales share one likelihood in the joint ELBO.
 
         Parameters
         ----------

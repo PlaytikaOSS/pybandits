@@ -18,13 +18,15 @@ Each action is a Bayesian MLP with **one output unit, μ(x)**, and the reward is
 - **σ is a single noise std per action,** not a function of the context. It is a latent (`log σ ~ Normal`) whose
   posterior is stored in the model state (`noise_log_sigma`) and carried across updates, like the weights. Its initial
   prior is centered on `noise_sigma` (reward units) if given, otherwise on the std of the first update batch.
-- **Training is on raw rewards by default** (`standardize_rewards=False`). With `standardize_rewards=True` it is on
-  standardized targets `(r − reward_loc) / reward_scale`, so the default O(1) weight priors fit rewards on any scale;
-  `reward_loc` / `reward_scale` are the values given at cold start, otherwise fitted on the first batch and then frozen.
+- **Training is on the targets** `(r − reward_loc) / reward_scale`. By default both are None, i.e. 0 / 1, so the
+  model trains on raw rewards and the weight priors are in reward units. Fixed constants can be given (alone or
+  together, e.g. only `reward_scale=20` for a centered uplift in dollars) so the default O(1) weight priors fit; they
+  are never re-fitted. With `fit_reward_standardization=True` they are instead fitted on the first batch and then
+  frozen (and must not be given).
 - **Thompson sampling** draws the weights from the posterior and ranks actions on μ. `predict` returns μ (in the
   "probabilities" slot) and σ (for monitoring) per action and row.
-- **`reset()`** returns the model to its cold-start state, including the standardization (re-fitted on the next
-  update unless it was given at cold start).
+- **`reset()`** returns the model to its cold-start state, including the standardization (fixed values are restored;
+  fitted ones are re-fitted on the next update).
 
 ### Why one σ and not σ(x)
 
@@ -50,7 +52,7 @@ mab = CmabGaussian.cold_start(
     dist_type="normal",
     dist_params_init={"mu": 0, "sigma": 0.1},   # a narrow prior fits much faster than the default sigma=1
     update_kwargs={"num_steps": 400, "optimizer_kwargs": {"step_size": 3e-3}},
-    # optionally, from historical data rather than the first batch:
+    # optionally, fixed values from historical data (or fit_reward_standardization=True to fit on the first batch):
     # reward_loc=..., reward_scale=..., noise_sigma=...,
     # decay_factor=...,                         # if the reward process drifts
 )
