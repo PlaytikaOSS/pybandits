@@ -29,6 +29,7 @@ from pybandits.meta_model.cmab_meta_model import (
     CmabMetaModel,
     CmabMetaModelCC,
     CmabMetaModelDP,
+    CmabMetaModelGaussian,
     CmabMetaModelMO,
     CmabMetaModelMOCC,
     CmabMetaModelSO,
@@ -58,4 +59,5 @@ __all__ = [
     "CmabMetaModelDP",
     "CmabMetaModelMO",
     "CmabMetaModelMOCC",
+    "CmabMetaModelGaussian",
 ]
