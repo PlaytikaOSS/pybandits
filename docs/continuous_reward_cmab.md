@@ -18,9 +18,9 @@ Each action is a Bayesian MLP with **one output unit, μ(x)**, and the reward is
 - **σ is a single noise std per action,** not a function of the context. It is a latent (`log σ ~ Normal`) whose
   posterior is stored in the model state (`noise_log_sigma`) and carried across updates, like the weights. Its initial
   prior is centered on `noise_sigma` (reward units) if given, otherwise on the std of the first update batch.
-- **Training is on standardized targets** `(r − reward_loc) / reward_scale`, so the default O(1) weight priors fit
-  rewards on any scale. `reward_loc` / `reward_scale` are the values given at cold start, otherwise fitted on the first
-  batch and then frozen. `standardize_rewards=False` trains on raw rewards.
+- **Training is on raw rewards by default** (`standardize_rewards=False`). With `standardize_rewards=True` it is on
+  standardized targets `(r − reward_loc) / reward_scale`, so the default O(1) weight priors fit rewards on any scale;
+  `reward_loc` / `reward_scale` are the values given at cold start, otherwise fitted on the first batch and then frozen.
 - **Thompson sampling** draws the weights from the posterior and ranks actions on μ. `predict` returns μ (in the
   "probabilities" slot) and σ (for monitoring) per action and row.
 - **`reset()`** returns the model to its cold-start state, including the standardization (re-fitted on the next

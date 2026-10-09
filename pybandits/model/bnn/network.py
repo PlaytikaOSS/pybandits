@@ -1763,7 +1763,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     standardize_rewards : bool
         Whether to train on standardized targets. When True, ``reward_loc`` / ``reward_scale`` are used: the values
         given at cold start, or else fitted (mean / std) on the first update batch and kept fixed afterwards. When
-        False, they are neither fitted nor used (the model trains on raw rewards). Default is True.
+        False, they are neither fitted nor used (the model trains on raw rewards). Default is False.
     reward_loc : Optional[float]
         Location used to standardize rewards. None to fit it on the first update.
     reward_scale : Optional[PositiveFloat]
@@ -1810,7 +1810,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     ... )
     """
 
-    standardize_rewards: bool = True
+    standardize_rewards: bool = False
     reward_loc: Optional[float] = None
     reward_scale: Optional[PositiveFloat] = None
     reward_loc_init: Optional[float] = None
