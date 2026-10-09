@@ -43,7 +43,6 @@ import numpy as np
 import numpyro
 import optax
 from loguru import logger
-from numpyro.distributions import Bernoulli as NumpyroBernoulli
 from numpyro.infer import TraceMeanField_ELBO
 from pydantic import ConfigDict, NonNegativeInt, PrivateAttr, model_validator
 
@@ -58,6 +57,7 @@ from pybandits.model import (
     BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
+    GaussianBayesianNeuralNetwork,
 )
 from pybandits.model.bnn._guide import ParameterizedScaleAutoNormal
 from pybandits.model.bnn._svi import forward_layers, per_sample_linear, run_svi
@@ -237,6 +237,14 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                 raise AttributeError("All actions should have the same input size.")
             if first_bnn.update_kwargs != self._rep_bnn(head).update_kwargs:
                 raise AttributeError("All actions should have the same update kwargs.")
+            # The joint pass observes every row under the representative head's likelihood.
+            head_bnn = self._rep_bnn(head)
+            same_likelihood = type(head_bnn).output_distribution is type(first_bnn).output_distribution and all(
+                getattr(head_bnn, attr, None) == getattr(first_bnn, attr, None)
+                for attr in ("sigma_min", "homoscedastic")
+            )
+            if not same_likelihood:
+                raise AttributeError("All actions should have the same reward likelihood.")
         # What must match the embedding is the width the head's first layer consumes, which its own
         # categorical expansion (if any) widens beyond the context dim.
         feature_config = first_bnn.feature_config
@@ -449,11 +457,12 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         declare_backbone = functools.partial(self._declare_backbone, backbone_w, backbone_b, n_bb_layers)
         batch_size = resolved_kwargs.get("batch_size")
 
+        targets = self._prepare_targets(arm_to_rows, rewards_arr)
         if self._heads_support_minibatching:
             # One shared data plate for every arm's rows pooled together; _so_model subsamples it
             # (the arm-indexing trick) when batch_size < n_samples, else it's a full-batch nullcontext.
             action_index = jnp.asarray(self._build_action_index(arm_to_rows, batch_arms), dtype=jnp.int32)
-            y_all = jnp.asarray(rewards_arr, dtype=BaseBayesianNeuralNetwork._reward_dtype)
+            y_all = jnp.asarray(targets, dtype=BaseBayesianNeuralNetwork._reward_dtype)
             model = self._make_so_model(batch_arms, representative_bnn, batch_size, n_samples, declare_backbone)
             model_args: Tuple[Any, ...] = (x, action_index, y_all)
         else:
@@ -465,7 +474,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             arm_data = {
                 arm: (
                     jnp.asarray(rows, dtype=jnp.int32),
-                    jnp.asarray(rewards_arr[rows], dtype=BaseBayesianNeuralNetwork._reward_dtype),
+                    jnp.asarray(targets[rows], dtype=BaseBayesianNeuralNetwork._reward_dtype),
                 )
                 for arm, rows in arm_to_rows.items()
             }
@@ -677,12 +686,15 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
     ) -> None:
         """The single-BNN-per-arm joint NumPyro model; built and bound by :meth:`_make_so_model`."""
         backbone_wb = declare_backbone() if self.backbone is not None else None
-        per_arm = []
+        per_arm, per_arm_extra = [], []
         for arm in batch_arms:
             ((bnn, obj_index, _q),) = self._arm_units(self.actions[arm])
             with numpyro.handlers.scope(prefix=self._unit_scope(arm, obj_index), divider=self._scope_divider):
                 per_arm.append(bnn.sample_head_sites(cast(Any, kl_annealing_factor)))
+                per_arm_extra.append(bnn.sample_extra_sites(cast(Any, kl_annealing_factor)))
         stacked_wb, stacked_emb = self._stack_head_sites(per_arm)
+        # Head-level likelihood latents (e.g. a homoscedastic noise std), stacked to (num_arms, *site_shape).
+        stacked_extra = {name: jnp.stack([extra[name] for extra in per_arm_extra]) for name in per_arm_extra[0]}
 
         use_minibatch = batch_size is not None and batch_size < n_samples
         plate_ctx = numpyro.plate("data", size=n_samples, subsample_size=batch_size) if use_minibatch else nullcontext()
@@ -695,15 +707,16 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             else:
                 head_input = self._per_sample_head_input(ctx, arm_of_row, stacked_emb, representative_bnn)
             per_sample_wb = [(w[arm_of_row], b[arm_of_row]) for w, b in stacked_wb]
-            logit = forward_layers(
+            linear_out = forward_layers(
                 next_layer_input=head_input,
                 weights_biases=per_sample_wb,
                 activation_fn=representative_bnn._jax_activation_fn,
                 linear_fn=per_sample_linear,
                 backend=jnp,
                 use_residual_connections=representative_bnn.use_residual_connections,
-            ).squeeze(-1)
-            numpyro.sample("out", NumpyroBernoulli(logits=logit), obs=y_batch)
+            )
+            row_extra = {name: site[arm_of_row] for name, site in stacked_extra.items()}
+            numpyro.sample("out", representative_bnn.output_distribution(linear_out, row_extra), obs=y_batch)
 
     @staticmethod
     def _stack_head_sites(per_arm: List[Tuple[list, list]]) -> Tuple[list, list]:
@@ -866,6 +879,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             unit_sigma = {name[len(scope) :]: v for name, v in site_sigma.items() if name.startswith(scope)}
             bnn.model_params.bnn_layer_params = bnn.layer_params_from_posterior(unit_mu, unit_sigma)
             bnn.update_embedding_params_from_vi(unit_mu, unit_sigma)
+            bnn.update_extra_params_from_vi(unit_mu, unit_sigma)
 
     def _store_backbone(self, params: dict, n_bb_layers: int) -> None:
         """Write back the trained backbone point estimates (no-op when no backbone).
@@ -883,6 +897,31 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         new_w = [np.asarray(params[wn]) for wn, _ in layer_names]
         new_b = [np.asarray(params[bn]) for _, bn in layer_names]
         self.backbone = self.backbone.with_weights_and_biases(new_w, new_b)
+
+    def _prepare_targets(self, arm_to_rows: Dict[ActionId, List[int]], rewards_arr: np.ndarray) -> np.ndarray:
+        """Training targets for the joint pass: each single-BNN head maps its own rows' rewards.
+
+        Identity for Bernoulli heads; Gaussian heads standardize with their own (first-batch fitted)
+        location and scale, so arms on different reward scales share one likelihood in the joint ELBO.
+
+        Parameters
+        ----------
+        arm_to_rows : Dict[ActionId, List[int]]
+            Row indices of the batch belonging to each arm.
+        rewards_arr : np.ndarray
+            Rewards for the batch (1-D single-objective, 2-D ``(n_samples, n_objectives)`` for MO).
+
+        Returns
+        -------
+        np.ndarray
+            Targets, row-aligned with ``rewards_arr`` (the raw rewards are left untouched for the counters).
+        """
+        targets = np.array(rewards_arr, dtype=float)
+        for arm, rows in arm_to_rows.items():
+            head = self.actions[arm]
+            if isinstance(head, BaseBayesianNeuralNetwork):
+                targets[rows] = head.prepare_rewards(rewards_arr[rows].tolist())
+        return targets
 
     def _increment_counters(self, arm_to_rows: Dict[ActionId, List[int]], rewards_arr: np.ndarray) -> None:
         """Keep each head's success/failure counters in sync (the joint engine bypasses per-head ``update``).
@@ -915,3 +954,4 @@ CmabMetaModelCC = CmabMetaModel[Union[BayesianNeuralNetworkCC, QuantitativeBayes
 CmabMetaModelDP = CmabMetaModel[Union[BayesianNeuralNetworkDP, QuantitativeBayesianNeuralNetworkDP]]
 CmabMetaModelMO = CmabMetaModel[BayesianNeuralNetworkMO]
 CmabMetaModelMOCC = CmabMetaModel[BayesianNeuralNetworkMOCC]
+CmabMetaModelGaussian = CmabMetaModel[GaussianBayesianNeuralNetwork]

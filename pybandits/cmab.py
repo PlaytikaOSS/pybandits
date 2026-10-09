@@ -30,6 +30,7 @@ from pybandits.actions_manager import (
     CmabActionsManager,
     CmabActionsManagerCC,
     CmabActionsManagerDP,
+    CmabActionsManagerGaussian,
     CmabActionsManagerMO,
     CmabActionsManagerMOCC,
     CmabActionsManagerSO,
@@ -37,11 +38,11 @@ from pybandits.actions_manager import (
 )
 from pybandits.base import (
     ActionId,
+    AnyReward,
     CmabPredictions,
     ForbiddenActions,
     MOProbabilityWeight,
     ProbabilityWeight,
-    Reward,
     Serializable,
 )
 from pybandits.mab import BaseMab
@@ -162,11 +163,11 @@ class BaseCmabBernoulli(BaseMab, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[Reward], List[List[Reward]]],
+        rewards: Union[List[AnyReward], List[List[AnyReward]]],
         context: np.ndarray,
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
+        rewards_memory: Optional[Union[List[AnyReward], List[List[AnyReward]]]] = None,
         context_memory: Optional[np.ndarray] = None,
     ):
         """
@@ -177,8 +178,8 @@ class BaseCmabBernoulli(BaseMab, ABC):
         ----------
         actions : List[ActionId] of shape (n_samples,), e.g. ['a1', 'a2', 'a3', 'a4', 'a5']
             The selected action for each sample.
-        rewards : List[Union[Reward, List[Reward]]] of shape (n_samples, n_objectives)
-            The binary reward for each sample.
+        rewards : List[Union[AnyReward, List[AnyReward]]] of shape (n_samples, n_objectives)
+            The reward for each sample: binary, soft in [0, 1], or real-valued for continuous-reward models.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
@@ -189,7 +190,7 @@ class BaseCmabBernoulli(BaseMab, ABC):
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
+        rewards_memory : Optional[Union[List[AnyReward], List[List[AnyReward]]]]
             List of previously collected rewards.
         context_memory : Optional[ArrayLike] of shape (n_samples, n_features)
             Matrix of contextual features.
@@ -304,6 +305,40 @@ class CmabBernoulli(BaseCmabBernoulli):
     actions_manager: CmabActionsManagerSO
     strategy: ClassicBandit
     _predict_with_proba: bool = False
+
+
+class CmabGaussian(BaseCmabBernoulli):
+    """
+    Contextual Multi-Armed Bandit with Thompson Sampling for continuous (real-valued) rewards.
+
+    Each action is a :class:`~pybandits.model.GaussianBayesianNeuralNetwork`: a BNN with a mean head and
+    a (heteroscedastic) noise head, trained with a Gaussian likelihood. At prediction time the weights are
+    sampled from the posterior and the action with the highest sampled reward mean is selected.
+
+    ``predict`` returns the sampled reward means in place of the probabilities and the predicted reward
+    noise std in place of the weighted sums.
+
+    References
+    ----------
+    Thompson Sampling for Contextual Bandits with Linear Payoffs (Agrawal and Goyal, 2014)
+    https://arxiv.org/pdf/1209.3352.pdf
+
+    Parameters
+    ----------
+    actions_manager: CmabActionsManagerGaussian
+        The manager for actions and their associated models.
+    strategy: ClassicBandit
+        The strategy used to select actions.
+
+    Notes
+    -----
+    A shared backbone is requested at ``cold_start`` exactly as for :class:`CmabBernoulli`. The adaptive
+    window (``delta``) is not supported, since its change-point test assumes binary rewards.
+    """
+
+    actions_manager: CmabActionsManagerGaussian
+    strategy: ClassicBandit
+    _predict_with_proba: bool = True
 
 
 class CmabBernoulliBAI(BaseCmabBernoulli):

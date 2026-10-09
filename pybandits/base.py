@@ -41,6 +41,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    FiniteFloat,
     confloat,
     conint,
     constr,
@@ -55,6 +56,8 @@ PositiveFloat01 = NewType("PositiveFloat01", confloat(gt=0, le=1))
 Probability = NewType("Probability", Float01)
 PositiveProbability = NewType("PositiveProbability", confloat(gt=0, le=1))
 ProbabilityWeight = Tuple[Probability, float]
+# Gaussian-likelihood sample: (mean, noise std) of the reward, in the ProbabilityWeight slot of a Bernoulli model.
+GaussianSample = Tuple[float, float]
 MOProbability = List[Probability]
 MOProbabilityWeight = List[ProbabilityWeight]
 # QuantitativeProbability generalizes probability to include both action quantities and their associated probability
@@ -108,6 +111,11 @@ BinaryReward = NewType("BinaryReward", conint(ge=0, le=1))
 SoftReward = NewType("SoftReward", Float01)
 # Binary or soft label; left_to_right keeps 0/1 (incl. numpy ints) as int.
 Reward = NewType("Reward", Annotated[Union[BinaryReward, SoftReward], Field(union_mode="left_to_right")])
+ContinuousReward = NewType("ContinuousReward", FiniteFloat)
+# Any reward a bandit entry point accepts; the actions manager narrows it to what its models support.
+AnyReward = NewType(
+    "AnyReward", Annotated[Union[BinaryReward, SoftReward, ContinuousReward], Field(union_mode="left_to_right")]
+)
 ActionRewardLikelihood = NewType(
     "ActionRewardLikelihood",
     Union[

@@ -60,6 +60,7 @@ from pybandits.model.bnn.network import (
     BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
+    GaussianBayesianNeuralNetwork,
 )
 from pybandits.model.bnn.priors import (
     BaseLocationScaleArray,
@@ -100,4 +101,5 @@ __all__ = [
     "BaseBayesianNeuralNetworkMO",
     "BayesianNeuralNetworkMO",
     "BayesianNeuralNetworkMOCC",
+    "GaussianBayesianNeuralNetwork",
 ]
