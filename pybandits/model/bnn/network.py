@@ -774,7 +774,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         """Head-level latents of the likelihood (beyond weights / embeddings), keyed by site name.
 
         They are sampled once per head, outside the data plate, and carried across updates like the weights
-        (current posterior → next prior). None for the Bernoulli head; e.g. the homoscedastic Gaussian head's
+        (current posterior → next prior). None for the Bernoulli head; e.g. the Gaussian head's
         log noise std.
         """
         return {}
@@ -867,11 +867,6 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             Training targets, row-aligned with ``rewards``.
         """
         return np.asarray(rewards, dtype=float)
-
-    @classmethod
-    def _resolve_output_dim(cls, **kwargs) -> PositiveInt:
-        """Output-layer width for a cold start with these extra constructor kwargs (the class default here)."""
-        return cls._output_dim
 
     @property
     def _is_first_fit(self) -> bool:
@@ -1630,7 +1625,6 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             use_layerwise_scaling=use_layerwise_scaling,
             dist_class=dist_class,
             bias_std=bias_std,
-            output_dim=cls._resolve_output_dim(**kwargs),
             **dist_params_init,
         )
         return cls(
@@ -1748,56 +1742,50 @@ class BayesianNeuralNetworkDP(BaseBayesianNeuralNetwork, ModelDP):
 class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     """Bayesian Neural Network for continuous (real-valued) rewards with a Gaussian likelihood.
 
-    Rewards are modelled as ``Normal(mu(x), sigma)``. Thompson sampling draws the network weights from the
-    posterior and returns ``mu(x)``, so arm selection is driven by the (epistemic) uncertainty on the mean;
-    ``sigma`` is the aleatoric reward noise and only sets how much each observation is trusted during training.
-    Two noise models:
+    Rewards are modelled as ``Normal(mu(x), sigma)``: the network has a single output unit ``mu(x)``, and the noise
+    std ``sigma`` is one latent of the model (not a function of the context), ``log sigma ~ Normal``, whose posterior
+    is stored in ``noise_log_sigma`` and carried across updates like the weights. Thompson sampling draws the weights
+    (and ``log sigma``) from the posterior and returns ``mu(x)``, so arm selection is driven by the (epistemic)
+    uncertainty on the mean; ``sigma`` is the aleatoric reward noise and sets how much each observation is trusted
+    during training, i.e. how fast the posterior of ``mu`` contracts.
 
-    - **heteroscedastic** (default): the output layer has two units that share the hidden layers, a mean head
-      ``mu(x)`` and a noise head ``sigma(x) = softplus(.) + sigma_min``.
-    - **homoscedastic** (``homoscedastic=True``): the output layer has one unit ``mu(x)``, and ``sigma`` is a
-      single latent of the model, ``log sigma ~ Normal``, whose posterior is stored in ``noise_log_sigma`` and
-      carried across updates like the weights.
-
-    Use the homoscedastic model when the reward noise is skewed or zero-inflated (e.g. revenue). The Gaussian
-    likelihood weights each residual by ``1 / sigma(x)^2``, so a learned ``sigma(x)`` lets the model explain
-    the large rewards as noise instead of moving ``mu(x)``: ``mu`` then sits below ``E[reward | x]`` where the
-    rewards are most variable. With a single ``sigma`` the fit of ``mu`` is a (Bayesian) least-squares fit,
-    whose target is ``E[reward | x]`` whatever the shape of the noise.
+    Why a single ``sigma``: with one noise level the fit of ``mu`` is a (Bayesian) least-squares fit, whose target is
+    ``E[reward | x]`` whatever the shape of the noise (zero-inflated, skewed, heavy-tailed, e.g. revenue). A
+    context-dependent ``sigma(x)`` would let the model explain large rewards as noise instead of raising ``mu(x)``,
+    which biases ``mu`` low exactly where the rewards are most variable.
 
     The network is trained on standardized targets ``(reward - reward_loc) / reward_scale`` so the default
-    ``O(1)`` weight priors fit rewards on any scale (e.g. revenue); ``sample_proba`` maps the outputs
-    back to the reward scale.
+    ``O(1)`` weight priors fit rewards on any scale; ``sample_proba`` maps ``mu`` and ``sigma`` back to the reward
+    scale.
 
     Parameters
     ----------
-    sigma_min : PositiveFloat
-        Floor on the noise std, in standardized units. Keeps the likelihood (and its gradients) bounded
-        while the early, wide posterior samples push the noise head down. Default is 0.05.
     standardize_rewards : bool
-        Whether to train on standardized targets. When ``reward_loc`` / ``reward_scale`` are not given they
-        are fitted (mean / std) on the first update batch and kept fixed afterwards, including across
-        ``reset()`` (the prior lives in standardized space). Default is True.
+        Whether to train on standardized targets. When True, ``reward_loc`` / ``reward_scale`` are used: the values
+        given at cold start, or else fitted (mean / std) on the first update batch and kept fixed afterwards. When
+        False, they are neither fitted nor used (the model trains on raw rewards). Default is True.
     reward_loc : Optional[float]
         Location used to standardize rewards. None to fit it on the first update.
     reward_scale : Optional[PositiveFloat]
         Scale used to standardize rewards. None to fit it on the first update.
+    reward_loc_init : Optional[float]
+        The cold-start value of ``reward_loc`` (None if it is fitted), restored by ``reset()``. Set automatically
+        from ``reward_loc`` at construction.
+    reward_scale_init : Optional[PositiveFloat]
+        The cold-start value of ``reward_scale`` (None if it is fitted), restored by ``reset()``. Set automatically
+        from ``reward_scale`` at construction.
     n_observations : NonNegativeInt
         Number of rewards observed.
     reward_sum : float
         Sum of the rewards observed.
-    homoscedastic : bool
-        Whether the noise std is one latent of the model rather than a function of the context. Default is False.
     noise_sigma : Optional[PositiveFloat]
-        Homoscedastic model only: the initial guess of the noise std, **in reward units**. It sets the mean of the
-        ``log sigma`` prior on the first update (once ``reward_scale`` is known). None to use the std of the first
-        update batch. Default is None.
+        Initial guess of the noise std, **in reward units**. It sets the mean of the ``log sigma`` prior on the first
+        update (once ``reward_scale`` is known). None to use the std of the first update batch. Default is None.
     noise_log_sigma_prior_std : PositiveFloat
-        Homoscedastic model only: std of the initial ``log sigma`` prior (0.5 allows about a factor 1.65 at one
-        std). Default is 0.5.
+        Std of the initial ``log sigma`` prior (0.5 allows about a factor 1.65 at one std). Default is 0.5.
     noise_log_sigma : Optional[NormalArray]
-        Homoscedastic model only: the current posterior of ``log sigma`` (in standardized units), shape (1,). None
-        until the first update initializes it from ``noise_sigma`` or the batch.
+        The current posterior of ``log sigma`` (in standardized units), shape (1,). None until the first update
+        initializes it from ``noise_sigma`` or the batch.
 
     Notes
     -----
@@ -1807,9 +1795,9 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
       at the prior's width, so with the default ``sigma=1`` the posterior may not tighten within the
       default number of steps. A narrower prior (e.g. ``dist_params_init={"mu": 0, "sigma": 0.1, ...}``)
       and a larger step size (e.g. ``3e-3``) fit much faster.
-    - ``sigma_min`` only applies to the heteroscedastic noise head.
-    - ``reset()`` clears ``noise_log_sigma``: it is re-initialized on the next update, like the weights return to
-      their cold-start prior. The reward standardization is kept.
+    - ``reset()`` returns the model to its cold-start state: the weights to their initial prior, ``noise_log_sigma``
+      to None, the counters to 0, and ``reward_loc`` / ``reward_scale`` to their cold-start values (re-fitted on the
+      next update if they were fitted).
 
     Examples
     --------
@@ -1822,54 +1810,66 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     ... )
     """
 
-    sigma_min: PositiveFloat = 0.05
     standardize_rewards: bool = True
     reward_loc: Optional[float] = None
     reward_scale: Optional[PositiveFloat] = None
+    reward_loc_init: Optional[float] = None
+    reward_scale_init: Optional[PositiveFloat] = None
     n_observations: NonNegativeInt = 0
     reward_sum: float = 0.0
-    homoscedastic: bool = False
     noise_sigma: Optional[PositiveFloat] = None
     noise_log_sigma_prior_std: PositiveFloat = 0.5
     noise_log_sigma: Optional[NormalArray] = None
 
     supports_continuous_rewards: ClassVar[bool] = True
-    # [mu, raw sigma]; the homoscedastic model has [mu] only
-    _output_dim: ClassVar[PositiveInt] = 2
+    # [mu]; the noise std is the scalar latent ``noise_log_sigma``
+    _output_dim: ClassVar[PositiveInt] = 1
     _noise_var_name: ClassVar[str] = "noise_log_sigma"
 
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = (
         "reward_loc",
         "reward_scale",
+        "reward_loc_init",
+        "reward_scale_init",
         "n_observations",
         "reward_sum",
         "noise_log_sigma",
     )
-    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("homoscedastic",)
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_standardization_init(cls, data: Any) -> Any:
+        """Record user-supplied ``reward_loc`` / ``reward_scale`` as their cold-start values (restored by reset)."""
+        if isinstance(data, dict):
+            for name in ("reward_loc", "reward_scale"):
+                if f"{name}_init" not in data and data.get(name) is not None:
+                    data = {**data, f"{name}_init": data[name]}
+        return data
 
     @model_validator(mode="after")
     def validate_reward_standardization(self) -> "GaussianBayesianNeuralNetwork":
-        if (self.reward_loc is None) != (self.reward_scale is None):
-            raise ValueError("reward_loc and reward_scale must be either both set or both None.")
+        for loc, scale in [(self.reward_loc, self.reward_scale), (self.reward_loc_init, self.reward_scale_init)]:
+            if (loc is None) != (scale is None):
+                raise ValueError("reward_loc and reward_scale must be either both set or both None.")
+            if not self.standardize_rewards and loc is not None:
+                raise ValueError("reward_loc / reward_scale require standardize_rewards=True.")
         return self
 
     @model_validator(mode="after")
-    def validate_noise_model(self) -> "GaussianBayesianNeuralNetwork":
-        expected = self._resolve_output_dim(homoscedastic=self.homoscedastic)
+    def validate_output_layer(self) -> "GaussianBayesianNeuralNetwork":
         output_dim = self.model_params.bnn_layer_params[-1].weight.shape[-1]
-        if output_dim != expected:
-            raise ValueError(
-                f"The output layer has {output_dim} units, but homoscedastic={self.homoscedastic} needs {expected}."
-            )
-        if not self.homoscedastic and (self.noise_log_sigma is not None or self.noise_sigma is not None):
-            raise ValueError("noise_sigma / noise_log_sigma require homoscedastic=True.")
+        if output_dim != self._output_dim:
+            raise ValueError(f"The output layer has {output_dim} units, expected {self._output_dim} (mu).")
         if self.noise_log_sigma is not None and self.noise_log_sigma.shape != (1,):
             raise ValueError("noise_log_sigma must have shape (1,).")
         return self
 
-    @classmethod
-    def _resolve_output_dim(cls, **kwargs) -> PositiveInt:
-        return 1 if kwargs.get("homoscedastic", False) else cls._output_dim
+    @property
+    def _loc_scale(self) -> Tuple[float, float]:
+        """``(loc, scale)`` mapping standardized targets back to rewards (identity until fitted, or if disabled)."""
+        if not self.standardize_rewards or self.reward_loc is None:
+            return 0.0, 1.0
+        return self.reward_loc, self.reward_scale
 
     def _initial_noise_log_sigma(self, targets: Optional[np.ndarray] = None) -> NormalArray:
         """The cold-start ``log sigma`` prior, in standardized units.
@@ -1886,14 +1886,10 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
         return NormalArray.cold_start(shape=1, mu=float(np.log(sigma)), sigma=self.noise_log_sigma_prior_std)
 
     def extra_site_params(self) -> Dict[str, BaseLocationScaleArray]:
-        """The homoscedastic noise latent ``log sigma`` (none for the heteroscedastic model)."""
-        if not self.homoscedastic:
-            return {}
+        """The noise latent ``log sigma`` (its current posterior, or the cold-start prior before the first update)."""
         return {self._noise_var_name: self.noise_log_sigma or self._initial_noise_log_sigma()}
 
     def update_extra_params_from_vi(self, site_mu: dict, site_sigma: dict) -> None:
-        if not self.homoscedastic:
-            return
         mu = np.asarray(site_mu[self._noise_var_name], dtype=float).reshape(1)
         sigma = np.asarray(site_sigma[self._noise_var_name], dtype=float).reshape(1)
         self.noise_log_sigma = NormalArray(mu=mu.tolist(), sigma=sigma.tolist())
@@ -1910,38 +1906,26 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
         log_sigma = extra[name]
         return log_sigma.reshape(log_sigma.shape[:-1])
 
-    @property
-    def _loc_scale(self) -> Tuple[float, float]:
-        """``(loc, scale)`` mapping standardized targets back to rewards (identity until fitted)."""
-        if not self.standardize_rewards or self.reward_loc is None:
-            return 0.0, 1.0
-        return self.reward_loc, self.reward_scale
-
     def output_distribution(
         self, linear_out: jax.Array, extra_sites: Optional[Dict[str, jax.Array]] = None
     ) -> NumpyroDistribution:
-        """``Normal(mu, sigma)`` on the standardized targets.
+        """``Normal(mu, exp(log sigma))`` on the standardized targets.
 
         Parameters
         ----------
-        linear_out : jax.Array of shape (batch, 2) or (batch, 1)
-            Raw output of the final layer: ``[mu, raw_sigma]`` (heteroscedastic) or ``[mu]`` (homoscedastic).
+        linear_out : jax.Array of shape (batch, 1)
+            Raw output of the final layer: ``[mu]``.
         extra_sites : Optional[Dict[str, jax.Array]]
-            Homoscedastic model: the sampled ``log sigma`` site, shape (1,) or (batch, 1) (per-row in the joint
-            meta-model, where rows of several arms share one batch).
+            The sampled ``log sigma`` site, shape (1,) or (batch, 1) (per-row in the joint meta-model, where rows of
+            several arms share one batch).
 
         Returns
         -------
         NumpyroDistribution
-            The Gaussian reward likelihood, with ``sigma = exp(log sigma)`` (homoscedastic) or
-            ``softplus(raw_sigma) + sigma_min`` (heteroscedastic).
+            The Gaussian reward likelihood.
         """
-        mu = linear_out[..., 0]
-        if self.homoscedastic:
-            sigma = jnp.exp(self._noise_log_sigma_of(extra_sites, self._noise_var_name))
-        else:
-            sigma = jax.nn.softplus(linear_out[..., 1]) + self.sigma_min
-        return NumpyroNormal(loc=mu, scale=sigma)
+        sigma = jnp.exp(self._noise_log_sigma_of(extra_sites, self._noise_var_name))
+        return NumpyroNormal(loc=linear_out[..., 0], scale=sigma)
 
     def _observe_output(
         self, linear_out: jax.Array, y: jax.Array, extra_sites: Optional[Dict[str, jax.Array]] = None
@@ -1956,37 +1940,35 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
 
         Parameters
         ----------
-        linear_out : np.ndarray of shape (n_samples, 2) or (n_samples, 1)
+        linear_out : np.ndarray of shape (n_samples, 1)
             Raw output of the final layer, one row per sampled network.
         extra_samples : Optional[Dict[str, np.ndarray]]
-            Homoscedastic model: per-row draws of ``log sigma``, shape (n_samples, 1). None uses its posterior mean.
+            Per-row draws of ``log sigma``, shape (n_samples, 1). None uses its posterior mean.
 
         Returns
         -------
         List[GaussianSample]
-            ``(mu, sigma)`` per sample: the sampled reward mean and the noise std.
+            ``(mu, sigma)`` per sample: the sampled reward mean and the noise std (the latter is for monitoring; arm
+            selection uses ``mu`` only).
         """
         loc, scale = self._loc_scale
         mu = linear_out[..., 0] * scale + loc
-        if self.homoscedastic:
-            if extra_samples is None:  # no per-row draws given: use the posterior mean of log sigma
-                log_sigma_mu = self.extra_site_params()[self._noise_var_name].params["mu"]
-                extra_samples = {self._noise_var_name: np.broadcast_to(log_sigma_mu, (len(mu), 1))}
-            sigma = np.exp(self._noise_log_sigma_of(extra_samples, self._noise_var_name)) * scale
-        else:
-            sigma = (np.logaddexp(0.0, linear_out[..., 1]) + self.sigma_min) * scale
+        if extra_samples is None:  # no per-row draws given: use the posterior mean of log sigma
+            log_sigma_mu = self.extra_site_params()[self._noise_var_name].params["mu"]
+            extra_samples = {self._noise_var_name: np.broadcast_to(log_sigma_mu, (len(mu), 1))}
+        sigma = np.exp(self._noise_log_sigma_of(extra_samples, self._noise_var_name)) * scale
         return list(zip(mu, sigma))
 
     def sample_proba(self, context: np.ndarray, rng: np.random.Generator) -> List[GaussianSample]:
         """
-        Sample the reward mean from the posterior (Thompson sampling), with the predicted noise std.
+        Sample the reward mean from the posterior (Thompson sampling), with the noise std.
 
         Parameters
         ----------
         context : np.ndarray
             The context matrix for which the rewards are to be sampled.
         rng : np.random.Generator
-            Numpy random generator for weight/embedding sampling.
+            Numpy random generator for weight/embedding/noise sampling.
 
         Returns
         -------
@@ -1996,11 +1978,11 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
         return super().sample_proba(context=context, rng=rng)
 
     def prepare_rewards(self, rewards: List[ContinuousReward]) -> np.ndarray:
-        """Standardize rewards into training targets, fitting ``reward_loc`` / ``reward_scale`` on first use.
+        """Standardize rewards into training targets, fitting the standardization and the noise prior on first use.
 
-        The scale falls back to ``max(|loc|, 1)`` when the first batch has (near) zero spread, e.g. a
-        single observation. The homoscedastic model also initializes its ``log sigma`` prior here, on first
-        use (see ``noise_sigma``).
+        With ``standardize_rewards``, ``reward_loc`` / ``reward_scale`` are fitted (mean / std) on the first batch if
+        not set; the scale falls back to ``max(|loc|, 1)`` when that batch has (near) zero spread, e.g. a single
+        observation. The ``log sigma`` prior is initialized here too, on first use (see ``noise_sigma``).
 
         Parameters
         ----------
@@ -2022,7 +2004,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
             self.reward_scale = std if std > self._numerical_eps else max(abs(loc), 1.0)
         loc, scale = self._loc_scale
         targets = (y - loc) / scale
-        if self.homoscedastic and self.noise_log_sigma is None and len(y) > 0:
+        if self.noise_log_sigma is None and len(y) > 0:
             self.noise_log_sigma = self._initial_noise_log_sigma(targets)
         return targets
 
@@ -2079,11 +2061,10 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
         return self.reward_sum / self.n_observations if self.n_observations else 0.0
 
     def _calibrate_output_bias(self, rewards: List[ContinuousReward]) -> None:
-        """Set the output-layer biases to the first batch's target mean and std on the first update call.
+        """Set the output-layer bias to the first batch's (standardized) target mean on the first update call.
 
-        The mean head's bias gets the mean of the (standardized) targets and the noise head's bias gets
-        ``softplus^-1(std - sigma_min)``, so the cold-start predictive matches the observed reward spread.
-        With ``standardize_rewards`` (fitted on that same batch) this is ``(0, softplus^-1(1 - sigma_min))``.
+        With ``standardize_rewards`` fitted on that same batch this is 0. The noise prior is initialized by
+        :meth:`prepare_rewards` instead.
 
         Parameters
         ----------
@@ -2094,22 +2075,18 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
             return
         y = self.prepare_rewards(rewards)
         output_layer = self.model_params.bnn_layer_params[-1]
-        bias_mu = [float(y.mean())]
-        if not self.homoscedastic:  # the homoscedastic noise is initialized by prepare_rewards instead
-            std = float(y.std())
-            std = std if std > self._numerical_eps else 1.0  # no spread to calibrate on (e.g. a single reward)
-            raw_sigma = max(std - self.sigma_min, self._numerical_eps)
-            bias_mu.append(float(np.log(np.expm1(raw_sigma))))
-        new_bias = output_layer.bias.with_dist_parameters(mu=bias_mu)
+        new_bias = output_layer.bias.with_dist_parameters(mu=[float(y.mean())])
         self.model_params.bnn_layer_params[-1] = BnnLayerParams(weight=output_layer.weight, bias=new_bias)
         self.bias_calibrated = True
 
     def _reset(self):
-        """Reset the network, the noise latent and the reward counters; the reward standardization is kept."""
+        """Return to the cold-start state: weights, noise latent, counters and standardization."""
         super()._reset()
         self.n_observations = 0
         self.reward_sum = 0.0
         self.noise_log_sigma = None
+        self.reward_loc = self.reward_loc_init
+        self.reward_scale = self.reward_scale_init
 
 
 class BaseBayesianNeuralNetworkMO(ModelMO, ABC):

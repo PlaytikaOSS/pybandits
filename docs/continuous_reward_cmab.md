@@ -1,73 +1,78 @@
-# Continuous rewards in [-1, 1] for cMAB
+# Continuous rewards for cMAB
 
-## Current state
+pybandits supports three kinds of reward for contextual bandits:
 
-The library does not take -1/1 rewards. It takes binary {0, 1} rewards:
+| reward | type | model | bandit |
+|---|---|---|---|
+| binary 0 / 1 | `BinaryReward` | `BayesianNeuralNetwork` (Bernoulli) | `CmabBernoulli` (and the CC / MO / DP variants) |
+| soft label in [0, 1] | `SoftReward` (`use_soft_rewards=True`) | `BayesianNeuralNetwork` (Bernoulli on fractional targets) | the same |
+| real-valued | `ContinuousReward` | `GaussianBayesianNeuralNetwork` | `CmabGaussian` |
 
-- `BinaryReward = conint(ge=0, le=1)` in `pybandits/base.py`.
-- Every cMAB model uses a Bernoulli likelihood on a logit:
-  - `pybandits/model/bnn/network.py` (`NumpyroBernoulli(logits=logit)`)
-  - `pybandits/meta_model/cmab_meta_model.py` (`NumpyroBernoulli(logits=logit)`)
+The bandit entry points accept `AnyReward`, and the actions manager checks each reward against what its models
+support (`ActionsManager._check_rewards`).
 
-So any -1/1 reward is already being mapped to 0/1 before it reaches the library.
+## The Gaussian model
 
-## Option A: rescale to [0, 1] and keep the Bernoulli model (easy)
+Each action is a Bayesian MLP with **one output unit, μ(x)**, and the reward is modelled as `Normal(μ(x), σ)`:
 
-Map the reward with `y = (r + 1) / 2`, which puts it in [0, 1].
+- **σ is a single noise std per action,** not a function of the context. It is a latent (`log σ ~ Normal`) whose
+  posterior is stored in the model state (`noise_log_sigma`) and carried across updates, like the weights. Its initial
+  prior is centered on `noise_sigma` (reward units) if given, otherwise on the std of the first update batch.
+- **Training is on standardized targets** `(r − reward_loc) / reward_scale`, so the default O(1) weight priors fit
+  rewards on any scale. `reward_loc` / `reward_scale` are the values given at cold start, otherwise fitted on the first
+  batch and then frozen. `standardize_rewards=False` trains on raw rewards.
+- **Thompson sampling** draws the weights from the posterior and ranks actions on μ. `predict` returns μ (in the
+  "probabilities" slot) and σ (for monitoring) per action and row.
+- **`reset()`** returns the model to its cold-start state, including the standardization (re-fitted on the next
+  update unless it was given at cold start).
 
-### A1. Binarization trick (no library change)
+### Why one σ and not σ(x)
 
-For each observation, draw `b ~ Bernoulli((r + 1) / 2)` and pass `b` as the reward.
+With a single noise level the fit of μ is a (Bayesian) least-squares fit, whose target is `E[reward | x]` whatever
+the shape of the noise. A context-dependent σ(x) weights each residual by 1/σ(x)². On zero-inflated or skewed rewards
+(e.g. revenue), the model can then explain large rewards as noise instead of raising μ, which biases μ low exactly
+where the rewards are most variable. That bias is what Thompson sampling would rank on.
 
-- This is Agrawal & Goyal's standard way to extend Thompson Sampling to bounded rewards, and the regret guarantees still hold.
-- Cost: extra noise, so the model learns somewhat slower.
-- It can be used today with no code change.
+### Recommended use: uplift against a control baseline
 
-### A2. Pass the fractional target directly
+For rewards with a lot of player-to-player variance (e.g. revenue), train on the **uplift** `r = R − E0(x)`, where
+`E0(x)` is the expected reward under a control policy, from a separate baseline model. `E0` doesn't depend on the
+action, so the ranking of actions is unchanged, and the shared variance is removed (a control variate). The posterior
+then contracts much faster with per-action data volumes. `r` can be negative.
 
-This fits a logistic regression with targets that are not 0/1. The Bernoulli log-likelihood with logits is BCE-with-logits, which is valid for any `y` in [0, 1], and numpyro does not check the support by default.
+```python
+from pybandits.cmab import CmabGaussian
 
-Changes needed:
+mab = CmabGaussian.cold_start(
+    action_ids={"a1", "a2", "a3"},
+    n_features=n_features,
+    hidden_dim_list=[16],
+    dist_type="normal",
+    dist_params_init={"mu": 0, "sigma": 0.1},   # a narrow prior fits much faster than the default sigma=1
+    update_kwargs={"num_steps": 400, "optimizer_kwargs": {"step_size": 3e-3}},
+    # optionally, from historical data rather than the first batch:
+    # reward_loc=..., reward_scale=..., noise_sigma=...,
+    # decay_factor=...,                         # if the reward process drifts
+)
+actions, mu, sigma = mab.predict(context=X)
+mab.update(actions=actions, rewards=(R - E0).tolist(), context=X)
+```
 
-- Relax `BinaryReward` to a float in [0, 1]. The type appears in many signatures, but the change is mechanical.
-- Check `_calibrate_output_bias`. It should still work because it uses the mean reward.
-- Update the simulators and tests.
+A shared backbone (`backbone_hidden_dims=...`) works as for `CmabBernoulli`; each action keeps its own σ and
+standardization.
 
-Behaviour:
+### Alternatives that were evaluated and rejected
 
-- The mean is estimated correctly: `E[y | x] = sigmoid(f)`.
-- The uncertainty is not. The model assumes variance `p(1 - p)`, which is the largest possible variance for a variable in [0, 1]. The posterior is therefore too wide and the bandit **over-explores**. This errs on the safe side.
+- **σ(x) noise head:** biases μ on skewed rewards (see above).
+- **Bernoulli on a [0, 1] rescaling of a continuous reward:** the mean is consistent, but the Bernoulli variance
+  p(1 − p) can overstate the real noise by orders of magnitude. Each observation then carries far too little weight,
+  and the model learns little beyond an intercept.
+- **Hurdle × log-normal amount:** a good fit of the distribution's shape, but the back-transform `exp(m + σ²/2)` can
+  bias the level, and Thompson draws of it have extreme tails. If a split of the effect into conversion vs. amount is
+  needed, a Bernoulli × Gaussian amount (on the raw scale) is the better hurdle.
 
-Estimated effort: 1–2 days, including tests.
+### Not supported (yet)
 
-## Option B: a proper continuous likelihood (harder)
-
-Use a Gaussian, Beta or truncated-normal likelihood, with an identity or tanh output and a learned noise `σ`.
-
-The likelihood itself is simple. The work is in what is built around it:
-
-- `sample_proba` returns a `Probability` (`Float01`) everywhere, and the strategies and meta-model all rely on that.
-- `_calibrate_output_bias` uses `logit(rate)`.
-- The CostControl `subsidy_factor` is a **relative** threshold ("within X of the best"). Relative thresholds break once the expected reward can be negative, so they must be rescaled or redefined.
-- The OPE estimators, the simulators and the whole test suite need changes.
-
-Estimated effort: 1–2+ weeks. It touches every cMAB / MO / CC variant.
-
-## Do we need to understand the reward distribution first?
-
-**For Option A: mostly no.** Arm selection depends only on the mean, and the Bernoulli model's uncertainty is conservative whatever the shape. A histogram per arm is still worth plotting, because some shapes change the recommendation:
-
-| Reward shape | Implication |
-|---|---|
-| Mostly at ±1 with a few values in between | The Bernoulli model is almost exact. Use Option A. |
-| Spike at 0 (e.g. "no response" coded as 0) | Rewards are zero-inflated. Consider modelling "any response" and "sign/size given a response" separately. |
-| Concentrated in the middle (e.g. 0 ± 0.2) | Option A's posterior is much too wide and exploration is slow. Option B with a learned `σ` pays off here. |
-| Heteroscedastic (noise varies with context) | Only Option B can model this. |
-
-**For Option B: yes.** The likelihood family and a sensible prior on `σ` have to be chosen from the data.
-
-## Recommendation
-
-1. Start with **A2** (fractional targets), or **A1** for zero code changes.
-2. Back-test it on logged data with the existing offline policy evaluator.
-3. Build **Option B** only if the histogram shows rewards bunched in the middle and A2 explores too slowly.
+- Gaussian variants of the cost-control, multi-objective, dynamic-pricing and quantitative bandits.
+- The adaptive window (`delta`) with continuous rewards.
+- Offline policy evaluation and the simulators with continuous rewards.

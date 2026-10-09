@@ -311,12 +311,15 @@ class CmabGaussian(BaseCmabBernoulli):
     """
     Contextual Multi-Armed Bandit with Thompson Sampling for continuous (real-valued) rewards.
 
-    Each action is a :class:`~pybandits.model.GaussianBayesianNeuralNetwork`: a BNN with a mean head and
-    a (heteroscedastic) noise head, trained with a Gaussian likelihood. At prediction time the weights are
-    sampled from the posterior and the action with the highest sampled reward mean is selected.
+    Each action is a :class:`~pybandits.model.GaussianBayesianNeuralNetwork`: a BNN with a single mean head
+    ``mu(x)`` and a learned scalar noise std per action, trained with a Gaussian likelihood. At prediction time the
+    weights are sampled from the posterior and the action with the highest sampled reward mean is selected.
 
-    ``predict`` returns the sampled reward means in place of the probabilities and the predicted reward
-    noise std in place of the weighted sums.
+    ``predict`` returns the sampled reward means in place of the probabilities and the noise std (for monitoring
+    only) in place of the weighted sums.
+
+    A typical reward is an uplift ``R - E0(x)`` against a control baseline computed outside the bandit: it removes
+    the noise shared by all actions without changing their ranking.
 
     References
     ----------

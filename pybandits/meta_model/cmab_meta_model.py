@@ -239,11 +239,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                 raise AttributeError("All actions should have the same update kwargs.")
             # The joint pass observes every row under the representative head's likelihood.
             head_bnn = self._rep_bnn(head)
-            same_likelihood = type(head_bnn).output_distribution is type(first_bnn).output_distribution and all(
-                getattr(head_bnn, attr, None) == getattr(first_bnn, attr, None)
-                for attr in ("sigma_min", "homoscedastic")
-            )
-            if not same_likelihood:
+            if type(head_bnn).output_distribution is not type(first_bnn).output_distribution:
                 raise AttributeError("All actions should have the same reward likelihood.")
         # What must match the embedding is the width the head's first layer consumes, which its own
         # categorical expansion (if any) widens beyond the context dim.
@@ -693,7 +689,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                 per_arm.append(bnn.sample_head_sites(cast(Any, kl_annealing_factor)))
                 per_arm_extra.append(bnn.sample_extra_sites(cast(Any, kl_annealing_factor)))
         stacked_wb, stacked_emb = self._stack_head_sites(per_arm)
-        # Head-level likelihood latents (e.g. a homoscedastic noise std), stacked to (num_arms, *site_shape).
+        # Head-level likelihood latents (e.g. the Gaussian noise std), stacked to (num_arms, *site_shape).
         stacked_extra = {name: jnp.stack([extra[name] for extra in per_arm_extra]) for name in per_arm_extra[0]}
 
         use_minibatch = batch_size is not None and batch_size < n_samples
