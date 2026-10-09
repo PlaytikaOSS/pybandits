@@ -616,11 +616,11 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
            (current posteriors used as new priors).
         2. Sample embedding matrices for categorical features (if any).
         3. Apply linear transformations and activations through the layers.
-        4. Apply sigmoid activation at the output.
-        5. Use Bernoulli likelihood for binary classification
+        4. Observe the rewards under :meth:`output_distribution` on the raw output layer (Bernoulli on the
+           logit for binary rewards; a subclass may override it, e.g. Gaussian for continuous rewards).
 
         Steps 1-2 happen inside ``numpyro.handlers.scale(scale=kl_annealing_factor)`` so that
-        the KL portion of the ELBO can be scheduled across training steps. Step 5 stays outside
+        the KL portion of the ELBO can be scheduled across training steps. Step 4 stays outside
         that context so the likelihood term is not scaled.
         """
 
@@ -640,8 +640,9 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     ) -> None:
         """Emit this BNN's NumPyro sites on the supplied input array.
 
-        Samples the layer weights/biases and categorical embeddings, runs the forward pass on ``x``,
-        and registers the ``logit`` deterministic + ``out`` Bernoulli likelihood. Factored out of
+        Samples the layer weights/biases, categorical embeddings and any :meth:`extra_site_params` latents
+        (e.g. the Gaussian head's noise std), runs the forward pass on ``x``, and registers the ``logit``
+        deterministic + ``out`` likelihood (:meth:`output_distribution`). Factored out of
         :meth:`_create_update_model` so a meta-model can compose several arms' sub-models into one
         joint model on a shared backbone embedding *or* on raw context — the meta-model wraps each
         call in ``numpyro.handlers.scope(prefix=arm)`` to keep the (otherwise identical) site names
@@ -652,7 +653,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         x : jax.Array
             Network input — raw context (standalone / no-backbone head) or a backbone embedding.
         y : jax.Array
-            Binary rewards for these rows.
+            Training targets for these rows (from :meth:`prepare_rewards`).
         kl_annealing_factor : Union[PositiveFloat01, jax.Array]
             Scales the prior-site log-probabilities (KL term); ``1.0`` is a no-op.
         batch_size : Optional[PositiveInt]
@@ -713,8 +714,8 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         """Forward the (optionally minibatched) input through the sampled sites and observe ``out``.
 
         Builds the network input (numerical columns + embedded categoricals), runs the forward pass,
-        registers the ``logit`` deterministic, and observes the ``out`` Bernoulli likelihood — inside a
-        subsampling ``data`` plate when ``batch_size`` is set. Kept separate from
+        registers the ``logit`` deterministic, and observes the ``out`` likelihood (:meth:`output_distribution`)
+        — inside a subsampling ``data`` plate when ``batch_size`` is set. Kept separate from
         :meth:`sample_head_sites` so the latent sites can be sampled once and reused.
 
         Parameters
@@ -722,7 +723,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         x : jax.Array
             Network input — raw context (standalone / no-backbone head) or a backbone embedding.
         y : jax.Array
-            Binary rewards for these rows.
+            Training targets for these rows (from :meth:`prepare_rewards`).
         weights_biases : List[Tuple[jax.Array, jax.Array]]
             Per-layer ``(weight, bias)`` from :meth:`sample_head_sites`.
         embedding_matrices : List[jax.Array]
@@ -827,7 +828,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     ) -> None:
         """Register the ``logit`` deterministic and observe ``y`` under :meth:`output_distribution`."""
         numpyro.deterministic(self._logit_var_name, linear_out.squeeze(-1))
-        # "The observed reward follows a Bernoulli distribution given the network output"
+        # The observed reward follows output_distribution (Bernoulli by default) given the network output
         numpyro.sample("out", self.output_distribution(linear_out, extra_sites), obs=y)
 
     def _postprocess_output(
