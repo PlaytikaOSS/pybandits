@@ -23,7 +23,7 @@
 import json
 from copy import deepcopy
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, get_args
 from unittest.mock import patch
 
 import numpy as np
@@ -48,7 +48,9 @@ from pybandits.cmab import (
     CmabBernoulliDP,
     CmabBernoulliMO,
     CmabBernoulliMOCC,
+    CmabGaussian,
 )
+from pybandits.meta_model import CmabMetaModel
 from pybandits.model import (
     BaseBayesianNeuralNetwork,
     BaseBayesianNeuralNetworkMO,
@@ -57,6 +59,7 @@ from pybandits.model import (
     BayesianNeuralNetworkDP,
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
+    GaussianBayesianNeuralNetwork,
     StudentTArray,
 )
 from pybandits.model.bnn._typing import ActivationFunctions
@@ -1636,3 +1639,154 @@ def test_cold_start_rejects_delta_with_backbone(delta: float) -> None:
             backbone_hidden_dims=_BACKBONE_HIDDEN_DIMS,
             delta=delta,
         )
+
+
+########################################################################################################################
+# --- Gaussian (continuous-reward) CmabGaussian constants ---
+_GAUSSIAN_N_FEATURES = 3
+_GAUSSIAN_HIDDEN_DIMS = [8]
+_GAUSSIAN_RANDOM_SEED = 0
+# Narrow prior + larger step size: the setting the class docstring recommends for a fast fit.
+_GAUSSIAN_FAST_FIT_KWARGS: Dict[str, Any] = {
+    "dist_type": "normal",
+    "dist_params_init": {"mu": 0, "sigma": 0.1},
+    "update_kwargs": {"num_steps": 1000, "optimizer_kwargs": {"step_size": 3e-3}},
+}
+_GAUSSIAN_SHORT_FIT_KWARGS: Dict[str, Any] = {"update_kwargs": {"num_steps": 5}}
+_GAUSSIAN_ACTION_IDS = {"a", "b", "c"}
+_GAUSSIAN_ARM_MEANS = {"a": -1.0, "b": 0.0, "c": 2.0}
+_GAUSSIAN_BEST_ARM = "c"
+_GAUSSIAN_N_ROUNDS = 4
+_GAUSSIAN_N_PER_ROUND = 200
+_GAUSSIAN_MIN_BEST_ARM_SHARE = 0.8
+_GAUSSIAN_BACKBONE_KWARGS: Dict[str, Any] = {"backbone_hidden_dims": [8], "backbone_embedding_dim": 3}
+_GAUSSIAN_MINIBATCH_SIZE = 64
+_GAUSSIAN_BAD_REWARDS = [float("nan"), float("inf"), -float("inf")]
+_GAUSSIAN_OUT_OF_RANGE_SOFT_REWARD = 2.5
+_GAUSSIAN_DELTA = 0.1
+_GAUSSIAN_EPSILON = 0.1
+
+
+@pytest.fixture(scope="module")
+def make_cmab_gaussian() -> Callable[..., CmabGaussian]:
+    """Factory: cold-starts a CmabGaussian over ACTION_IDS with the fast-fit prior and extra kwargs."""
+
+    def _factory(**kwargs: Any) -> CmabGaussian:
+        return CmabGaussian.cold_start(
+            action_ids=_GAUSSIAN_ACTION_IDS,
+            n_features=_GAUSSIAN_N_FEATURES,
+            hidden_dim_list=_GAUSSIAN_HIDDEN_DIMS,
+            random_seed=_GAUSSIAN_RANDOM_SEED,
+            **{**_GAUSSIAN_FAST_FIT_KWARGS, **kwargs},
+        )
+
+    return _factory
+
+
+class TestGaussianMetaModel:
+    """Tests for Gaussian heads in CmabMetaModel."""
+
+    def test_rejects_mixed_likelihoods(
+        self,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        hidden_dims: List[int] = _GAUSSIAN_HIDDEN_DIMS,
+    ) -> None:
+        """Bernoulli and Gaussian heads cannot share one meta-model."""
+        gaussian = GaussianBayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dims)
+        bernoulli = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dims)
+        with pytest.raises(AttributeError):
+            CmabMetaModel(actions={"a": gaussian, "b": bernoulli})
+
+
+class TestCmabGaussian:
+    """Tests for the CmabGaussian bandit."""
+
+    @pytest.mark.parametrize(
+        "extra_kwargs",
+        [
+            {},
+            {
+                **_GAUSSIAN_BACKBONE_KWARGS,
+                "update_kwargs": {**_GAUSSIAN_FAST_FIT_KWARGS["update_kwargs"], "batch_size": _GAUSSIAN_MINIBATCH_SIZE},
+            },
+        ],
+        ids=["no_backbone", "backbone_minibatch"],
+    )
+    def test_learns_best_arm_and_per_arm_noise(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        extra_kwargs: Dict[str, Any],
+        rng: np.random.Generator,
+        arm_means: Dict[str, float] = _GAUSSIAN_ARM_MEANS,
+        best_arm: str = _GAUSSIAN_BEST_ARM,
+        n_rounds: int = _GAUSSIAN_N_ROUNDS,
+        n_per_round: int = _GAUSSIAN_N_PER_ROUND,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        min_share: float = _GAUSSIAN_MIN_BEST_ARM_SHARE,
+    ) -> None:
+        """After a few rounds of real-valued feedback (incl. negative rewards) the best-mean arm dominates."""
+        mab = make_cmab_gaussian(**extra_kwargs)
+        for _ in range(n_rounds):
+            context = rng.normal(size=(n_per_round, n_features))
+            actions, _, _ = mab.predict(context=context)
+            mab.update(actions=actions, rewards=[arm_means[a] + rng.normal() for a in actions], context=context)
+        actions, _, sigmas = mab.predict(context=rng.normal(size=(n_per_round, n_features)))
+        assert np.mean(np.array(actions) == best_arm) >= min_share
+        assert all(sigma > 0 for row in sigmas for sigma in row.values())
+        assert mab.actions[best_arm].noise_log_sigma is not None
+
+    def test_state_round_trip(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        rng: np.random.Generator,
+        n_per_round: int = _GAUSSIAN_N_PER_ROUND,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+    ) -> None:
+        """The bandit state round-trips through get_state / from_state."""
+        mab = make_cmab_gaussian(**short_fit_kwargs)
+        context = rng.normal(size=(n_per_round, n_features))
+        actions, _, _ = mab.predict(context=context)
+        mab.update(actions=actions, rewards=rng.normal(size=n_per_round).tolist(), context=context)
+        restored = CmabGaussian.from_state(mab.get_state()[1])
+        assert restored.actions == mab.actions
+
+    @pytest.mark.parametrize("bad_reward", _GAUSSIAN_BAD_REWARDS)
+    def test_rejects_non_finite_rewards(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        bad_reward: float,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+    ) -> None:
+        """NaN / inf rewards are rejected at the bandit entry point."""
+        mab = make_cmab_gaussian(**short_fit_kwargs)
+        with pytest.raises(ValueError):
+            mab.update(actions=[next(iter(mab.actions))], rewards=[bad_reward], context=np.zeros((1, n_features)))
+
+    def test_rejects_adaptive_window(
+        self,
+        action_ids: set = _GAUSSIAN_ACTION_IDS,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        delta: float = _GAUSSIAN_DELTA,
+        epsilon: float = _GAUSSIAN_EPSILON,
+    ) -> None:
+        """The adaptive window assumes binary rewards, so delta is refused."""
+        with pytest.raises(ValueError):
+            CmabGaussian.cold_start(action_ids=action_ids, n_features=n_features, delta=delta, epsilon=epsilon)
+
+
+@pytest.mark.parametrize("use_soft_rewards", [False, True])
+def test_bernoulli_bandit_still_rejects_out_of_range_rewards(
+    use_soft_rewards: bool,
+    action_ids: set = _GAUSSIAN_ACTION_IDS,
+    n_features: int = _GAUSSIAN_N_FEATURES,
+    reward: float = _GAUSSIAN_OUT_OF_RANGE_SOFT_REWARD,
+    short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+) -> None:
+    """Widening the entry-point reward type must not let a Bernoulli bandit accept rewards outside [0, 1]."""
+    mab = CmabBernoulli.cold_start(
+        action_ids=action_ids, n_features=n_features, use_soft_rewards=use_soft_rewards, **short_fit_kwargs
+    )
+    with pytest.raises(ValueError):
+        mab.update(actions=[next(iter(mab.actions))], rewards=[reward], context=np.zeros((1, n_features)))
