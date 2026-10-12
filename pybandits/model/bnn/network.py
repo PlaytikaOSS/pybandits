@@ -144,7 +144,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     model_params: BnnParams
 
-    _reward_dtype: ClassVar[Any] = jnp.float32  # float, not int: soft rewards are fractional labels
+    reward_dtype: ClassVar[Any] = jnp.float32  # float, not int: soft rewards are fractional labels
     # Width of the output layer: one logit for the Bernoulli likelihood.
     _output_dim: ClassVar[PositiveInt] = 1
     _logit_var_name: ClassVar[str] = "logit"
@@ -1487,7 +1487,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         _context = np.atleast_2d(context)
         x_jnp = jnp.array(_context, dtype=jnp.float32)
-        y_jnp = jnp.asarray(self.prepare_rewards(rewards), dtype=self._reward_dtype)
+        y_jnp = jnp.asarray(self.prepare_rewards(rewards), dtype=self.reward_dtype)
         n_samples = _context.shape[0]
 
         if self.calibrate_output_bias:

@@ -458,7 +458,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             # One shared data plate for every arm's rows pooled together; _so_model subsamples it
             # (the arm-indexing trick) when batch_size < n_samples, else it's a full-batch nullcontext.
             action_index = jnp.asarray(self._build_action_index(arm_to_rows, batch_arms), dtype=jnp.int32)
-            y_all = jnp.asarray(targets, dtype=BaseBayesianNeuralNetwork._reward_dtype)
+            y_all = jnp.asarray(targets, dtype=BaseBayesianNeuralNetwork.reward_dtype)
             model = self._make_so_model(batch_arms, representative_bnn, batch_size, n_samples, declare_backbone)
             model_args: Tuple[Any, ...] = (x, action_index, y_all)
         else:
@@ -470,7 +470,7 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             arm_data = {
                 arm: (
                     jnp.asarray(rows, dtype=jnp.int32),
-                    jnp.asarray(targets[rows], dtype=BaseBayesianNeuralNetwork._reward_dtype),
+                    jnp.asarray(targets[rows], dtype=BaseBayesianNeuralNetwork.reward_dtype),
                 )
                 for arm, rows in arm_to_rows.items()
             }
