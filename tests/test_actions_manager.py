@@ -39,7 +39,7 @@ from pybandits.actions_manager import (
 )
 from pybandits.base import ActionId, BinaryReward
 from pybandits.meta_model import BaseMetaModel, CmabMetaModel, SmabMetaModel
-from pybandits.model import BayesianNeuralNetwork, Beta, BetaMO
+from pybandits.model import BayesianNeuralNetwork, Beta, BetaMO, GaussianBayesianNeuralNetwork
 from pybandits.quantitative_model import QuantitativeBayesianNeuralNetwork, Zooming
 from tests.utils import make_action_ids, make_binary_rewards, make_context_matrix, mock_update
 
@@ -215,6 +215,13 @@ def test_cmab_mixed_action_types_error(n_features=1):
 
     actions = {"a1": bnn_model, "a2": quant_model}
     CmabActionsManager[Union[BayesianNeuralNetwork, QuantitativeBayesianNeuralNetwork]](actions=actions)
+
+
+def test_mixed_continuous_and_binary_reward_models_error(n_features: int = 1) -> None:
+    """A manager whose type admits both kinds of model still rejects mixing continuous and binary-reward arms."""
+    gaussian = GaussianBayesianNeuralNetwork.cold_start(n_features=n_features, reward_loc=0.0, reward_scale=1.0)
+    with pytest.raises(ValidationError, match="continuous rewards"):
+        SmabActionsManager[Union[Beta, GaussianBayesianNeuralNetwork]](actions={"a1": Beta(), "a2": gaussian})
 
 
 @given(

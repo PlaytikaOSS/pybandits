@@ -41,6 +41,7 @@ from pybandits.actions_manager import ActionsManager
 from pybandits.base import (
     ActionId,
     ActionRewardLikelihood,
+    AnyReward,
     Float01,
     ForbiddenActions,
     MOProbability,
@@ -54,7 +55,6 @@ from pybandits.base import (
     QuantitativeMOProbabilityWeight,
     QuantitativeProbability,
     QuantitativeProbabilityWeight,
-    Reward,
     Serializable,
     UnifiedActionId,
 )
@@ -343,10 +343,10 @@ class BaseMab(PyBanditsBaseModel, ABC):
     def update(
         self,
         actions: List[ActionId],
-        rewards: Union[List[Reward], List[List[Reward]]],
+        rewards: Union[List[AnyReward], List[List[AnyReward]]],
         quantities: Optional[List[Union[float, List[float], None]]] = None,
         actions_memory: Optional[List[ActionId]] = None,
-        rewards_memory: Optional[Union[List[Reward], List[List[Reward]]]] = None,
+        rewards_memory: Optional[Union[List[AnyReward], List[List[AnyReward]]]] = None,
         **kwargs,
     ):
         """
@@ -356,8 +356,8 @@ class BaseMab(PyBanditsBaseModel, ABC):
         ----------
         actions: List[ActionId]
             The selected action for each sample.
-        rewards : Union[List[Reward], List[List[Reward]]] of shape (n_samples, n_objectives)
-            The binary reward for each sample.
+        rewards : Union[List[AnyReward], List[List[AnyReward]]] of shape (n_samples, n_objectives)
+            The reward for each sample: binary, soft in [0, 1], or real-valued for continuous-reward models.
                 If strategy is not MultiObjectiveBandit, rewards should be a list, e.g.
                     rewards = [1, 0, 1, 1, 1, ...]
                 If strategy is MultiObjectiveBandit, rewards should be a list of list, e.g. (with n_objectives=2):
@@ -366,7 +366,7 @@ class BaseMab(PyBanditsBaseModel, ABC):
             The value associated with each action. If none, the value is not used, i.e. non-quantitative action.
         actions_memory : Optional[List[ActionId]]
             List of previously selected actions.
-        rewards_memory : Optional[Union[List[Reward], List[List[Reward]]]]
+        rewards_memory : Optional[Union[List[AnyReward], List[List[AnyReward]]]]
             List of previously collected rewards.
         """
         self.actions_manager.update(

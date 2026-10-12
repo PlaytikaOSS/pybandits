@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Literal, Optional, Tuple, get_args
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 from unittest.mock import patch
 
 import jax
@@ -54,6 +54,7 @@ from pybandits.model import (
     EarlyStopping,
     EmbeddingParams,
     FeaturesConfig,
+    GaussianBayesianNeuralNetwork,
     NormalArray,
     OptaxKind,
     StudentTArray,
@@ -2576,3 +2577,471 @@ def test_advi_zero_lr_posterior_equals_prior(
         np.testing.assert_allclose(post_b.params["mu"], prior_b.params["mu"], atol=atol_mu)
         np.testing.assert_allclose(post_w.params["sigma"], prior_w.params["sigma"], rtol=rtol_sigma)
         np.testing.assert_allclose(post_b.params["sigma"], prior_b.params["sigma"], rtol=rtol_sigma)
+
+
+########################################################################################################################
+# --- Gaussian (continuous-reward) BNN constants ---
+_GAUSSIAN_N_FEATURES = 3
+_GAUSSIAN_HIDDEN_DIMS = [8]
+_GAUSSIAN_OUTPUT_DIM = 1
+_GAUSSIAN_RANDOM_SEED = 0
+_GAUSSIAN_N_TRAIN = 2000
+_GAUSSIAN_N_POSTERIOR_SAMPLES = 200
+# Narrow prior + larger step size: the setting the class docstring recommends for a fast fit.
+_GAUSSIAN_FAST_FIT_KWARGS: Dict[str, Any] = {
+    "dist_type": "normal",
+    "dist_params_init": {"mu": 0, "sigma": 0.1},
+    "update_kwargs": {"num_steps": 1000, "optimizer_kwargs": {"step_size": 3e-3}},
+}
+_GAUSSIAN_SHORT_FIT_KWARGS: Dict[str, Any] = {"update_kwargs": {"num_steps": 5}}
+# Linear synthetic reward: REWARD_OFFSET + REWARD_SLOPE * x0 + Normal(0, NOISE_STD).
+_GAUSSIAN_REWARD_OFFSET = 100.0
+_GAUSSIAN_REWARD_SLOPE = 30.0
+_GAUSSIAN_NOISE_STD = 10.0
+_GAUSSIAN_MEAN_REL_TOL = 0.1
+_GAUSSIAN_SIGMA_REL_TOL = 0.3
+# Probe contexts on both sides of x0.
+_GAUSSIAN_PROBE_CONTEXTS = [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.5, 1.0, -1.0]]
+# Zero-inflated, skewed reward (as revenue): a buy with probability BUY_PROB, then a log-normal amount, so the mean
+# is SKEW_OFFSET + SKEW_SLOPE * x0.
+_GAUSSIAN_BUY_PROB = 0.15
+_GAUSSIAN_SKEW_OFFSET = 2.0
+_GAUSSIAN_SKEW_SLOPE = 1.5
+_GAUSSIAN_SKEW_LOG_SD = 1.0
+_GAUSSIAN_LEVEL_REL_TOL = 0.15
+_GAUSSIAN_ROUND_TRIP_TOL = 1e-6
+_GAUSSIAN_MAX_ABS_REWARD = 1e6
+_GAUSSIAN_MAX_REWARDS = 50
+_GAUSSIAN_NOISE_SIGMA = 3.0
+_GAUSSIAN_DECAY_FACTOR = 0.5
+_GAUSSIAN_USER_LOC = 5.0
+_GAUSSIAN_USER_SCALE = 2.0
+# Fixed identity standardization: train on the raw rewards.
+_GAUSSIAN_RAW_STANDARDIZATION: Dict[str, float] = {"reward_loc": 0.0, "reward_scale": 1.0}
+_GAUSSIAN_SECOND_BATCH_SHIFT = 50.0
+_GAUSSIAN_BAD_REWARDS = [float("nan"), float("inf"), -float("inf")]
+
+
+def _linear_rewards(x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Linear-in-x0 rewards with constant Gaussian noise."""
+    return _GAUSSIAN_REWARD_OFFSET + _GAUSSIAN_REWARD_SLOPE * x[:, 0] + rng.normal(size=len(x)) * _GAUSSIAN_NOISE_STD
+
+
+def _skewed_rewards(x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Zero-inflated log-normal rewards with mean SKEW_OFFSET + SKEW_SLOPE * x0 (x0 clipped to keep it positive)."""
+    mean = _GAUSSIAN_SKEW_OFFSET + _GAUSSIAN_SKEW_SLOPE * np.clip(x[:, 0], -1.0, 2.0)
+    amount = rng.lognormal(np.log(mean / _GAUSSIAN_BUY_PROB) - _GAUSSIAN_SKEW_LOG_SD**2 / 2, _GAUSSIAN_SKEW_LOG_SD)
+    return (rng.uniform(size=len(x)) < _GAUSSIAN_BUY_PROB) * amount
+
+
+def _noise_sigma_in_reward_units(bnn: GaussianBayesianNeuralNetwork) -> float:
+    """Posterior mean of the noise std, mapped back to reward units."""
+    _, scale = bnn._loc_scale
+    return float(np.exp(bnn.noise_log_sigma.params["mu"][0]) * scale)
+
+
+@pytest.fixture(scope="module")
+def make_gaussian_bnn() -> Callable[..., GaussianBayesianNeuralNetwork]:
+    """Factory: cold-starts a GaussianBayesianNeuralNetwork with the module's shape and extra kwargs.
+
+    Unless fit_reward_standardization=True, the fixed standardization defaults to the identity (raw rewards).
+    """
+
+    def _factory(**kwargs: Any) -> GaussianBayesianNeuralNetwork:
+        standardization = {} if kwargs.get("fit_reward_standardization") else _GAUSSIAN_RAW_STANDARDIZATION
+        return GaussianBayesianNeuralNetwork.cold_start(
+            n_features=_GAUSSIAN_N_FEATURES,
+            hidden_dim_list=_GAUSSIAN_HIDDEN_DIMS,
+            random_seed=_GAUSSIAN_RANDOM_SEED,
+            **{**standardization, **kwargs},
+        )
+
+    return _factory
+
+
+@pytest.fixture(scope="module")
+def fitted_gaussian_bnn(
+    make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+) -> GaussianBayesianNeuralNetwork:
+    """A Gaussian BNN fitted on linear synthetic rewards with constant noise."""
+    data_rng = np.random.default_rng(_GAUSSIAN_RANDOM_SEED)
+    bnn = make_gaussian_bnn(fit_reward_standardization=True, **_GAUSSIAN_FAST_FIT_KWARGS)
+    x = data_rng.normal(size=(_GAUSSIAN_N_TRAIN, _GAUSSIAN_N_FEATURES))
+    bnn.update(context=x, rewards=_linear_rewards(x, data_rng).tolist())
+    return bnn
+
+
+class TestGaussianBayesianNeuralNetwork:
+    """Tests for the standalone Gaussian BNN (one mean unit, a learned scalar noise latent)."""
+
+    def test_output_layer_has_only_the_mean_unit(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        output_dim: int = _GAUSSIAN_OUTPUT_DIM,
+    ) -> None:
+        """The output layer has a single unit and the noise latent is unset before the first update."""
+        bnn = make_gaussian_bnn()
+        output_layer = bnn.model_params.bnn_layer_params[-1]
+        assert output_layer.weight.shape[-1] == output_dim
+        assert output_layer.bias.shape == (output_dim,)
+        assert bnn.noise_log_sigma is None
+
+    def test_rejects_legacy_homoscedastic_argument(
+        self, make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork]
+    ) -> None:
+        """The removed noise-model switch is an unknown argument."""
+        with pytest.raises(ValidationError):
+            make_gaussian_bnn(homoscedastic=True)
+
+    def test_sample_proba_returns_mean_and_positive_noise(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+    ) -> None:
+        """Each sample is a (mu, sigma) pair with a positive sigma, also before any update."""
+        bnn = make_gaussian_bnn()
+        samples = bnn.sample_proba(context=rng.normal(size=(n_samples, n_features)), rng=rng)
+        assert len(samples) == n_samples
+        assert all(sigma > 0 for _, sigma in samples)
+
+    def test_fit_recovers_mean_trend_and_noise_level(
+        self,
+        fitted_gaussian_bnn: GaussianBayesianNeuralNetwork,
+        rng: np.random.Generator,
+        n_posterior_samples: int = _GAUSSIAN_N_POSTERIOR_SAMPLES,
+        offset: float = _GAUSSIAN_REWARD_OFFSET,
+        slope: float = _GAUSSIAN_REWARD_SLOPE,
+        noise_std: float = _GAUSSIAN_NOISE_STD,
+        mean_rel_tol: float = _GAUSSIAN_MEAN_REL_TOL,
+        sigma_rel_tol: float = _GAUSSIAN_SIGMA_REL_TOL,
+        probe_contexts: List[List[float]] = _GAUSSIAN_PROBE_CONTEXTS,
+    ) -> None:
+        """The posterior mean tracks the linear trend and the learned sigma matches the noise std."""
+        probes = np.array(probe_contexts)
+        draws = np.array(
+            [fitted_gaussian_bnn.sample_proba(context=probes, rng=rng) for _ in range(n_posterior_samples)]
+        )
+        np.testing.assert_allclose(draws[..., 0].mean(axis=0), offset + slope * probes[:, 0], rtol=mean_rel_tol)
+        assert _noise_sigma_in_reward_units(fitted_gaussian_bnn) == pytest.approx(noise_std, rel=sigma_rel_tol)
+
+    def test_counters_track_observations(
+        self,
+        fitted_gaussian_bnn: GaussianBayesianNeuralNetwork,
+        n_train: int = _GAUSSIAN_N_TRAIN,
+    ) -> None:
+        """count / mean come from the observed rewards; the Beta pseudo-counts are untouched."""
+        assert fitted_gaussian_bnn.count == n_train
+        assert fitted_gaussian_bnn.mean == pytest.approx(fitted_gaussian_bnn.reward_sum / n_train)
+        assert fitted_gaussian_bnn.n_successes == fitted_gaussian_bnn._prior_pseudo_count
+        assert fitted_gaussian_bnn.n_failures == fitted_gaussian_bnn._prior_pseudo_count
+
+    @given(
+        rewards=st.lists(
+            st.floats(min_value=-_GAUSSIAN_MAX_ABS_REWARD, max_value=_GAUSSIAN_MAX_ABS_REWARD, allow_nan=False),
+            min_size=2,
+            max_size=_GAUSSIAN_MAX_REWARDS,
+            unique=True,
+        ),
+        n_features=st.just(_GAUSSIAN_N_FEATURES),
+        tol=st.just(_GAUSSIAN_ROUND_TRIP_TOL),
+    )
+    def test_standardization_is_fitted_once(self, rewards: List[float], n_features: int, tol: float) -> None:
+        """The first batch fixes reward_loc / reward_scale; later batches are mapped with the same values."""
+        bnn = GaussianBayesianNeuralNetwork.cold_start(n_features=n_features, fit_reward_standardization=True)
+        targets = bnn.prepare_rewards(rewards)
+        loc, scale = bnn.reward_loc, bnn.reward_scale
+        assert loc == pytest.approx(np.mean(rewards))
+        np.testing.assert_allclose(targets * scale + loc, rewards, rtol=tol, atol=tol * scale)
+        bnn.prepare_rewards([value + scale for value in rewards])
+        assert (bnn.reward_loc, bnn.reward_scale) == (loc, scale)
+
+    @given(
+        reward=st.floats(min_value=-_GAUSSIAN_MAX_ABS_REWARD, max_value=_GAUSSIAN_MAX_ABS_REWARD, allow_nan=False),
+        n_features=st.just(_GAUSSIAN_N_FEATURES),
+    )
+    def test_single_reward_standardization_has_unit_or_larger_scale(self, reward: float, n_features: int) -> None:
+        """A zero-spread first batch falls back to max(|reward|, 1) instead of dividing by ~0."""
+        bnn = GaussianBayesianNeuralNetwork.cold_start(n_features=n_features, fit_reward_standardization=True)
+        bnn.prepare_rewards([reward])
+        assert bnn.reward_scale == max(abs(reward), 1.0)
+
+    @given(
+        rewards=st.lists(
+            st.floats(min_value=-_GAUSSIAN_MAX_ABS_REWARD, max_value=_GAUSSIAN_MAX_ABS_REWARD, allow_nan=False),
+            min_size=2,
+            max_size=_GAUSSIAN_MAX_REWARDS,
+            unique=True,
+        ),
+        n_features=st.just(_GAUSSIAN_N_FEATURES),
+        tol=st.just(_GAUSSIAN_ROUND_TRIP_TOL),
+    )
+    def test_noise_initialized_from_first_batch(self, rewards: List[float], n_features: int, tol: float) -> None:
+        """Without noise_sigma, the log-sigma prior is centered on the first batch's std (1 if it has no spread)."""
+        bnn = GaussianBayesianNeuralNetwork.cold_start(n_features=n_features, fit_reward_standardization=True)
+        targets = bnn.prepare_rewards(rewards)
+        expected = targets.std() if targets.std() > bnn._numerical_eps else 1.0
+        assert np.exp(bnn.noise_log_sigma.params["mu"][0]) == pytest.approx(expected, rel=tol)
+
+    def test_noise_initialized_from_noise_sigma(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        noise_sigma: float = _GAUSSIAN_NOISE_SIGMA,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """noise_sigma (reward units) sets the prior once the reward scale is known."""
+        bnn = make_gaussian_bnn(noise_sigma=noise_sigma)
+        bnn.prepare_rewards(rng.normal(size=n_samples).tolist())
+        assert _noise_sigma_in_reward_units(bnn) == pytest.approx(noise_sigma, rel=tol)
+        assert bnn.noise_log_sigma.params["sigma"][0] == pytest.approx(bnn.noise_log_sigma_prior_std, rel=tol)
+
+    def test_noise_posterior_is_carried_across_updates(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+    ) -> None:
+        """Each update replaces the stored noise posterior, and the next update starts from it."""
+        bnn = make_gaussian_bnn(**short_fit_kwargs)
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        first = bnn.noise_log_sigma
+        assert first is not None
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        assert bnn.noise_log_sigma != first
+        _, site_sigmas, _, _ = bnn.collect_guide_init_arrays()
+        np.testing.assert_array_equal(site_sigmas[bnn._noise_var_name], bnn.noise_log_sigma.params["sigma"])
+
+    def test_sample_proba_noise_is_shared_across_contexts(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+        rel_tol: float = _GAUSSIAN_SIGMA_REL_TOL,
+    ) -> None:
+        """The noise std doesn't depend on the context: its spread comes only from the log-sigma posterior."""
+        bnn = make_gaussian_bnn(**short_fit_kwargs)
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        sigmas = np.array([s for _, s in bnn.sample_proba(context=rng.normal(size=(n_samples, n_features)), rng=rng)])
+        assert np.all(sigmas > 0)
+        assert np.log(sigmas).std() == pytest.approx(bnn.noise_log_sigma.params["sigma"][0], rel=rel_tol)
+
+    def test_mean_is_level_calibrated_on_skewed_rewards(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        n_posterior_samples: int = _GAUSSIAN_N_POSTERIOR_SAMPLES,
+        rel_tol: float = _GAUSSIAN_LEVEL_REL_TOL,
+        fast_fit_kwargs: Dict[str, Any] = _GAUSSIAN_FAST_FIT_KWARGS,
+    ) -> None:
+        """On zero-inflated skewed rewards, the average posterior mean matches the average reward (least squares)."""
+        data_rng = np.random.default_rng(_GAUSSIAN_RANDOM_SEED)
+        x = data_rng.normal(size=(n_samples, n_features))
+        y = _skewed_rewards(x, data_rng)
+        bnn = make_gaussian_bnn(fit_reward_standardization=True, **fast_fit_kwargs)
+        bnn.update(context=x, rewards=y.tolist())
+        mu = np.mean([[m for m, _ in bnn.sample_proba(context=x, rng=rng)] for _ in range(n_posterior_samples)], axis=0)
+        assert mu.mean() == pytest.approx(y.mean(), rel=rel_tol)
+
+    @pytest.mark.parametrize("bad_reward", _GAUSSIAN_BAD_REWARDS)
+    def test_update_rejects_non_finite_rewards(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        bad_reward: float,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+    ) -> None:
+        """NaN / inf rewards are rejected."""
+        bnn = make_gaussian_bnn()
+        with pytest.raises(ValidationError):
+            bnn.update(context=np.zeros((1, n_features)), rewards=[bad_reward])
+
+    @pytest.mark.parametrize(
+        "reward_loc, reward_scale",
+        [(_GAUSSIAN_USER_LOC, None), (None, _GAUSSIAN_USER_SCALE), (None, None)],
+        ids=["loc_only", "scale_only", "neither"],
+    )
+    def test_rejects_missing_fixed_values_without_fitted_standardization(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        reward_loc: Optional[float],
+        reward_scale: Optional[float],
+    ) -> None:
+        """fit_reward_standardization=False (the default) uses fixed loc / scale, so both must be given."""
+        with pytest.raises(ValidationError):
+            make_gaussian_bnn(reward_loc=reward_loc, reward_scale=reward_scale)
+
+    def test_fixed_standardization_maps_rewards(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        reward_loc: float = _GAUSSIAN_USER_LOC,
+        reward_scale: float = _GAUSSIAN_USER_SCALE,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """Fixed loc / scale map the rewards to (reward - loc) / scale and are never re-fitted."""
+        bnn = make_gaussian_bnn(reward_loc=reward_loc, reward_scale=reward_scale)
+        rewards = rng.normal(size=n_samples)
+        np.testing.assert_allclose(
+            bnn.prepare_rewards(rewards.tolist()), (rewards - reward_loc) / reward_scale, rtol=tol
+        )
+        assert (bnn.reward_loc, bnn.reward_scale) == (reward_loc, reward_scale)
+
+    @pytest.mark.parametrize(
+        "reward_loc, reward_scale",
+        [(_GAUSSIAN_USER_LOC, None), (None, _GAUSSIAN_USER_SCALE)],
+        ids=["loc_only", "scale_only"],
+    )
+    def test_rejects_partial_fitted_standardization(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        reward_loc: Optional[float],
+        reward_scale: Optional[float],
+    ) -> None:
+        """With fit_reward_standardization=True, loc / scale are fitted together, so only one of them is invalid."""
+        with pytest.raises(ValidationError):
+            make_gaussian_bnn(fit_reward_standardization=True, reward_loc=reward_loc, reward_scale=reward_scale)
+
+    def test_given_values_with_fitted_standardization_are_taken_as_fitted(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        reward_loc: float = _GAUSSIAN_USER_LOC,
+        reward_scale: float = _GAUSSIAN_USER_SCALE,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """Both values with fit_reward_standardization=True are an already fitted state: used, not re-fitted."""
+        bnn = make_gaussian_bnn(fit_reward_standardization=True, reward_loc=reward_loc, reward_scale=reward_scale)
+        rewards = rng.normal(size=n_samples)
+        np.testing.assert_allclose(
+            bnn.prepare_rewards(rewards.tolist()), (rewards - reward_loc) / reward_scale, rtol=tol
+        )
+        assert (bnn.reward_loc, bnn.reward_scale) == (reward_loc, reward_scale)
+
+    def test_identity_standardization_trains_on_raw_rewards(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        noise_sigma: float = _GAUSSIAN_NOISE_SIGMA,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+        raw_standardization: Dict[str, float] = _GAUSSIAN_RAW_STANDARDIZATION,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """reward_loc=0, reward_scale=1: targets are the raw rewards and noise_sigma is in raw units."""
+        bnn = make_gaussian_bnn(noise_sigma=noise_sigma, **raw_standardization, **short_fit_kwargs)
+        rewards = rng.normal(size=n_samples)
+        np.testing.assert_array_equal(bnn.prepare_rewards(rewards.tolist()), rewards)
+        assert (bnn.reward_loc, bnn.reward_scale) == (
+            raw_standardization["reward_loc"],
+            raw_standardization["reward_scale"],
+        )
+        assert np.exp(bnn.noise_log_sigma.params["mu"][0]) == pytest.approx(noise_sigma, rel=tol)
+
+    def test_calibrate_output_bias_sets_mean_bias(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """Calibration puts the output bias at the standardized target mean."""
+        bnn = make_gaussian_bnn(calibrate_output_bias=True)
+        rewards = rng.normal(size=n_samples).tolist()
+        bnn._calibrate_output_bias(rewards)
+        (mu_bias,) = bnn.model_params.bnn_layer_params[-1].bias.params["mu"]
+        assert bnn.bias_calibrated
+        assert mu_bias == pytest.approx(bnn.prepare_rewards(rewards).mean(), abs=tol)
+
+    def test_reset_refits_fitted_standardization(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        shift: float = _GAUSSIAN_SECOND_BATCH_SHIFT,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+    ) -> None:
+        """Fitted loc / scale are cleared by reset() and re-fitted on the next batch, with the noise prior."""
+        bnn = make_gaussian_bnn(fit_reward_standardization=True, **short_fit_kwargs)
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        first_loc = bnn.reward_loc
+        bnn.reset()
+        assert bnn.reward_loc is None and bnn.reward_scale is None and bnn.noise_log_sigma is None
+        assert bnn.n_observations == bnn.reward_sum == 0
+        assert bnn.model_params.bnn_layer_params == bnn.model_params.bnn_layer_params_init
+        second = (rng.normal(size=n_samples) + shift).tolist()
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=second)
+        assert bnn.reward_loc == pytest.approx(np.mean(second))
+        assert bnn.reward_loc != first_loc
+        assert bnn.noise_log_sigma is not None
+
+    def test_reset_restores_user_supplied_standardization(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        reward_loc: float = _GAUSSIAN_USER_LOC,
+        reward_scale: float = _GAUSSIAN_USER_SCALE,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+    ) -> None:
+        """loc / scale given at cold start are never re-fitted, and survive reset() and a JSON round trip."""
+        bnn = make_gaussian_bnn(reward_loc=reward_loc, reward_scale=reward_scale, **short_fit_kwargs)
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        assert (bnn.reward_loc, bnn.reward_scale) == (reward_loc, reward_scale)
+        restored = GaussianBayesianNeuralNetwork.model_validate_json(bnn.model_dump_json())
+        for model in (bnn, restored):
+            model.reset()
+            assert (model.reward_loc, model.reward_scale) == (reward_loc, reward_scale)
+
+    def test_reset_after_round_trip_clears_fitted_standardization(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+    ) -> None:
+        """A fitted standardization stays 'fitted' through serialization: reset() still clears it."""
+        bnn = make_gaussian_bnn(fit_reward_standardization=True, **short_fit_kwargs)
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        restored = GaussianBayesianNeuralNetwork.model_validate_json(bnn.model_dump_json())
+        assert restored.reward_loc == bnn.reward_loc
+        restored.reset()
+        assert restored.reward_loc is None and restored.reward_scale is None
+
+    def test_decay_inflates_noise_posterior(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        decay_factor: float = _GAUSSIAN_DECAY_FACTOR,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """Forgetting widens the noise posterior by 1 / decay_factor, like the weights."""
+        bnn = make_gaussian_bnn(decay_factor=decay_factor, **short_fit_kwargs)
+        bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
+        before = bnn.noise_log_sigma.params["sigma"][0]
+        bnn._inflate_prior_variance()
+        assert bnn.noise_log_sigma.params["sigma"][0] == pytest.approx(before / decay_factor, rel=tol)
+
+    def test_serialization_round_trip(self, fitted_gaussian_bnn: GaussianBayesianNeuralNetwork) -> None:
+        """The JSON state round-trips, including the standardization, the noise posterior and the counters."""
+        restored = GaussianBayesianNeuralNetwork.model_validate_json(fitted_gaussian_bnn.model_dump_json())
+        assert restored.reward_loc == fitted_gaussian_bnn.reward_loc
+        assert restored.reward_scale == fitted_gaussian_bnn.reward_scale
+        assert restored.noise_log_sigma == fitted_gaussian_bnn.noise_log_sigma
+        assert restored.n_observations == fitted_gaussian_bnn.n_observations
+        assert restored.model_params == fitted_gaussian_bnn.model_params

@@ -52,6 +52,9 @@ class BaseModel(PyBanditsBaseModel, ABC):
     Class to model the prior distributions of standard actions and quantitative actions.
     """
 
+    # Whether the model accepts real-valued rewards (otherwise binary or soft rewards in [0, 1]).
+    supports_continuous_rewards: ClassVar[bool] = False
+
     @abstractmethod
     def sample_proba(
         self, rng: Generator, **kwargs

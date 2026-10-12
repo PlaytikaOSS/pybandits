@@ -24,7 +24,7 @@
 
 import copy
 import json
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 import pytest
@@ -33,7 +33,7 @@ from hypothesis import strategies as st
 from pytest import MonkeyPatch
 
 import pybandits
-from pybandits.cmab import CmabBernoulli, CmabBernoulliMO
+from pybandits.cmab import CmabBernoulli, CmabBernoulliMO, CmabGaussian
 from pybandits.model import BaseBayesianNeuralNetwork
 from pybandits.smab import SmabBernoulli, SmabBernoulliCC, SmabBernoulliMO
 from pybandits.strategy import (
@@ -1423,3 +1423,94 @@ class TestCategoricalFeatureExpansion:
         )
         result = edit_model_on_the_fly(current, template)
         assert set(result.actions.keys()) == {"a2"}
+
+
+# ---------------------------------------------------------------------------
+# Gaussian (continuous-reward) cMAB
+# ---------------------------------------------------------------------------
+_GAUSSIAN_ACTION_IDS = {"a1", "a2"}
+_GAUSSIAN_N_SAMPLES = 100
+_GAUSSIAN_REWARD_OFFSET = 3.0
+_GAUSSIAN_UPDATE_KWARGS: Dict[str, Any] = {"num_steps": 20}
+_GAUSSIAN_STANDARDIZATIONS: Dict[str, Dict[str, Any]] = {
+    "fixed": {"reward_loc": 0.0, "reward_scale": 1.0},
+    "fitted": {"fit_reward_standardization": True},
+}
+
+
+@pytest.fixture(scope="module")
+def make_cmab_gaussian() -> Callable[..., CmabGaussian]:
+    """Factory: cold-starts a CmabGaussian with the given standardization mode ("fixed" or "fitted")."""
+
+    def _factory(standardization: str) -> CmabGaussian:
+        return CmabGaussian.cold_start(
+            action_ids=_GAUSSIAN_ACTION_IDS,
+            n_features=_N_FEATURES,
+            update_kwargs=_GAUSSIAN_UPDATE_KWARGS,
+            **_GAUSSIAN_STANDARDIZATIONS[standardization],
+        )
+
+    return _factory
+
+
+def _update_with_continuous_rewards(
+    mab: CmabGaussian, rng: np.random.Generator, n_samples: int = _GAUSSIAN_N_SAMPLES
+) -> CmabGaussian:
+    """One predict / update round with real-valued rewards away from 0 (so a fitted loc differs from 0)."""
+    context = rng.normal(size=(n_samples, _N_FEATURES))
+    actions, _, _ = mab.predict(context=context)
+    rewards = (rng.normal(size=n_samples) + _GAUSSIAN_REWARD_OFFSET).tolist()
+    mab.update(context=context, actions=actions, rewards=rewards)
+    return mab
+
+
+class TestGaussianTransfer:
+    """Transfer learning for CmabGaussian: learned state, standardization mode and likelihood compatibility."""
+
+    @pytest.mark.parametrize("standardization", list(_GAUSSIAN_STANDARDIZATIONS))
+    def test_transfer_carries_learned_state(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        rng: np.random.Generator,
+        standardization: str,
+    ) -> None:
+        """Weights, standardization, noise posterior and counters are carried over to the template."""
+        current = _update_with_continuous_rewards(make_cmab_gaussian(standardization), rng)
+        result = edit_model_on_the_fly(current, make_cmab_gaussian(standardization))
+        assert isinstance(result, CmabGaussian)
+        for action_id, source in current.actions.items():
+            transferred = result.actions[action_id]
+            assert transferred.model_params == source.model_params
+            assert (transferred.reward_loc, transferred.reward_scale) == (source.reward_loc, source.reward_scale)
+            assert transferred.noise_log_sigma == source.noise_log_sigma
+            assert transferred.n_observations == source.n_observations
+
+    @pytest.mark.parametrize("source, template", [("fixed", "fitted"), ("fitted", "fixed")])
+    def test_standardization_mode_change_raises(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        rng: np.random.Generator,
+        source: str,
+        template: str,
+    ) -> None:
+        """Weights only mean something relative to their loc / scale, so the mode can't change across a transfer."""
+        current = _update_with_continuous_rewards(make_cmab_gaussian(source), rng)
+        with pytest.raises(ValueError, match="fit_reward_standardization"):
+            edit_model_on_the_fly(current, make_cmab_gaussian(template))
+
+    @pytest.mark.parametrize(
+        "gaussian_is_source", [True, False], ids=["gaussian_to_bernoulli", "bernoulli_to_gaussian"]
+    )
+    def test_bernoulli_and_gaussian_cannot_be_merged(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        gaussian_is_source: bool,
+        action_ids: set = _GAUSSIAN_ACTION_IDS,
+        n_features: int = _N_FEATURES,
+    ) -> None:
+        """Logit weights and mean-reward weights are not interchangeable: mixing likelihoods raises TypeError."""
+        gaussian = make_cmab_gaussian("fixed")
+        bernoulli = CmabBernoulli.cold_start(action_ids=action_ids, n_features=n_features, strategy=ClassicBandit())
+        current, template = (gaussian, bernoulli) if gaussian_is_source else (bernoulli, gaussian)
+        with pytest.raises(TypeError, match="reward type"):
+            edit_model_on_the_fly(current, template)

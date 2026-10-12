@@ -98,26 +98,29 @@ _VARIANT_LABELS = (
     ("CMAB", "SMAB", "context type (CMAB vs SMAB)"),
     ("MO", "SO", "objective type (MO vs SO)"),
     ("quantitative", "standard", "action type (quantitative vs standard)"),
+    ("continuous", "binary", "reward type (continuous vs binary)"),
 )
 
 
-def _mab_variant(mab: BaseMab) -> Tuple[bool, bool, bool]:
-    """Return (is_cmab, is_mo, is_quantitative) for a MAB based on its type and action models."""
+def _mab_variant(mab: BaseMab) -> Tuple[bool, bool, bool, bool]:
+    """Return (is_cmab, is_mo, is_quantitative, is_continuous) for a MAB based on its type and action models."""
     first_model = next(iter(mab.actions.values()), None)
     return (
         isinstance(mab, BaseCmabBernoulli),
         isinstance(first_model, BaseModelMO),
         isinstance(first_model, QuantitativeModel),
+        getattr(first_model, "supports_continuous_rewards", False),
     )
 
 
 def _validate_mab_compatibility(mab1: BaseMab, mab2: BaseMab) -> None:
     """Validate that two MABs can be merged.
 
-    Checks that both MABs share the same three variant dimensions:
+    Checks that both MABs share the same four variant dimensions:
     - Context type: CMAB (contextual) vs SMAB (stochastic)
     - Objective type: MO (multi-objective) vs SO (single-objective)
     - Action type: quantitative (zooming) vs standard (Bernoulli/Beta)
+    - Reward type: continuous (Gaussian likelihood) vs binary / soft (Bernoulli likelihood)
 
     Parameters
     ----------
@@ -762,6 +765,10 @@ def edit_model_on_the_fly(
     **STRUCTURAL_IMMUTABLE (must match - raises ValueError):**
         - activation: Activation function (tanh, relu, sigmoid, gelu)
         - use_residual_connections: Whether skip connections are used
+        - fit_reward_standardization (Gaussian models): Whether reward_loc / reward_scale are fitted or fixed.
+          The source's loc / scale are carried over with the weights, which were trained relative to them.
+
+    Bernoulli and Gaussian (continuous-reward) bandits cannot be merged (raises TypeError).
 
     **CONFIGURABLE_MUTABLE (safe to change):**
         - update_kwargs: Training hyperparameters (epochs, learning rate, etc.)
