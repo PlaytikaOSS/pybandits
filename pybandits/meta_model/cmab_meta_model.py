@@ -570,11 +570,11 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         to MO's multiple weight sets per arm or quantitative's per-row quantity concatenation).
         """
         z = self.backbone.forward_jax(x_, declare_backbone()) if self.backbone is not None else x_
-        for arm, (row_idx, arm_rewards) in arm_data_.items():
+        for arm, (row_idx, arm_targets) in arm_data_.items():
             z_arm = z[row_idx]
             for bnn, obj_index, is_quantitative in self._arm_units(self.actions[arm]):
                 x_unit = jnp.concatenate([arm_q[arm], z_arm], axis=1) if is_quantitative else z_arm
-                y_unit = arm_rewards if obj_index is None else arm_rewards[:, obj_index]
+                y_unit = arm_targets if obj_index is None else arm_targets[:, obj_index]
                 # scope() prepends "{arm}/" (and "/objN" for MO) to every site this unit emits, so
                 # the otherwise-identical per-head site names stay unique across arms.
                 with numpyro.handlers.scope(prefix=self._unit_scope(arm, obj_index), divider=self._scope_divider):
