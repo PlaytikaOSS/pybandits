@@ -224,6 +224,14 @@ class ActionsManager(PyBanditsBaseModel, ABC):
             raise ValueError("Continuous rewards are not supported with the adaptive window (delta).")
         return self
 
+    @model_validator(mode="after")
+    def _check_uniform_reward_support(self) -> "ActionsManager":
+        """All action models must take the same kind of reward: either all continuous or none."""
+        supports = {model.supports_continuous_rewards for model in self.actions.values()}
+        if len(supports) > 1:
+            raise ValueError("Action models must either all take continuous rewards or none of them.")
+        return self
+
     @property
     def continuous_rewards(self) -> bool:
         """Whether the action models take real-valued rewards rather than binary / soft ones in [0, 1]."""

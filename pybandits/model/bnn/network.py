@@ -1758,7 +1758,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     The network is trained on the targets ``(reward - reward_loc) / reward_scale``, and ``sample_proba`` maps ``mu``
     and ``sigma`` back to the reward scale. The standardization is set in exactly one of two ways: either both
     ``reward_loc`` and ``reward_scale`` are given as fixed constants (``fit_reward_standardization=False``, the
-    default), or neither is given and both are fitted on the first update batch (``fit_reward_standardization=True``).
+    default), or both are fitted on the first update batch (``fit_reward_standardization=True``, leaving them unset).
     For rewards far from ``O(1)``, choose them so the default ``O(1)`` weight priors fit; ``reward_loc=0`` and
     ``reward_scale=1`` train on the raw rewards.
 
@@ -1766,20 +1766,15 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     ----------
     fit_reward_standardization : bool
         Whether to fit ``reward_loc`` / ``reward_scale`` (mean / std) on the first update batch, kept fixed afterwards
-        and re-fitted after ``reset()``. When True, neither ``reward_loc`` nor ``reward_scale`` may be given. When
-        False, both must be given, and are used as fixed constants. Default is False.
+        and re-fitted after ``reset()``. When True, leave ``reward_loc`` / ``reward_scale`` unset: values given
+        together are taken as an already fitted standardization (e.g. a reloaded model), used until ``reset()``.
+        When False, both must be given, and are used as fixed constants. Default is False.
     reward_loc : Optional[float]
-        Location subtracted from the rewards. Required when ``fit_reward_standardization`` is False; otherwise must
-        not be given, and is None until fitted on the first update.
+        Location subtracted from the rewards. Required when ``fit_reward_standardization`` is False; otherwise None
+        until fitted on the first update.
     reward_scale : Optional[PositiveFloat]
-        Scale the rewards are divided by. Required when ``fit_reward_standardization`` is False; otherwise must not
-        be given, and is None until fitted on the first update.
-    reward_loc_init : Optional[float]
-        The cold-start value of ``reward_loc``, restored by ``reset()``. Set automatically from ``reward_loc`` at
-        construction.
-    reward_scale_init : Optional[PositiveFloat]
-        The cold-start value of ``reward_scale``, restored by ``reset()``. Set automatically from ``reward_scale`` at
-        construction.
+        Scale the rewards are divided by. Required when ``fit_reward_standardization`` is False; otherwise None
+        until fitted on the first update.
     n_observations : NonNegativeInt
         Number of rewards observed.
     reward_sum : float
@@ -1802,8 +1797,8 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
       default number of steps. A narrower prior (e.g. ``dist_params_init={"mu": 0, "sigma": 0.1, ...}``)
       and a larger step size (e.g. ``3e-3``) fit much faster.
     - ``reset()`` returns the model to its cold-start state: the weights to their initial prior, ``noise_log_sigma``
-      to None, the counters to 0, and ``reward_loc`` / ``reward_scale`` to their cold-start values (re-fitted on the
-      next update with ``fit_reward_standardization``).
+      to None, the counters to 0, and, with ``fit_reward_standardization``, ``reward_loc`` / ``reward_scale`` to None
+      (re-fitted on the next update); fixed values are kept.
 
     Examples
     --------
@@ -1821,8 +1816,6 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     fit_reward_standardization: bool = False
     reward_loc: Optional[float] = None
     reward_scale: Optional[PositiveFloat] = None
-    reward_loc_init: Optional[float] = None
-    reward_scale_init: Optional[PositiveFloat] = None
     n_observations: NonNegativeInt = 0
     reward_sum: float = 0.0
     noise_sigma: Optional[PositiveFloat] = None
@@ -1837,31 +1830,20 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = (
         "reward_loc",
         "reward_scale",
-        "reward_loc_init",
-        "reward_scale_init",
         "n_observations",
         "reward_sum",
         "noise_log_sigma",
     )
 
-    @model_validator(mode="before")
-    @classmethod
-    def set_standardization_init(cls, data: Any) -> Any:
-        """Record user-supplied ``reward_loc`` / ``reward_scale`` as their cold-start values (restored by reset)."""
-        if isinstance(data, dict):
-            for name in ("reward_loc", "reward_scale"):
-                if f"{name}_init" not in data and data.get(name) is not None:
-                    data = {**data, f"{name}_init": data[name]}
-        return data
-
     @model_validator(mode="after")
     def validate_reward_standardization(self) -> "GaussianBayesianNeuralNetwork":
         if self.fit_reward_standardization:
-            if self.reward_loc_init is not None or self.reward_scale_init is not None:
-                raise ValueError("reward_loc / reward_scale cannot be given with fit_reward_standardization=True.")
             if (self.reward_loc is None) != (self.reward_scale is None):
-                raise ValueError("A fitted reward_loc and reward_scale must be either both set or both None.")
-        elif None in (self.reward_loc, self.reward_scale, self.reward_loc_init, self.reward_scale_init):
+                raise ValueError(
+                    "With fit_reward_standardization=True, reward_loc and reward_scale are either both unset "
+                    "(not fitted yet) or both set (fitted)."
+                )
+        elif self.reward_loc is None or self.reward_scale is None:
             raise ValueError(
                 "reward_loc and reward_scale must both be given when fit_reward_standardization=False "
                 "(use reward_loc=0, reward_scale=1 to train on raw rewards - with caution, as the weight priors are in reward units)."
@@ -1910,7 +1892,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     def _inflate_extra_params(self, inflation: float) -> None:
         if self.noise_log_sigma is not None:
             self.noise_log_sigma = self.noise_log_sigma.with_dist_parameters(
-                sigma=(np.asarray(self.noise_log_sigma.params["sigma"]) * inflation).tolist()
+                sigma=(self.noise_log_sigma.params["sigma"] * inflation).tolist()
             )
 
     @staticmethod
@@ -2098,8 +2080,8 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
         self.n_observations = 0
         self.reward_sum = 0.0
         self.noise_log_sigma = None
-        self.reward_loc = self.reward_loc_init
-        self.reward_scale = self.reward_scale_init
+        if self.fit_reward_standardization:
+            self.reward_loc = self.reward_scale = None
 
 
 class BaseBayesianNeuralNetworkMO(ModelMO, ABC):

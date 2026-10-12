@@ -2897,18 +2897,35 @@ class TestGaussianBayesianNeuralNetwork:
 
     @pytest.mark.parametrize(
         "reward_loc, reward_scale",
-        [(_GAUSSIAN_USER_LOC, None), (None, _GAUSSIAN_USER_SCALE), (_GAUSSIAN_USER_LOC, _GAUSSIAN_USER_SCALE)],
-        ids=["loc_only", "scale_only", "both"],
+        [(_GAUSSIAN_USER_LOC, None), (None, _GAUSSIAN_USER_SCALE)],
+        ids=["loc_only", "scale_only"],
     )
-    def test_rejects_fixed_values_with_fitted_standardization(
+    def test_rejects_partial_fitted_standardization(
         self,
         make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
         reward_loc: Optional[float],
         reward_scale: Optional[float],
     ) -> None:
-        """fit_reward_standardization=True fits loc / scale from data, so given values would conflict."""
+        """With fit_reward_standardization=True, loc / scale are fitted together, so only one of them is invalid."""
         with pytest.raises(ValidationError):
             make_gaussian_bnn(fit_reward_standardization=True, reward_loc=reward_loc, reward_scale=reward_scale)
+
+    def test_given_values_with_fitted_standardization_are_taken_as_fitted(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        rng: np.random.Generator,
+        reward_loc: float = _GAUSSIAN_USER_LOC,
+        reward_scale: float = _GAUSSIAN_USER_SCALE,
+        n_samples: int = _GAUSSIAN_N_TRAIN,
+        tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
+    ) -> None:
+        """Both values with fit_reward_standardization=True are an already fitted state: used, not re-fitted."""
+        bnn = make_gaussian_bnn(fit_reward_standardization=True, reward_loc=reward_loc, reward_scale=reward_scale)
+        rewards = rng.normal(size=n_samples)
+        np.testing.assert_allclose(
+            bnn.prepare_rewards(rewards.tolist()), (rewards - reward_loc) / reward_scale, rtol=tol
+        )
+        assert (bnn.reward_loc, bnn.reward_scale) == (reward_loc, reward_scale)
 
     def test_identity_standardization_trains_on_raw_rewards(
         self,
@@ -2999,7 +3016,7 @@ class TestGaussianBayesianNeuralNetwork:
         bnn = make_gaussian_bnn(fit_reward_standardization=True, **short_fit_kwargs)
         bnn.update(context=rng.normal(size=(n_samples, n_features)), rewards=rng.normal(size=n_samples).tolist())
         restored = GaussianBayesianNeuralNetwork.model_validate_json(bnn.model_dump_json())
-        assert restored.reward_loc == bnn.reward_loc and restored.reward_loc_init is None
+        assert restored.reward_loc == bnn.reward_loc
         restored.reset()
         assert restored.reward_loc is None and restored.reward_scale is None
 
