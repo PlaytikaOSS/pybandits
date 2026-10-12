@@ -2616,6 +2616,8 @@ _GAUSSIAN_NOISE_SIGMA = 3.0
 _GAUSSIAN_DECAY_FACTOR = 0.5
 _GAUSSIAN_USER_LOC = 5.0
 _GAUSSIAN_USER_SCALE = 2.0
+# Fixed identity standardization: train on the raw rewards.
+_GAUSSIAN_RAW_STANDARDIZATION: Dict[str, float] = {"reward_loc": 0.0, "reward_scale": 1.0}
 _GAUSSIAN_SECOND_BATCH_SHIFT = 50.0
 _GAUSSIAN_BAD_REWARDS = [float("nan"), float("inf"), -float("inf")]
 
@@ -2640,14 +2642,18 @@ def _noise_sigma_in_reward_units(bnn: GaussianBayesianNeuralNetwork) -> float:
 
 @pytest.fixture(scope="module")
 def make_gaussian_bnn() -> Callable[..., GaussianBayesianNeuralNetwork]:
-    """Factory: cold-starts a GaussianBayesianNeuralNetwork with the module's shape and extra kwargs."""
+    """Factory: cold-starts a GaussianBayesianNeuralNetwork with the module's shape and extra kwargs.
+
+    Unless fit_reward_standardization=True, the fixed standardization defaults to the identity (raw rewards).
+    """
 
     def _factory(**kwargs: Any) -> GaussianBayesianNeuralNetwork:
+        standardization = {} if kwargs.get("fit_reward_standardization") else _GAUSSIAN_RAW_STANDARDIZATION
         return GaussianBayesianNeuralNetwork.cold_start(
             n_features=_GAUSSIAN_N_FEATURES,
             hidden_dim_list=_GAUSSIAN_HIDDEN_DIMS,
             random_seed=_GAUSSIAN_RANDOM_SEED,
-            **kwargs,
+            **{**standardization, **kwargs},
         )
 
     return _factory
@@ -2859,24 +2865,34 @@ class TestGaussianBayesianNeuralNetwork:
 
     @pytest.mark.parametrize(
         "reward_loc, reward_scale",
-        [(_GAUSSIAN_USER_LOC, None), (None, _GAUSSIAN_USER_SCALE)],
-        ids=["loc_only", "scale_only"],
+        [(_GAUSSIAN_USER_LOC, None), (None, _GAUSSIAN_USER_SCALE), (None, None)],
+        ids=["loc_only", "scale_only", "neither"],
     )
-    def test_fixed_standardization_can_be_partial(
+    def test_rejects_missing_fixed_values_without_fitted_standardization(
+        self,
+        make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
+        reward_loc: Optional[float],
+        reward_scale: Optional[float],
+    ) -> None:
+        """fit_reward_standardization=False (the default) uses fixed loc / scale, so both must be given."""
+        with pytest.raises(ValidationError):
+            make_gaussian_bnn(reward_loc=reward_loc, reward_scale=reward_scale)
+
+    def test_fixed_standardization_maps_rewards(
         self,
         make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
         rng: np.random.Generator,
-        reward_loc: Optional[float],
-        reward_scale: Optional[float],
+        reward_loc: float = _GAUSSIAN_USER_LOC,
+        reward_scale: float = _GAUSSIAN_USER_SCALE,
         n_samples: int = _GAUSSIAN_N_TRAIN,
         tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
     ) -> None:
-        """A fixed reward_loc or reward_scale can be given alone: the other one defaults to 0 / 1, never fitted."""
+        """Fixed loc / scale map the rewards to (reward - loc) / scale and are never re-fitted."""
         bnn = make_gaussian_bnn(reward_loc=reward_loc, reward_scale=reward_scale)
         rewards = rng.normal(size=n_samples)
-        loc = 0.0 if reward_loc is None else reward_loc
-        scale = 1.0 if reward_scale is None else reward_scale
-        np.testing.assert_allclose(bnn.prepare_rewards(rewards.tolist()), (rewards - loc) / scale, rtol=tol)
+        np.testing.assert_allclose(
+            bnn.prepare_rewards(rewards.tolist()), (rewards - reward_loc) / reward_scale, rtol=tol
+        )
         assert (bnn.reward_loc, bnn.reward_scale) == (reward_loc, reward_scale)
 
     @pytest.mark.parametrize(
@@ -2894,21 +2910,24 @@ class TestGaussianBayesianNeuralNetwork:
         with pytest.raises(ValidationError):
             make_gaussian_bnn(fit_reward_standardization=True, reward_loc=reward_loc, reward_scale=reward_scale)
 
-    def test_unstandardized_model_trains_and_predicts_on_raw_rewards(
+    def test_identity_standardization_trains_on_raw_rewards(
         self,
         make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
         rng: np.random.Generator,
         n_samples: int = _GAUSSIAN_N_TRAIN,
-        n_features: int = _GAUSSIAN_N_FEATURES,
         noise_sigma: float = _GAUSSIAN_NOISE_SIGMA,
         short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+        raw_standardization: Dict[str, float] = _GAUSSIAN_RAW_STANDARDIZATION,
         tol: float = _GAUSSIAN_ROUND_TRIP_TOL,
     ) -> None:
-        """By default no loc / scale are set or fitted: targets are raw and noise_sigma is in raw units."""
-        bnn = make_gaussian_bnn(noise_sigma=noise_sigma, **short_fit_kwargs)
+        """reward_loc=0, reward_scale=1: targets are the raw rewards and noise_sigma is in raw units."""
+        bnn = make_gaussian_bnn(noise_sigma=noise_sigma, **raw_standardization, **short_fit_kwargs)
         rewards = rng.normal(size=n_samples)
         np.testing.assert_array_equal(bnn.prepare_rewards(rewards.tolist()), rewards)
-        assert bnn.reward_loc is None and bnn.reward_scale is None
+        assert (bnn.reward_loc, bnn.reward_scale) == (
+            raw_standardization["reward_loc"],
+            raw_standardization["reward_scale"],
+        )
         assert np.exp(bnn.noise_log_sigma.params["mu"][0]) == pytest.approx(noise_sigma, rel=tol)
 
     def test_calibrate_output_bias_sets_mean_bias(

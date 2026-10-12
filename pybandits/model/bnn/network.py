@@ -146,7 +146,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     reward_dtype: ClassVar[Any] = jnp.float32  # float, not int: soft rewards are fractional labels
     # Width of the output layer: one logit for the Bernoulli likelihood.
-    _output_dim: ClassVar[PositiveInt] = 1
+    default_output_dim: ClassVar[PositiveInt] = 1
     _logit_var_name: ClassVar[str] = "logit"
     _prob_var_name: ClassVar[str] = "prob"
     weight_var_name: ClassVar[str] = "weight"
@@ -398,7 +398,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             Applied to every layer's bias (including the output layer's logit bias), leaving weight priors unchanged.
             Default is None (use ``sigma`` from ``dist_params_init``).
         output_dim : Optional[PositiveInt]
-            Width of the output layer. None uses the class default ``_output_dim``.
+            Width of the output layer. None uses the class attribute ``default_output_dim``.
         **dist_params_init : dict, optional
             Additional parameters for initializing the distribution of weights and biases.
 
@@ -414,7 +414,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         else:
             _dim_list = [effective_n_features] + hidden_dim_list
 
-        _dim_list.append(output_dim or cls._output_dim)
+        _dim_list.append(output_dim or cls.default_output_dim)
 
         layer_params_init = []
         for layer_ind in range(len(_dim_list) - 1):
@@ -811,7 +811,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        linear_out : jax.Array of shape (batch, _output_dim)
+        linear_out : jax.Array of shape (batch, default_output_dim)
             Raw (pre-activation) output of the final layer.
         extra_sites : Optional[Dict[str, jax.Array]]
             Sampled :meth:`extra_site_params` latents, broadcastable to the batch (unused here).
@@ -838,7 +838,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         Parameters
         ----------
-        linear_out : np.ndarray of shape (n_samples, _output_dim)
+        linear_out : np.ndarray of shape (n_samples, default_output_dim)
             Raw output of the final layer, one row per sampled network.
         extra_samples : Optional[Dict[str, np.ndarray]]
             Per-row draws of the :meth:`extra_site_params` latents (unused here).
@@ -1756,20 +1756,24 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     which biases ``mu`` low exactly where the rewards are most variable.
 
     The network is trained on the targets ``(reward - reward_loc) / reward_scale``, and ``sample_proba`` maps ``mu``
-    and ``sigma`` back to the reward scale. By default (both None) the targets are the raw rewards, so the weight
-    priors are in reward units: for rewards far from ``O(1)``, set a fixed ``reward_scale`` (or fit it from data with
-    ``fit_reward_standardization``) so the default ``O(1)`` weight priors fit.
+    and ``sigma`` back to the reward scale. The standardization is set in exactly one of two ways: either both
+    ``reward_loc`` and ``reward_scale`` are given as fixed constants (``fit_reward_standardization=False``, the
+    default), or neither is given and both are fitted on the first update batch (``fit_reward_standardization=True``).
+    For rewards far from ``O(1)``, choose them so the default ``O(1)`` weight priors fit; ``reward_loc=0`` and
+    ``reward_scale=1`` train on the raw rewards.
 
     Parameters
     ----------
     fit_reward_standardization : bool
         Whether to fit ``reward_loc`` / ``reward_scale`` (mean / std) on the first update batch, kept fixed afterwards
-        and re-fitted after ``reset()``. When True, ``reward_loc`` / ``reward_scale`` must not be given. When False,
-        the values given at cold start are used as fixed constants. Default is False.
+        and re-fitted after ``reset()``. When True, neither ``reward_loc`` nor ``reward_scale`` may be given. When
+        False, both must be given, and are used as fixed constants. Default is False.
     reward_loc : Optional[float]
-        Location subtracted from the rewards. None means 0 (or fitted, with ``fit_reward_standardization``).
+        Location subtracted from the rewards. Required when ``fit_reward_standardization`` is False; otherwise must
+        not be given, and is None until fitted on the first update.
     reward_scale : Optional[PositiveFloat]
-        Scale the rewards are divided by. None means 1 (or fitted, with ``fit_reward_standardization``).
+        Scale the rewards are divided by. Required when ``fit_reward_standardization`` is False; otherwise must not
+        be given, and is None until fitted on the first update.
     reward_loc_init : Optional[float]
         The cold-start value of ``reward_loc``, restored by ``reset()``. Set automatically from ``reward_loc`` at
         construction.
@@ -1805,6 +1809,8 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
     --------
     >>> bnn = GaussianBayesianNeuralNetwork.cold_start(
     ...     n_features=2,
+    ...     reward_loc=0.0,
+    ...     reward_scale=1.0,
     ...     hidden_dim_list=[16],
     ...     dist_type="normal",
     ...     dist_params_init={"mu": 0, "sigma": 0.1},
@@ -1825,7 +1831,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
 
     supports_continuous_rewards: ClassVar[bool] = True
     # [mu]; the noise std is the scalar latent ``noise_log_sigma``
-    _output_dim: ClassVar[PositiveInt] = 1
+    default_output_dim: ClassVar[PositiveInt] = 1
     _noise_var_name: ClassVar[str] = "noise_log_sigma"
 
     _transfer_learned_keys: ClassVar[Tuple[str, ...]] = (
@@ -1855,20 +1861,25 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
                 raise ValueError("reward_loc / reward_scale cannot be given with fit_reward_standardization=True.")
             if (self.reward_loc is None) != (self.reward_scale is None):
                 raise ValueError("A fitted reward_loc and reward_scale must be either both set or both None.")
+        elif None in (self.reward_loc, self.reward_scale, self.reward_loc_init, self.reward_scale_init):
+            raise ValueError(
+                "reward_loc and reward_scale must both be given when fit_reward_standardization=False "
+                "(use reward_loc=0, reward_scale=1 to train on raw rewards - with caution, as the weight priors are in reward units)."
+            )
         return self
 
     @model_validator(mode="after")
     def validate_output_layer(self) -> "GaussianBayesianNeuralNetwork":
         output_dim = self.model_params.bnn_layer_params[-1].weight.shape[-1]
-        if output_dim != self._output_dim:
-            raise ValueError(f"The output layer has {output_dim} units, expected {self._output_dim} (mu).")
+        if output_dim != self.default_output_dim:
+            raise ValueError(f"The output layer has {output_dim} units, expected {self.default_output_dim} (mu).")
         if self.noise_log_sigma is not None and self.noise_log_sigma.shape != (1,):
             raise ValueError("noise_log_sigma must have shape (1,).")
         return self
 
     @property
     def _loc_scale(self) -> Tuple[float, float]:
-        """``(loc, scale)`` mapping targets back to rewards (0 / 1 for an unset or not yet fitted value)."""
+        """``(loc, scale)`` mapping targets back to rewards (0 / 1 while a fitted standardization is not yet fitted)."""
         loc = 0.0 if self.reward_loc is None else self.reward_loc
         scale = 1.0 if self.reward_scale is None else self.reward_scale
         return loc, scale

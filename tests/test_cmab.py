@@ -1665,6 +1665,8 @@ _GAUSSIAN_BAD_REWARDS = [float("nan"), float("inf"), -float("inf")]
 _GAUSSIAN_OUT_OF_RANGE_SOFT_REWARD = 2.5
 _GAUSSIAN_DELTA = 0.1
 _GAUSSIAN_EPSILON = 0.1
+# Fixed identity standardization: train on the raw rewards.
+_GAUSSIAN_RAW_STANDARDIZATION: Dict[str, float] = {"reward_loc": 0.0, "reward_scale": 1.0}
 
 
 @pytest.fixture(scope="module")
@@ -1677,7 +1679,7 @@ def make_cmab_gaussian() -> Callable[..., CmabGaussian]:
             n_features=_GAUSSIAN_N_FEATURES,
             hidden_dim_list=_GAUSSIAN_HIDDEN_DIMS,
             random_seed=_GAUSSIAN_RANDOM_SEED,
-            **{**_GAUSSIAN_FAST_FIT_KWARGS, **kwargs},
+            **{**_GAUSSIAN_RAW_STANDARDIZATION, **_GAUSSIAN_FAST_FIT_KWARGS, **kwargs},
         )
 
     return _factory
@@ -1690,9 +1692,12 @@ class TestGaussianMetaModel:
         self,
         n_features: int = _GAUSSIAN_N_FEATURES,
         hidden_dims: List[int] = _GAUSSIAN_HIDDEN_DIMS,
+        raw_standardization: Dict[str, float] = _GAUSSIAN_RAW_STANDARDIZATION,
     ) -> None:
         """Bernoulli and Gaussian heads cannot share one meta-model."""
-        gaussian = GaussianBayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dims)
+        gaussian = GaussianBayesianNeuralNetwork.cold_start(
+            n_features=n_features, hidden_dim_list=hidden_dims, **raw_standardization
+        )
         bernoulli = BayesianNeuralNetwork.cold_start(n_features=n_features, hidden_dim_list=hidden_dims)
         with pytest.raises(AttributeError):
             CmabMetaModel(actions={"a": gaussian, "b": bernoulli})
@@ -1770,10 +1775,13 @@ class TestCmabGaussian:
         n_features: int = _GAUSSIAN_N_FEATURES,
         delta: float = _GAUSSIAN_DELTA,
         epsilon: float = _GAUSSIAN_EPSILON,
+        raw_standardization: Dict[str, float] = _GAUSSIAN_RAW_STANDARDIZATION,
     ) -> None:
         """The adaptive window assumes binary rewards, so delta is refused."""
         with pytest.raises(ValueError):
-            CmabGaussian.cold_start(action_ids=action_ids, n_features=n_features, delta=delta, epsilon=epsilon)
+            CmabGaussian.cold_start(
+                action_ids=action_ids, n_features=n_features, delta=delta, epsilon=epsilon, **raw_standardization
+            )
 
 
 @pytest.mark.parametrize("use_soft_rewards", [False, True])
