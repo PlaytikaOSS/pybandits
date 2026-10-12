@@ -20,9 +20,9 @@ metadata:
   - a Bayesian MLP with **one output unit, μ(x)**, and the likelihood `Normal(μ(x), σ)`;
   - **σ is one latent per model** (`log σ ~ Normal`, site `noise_log_sigma`), with its posterior stored in the state
     and carried across updates like the weights;
-  - **raw rewards by default** (`standardize_rewards=False`, which rejects loc / scale); with `standardize_rewards=True`,
-    **standardized targets** `(r − reward_loc) / reward_scale`, using the user's values or else fitted on the first
-    batch, then frozen.
+  - targets `(r − reward_loc) / reward_scale`: **raw rewards by default** (both None, i.e. 0 / 1); user-given values
+    are fixed constants (loc or scale may be given alone); `fit_reward_standardization=True` fits both on the first
+    batch, then freezes them (and rejects user-given values).
 - **`CmabGaussian`** (`pybandits/cmab.py`): `ClassicBandit` strategy, `_predict_with_proba = True`. Actions are
   ranked on μ; `predict` returns `(actions, mu, sigma)`, where σ is for monitoring only.
 - **Reward types** (`pybandits/base.py`): `BinaryReward`, `SoftReward`, `ContinuousReward`, `AnyReward`.
