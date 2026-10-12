@@ -1834,6 +1834,8 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
         "reward_sum",
         "noise_log_sigma",
     )
+    # The weights are trained relative to the standardization, so its mode can't change across a transfer.
+    _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("fit_reward_standardization",)
 
     @model_validator(mode="after")
     def validate_reward_standardization(self) -> "GaussianBayesianNeuralNetwork":
