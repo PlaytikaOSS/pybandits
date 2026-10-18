@@ -58,6 +58,30 @@ def _pick_learned_state(source_state: Dict[str, Any], model_cls: Type[BaseModelS
     return {k: source_state[k] for k in model_cls.transfer_learned_keys if k in source_state}
 
 
+def _reconcile_bias_calibrated(merged_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Clear a transferred ``bias_calibrated`` flag when the template no longer calibrates the output bias.
+
+    ``bias_calibrated`` is learned state and comes from the source, while ``calibrate_output_bias`` is configuration
+    and comes from the template. A model rejects ``bias_calibrated=True`` without ``calibrate_output_bias=True``,
+    so a calibrated source merged into a template that turns calibration off would otherwise fail validation.
+    The learned weights, including the calibrated bias, are still transferred.
+
+    Parameters
+    ----------
+    merged_state : Dict[str, Any]
+        Single-objective action state: the template's configuration with the source's learned state applied.
+        States of models without a ``bias_calibrated`` field are returned unchanged.
+
+    Returns
+    -------
+    Dict[str, Any]
+        The same state, with ``bias_calibrated`` set to False if the template does not calibrate.
+    """
+    if merged_state.get("bias_calibrated") and not merged_state.get("calibrate_output_bias"):
+        merged_state["bias_calibrated"] = False
+    return merged_state
+
+
 def _get_state_dict(mab: BaseMab) -> Dict[str, Any]:
     """Convert MAB to dictionary via JSON serialization.
 
@@ -247,7 +271,7 @@ def _transfer_learned_state(
     if isinstance(model_instance, BaseModelMO):
         # MO: transfer learned state per objective using each objective's model class
         result["models"] = [
-            {**tgt_obj, **_pick_learned_state(src_obj, type(obj_model))}
+            _reconcile_bias_calibrated({**tgt_obj, **_pick_learned_state(src_obj, type(obj_model))})
             for obj_model, src_obj, tgt_obj in zip(
                 model_instance.models, source_action_state["models"], target_action_state["models"]
             )
@@ -255,6 +279,7 @@ def _transfer_learned_state(
     else:
         # SO: use the model class's declared transferable keys
         result.update(_pick_learned_state(source_action_state, type(model_instance)))
+        _reconcile_bias_calibrated(result)
 
     return result
 
@@ -275,7 +300,7 @@ def _merge_mabs(
     - Actions: Only actions from mab2 (mab2 defines the final action set)
     - Configuration: All parameters (epsilon, delta, update_kwargs, etc.) from mab2
     - Learned state: For overlapping actions, transferable parameters (n_successes,
-      n_failures, model_params) from mab1
+      n_failures, model_params, bias_calibrated) from mab1
     - Strategy: From mab2
 
     Parameters
@@ -792,7 +817,8 @@ def edit_model_on_the_fly(
     - Actions: All actions from new_mab
     - Configuration: All parameters from new_mab (epsilon, delta, update_kwargs, etc.)
     - Learned state: For actions that exist in both MABs, transferable parameters
-      (n_successes, n_failures, model_params) from current_mab
+      (n_successes, n_failures, model_params, bias_calibrated) from current_mab. ``bias_calibrated`` is
+      cleared if new_mab does not calibrate the output bias (``calibrate_output_bias=False``).
     - Strategy: From new_mab
     - Input features (CMAB): Existing features from current_mab + new features from template
 
