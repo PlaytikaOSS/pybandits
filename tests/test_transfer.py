@@ -34,7 +34,7 @@ from pytest import MonkeyPatch
 
 import pybandits
 from pybandits.cmab import CmabBernoulli, CmabBernoulliMO, CmabGaussian
-from pybandits.model import BaseBayesianNeuralNetwork
+from pybandits.model import BaseBayesianNeuralNetwork, GaussianBayesianNeuralNetwork
 from pybandits.smab import SmabBernoulli, SmabBernoulliCC, SmabBernoulliMO
 from pybandits.strategy import (
     ClassicBandit,
@@ -1514,3 +1514,279 @@ class TestGaussianTransfer:
         current, template = (gaussian, bernoulli) if gaussian_is_source else (bernoulli, gaussian)
         with pytest.raises(TypeError, match="reward type"):
             edit_model_on_the_fly(current, template)
+
+
+# ---------------------------------------------------------------------------
+# bias_calibrated flag (BRAIN-21792)
+# ---------------------------------------------------------------------------
+_CALIBRATION_ACTION_IDS = {"a1", "a2"}
+_CALIBRATION_N_SAMPLES = 40
+_CALIBRATION_UPDATE_KWARGS: Dict[str, Any] = {"num_steps": 2}
+_CALIBRATION_KINDS = ["bernoulli", "gaussian_fixed", "gaussian_fitted"]
+
+
+def _make_calibrating_cmab(
+    kind: str,
+    action_ids: set = _CALIBRATION_ACTION_IDS,
+    calibrate_output_bias: bool = True,
+) -> "CmabBernoulli | CmabGaussian":
+    """Cold-start a CMAB of the given kind with ``calibrate_output_bias`` set as requested."""
+    common = dict(
+        action_ids=action_ids,
+        n_features=_N_FEATURES,
+        calibrate_output_bias=calibrate_output_bias,
+        update_kwargs=_CALIBRATION_UPDATE_KWARGS,
+    )
+    if kind == "bernoulli":
+        return CmabBernoulli.cold_start(**common)
+    return CmabGaussian.cold_start(**common, **_GAUSSIAN_STANDARDIZATIONS[kind.removeprefix("gaussian_")])
+
+
+def _calibration_batch(
+    kind: str, rng: np.random.Generator, first_batch: bool, action_ids: set = _CALIBRATION_ACTION_IDS
+) -> Dict[str, Any]:
+    """One update batch covering every action. The first and second batches are deliberately far apart.
+
+    Bernoulli: a mixed batch, then an all-ones batch (the degenerate case that pushes a re-calibrated bias to ~14).
+    Gaussian: rewards around +5, then around -5.
+    """
+    actions = sorted(action_ids) * (_CALIBRATION_N_SAMPLES // len(action_ids))
+    if kind == "bernoulli":
+        rewards = rng.integers(0, 2, len(actions)).tolist() if first_batch else [1] * len(actions)
+    else:
+        rewards = rng.normal(5.0 if first_batch else -5.0, 1.0, len(actions)).tolist()
+    return {"context": rng.normal(size=(len(actions), _N_FEATURES)), "actions": actions, "rewards": rewards}
+
+
+def _output_bias_mu(mab: "CmabBernoulli | CmabGaussian", action_id: str) -> List[float]:
+    return list(mab.actions[action_id].model_params.bnn_layer_params[-1].bias.params["mu"])
+
+
+# Captured at import time: ``test_hyperparameter_tuning_workflow`` patches ``BaseBayesianNeuralNetwork._update`` for the
+# rest of the module (module-scoped monkeypatch), and calibration runs inside the real ``_update``.
+_REAL_BNN_UPDATE = BaseBayesianNeuralNetwork.__dict__["_update"]
+
+
+class TestBiasCalibratedTransfer:
+    """``bias_calibrated`` is learned state: a warm-start merge must not make an arm re-calibrate its output bias."""
+
+    @pytest.fixture(autouse=True)
+    def _use_real_bnn_update(self, monkeypatch: MonkeyPatch) -> None:
+        """Undo the module-wide mock of ``_update`` so that ``update()`` really calibrates the output bias."""
+        monkeypatch.setattr(BaseBayesianNeuralNetwork, "_update", _REAL_BNN_UPDATE)
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_flag_is_transferred(self, kind: str, rng: np.random.Generator) -> None:
+        """Calibrated arms stay calibrated after merging into a cold template, with their learned bias intact."""
+        current = _make_calibrating_cmab(kind)
+        current.update(**_calibration_batch(kind, rng, first_batch=True))
+        assert all(current.actions[a].bias_calibrated for a in _CALIBRATION_ACTION_IDS)
+
+        merged = edit_model_on_the_fly(current, _make_calibrating_cmab(kind))
+
+        for action_id in _CALIBRATION_ACTION_IDS:
+            assert merged.actions[action_id].bias_calibrated is True
+            assert _output_bias_mu(merged, action_id) == _output_bias_mu(current, action_id)
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_flag_survives_json_round_trip_before_merge(self, kind: str, rng: np.random.Generator) -> None:
+        """The OptX flow: serialize the deployed model, reload it, merge it into a fresh template."""
+        current = _make_calibrating_cmab(kind)
+        current.update(**_calibration_batch(kind, rng, first_batch=True))
+        reloaded = type(current).from_state(current.get_state()[1])
+
+        merged = edit_model_on_the_fly(reloaded, _make_calibrating_cmab(kind))
+
+        assert all(merged.actions[a].bias_calibrated for a in _CALIBRATION_ACTION_IDS)
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_learned_bias_is_not_recalibrated_after_merge(self, kind: str, rng: np.random.Generator) -> None:
+        """After a merge, a far-away second batch must not overwrite the learned bias with the batch statistic."""
+        current = _make_calibrating_cmab(kind)
+        current.update(**_calibration_batch(kind, rng, first_batch=True))
+        merged = edit_model_on_the_fly(current, _make_calibrating_cmab(kind))
+        bias_before = {a: _output_bias_mu(merged, a) for a in _CALIBRATION_ACTION_IDS}
+
+        # The guard makes a direct calibration call a no-op, which isolates it from the VI steps of update().
+        batch = _calibration_batch(kind, rng, first_batch=False)
+        for action_id in _CALIBRATION_ACTION_IDS:
+            model = merged.actions[action_id]
+            model._calibrate_output_bias(batch["rewards"])
+            assert _output_bias_mu(merged, action_id) == bias_before[action_id]
+
+        merged.update(**batch)
+        for action_id in _CALIBRATION_ACTION_IDS:
+            bias = _output_bias_mu(merged, action_id)[0]
+            if kind == "bernoulli":
+                assert bias < 5.0  # re-calibrating on the all-ones batch gives logit(1 - eps) ~ 13.8
+            else:
+                # Kept: ~ +5 (fixed standardization) or ~ 0 (fitted, in standardized units).
+                # Re-calibrated on the second batch: ~ -5 (fixed) or ~ -10 (fitted).
+                assert bias > -2.5
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_uncalibrated_source_calibrates_on_first_update(self, kind: str, rng: np.random.Generator) -> None:
+        """An arm that never calibrated stays uncalibrated through the merge and calibrates on its first update."""
+        current = _make_calibrating_cmab(kind)
+        merged = edit_model_on_the_fly(current, _make_calibrating_cmab(kind))
+        assert not any(merged.actions[a].bias_calibrated for a in _CALIBRATION_ACTION_IDS)
+
+        merged.update(**_calibration_batch(kind, rng, first_batch=True))
+
+        assert all(merged.actions[a].bias_calibrated for a in _CALIBRATION_ACTION_IDS)
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_new_action_starts_uncalibrated(self, kind: str, rng: np.random.Generator) -> None:
+        """Only overlapping actions carry the flag; an action that exists only in the template is cold."""
+        current = _make_calibrating_cmab(kind, action_ids={"a1"})
+        current.update(**_calibration_batch(kind, rng, first_batch=True, action_ids={"a1"}))
+
+        merged = edit_model_on_the_fly(current, _make_calibrating_cmab(kind, action_ids={"a1", "a2"}))
+
+        assert merged.actions["a1"].bias_calibrated is True
+        assert merged.actions["a2"].bias_calibrated is False
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_reset_after_merge_clears_flag(self, kind: str, rng: np.random.Generator) -> None:
+        """``_reset`` is the intended way to recalibrate; it still works on a merged model."""
+        current = _make_calibrating_cmab(kind)
+        current.update(**_calibration_batch(kind, rng, first_batch=True))
+        merged = edit_model_on_the_fly(current, _make_calibrating_cmab(kind))
+
+        for action_id in _CALIBRATION_ACTION_IDS:
+            merged.actions[action_id]._reset()
+            assert merged.actions[action_id].bias_calibrated is False
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_template_without_calibration_resets_flag(self, kind: str, rng: np.random.Generator) -> None:
+        """A calibrated source merged into a template that turns calibration off is valid, with the flag cleared.
+
+        ``bias_calibrated=True`` requires ``calibrate_output_bias=True``, so carrying the flag over unchanged would make
+        the merged model invalid. The learned weights, including the bias, are still transferred.
+        """
+        current = _make_calibrating_cmab(kind)
+        current.update(**_calibration_batch(kind, rng, first_batch=True))
+
+        merged = edit_model_on_the_fly(current, _make_calibrating_cmab(kind, calibrate_output_bias=False))
+
+        for action_id in _CALIBRATION_ACTION_IDS:
+            assert merged.actions[action_id].calibrate_output_bias is False
+            assert merged.actions[action_id].bias_calibrated is False
+            assert _output_bias_mu(merged, action_id) == _output_bias_mu(current, action_id)
+
+    @staticmethod
+    def _make_mo(calibrate_output_bias: bool, bias_calibrated: bool) -> CmabBernoulliMO:
+        """CmabBernoulliMO.cold_start does not expose the calibration options, so set them on each objective."""
+        mab = CmabBernoulliMO.cold_start(action_ids={_ACTION_ID}, n_objectives=2, n_features=_N_FEATURES)
+        for objective_model in mab.actions[_ACTION_ID].models:
+            objective_model.calibrate_output_bias = calibrate_output_bias
+            objective_model.bias_calibrated = bias_calibrated
+        return mab
+
+    def test_flag_is_transferred_per_objective_for_mo(self) -> None:
+        """Multi-objective models transfer the flag for every objective."""
+        current = self._make_mo(calibrate_output_bias=True, bias_calibrated=True)
+        template = self._make_mo(calibrate_output_bias=True, bias_calibrated=False)
+
+        merged = edit_model_on_the_fly(current, template)
+
+        assert [m.bias_calibrated for m in merged.actions[_ACTION_ID].models] == [True, True]
+
+    def test_template_without_calibration_resets_flag_per_objective_for_mo(self) -> None:
+        """A calibrated multi-objective source merged into a non-calibrating template is valid, flags cleared."""
+        current = self._make_mo(calibrate_output_bias=True, bias_calibrated=True)
+        template = self._make_mo(calibrate_output_bias=False, bias_calibrated=False)
+
+        merged = edit_model_on_the_fly(current, template)
+
+        assert [m.bias_calibrated for m in merged.actions[_ACTION_ID].models] == [False, False]
+
+    @pytest.mark.parametrize("model_cls", [BaseBayesianNeuralNetwork, GaussianBayesianNeuralNetwork])
+    def test_bias_calibrated_is_declared_learned_state(self, model_cls: type) -> None:
+        """Guard: the flag must stay in the accumulated learned keys of every BNN class, once."""
+        assert model_cls.transfer_learned_keys.count("bias_calibrated") == 1
+
+    # --- End to end: the scenario reported in BRAIN-21792 and the OptX update loop that triggers it ---
+
+    @pytest.mark.parametrize("kind", ["bernoulli", "gaussian_fixed"])
+    def test_ticket_reproduction(self, kind: str) -> None:
+        """The reproduction script from BRAIN-21792, with its observed values as the failure thresholds.
+
+        Observed on pybandits 8.4.0: after the merge the flag was False and the second update re-calibrated the bias to
+        the second batch's statistic (CmabGaussian: -5.0, the batch mean; CmabBernoulli: 13.82 = logit(1 - eps) on an
+        all-ones batch).
+        """
+        rng = np.random.default_rng(0)
+        context = rng.normal(size=(40, 2))
+        actions = ["a"] * 40
+        if kind == "bernoulli":
+
+            def make() -> CmabBernoulli:
+                return CmabBernoulli.cold_start(
+                    action_ids={"a", "b"}, n_features=2, calibrate_output_bias=True, update_kwargs={"num_steps": 2}
+                )
+
+            first_rewards, second_rewards = rng.integers(0, 2, 40).tolist(), [1] * 40
+        else:
+
+            def make() -> CmabGaussian:
+                return CmabGaussian.cold_start(
+                    action_ids={"a", "b"},
+                    n_features=2,
+                    calibrate_output_bias=True,
+                    reward_loc=0.0,
+                    reward_scale=1.0,
+                    update_kwargs={"num_steps": 2},
+                )
+
+            first_rewards, second_rewards = rng.normal(5, 1, 40).tolist(), rng.normal(-5, 1, 40).tolist()
+
+        mab = make()
+        mab.update(context=context, actions=actions, rewards=first_rewards)
+        assert mab.actions["a"].bias_calibrated is True
+
+        merged = edit_model_on_the_fly(type(mab).from_state(mab.get_state()[1]), make())
+        assert merged.actions["a"].bias_calibrated is True  # 8.4.0: False
+
+        merged.update(context=context, actions=actions, rewards=second_rewards)
+        bias = _output_bias_mu(merged, "a")[0]
+        if kind == "bernoulli":
+            assert bias < 5.0  # 8.4.0: 13.82
+        else:
+            assert bias > 0.0  # 8.4.0: -5.0
+
+    @pytest.mark.parametrize("kind", _CALIBRATION_KINDS)
+    def test_each_arm_calibrates_exactly_once_across_update_cycles(
+        self, kind: str, rng: np.random.Generator, monkeypatch: MonkeyPatch, n_cycles: int = 4
+    ) -> None:
+        """The OptX loop: serialize the deployed model, reload it, merge it into a fresh template, update. Repeat.
+
+        Batches alternate between far-apart statistics, and a third arm joins the template in the second cycle. Every
+        arm must calibrate exactly once over the whole run: on its own first update, never again after a merge.
+        """
+        calibrated_arms: List[str] = []
+        model_cls = type(_make_calibrating_cmab(kind).actions["a1"])
+        owner = next(cls for cls in model_cls.__mro__ if "_calibrate_output_bias" in cls.__dict__)
+        original_calibrate = owner.__dict__["_calibrate_output_bias"]
+
+        def counting_calibrate(self, rewards):
+            if not self.bias_calibrated and len(rewards) > 0:
+                calibrated_arms.append(arm_by_model[id(self)])
+            return original_calibrate(self, rewards)
+
+        monkeypatch.setattr(owner, "_calibrate_output_bias", counting_calibrate)
+
+        action_ids = {"a1", "a2"}
+        mab = _make_calibrating_cmab(kind, action_ids=action_ids)
+        for cycle in range(n_cycles):
+            if cycle > 0:
+                if cycle == 1:
+                    action_ids = action_ids | {"a3"}
+                reloaded = type(mab).from_state(mab.get_state()[1])
+                mab = edit_model_on_the_fly(reloaded, _make_calibrating_cmab(kind, action_ids=action_ids))
+                for action_id, model in mab.actions.items():
+                    assert model.bias_calibrated is (action_id != "a3" or cycle > 1)
+            arm_by_model = {id(model): action_id for action_id, model in mab.actions.items()}
+            mab.update(**_calibration_batch(kind, rng, first_batch=cycle % 2 == 0, action_ids=action_ids))
+
+        assert sorted(calibrated_arms) == ["a1", "a2", "a3"]
