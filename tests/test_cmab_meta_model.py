@@ -265,6 +265,9 @@ class TestCmabMetaModel:
     # hypothesis-generated per test.
     l2_anchoring_disabled = 0.0
     lr_freeze = 0.0
+    # decay_factor forgetting: each update after the first widens the head posterior by 1 / decay_factor.
+    decay_factor = 0.5
+    n_decay_updates = 3
     # One raw-context column carrying integer category codes, for the backbone's one-hot expansion.
     categorical_features = {0: 3}
     # Smallest cardinality whose derived embedding_dim isn't 1 — derived from the rule itself (as
@@ -291,8 +294,9 @@ class TestCmabMetaModel:
         l2_anchoring: float = 0.0,
         lr: Optional[float] = None,
         categorical_features: Optional[dict] = None,
+        head_kwargs: Optional[dict] = None,
     ) -> CmabMetaModelSO:
-        """Build a meta-model, optionally with a shared backbone and/or a minibatch ``batch_size``.
+        """Build a meta-model, optionally with a shared backbone, a minibatch ``batch_size`` and extra ``head_kwargs``.
 
         The backbone's own knobs live on the ``MLPBackbone``, so they go to its ``cold_start`` here
         rather than into the meta-model's own ``kwargs``.
@@ -305,6 +309,7 @@ class TestCmabMetaModel:
             "hidden_dim_list": self.hidden,
             "update_kwargs": update_kwargs,
             "random_seed": self.meta_seed,
+            **(head_kwargs or {}),
         }
         if with_backbone:
             kwargs["backbone"] = MLPBackbone.cold_start(
@@ -431,6 +436,26 @@ class TestCmabMetaModel:
         assert not np.allclose(mu_before, self._head_mu(meta, "a"))
         if soft:
             self._assert_not_truncated(meta, actions, rewards, context, with_backbone=True, batch_size=batch_size)
+
+    @pytest.mark.parametrize("with_backbone", [False, True])
+    def test_update_applies_bias_calibration_and_decay(self, with_backbone: bool, rng: np.random.Generator) -> None:
+        """``calibrate_output_bias`` and ``decay_factor`` take effect with and without a shared backbone (#166).
+
+        The first update calibrates the output bias; each later one widens the head posterior by
+        ``1 / decay_factor`` before refitting, so the (barely-trained) output-bias sigma grows by about that factor.
+        """
+        meta = self._build_meta(
+            with_backbone=with_backbone,
+            head_kwargs={"decay_factor": self.decay_factor, "calibrate_output_bias": True},
+        )
+        sigmas = []
+        for _ in range(self.n_decay_updates):
+            meta.update(*self._balanced_batch(rng))
+            sigmas.append(np.mean(meta.actions["a"].model_params.bnn_layer_params[-1].bias.params["sigma"]))
+        assert meta.actions["a"].bias_calibrated
+        # Halfway between no inflation (ratio 1) and full inflation (1 / decay_factor).
+        min_ratio = (1 + 1 / self.decay_factor) / 2
+        assert all(later / earlier > min_ratio for earlier, later in zip(sigmas, sigmas[1:]))
 
     @settings(deadline=None, max_examples=5)
     @given(l2_anchoring=st.floats(min_value=1e4, max_value=1e8, allow_nan=False, allow_infinity=False))
