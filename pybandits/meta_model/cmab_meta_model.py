@@ -480,6 +480,15 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
             model = functools.partial(self._full_batch_model, arm_q=arm_q, declare_backbone=declare_backbone)
             model_args = (x, arm_data)
 
+        # The joint pass bypasses each head's _fit, so apply its pre-fit prior adjustments (bias calibration,
+        # decay_factor forgetting) here: after the batch is validated (a rejected batch leaves the heads
+        # untouched) and before the guide seeds from, and the model traces, the head posteriors.
+        # ponytail: backbone weights are point estimates (no variance), so decay_factor does not touch them.
+        for arm, rows in arm_to_rows.items():
+            arm_rewards = rewards_arr[rows]
+            for bnn, obj_index, _ in self._arm_units(self.actions[arm]):
+                bnn._prepare_prior((arm_rewards if obj_index is None else arm_rewards[:, obj_index]).tolist())
+
         guide = self._build_joint_guide(model, batch_arms)
         epoch_factor_arrays = representative_bnn.build_kl_annealing_factors(
             representative_bnn.compute_epoch_steps(n_samples)
@@ -941,7 +950,11 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
                 for i, sub in enumerate(head.models):
                     sub.record_rewards(arm_rewards[:, i].tolist())
             else:  # BNN or quantitative head — both BaseModelSO that own their counters
-                head.record_rewards(np.asarray(rewards_arr[rows]).reshape(-1).tolist())
+                arm_rewards = np.asarray(rewards_arr[rows]).reshape(-1).tolist()
+                head.record_rewards(arm_rewards)
+                if isinstance(head, BaseQuantitativeBayesianNeuralNetwork):
+                    # As in the no-backbone path (head.bnn.update), so the inner BNN's _is_first_fit advances.
+                    head.bnn.record_rewards(arm_rewards)
 
 
 # Module-level aliases for concrete parameterisations (required for pickling; see meta_model.py).

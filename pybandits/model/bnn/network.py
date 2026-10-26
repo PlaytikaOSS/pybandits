@@ -1490,16 +1490,25 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         y_jnp = jnp.asarray(self.prepare_rewards(rewards), dtype=self.reward_dtype)
         n_samples = _context.shape[0]
 
+        self._prepare_prior(rewards)
+        self.model_params.bnn_layer_params = self._extract_vi_params(x_jnp, y_jnp, n_samples)
+
+    def _prepare_prior(self, rewards: List[Any]) -> None:
+        """Adjust the stored posterior before it is used as the prior of the next fit.
+
+        Shared by :meth:`_fit` and the joint cMAB engine (which bypasses ``_fit``): calibrates the
+        output bias once, then applies ``decay_factor`` forgetting (widen the current posterior so
+        fresh data dominates old evidence; no-op on the first fit, when there is nothing to inflate).
+
+        Parameters
+        ----------
+        rewards : List[Any]
+            Rewards of the upcoming fit (used for the one-off bias calibration).
+        """
         if self.calibrate_output_bias:
             self._calibrate_output_bias(rewards)
-
-        # Forgetting: widen the current posterior (used as the prior for this fit) before re-fitting,
-        # so fresh data dominates old evidence. No-op on the first fit (no posterior to inflate yet),
-        # and no-op when decay_factor is None or 1.
         if not self._is_first_fit:
             self._inflate_prior_variance()
-
-        self.model_params.bnn_layer_params = self._extract_vi_params(x_jnp, y_jnp, n_samples)
 
     def _inflate_prior_variance(self):
         """
