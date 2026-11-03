@@ -108,7 +108,7 @@
   <section id="Contextual-Multi-Armed-Bandit">
 <h1>Contextual Multi-Armed Bandit<a class="headerlink" href="#Contextual-Multi-Armed-Bandit" title="Link to this heading"></a></h1>
 <p>For the contextual multi-armed bandit (cMAB) when user information is available (context), we implemented a generalisation of Thompson sampling algorithm (<a class="reference external" href="https://arxiv.org/pdf/1209.3352.pdf">Agrawal and Goyal, 2014</a>) based on NumPyro.</p>
-<img alt="title" src="../_images/cmab.png" />
+<p><img alt="title" src="../_images/cmab.png" /></p>
 <p>The following notebook contains an example of usage of the classes <code class="docutils literal notranslate"><span class="pre">CmabBernoulli</span></code> (binary rewards) and <code class="docutils literal notranslate"><span class="pre">CmabGaussian</span></code> (continuous, real-valued rewards), which implement the algorithm above.</p>
 <p>pybandits supports three kinds of reward for contextual bandits:</p>
 <table class="docutils align-default">
@@ -157,7 +157,7 @@
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.10/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+/home/runner/.cache/pypoetry/virtualenvs/pybandits-vYJB-miV-py3.11/lib/python3.11/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
   from .autonotebook import tqdm as notebook_tqdm
 </pre></div></div>
 </div>
@@ -188,16 +188,16 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 X: context matrix of shape (n_samples, n_features)
-[[ 0.12135931  0.7932286  -0.97876958 -0.19186166  0.46031655]
- [-0.48143622 -0.60405251 -0.75807472  0.12327123 -0.28763119]
- [ 0.05267735  0.02202056  0.74354102 -0.21722907  0.04280268]
- [-0.49185981  0.85983052  0.6150338   0.80348116 -0.10500362]
- [ 0.1002745   0.03484211  0.58917856  0.62073068  0.97756994]
- [-0.51023389  0.78999279 -0.84070473  0.10425247  0.09521078]
- [-0.1036125   0.94615201  0.62469445 -0.68059511 -0.7193617 ]
- [ 0.52066512  0.35472705  0.34470619  0.0019256  -0.90082578]
- [-0.62849445 -0.3750412   0.11357752  0.28097617  0.47735489]
- [-0.18127756  0.65066117  0.57446336 -0.80516137 -0.77192131]]
+[[-0.04520411  0.11866166 -0.88858723 -0.37230475 -0.11339049]
+ [ 0.2761333  -0.49584462 -0.32336224  0.12499469  0.49991157]
+ [-0.120842    0.50770024  0.12687119 -0.5332954   0.86748585]
+ [ 0.8269659  -0.94782934 -0.56193085  0.01340157 -0.72979923]
+ [-0.27832287  0.80340657  0.50317123  0.39990374 -0.724553  ]
+ [ 0.5566237   0.08223254 -0.05638805 -0.15656456 -0.36011973]
+ [ 0.24382619  0.49239723  0.79204498  0.07348191  0.42640508]
+ [ 0.55533051 -0.41039486  0.18011876  0.47303363  0.33918991]
+ [-0.95730148  0.33329882  0.86534843  0.20590677 -0.46451092]
+ [ 0.93697888  0.49739418  0.73118251  0.99603057 -0.40578028]]
 </pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
@@ -254,7 +254,7 @@ X: context matrix of shape (n_samples, n_features)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a1&#39;]
+Recommended action: [&#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;]
 </pre></div></div>
 </div>
 <p>Now, we observe the rewards and the context from the environment. In this example rewards and the context are randomly simulated.</p>
@@ -273,7 +273,7 @@ Recommended action: [&#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#3
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [1, 1, 0, 1, 1, 1, 0, 0, 0, 1]
+Simulated rewards: [0, 0, 0, 1, 1, 1, 1, 0, 1, 1]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each action sample: (i) its context <span class="math notranslate nohighlight">\(x_t\)</span> (ii) the action <span class="math notranslate nohighlight">\(a_t\)</span> selected by the bandit, (iii) the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -367,9 +367,9 @@ set <code class="docutils literal notranslate"><span class="pre">fit_reward_stan
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Recommended action: [&#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;]
-Sampled mean rewards: {&#39;a2&#39;: np.float64(0.10832409686856492), &#39;a1&#39;: np.float64(-0.2378630159232853)}
-Noise std: {&#39;a2&#39;: np.float64(0.8680683026142404), &#39;a1&#39;: np.float64(1.6248297831040581)}
+Recommended action: [&#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;, &#39;a2&#39;, &#39;a1&#39;]
+Sampled mean rewards: {&#39;a1&#39;: np.float64(0.10832409686856492), &#39;a2&#39;: np.float64(-0.2378630159232853)}
+Noise std: {&#39;a1&#39;: np.float64(0.8680683026142404), &#39;a2&#39;: np.float64(1.6248297831040581)}
 </pre></div></div>
 </div>
 <p>We now observe the (continuous) rewards of the selected actions. Here they are simulated from the true model above.</p>
@@ -389,7 +389,7 @@ Noise std: {&#39;a2&#39;: np.float64(0.8680683026142404), &#39;a1&#39;: np.float
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Simulated rewards: [ 1.38  2.41  1.81 -0.72  3.4   2.39  2.32  2.52  1.35  0.52]
+Simulated rewards: [ 1.48  0.11  3.34  2.88 -1.37  0.46  1.82  0.    1.78  2.64]
 </pre></div></div>
 </div>
 <p>Finally, we update the model providing per each sample the context <span class="math notranslate nohighlight">\(x_t\)</span>, the selected action <span class="math notranslate nohighlight">\(a_t\)</span> and the corresponding reward <span class="math notranslate nohighlight">\(r_t\)</span>.</p>
@@ -428,7 +428,7 @@ Simulated rewards: [ 1.38  2.41  1.81 -0.72  3.4   2.39  2.32  2.52  1.35  0.52]
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Share of best-action recommendations: 0.94
-Sampled mean rewards (first context): {&#39;a2&#39;: np.float64(1.8250167179180685), &#39;a1&#39;: np.float64(1.1410836311981258)}
+Sampled mean rewards (first context): {&#39;a1&#39;: np.float64(1.476520062485523), &#39;a2&#39;: np.float64(1.3995844905219077)}
 </pre></div></div>
 </div>
 </section>
