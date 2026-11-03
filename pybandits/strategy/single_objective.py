@@ -21,12 +21,11 @@
 # SOFTWARE.
 
 from random import random
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Self, Tuple, Union
 
 import numpy as np
 from loguru import logger
 from pydantic import field_validator, validate_call
-from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, UnifiedActionId
 from pybandits.base_model import BaseModel, BaseModelDP

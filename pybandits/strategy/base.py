@@ -21,11 +21,10 @@
 # SOFTWARE.
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, ClassVar, Dict, List, Optional, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Self, TypeVar, Union
 
 import numpy as np
 from pydantic import field_validator, validate_call
-from typing_extensions import Self
 
 from pybandits.base import ActionId, Float01, PyBanditsBaseModel, UnifiedActionId
 from pybandits.base_model import BaseModel

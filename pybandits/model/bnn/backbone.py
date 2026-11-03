@@ -30,12 +30,11 @@ It shares its activation field, maps and resolvers with the Bayesian heads via :
 """
 
 import warnings
-from typing import Any, ClassVar, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Self, Tuple
 
 import jax.numpy as jnp
 import numpy as np
 from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
-from typing_extensions import Self
 
 from pybandits.model.bnn._dnn import DNNMixin
 from pybandits.model.bnn._svi import forward_layers
