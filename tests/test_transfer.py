@@ -1526,7 +1526,7 @@ class TestGaussianTransfer:
 
 
 # ---------------------------------------------------------------------------
-# bias_calibrated flag (BRAIN-21792)
+# bias_calibrated flag
 # ---------------------------------------------------------------------------
 _CALIBRATION_ACTION_IDS = {"a1", "a2"}
 _CALIBRATION_N_SAMPLES = 40
