@@ -28,6 +28,7 @@ from typing import (
     List,
     NewType,
     Optional,
+    Self,
     Set,
     Tuple,
     Union,
@@ -46,7 +47,6 @@ from pydantic import (
     conint,
     constr,
 )
-from typing_extensions import Self
 
 ActionId = NewType("ActionId", constr(min_length=1))
 QuantitativeActionId = Tuple[ActionId, Tuple[float, ...]]
