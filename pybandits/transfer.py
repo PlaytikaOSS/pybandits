@@ -37,7 +37,7 @@ from pybandits.base_model import BaseModelMO, BaseModelSO
 from pybandits.cmab import BaseCmabBernoulli
 from pybandits.mab import BaseMab
 from pybandits.model import BaseBayesianNeuralNetwork
-from pybandits.quantitative_model import QuantitativeModel
+from pybandits.quantitative_model import BaseQuantitativeBayesianNeuralNetwork, QuantitativeModel
 
 
 def _pick_learned_state(source_state: Dict[str, Any], model_cls: Type[BaseModelSO]) -> Dict[str, Any]:
@@ -56,6 +56,37 @@ def _pick_learned_state(source_state: Dict[str, Any], model_cls: Type[BaseModelS
         Subset of source_state containing only the declared learned keys.
     """
     return {k: source_state[k] for k in model_cls.transfer_learned_keys if k in source_state}
+
+
+def _reconcile_bias_calibrated(merged_state: Dict[str, Any], source_model: BaseModelSO) -> Dict[str, Any]:
+    """Protect a transferred BNN bias from initialization once rewards have been observed.
+
+    ``bias_calibrated`` is learned state and comes from the source, while ``calibrate_output_bias`` is configuration
+    and comes from the template. A model rejects ``bias_calibrated=True`` without ``calibrate_output_bias=True``,
+    so a calibrated source merged into a template that turns calibration off would otherwise fail validation.
+    When calibration is enabled, the source's reward counters distinguish a learned bias from a cold one.
+    Those counters survive serialization and calibration being disabled, so enabling calibration again must
+    not overwrite a trained bias. Gaussian models expose the same distinction through ``_is_first_fit``.
+
+    Parameters
+    ----------
+    merged_state : Dict[str, Any]
+        Single-objective action state: the template's configuration with the source's learned state applied.
+        States of models without a ``bias_calibrated`` field are returned unchanged.
+    source_model : BaseModelSO
+        Source model supplying the calibration flag and reward history.
+
+    Returns
+    -------
+    Dict[str, Any]
+        The same state, with calibration suppressed for learned biases and disabled templates kept valid.
+    """
+    if isinstance(source_model, BaseBayesianNeuralNetwork):
+        merged_state["bias_calibrated"] = bool(
+            merged_state.get("calibrate_output_bias")
+            and (source_model.bias_calibrated or not source_model._is_first_fit)
+        )
+    return merged_state
 
 
 def _get_state_dict(mab: BaseMab) -> Dict[str, Any]:
@@ -210,6 +241,8 @@ def _validate_model_compatibility(
             _validate_single_objective_model(src_obj, tgt_obj, action_id, str(obj_idx))
     else:
         _validate_single_objective_model(source_model, target_model, action_id)
+        if isinstance(source_model, BaseQuantitativeBayesianNeuralNetwork):
+            _validate_single_objective_model(source_model.bnn, target_model.bnn, action_id)
 
 
 def _transfer_learned_state(
@@ -223,6 +256,9 @@ def _transfer_learned_state(
     but replaces learned state with values from source. The set of parameters
     that counts as learned state is determined by the model class itself via
     get_transfer_learned_params().
+
+    Multi-objective heads and the inner network of a quantitative BNN use the same transfer rules,
+    retaining the template's configuration while protecting each source network's learned bias.
 
     Since we work with state dicts from JSON serialization, objects are already
     independent copies, so we don't need deepcopy.
@@ -247,7 +283,7 @@ def _transfer_learned_state(
     if isinstance(model_instance, BaseModelMO):
         # MO: transfer learned state per objective using each objective's model class
         result["models"] = [
-            {**tgt_obj, **_pick_learned_state(src_obj, type(obj_model))}
+            _transfer_learned_state(tgt_obj, src_obj, obj_model)
             for obj_model, src_obj, tgt_obj in zip(
                 model_instance.models, source_action_state["models"], target_action_state["models"]
             )
@@ -255,6 +291,11 @@ def _transfer_learned_state(
     else:
         # SO: use the model class's declared transferable keys
         result.update(_pick_learned_state(source_action_state, type(model_instance)))
+        _reconcile_bias_calibrated(result, model_instance)
+        if isinstance(model_instance, BaseQuantitativeBayesianNeuralNetwork):
+            result["bnn"] = _transfer_learned_state(
+                target_action_state["bnn"], source_action_state["bnn"], model_instance.bnn
+            )
 
     return result
 
@@ -275,7 +316,7 @@ def _merge_mabs(
     - Actions: Only actions from mab2 (mab2 defines the final action set)
     - Configuration: All parameters (epsilon, delta, update_kwargs, etc.) from mab2
     - Learned state: For overlapping actions, transferable parameters (n_successes,
-      n_failures, model_params) from mab1
+      n_failures, model_params, bias_calibrated) from mab1
     - Strategy: From mab2
 
     Parameters
@@ -675,6 +716,8 @@ def _expand_with_template_weights(
     for action_id in set(current_cmab.actions.keys()) & set(template_cmab.actions.keys()):
         src_model = current_cmab.actions[action_id]
         tgt_model = template_cmab.actions[action_id]
+        if isinstance(src_model, BaseQuantitativeBayesianNeuralNetwork):
+            src_model, tgt_model = src_model.bnn, tgt_model.bnn
         if isinstance(src_model, BaseModelMO):
             if len(src_model.models) != len(tgt_model.models):
                 raise ValueError(
@@ -717,7 +760,9 @@ def _expand_with_template_weights(
                     action_id,
                     model_idx,
                 )
-        elif isinstance(action_model, BaseBayesianNeuralNetwork):
+        elif isinstance(action_model, (BaseBayesianNeuralNetwork, BaseQuantitativeBayesianNeuralNetwork)):
+            if isinstance(action_model, BaseQuantitativeBayesianNeuralNetwork):
+                current_action, template_action = current_action["bnn"], template_action["bnn"]
             # Single-objective BNN
             _expand_bnn_weights(
                 current_action["model_params"],
@@ -792,7 +837,10 @@ def edit_model_on_the_fly(
     - Actions: All actions from new_mab
     - Configuration: All parameters from new_mab (epsilon, delta, update_kwargs, etc.)
     - Learned state: For actions that exist in both MABs, transferable parameters
-      (n_successes, n_failures, model_params) from current_mab
+      (n_successes, n_failures, model_params, bias_calibrated) from current_mab. ``bias_calibrated`` is
+      cleared if new_mab does not calibrate the output bias (``calibrate_output_bias=False``). When calibration
+      is enabled, transferred biases with observed rewards are marked calibrated to prevent reinitialization.
+      Cold arms still calibrate on their first update. This also applies per objective and to quantitative BNNs.
     - Strategy: From new_mab
     - Input features (CMAB): Existing features from current_mab + new features from template
 
