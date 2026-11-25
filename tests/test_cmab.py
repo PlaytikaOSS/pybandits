@@ -1665,6 +1665,10 @@ _GAUSSIAN_BAD_REWARDS = [float("nan"), float("inf"), -float("inf")]
 _GAUSSIAN_OUT_OF_RANGE_SOFT_REWARD = 2.5
 _GAUSSIAN_DELTA = 0.1
 _GAUSSIAN_EPSILON = 0.1
+_GAUSSIAN_INFLATION_FACTOR = 2.5
+_GAUSSIAN_SELECTIVE_INFLATION_FACTOR = 1.5
+_GAUSSIAN_LAST_LAYER_SCOPE = "last_layer"
+_GAUSSIAN_TARGET_ARM = "a"
 # Fixed identity standardization: train on the raw rewards.
 _GAUSSIAN_RAW_STANDARDIZATION: Dict[str, float] = {"reward_loc": 0.0, "reward_scale": 1.0}
 
@@ -1782,6 +1786,65 @@ class TestCmabGaussian:
             CmabGaussian.cold_start(
                 action_ids=action_ids, n_features=n_features, delta=delta, epsilon=epsilon, **raw_standardization
             )
+
+    @pytest.mark.parametrize(
+        "extra_kwargs",
+        [{}, _GAUSSIAN_BACKBONE_KWARGS],
+        ids=["no_backbone", "backbone"],
+    )
+    def test_inflate_posterior_and_first_fit_config_round_trip(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        extra_kwargs: Dict[str, Any],
+        rng: np.random.Generator,
+        n_per_round: int = _GAUSSIAN_N_PER_ROUND,
+        n_features: int = _GAUSSIAN_N_FEATURES,
+        short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
+        inflation_factor: float = _GAUSSIAN_INFLATION_FACTOR,
+        selective_factor: float = _GAUSSIAN_SELECTIVE_INFLATION_FACTOR,
+        scope: str = _GAUSSIAN_LAST_LAYER_SCOPE,
+        target_arm: str = _GAUSSIAN_TARGET_ARM,
+    ) -> None:
+        """First-fit inflation and explicit ``mab.inflate_posterior`` scale only the requested epistemic sigmas."""
+        base = make_cmab_gaussian(**short_fit_kwargs, **extra_kwargs)
+        inflated = make_cmab_gaussian(
+            first_fit_inflation_factor=inflation_factor,
+            first_fit_inflation_scope=scope,
+            **short_fit_kwargs,
+            **extra_kwargs,
+        )
+        context = rng.normal(size=(n_per_round, n_features))
+        arms = sorted(base.actions)
+        actions = [arms[i % len(arms)] for i in range(n_per_round)]
+        rewards = rng.normal(size=n_per_round).tolist()
+        base.update(actions=actions, rewards=rewards, context=context)
+        inflated.update(actions=actions, rewards=rewards, context=context)
+
+        for arm_id in arms:
+            base_layers = base.actions[arm_id].model_params.bnn_layer_params
+            infl_layers = inflated.actions[arm_id].model_params.bnn_layer_params
+            assert np.allclose(np.asarray(infl_layers[0].weight.sigma), np.asarray(base_layers[0].weight.sigma))
+            assert np.allclose(
+                np.asarray(infl_layers[-1].weight.sigma),
+                np.asarray(base_layers[-1].weight.sigma) * inflation_factor,
+            )
+            assert inflated.actions[arm_id].noise_log_sigma == base.actions[arm_id].noise_log_sigma
+
+        before_target = np.asarray(inflated.actions[target_arm].model_params.bnn_layer_params[-1].weight.sigma)
+        other_arm = next(a for a in arms if a != target_arm)
+        before_other = np.asarray(inflated.actions[other_arm].model_params.bnn_layer_params[-1].weight.sigma)
+        inflated.inflate_posterior(factor=selective_factor, scope=scope, actions={target_arm})
+        assert np.allclose(
+            np.asarray(inflated.actions[target_arm].model_params.bnn_layer_params[-1].weight.sigma),
+            before_target * selective_factor,
+        )
+        assert np.allclose(
+            np.asarray(inflated.actions[other_arm].model_params.bnn_layer_params[-1].weight.sigma),
+            before_other,
+        )
+        restored = CmabGaussian.from_state(inflated.get_state()[1])
+        assert restored.actions[target_arm].first_fit_inflation_factor == inflation_factor
+        assert restored.actions[target_arm].first_fit_inflation_scope == scope
 
 
 @pytest.mark.parametrize("use_soft_rewards", [False, True])

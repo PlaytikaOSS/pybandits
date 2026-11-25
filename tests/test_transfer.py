@@ -34,7 +34,7 @@ from pytest import MonkeyPatch
 
 import pybandits
 from pybandits.cmab import CmabBernoulli, CmabBernoulliMO, CmabGaussian
-from pybandits.model import BaseBayesianNeuralNetwork
+from pybandits.model import BaseBayesianNeuralNetwork, PosteriorInflationScope
 from pybandits.smab import SmabBernoulli, SmabBernoulliCC, SmabBernoulliMO
 from pybandits.strategy import (
     ClassicBandit,
@@ -1514,3 +1514,34 @@ class TestGaussianTransfer:
         current, template = (gaussian, bernoulli) if gaussian_is_source else (bernoulli, gaussian)
         with pytest.raises(TypeError, match="reward type"):
             edit_model_on_the_fly(current, template)
+
+    def test_transfer_updates_inflation_config_without_reinflating_trained_arms(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        rng: np.random.Generator,
+        existing_actions: set = _GAUSSIAN_ACTION_IDS,
+        n_features: int = _N_FEATURES,
+        update_kwargs: Dict[str, Any] = _GAUSSIAN_UPDATE_KWARGS,
+        standardizations: Dict[str, Dict[str, Any]] = _GAUSSIAN_STANDARDIZATIONS,
+    ) -> None:
+        """Template inflation config transfers to all arms while only newly added cold arms stay on first fit."""
+        mode = next(iter(standardizations))
+        new_arm = f"{next(iter(existing_actions))}_new"
+        inflation_factor = float(len(existing_actions))
+        scope: PosteriorInflationScope = "last_layer"
+        current = _update_with_continuous_rewards(make_cmab_gaussian(mode), rng)
+        template = CmabGaussian.cold_start(
+            action_ids=existing_actions | {new_arm},
+            n_features=n_features,
+            update_kwargs=update_kwargs,
+            first_fit_inflation_factor=inflation_factor,
+            first_fit_inflation_scope=scope,
+            **standardizations[mode],
+        )
+        merged = edit_model_on_the_fly(current, template)
+        for arm_id in existing_actions:
+            assert merged.actions[arm_id].first_fit_inflation_factor == inflation_factor
+            assert merged.actions[arm_id].first_fit_inflation_scope == scope
+            assert not merged.actions[arm_id]._is_first_fit
+        assert merged.actions[new_arm].first_fit_inflation_factor == inflation_factor
+        assert merged.actions[new_arm]._is_first_fit

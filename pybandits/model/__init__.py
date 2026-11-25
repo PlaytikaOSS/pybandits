@@ -42,6 +42,7 @@ from pybandits.model.bnn._guide import (
 from pybandits.model.bnn._typing import (
     ActivationFunctions,
     OptaxKind,
+    PosteriorInflationScope,
     VIMethods,
 )
 from pybandits.model.bnn.config import (
@@ -72,6 +73,7 @@ __all__ = [
     "VIMethods",
     "ActivationFunctions",
     "OptaxKind",
+    "PosteriorInflationScope",
     "Model",
     "ModelCC",
     "ModelDP",

@@ -30,6 +30,7 @@ _Array = Union[np.ndarray, jax.Array]
 VIMethods = Literal["advi", "fullrank_advi"]
 ActivationFunctions = Literal["tanh", "relu", "sigmoid", "gelu"]
 OptaxKind = Literal["optimizer", "lr_scheduler"]
+PosteriorInflationScope = Literal["all", "last_layer", "weights_only"]
 
 _LOGIT_CLIPPING_THRESHOLD = 15
 

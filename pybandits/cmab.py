@@ -21,10 +21,10 @@
 # SOFTWARE.
 
 from abc import ABC
-from typing import Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, Set, Union, cast
 
 import numpy as np
-from pydantic import validate_call
+from pydantic import PositiveFloat, validate_call
 
 from pybandits.actions_manager import (
     CmabActionsManager,
@@ -50,6 +50,7 @@ from pybandits.model import (
     BaseBayesianNeuralNetwork,
     BaseBayesianNeuralNetworkMO,
     FeaturesConfig,
+    PosteriorInflationScope,
 )
 from pybandits.strategy import (
     BestActionIdentificationBandit,
@@ -204,6 +205,26 @@ class BaseCmabBernoulli(BaseMab, ABC):
             rewards_memory=rewards_memory,
             context_memory=context_memory,
         )
+
+    @validate_call
+    def inflate_posterior(
+        self,
+        factor: PositiveFloat,
+        scope: PosteriorInflationScope = "all",
+        actions: Optional[Set[ActionId]] = None,
+    ) -> None:
+        """Scale epistemic posterior standard deviations across action heads.
+
+        Parameters
+        ----------
+        factor : PositiveFloat
+            Positive multiplier applied to epistemic ``sigma`` parameters.
+        scope : PosteriorInflationScope, default="all"
+            Parameter scope forwarded to :meth:`BaseBayesianNeuralNetwork.inflate_posterior`.
+        actions : Optional[Set[ActionId]], default=None
+            Subset of action IDs to inflate. ``None`` inflates every action head.
+        """
+        self.actions_manager.meta_model.inflate_posterior(factor=factor, scope=scope, actions=actions)
 
     @classmethod
     def update_old_state(cls, state: Dict[str, Serializable]) -> Dict[str, Serializable]:

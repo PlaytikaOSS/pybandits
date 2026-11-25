@@ -27,6 +27,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 from pydantic import (
     NonNegativeInt,
+    PositiveFloat,
     PositiveInt,
     validate_call,
 )
@@ -38,7 +39,7 @@ from pybandits.base import (
     QuantitativeWeight,
     Reward,
 )
-from pybandits.model import BayesianNeuralNetwork
+from pybandits.model import BayesianNeuralNetwork, PosteriorInflationScope
 from pybandits.quantitative_model.base import QuantitativeModel, QuantitativeModelCC, QuantitativeModelDP
 
 
@@ -85,7 +86,8 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
         base_model_cold_start_kwargs : Optional[Dict[str, Any]], optional
             Keyword arguments passed to BayesianNeuralNetwork.cold_start. May include e.g.
             hidden_dim_list, update_kwargs, dist_type, dist_params_init,
-            activation, use_residual_connections, use_layerwise_scaling, decay_factor. Default is None.
+            activation, use_residual_connections, use_layerwise_scaling, decay_factor,
+            first_fit_inflation_factor, first_fit_inflation_scope. Default is None.
         **kwargs
             Additional keyword arguments for the QuantitativeBayesianNeuralNetwork constructor.
 
@@ -279,6 +281,15 @@ class BaseQuantitativeBayesianNeuralNetwork(QuantitativeModel, ABC):
 
         bnn_input = self._prepare_network_input(list(quantities), _context)
         self.bnn.update(context=bnn_input, rewards=rewards)
+
+    @validate_call
+    def inflate_posterior(
+        self,
+        factor: PositiveFloat,
+        scope: PosteriorInflationScope = "all",
+    ) -> None:
+        """Scale epistemic posterior standard deviations on the underlying BNN."""
+        self.bnn.inflate_posterior(factor=factor, scope=scope)
 
     def _reset(self):
         """Reset the model to its initial state."""
