@@ -32,7 +32,7 @@ from hypothesis import strategies as st
 
 from pybandits.base import ActionId
 from pybandits.meta_model import CmabMetaModelMO, CmabMetaModelSO
-from pybandits.model import BayesianNeuralNetwork
+from pybandits.model import BayesianNeuralNetwork, PosteriorInflationScope
 from pybandits.model.bnn.backbone import MLPBackbone
 
 # Shared strategies for the backbone's architecture and its configuration knobs (the ones that must
@@ -268,6 +268,12 @@ class TestCmabMetaModel:
     # decay_factor forgetting: each update after the first widens the head posterior by 1 / decay_factor.
     decay_factor = 0.5
     n_decay_updates = 3
+    first_fit_inflation = 2.5
+    selective_inflation = 1.5
+    scope_last_layer: PosteriorInflationScope = "last_layer"
+    primary_arm = "a"
+    secondary_arm = "b"
+    unknown_arm = "unknown"
     # One raw-context column carrying integer category codes, for the backbone's one-hot expansion.
     categorical_features = {0: 3}
     # Smallest cardinality whose derived embedding_dim isn't 1 — derived from the rule itself (as
@@ -456,6 +462,84 @@ class TestCmabMetaModel:
         # Halfway between no inflation (ratio 1) and full inflation (1 / decay_factor).
         min_ratio = (1 + 1 / self.decay_factor) / 2
         assert all(later / earlier > min_ratio for earlier, later in zip(sigmas, sigmas[1:]))
+
+    @pytest.mark.parametrize("with_backbone", [False, True])
+    @pytest.mark.parametrize("scope", ["all", "last_layer", "weights_only"])
+    def test_first_fit_inflation_with_and_without_backbone(
+        self,
+        with_backbone: bool,
+        scope: PosteriorInflationScope,
+        rng: np.random.Generator,
+    ) -> None:
+        """``first_fit_inflation_factor`` scales head epistemic sigmas once, re-arms on ``reset()``, and leaves the backbone untouched."""
+        batch_1 = self._balanced_batch(rng)
+        batch_2 = self._balanced_batch(rng)
+        base = self._build_meta(with_backbone=with_backbone)
+        inflated = self._build_meta(
+            with_backbone=with_backbone,
+            head_kwargs={
+                "first_fit_inflation_factor": self.first_fit_inflation,
+                "first_fit_inflation_scope": scope,
+            },
+        )
+        base.update(*batch_1)
+        inflated.update(*batch_1)
+
+        if with_backbone:
+            for w_base, w_infl in zip(base.backbone.weight_arrays, inflated.backbone.weight_arrays):
+                np.testing.assert_array_equal(w_base, w_infl)
+            for b_base, b_infl in zip(base.backbone.bias_arrays, inflated.backbone.bias_arrays):
+                np.testing.assert_array_equal(b_base, b_infl)
+
+        base.inflate_posterior(factor=self.first_fit_inflation, scope=scope)
+        for arm_id in self.action_ids:
+            assert inflated.actions[arm_id].model_params == base.actions[arm_id].model_params
+
+        # Second update must not apply first-fit inflation again.
+        base.update(*batch_2)
+        inflated.update(*batch_2)
+        for arm_id in self.action_ids:
+            assert inflated.actions[arm_id].model_params == base.actions[arm_id].model_params
+
+        # After reset(), first-fit inflation re-arms for the next update.
+        base.reset()
+        inflated.reset()
+        base.update(*batch_1)
+        inflated.update(*batch_1)
+        if with_backbone:
+            for w_base, w_infl in zip(base.backbone.weight_arrays, inflated.backbone.weight_arrays):
+                np.testing.assert_array_equal(w_base, w_infl)
+            for b_base, b_infl in zip(base.backbone.bias_arrays, inflated.backbone.bias_arrays):
+                np.testing.assert_array_equal(b_base, b_infl)
+        base.inflate_posterior(factor=self.first_fit_inflation, scope=scope)
+        for arm_id in self.action_ids:
+            assert inflated.actions[arm_id].model_params == base.actions[arm_id].model_params
+
+    def test_inflate_posterior_subset_and_unknown_action_error(self) -> None:
+        """``CmabMetaModel.inflate_posterior`` supports selective arm sets and rejects unknown arm IDs."""
+        meta = self._build_meta(with_backbone=True)
+        bb_before = [w.copy() for w in meta.backbone.weight_arrays]
+        primary_before = np.asarray(meta.actions[self.primary_arm].model_params.bnn_layer_params[-1].weight.sigma)
+        secondary_before = np.asarray(meta.actions[self.secondary_arm].model_params.bnn_layer_params[-1].weight.sigma)
+
+        meta.inflate_posterior(
+            factor=self.selective_inflation,
+            scope=self.scope_last_layer,
+            actions={self.primary_arm},
+        )
+        assert np.allclose(
+            np.asarray(meta.actions[self.primary_arm].model_params.bnn_layer_params[-1].weight.sigma),
+            primary_before * self.selective_inflation,
+        )
+        assert np.allclose(
+            np.asarray(meta.actions[self.secondary_arm].model_params.bnn_layer_params[-1].weight.sigma),
+            secondary_before,
+        )
+        for w_before, w_after in zip(bb_before, meta.backbone.weight_arrays):
+            np.testing.assert_array_equal(w_before, w_after)
+
+        with pytest.raises(KeyError):
+            meta.inflate_posterior(factor=self.selective_inflation, actions={self.unknown_arm})
 
     @settings(deadline=None, max_examples=5)
     @given(l2_anchoring=st.floats(min_value=1e4, max_value=1e8, allow_nan=False, allow_infinity=False))

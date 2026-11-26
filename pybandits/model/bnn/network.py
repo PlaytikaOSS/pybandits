@@ -65,6 +65,7 @@ from pybandits.model.bnn._svi import forward_layers, run_svi
 from pybandits.model.bnn._typing import (
     ActivationFunctions,
     OptaxKind,
+    PosteriorInflationScope,
     _Array,
     _numpy_sigmoid,
 )
@@ -114,6 +115,14 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         the layer output dimension is greater than or equal to the input dimension (default is False).
     early_stopping_config : Optional[EarlyStoppingConfig], optional
         Configuration for early stopping during VI training. If None, no early stopping is used (default is None).
+    first_fit_inflation_factor : Optional[PositiveFloat], optional
+        One-shot epistemic posterior standard-deviation multiplier applied right after the first
+        non-empty fit (and again on the first fit after :meth:`reset`). Leaves means (``mu``),
+        Student-t ``nu``, and extra likelihood sites (e.g. ``noise_log_sigma``) untouched.
+        Default is None.
+    first_fit_inflation_scope : PosteriorInflationScope, optional
+        Which epistemic parameters ``first_fit_inflation_factor`` scales: ``"all"`` (default),
+        ``"last_layer"``, or ``"weights_only"``.
 
     Examples
     --------
@@ -217,6 +226,8 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     random_seed: Optional[NonNegativeInt] = None
     calibrate_output_bias: bool = False
     bias_calibrated: bool = False
+    first_fit_inflation_factor: Optional[PositiveFloat] = None
+    first_fit_inflation_scope: PosteriorInflationScope = "all"
 
     _rng_key: Any = PrivateAttr(default=None)
 
@@ -1491,6 +1502,87 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
         self._prepare_prior(rewards)
         self.model_params.bnn_layer_params = self._extract_vi_params(x_jnp, y_jnp, n_samples)
+        self._finalize_posterior(n_samples)
+
+    def _finalize_posterior(self, n_samples: int) -> None:
+        """Apply one-shot post-first-fit adjustments to the newly fitted posterior.
+
+        Shared by :meth:`_fit` and the joint cMAB engine (:meth:`CmabMetaModel._joint_svi_update`):
+        when ``first_fit_inflation_factor`` is set and this is the head's first non-empty fit
+        (``_is_first_fit`` is still ``True`` because reward counters advance after ``_update``),
+        scales the epistemic posterior standard deviations via :meth:`inflate_posterior`.
+
+        Parameters
+        ----------
+        n_samples : int
+            Number of observations fitted for this unit in the current update.
+        """
+        if self.first_fit_inflation_factor is not None and self._is_first_fit and n_samples > 0:
+            self.inflate_posterior(
+                factor=self.first_fit_inflation_factor,
+                scope=self.first_fit_inflation_scope,
+            )
+
+    @validate_call
+    def inflate_posterior(
+        self,
+        factor: PositiveFloat,
+        scope: PosteriorInflationScope = "all",
+    ) -> None:
+        """Scale epistemic posterior standard deviations (``sigma``) in place by ``factor``.
+
+        Widens (when ``factor > 1``) or narrows (when ``0 < factor < 1``) the stored variational
+        posterior without altering means (``mu``), Student-t degrees of freedom (``nu``), or
+        likelihood-specific extra sites such as :attr:`GaussianBayesianNeuralNetwork.noise_log_sigma`
+        (aleatoric reward noise). Useful right after a cold-start or full-history retrain, where
+        mean-field VI can over-concentrate epistemic weight posteriors and suppress Thompson
+        sampling exploration.
+
+        Parameters
+        ----------
+        factor : PositiveFloat
+            Positive multiplier applied to ``sigma``. ``1.0`` is a no-op.
+        scope : PosteriorInflationScope, default="all"
+            Which epistemic parameters to scale:
+            - ``"all"``: ``weight.sigma`` and ``bias.sigma`` on every layer, plus categorical
+              ``embedding_params.embeddings[*].sigma`` when present.
+            - ``"last_layer"``: ``weight.sigma`` and ``bias.sigma`` on the final readout layer
+              only (``bnn_layer_params[-1]``), leaving hidden layers and embeddings untouched so
+              readout perturbations do not compound through hidden nonlinearities.
+            - ``"weights_only"``: ``weight.sigma`` on every layer plus categorical embeddings,
+              leaving every layer's ``bias.sigma`` untouched.
+        """
+        self._scale_epistemic_sigma(factor=factor, scope=scope)
+
+    def _scale_epistemic_sigma(
+        self,
+        factor: float,
+        scope: PosteriorInflationScope = "all",
+    ) -> None:
+        """Multiply epistemic ``sigma`` arrays in place by ``factor`` according to ``scope``."""
+        if factor == 1:
+            return
+        target_layers = (
+            [self.model_params.bnn_layer_params[-1]] if scope == "last_layer" else self.model_params.bnn_layer_params
+        )
+        # Validate and build all scaled arrays before mutating so overflow/underflow leaves state intact.
+        scaled_layers = [
+            (
+                layer_params.weight.with_scaled_sigma(factor),
+                layer_params.bias.with_scaled_sigma(factor) if scope != "weights_only" else layer_params.bias,
+            )
+            for layer_params in target_layers
+        ]
+        scaled_embeddings = (
+            [emb.with_scaled_sigma(factor) for emb in self.model_params.embedding_params.embeddings]
+            if scope != "last_layer" and self.model_params.embedding_params is not None
+            else None
+        )
+        for layer_params, (new_weight, new_bias) in zip(target_layers, scaled_layers):
+            layer_params.weight = new_weight
+            layer_params.bias = new_bias
+        if scaled_embeddings is not None:
+            self.model_params.embedding_params.embeddings = scaled_embeddings
 
     def _prepare_prior(self, rewards: List[Any]) -> None:
         """Adjust the stored posterior before it is used as the prior of the next fit.
@@ -1512,7 +1604,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
     def _inflate_prior_variance(self):
         """
         Inflate the stored posterior variance before re-fitting, implementing per-update forgetting.
-        Every weight, bias, and embedding ``sigma`` is multiplied
+        Every weight, bias, embedding, and extra likelihood ``sigma`` is multiplied
         by ``1 / decay_factor``, widening the prior consumed by the next VI round so that fresh
         data dominates old evidence. The means (``mu``) and the Student-t degrees of freedom (``nu``)
         are left untouched. No-op when ``decay_factor`` is None or 1.
@@ -1520,18 +1612,7 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         if self.decay_factor is None or self.decay_factor == 1:
             return
         inflation = 1.0 / self.decay_factor
-        for layer_params in self.model_params.bnn_layer_params:
-            layer_params.weight = layer_params.weight.with_dist_parameters(
-                sigma=(np.asarray(layer_params.weight.params["sigma"]) * inflation).tolist()
-            )
-            layer_params.bias = layer_params.bias.with_dist_parameters(
-                sigma=(np.asarray(layer_params.bias.params["sigma"]) * inflation).tolist()
-            )
-        if self.model_params.embedding_params is not None:
-            self.model_params.embedding_params.embeddings = [
-                emb.with_dist_parameters(sigma=(np.asarray(emb.params["sigma"]) * inflation).tolist())
-                for emb in self.model_params.embedding_params.embeddings
-            ]
+        self._scale_epistemic_sigma(factor=inflation, scope="all")
         self._inflate_extra_params(inflation)
 
     @classmethod
@@ -1901,9 +1982,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
 
     def _inflate_extra_params(self, inflation: float) -> None:
         if self.noise_log_sigma is not None:
-            self.noise_log_sigma = self.noise_log_sigma.with_dist_parameters(
-                sigma=(self.noise_log_sigma.params["sigma"] * inflation).tolist()
-            )
+            self.noise_log_sigma = self.noise_log_sigma.with_scaled_sigma(inflation)
 
     @staticmethod
     def _noise_log_sigma_of(extra: Dict[str, Any], name: str) -> Any:
@@ -2141,6 +2220,16 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         """
         return self.models[0].hidden_dim_list
 
+    @validate_call
+    def inflate_posterior(
+        self,
+        factor: PositiveFloat,
+        scope: PosteriorInflationScope = "all",
+    ) -> None:
+        """Scale epistemic posterior standard deviations across every objective's BNN."""
+        for model in self.models:
+            model.inflate_posterior(factor=factor, scope=scope)
+
     @classmethod
     @validate_call
     def cold_start(
@@ -2157,6 +2246,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
         bias_std: Optional[PositiveFloat] = None,
         categorical_features: Optional[Dict[NonNegativeInt, NonNegativeInt]] = None,
         decay_factor: Optional[PositiveFloat01] = None,
+        first_fit_inflation_factor: Optional[PositiveFloat] = None,
+        first_fit_inflation_scope: PosteriorInflationScope = "all",
         **kwargs,
     ) -> Self:
         """
@@ -2189,6 +2280,10 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
             Categorical columns as ``{column_index: cardinality}``, forwarded to each per-objective BNN.
         decay_factor : Optional[PositiveFloat01]
             Per-update forgetting factor forwarded to each per-objective BNN.
+        first_fit_inflation_factor : Optional[PositiveFloat]
+            One-shot epistemic posterior standard-deviation multiplier forwarded to each per-objective BNN.
+        first_fit_inflation_scope : PosteriorInflationScope
+            Parameter scope for ``first_fit_inflation_factor``, forwarded to each per-objective BNN.
         **kwargs
             Additional keyword arguments.
 
@@ -2211,6 +2306,8 @@ class BaseBayesianNeuralNetworkMO(ModelMO, ABC):
                 bias_std=bias_std,
                 categorical_features=categorical_features,
                 decay_factor=decay_factor,
+                first_fit_inflation_factor=first_fit_inflation_factor,
+                first_fit_inflation_scope=first_fit_inflation_scope,
             )
             for _ in range(n_objectives)
         ]

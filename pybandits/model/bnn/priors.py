@@ -103,6 +103,30 @@ class BaseLocationScaleArray(PyBanditsBaseModel, ABC):
         updated_dict.update(kwargs)
         return self.__class__.model_validate(updated_dict)
 
+    def with_scaled_sigma(self, factor: float) -> Self:
+        """Return a new instance with ``sigma`` multiplied by ``factor``.
+
+        Parameters
+        ----------
+        factor : float
+            Positive multiplier applied to ``sigma``.
+
+        Returns
+        -------
+        Self
+            A new instance with scaled ``sigma`` and all other parameters preserved.
+
+        Raises
+        ------
+        ValueError
+            If scaling ``sigma`` overflows to non-finite values or underflows to non-positive values.
+        """
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            scaled = self.params["sigma"] * factor
+        if not np.all(np.isfinite(scaled)) or not np.all(scaled > 0):
+            raise ValueError(f"Scaling sigma by {factor} produced non-finite or non-positive values.")
+        return self.with_dist_parameters(sigma=scaled.tolist())
+
     def _draw(
         self, params: Dict[str, np.ndarray], rng: np.random.Generator, size: Optional[Tuple[int, ...]] = None
     ) -> np.ndarray:

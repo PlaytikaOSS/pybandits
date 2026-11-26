@@ -24,7 +24,7 @@
 
 import copy
 import json
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Set, Tuple
 
 import numpy as np
 import pytest
@@ -33,8 +33,9 @@ from hypothesis import strategies as st
 from pytest import MonkeyPatch
 
 import pybandits
+from pybandits.base import ActionId
 from pybandits.cmab import CmabBernoulli, CmabBernoulliMO, CmabGaussian
-from pybandits.model import BaseBayesianNeuralNetwork
+from pybandits.model import BaseBayesianNeuralNetwork, PosteriorInflationScope
 from pybandits.smab import SmabBernoulli, SmabBernoulliCC, SmabBernoulliMO
 from pybandits.strategy import (
     ClassicBandit,
@@ -1428,7 +1429,11 @@ class TestCategoricalFeatureExpansion:
 # ---------------------------------------------------------------------------
 # Gaussian (continuous-reward) cMAB
 # ---------------------------------------------------------------------------
-_GAUSSIAN_ACTION_IDS = {"a1", "a2"}
+_GAUSSIAN_ACTION_IDS: Set[ActionId] = {"a1", "a2"}
+_GAUSSIAN_NEW_ARM: ActionId = "a_new"
+_GAUSSIAN_INFLATION_FACTOR = 2.5
+_GAUSSIAN_INFLATION_SCOPE: PosteriorInflationScope = "last_layer"
+_GAUSSIAN_RANDOM_SEED = 7
 _GAUSSIAN_N_SAMPLES = 100
 _GAUSSIAN_REWARD_OFFSET = 3.0
 _GAUSSIAN_UPDATE_KWARGS: Dict[str, Any] = {"num_steps": 20}
@@ -1514,3 +1519,56 @@ class TestGaussianTransfer:
         current, template = (gaussian, bernoulli) if gaussian_is_source else (bernoulli, gaussian)
         with pytest.raises(TypeError, match="reward type"):
             edit_model_on_the_fly(current, template)
+
+    def test_transfer_updates_inflation_config_without_reinflating_trained_arms(
+        self,
+        make_cmab_gaussian: Callable[..., CmabGaussian],
+        rng: np.random.Generator,
+        existing_actions: Set[ActionId] = _GAUSSIAN_ACTION_IDS,
+        new_arm: ActionId = _GAUSSIAN_NEW_ARM,
+        inflation_factor: float = _GAUSSIAN_INFLATION_FACTOR,
+        scope: PosteriorInflationScope = _GAUSSIAN_INFLATION_SCOPE,
+        seed: int = _GAUSSIAN_RANDOM_SEED,
+        n_features: int = _N_FEATURES,
+        n_samples: int = _GAUSSIAN_N_SAMPLES,
+        reward_offset: float = _GAUSSIAN_REWARD_OFFSET,
+        update_kwargs: Dict[str, Any] = _GAUSSIAN_UPDATE_KWARGS,
+        standardizations: Dict[str, Dict[str, Any]] = _GAUSSIAN_STANDARDIZATIONS,
+    ) -> None:
+        """Template inflation config transfers to all arms while only newly added cold arms inflate on first fit."""
+        mode = next(iter(standardizations))
+        all_actions = existing_actions | {new_arm}
+        current = _update_with_continuous_rewards(make_cmab_gaussian(mode), rng)
+        template_base = CmabGaussian.cold_start(
+            action_ids=all_actions,
+            n_features=n_features,
+            update_kwargs=update_kwargs,
+            random_seed=seed,
+            **standardizations[mode],
+        )
+        template_inflated = CmabGaussian.cold_start(
+            action_ids=all_actions,
+            n_features=n_features,
+            update_kwargs=update_kwargs,
+            random_seed=seed,
+            first_fit_inflation_factor=inflation_factor,
+            first_fit_inflation_scope=scope,
+            **standardizations[mode],
+        )
+        merged_base = edit_model_on_the_fly(copy.deepcopy(current), template_base)
+        merged_inflated = edit_model_on_the_fly(copy.deepcopy(current), template_inflated)
+        for arm_id in all_actions:
+            assert merged_inflated.actions[arm_id].first_fit_inflation_factor == inflation_factor
+            assert merged_inflated.actions[arm_id].first_fit_inflation_scope == scope
+
+        arms_sorted = sorted(all_actions)
+        context = rng.normal(size=(n_samples, n_features))
+        actions = [arms_sorted[i % len(arms_sorted)] for i in range(n_samples)]
+        rewards = (rng.normal(size=n_samples) + reward_offset).tolist()
+        merged_base.update(context=context, actions=actions, rewards=rewards)
+        merged_inflated.update(context=context, actions=actions, rewards=rewards)
+
+        for arm_id in existing_actions:
+            assert merged_inflated.actions[arm_id].model_params == merged_base.actions[arm_id].model_params
+        merged_base.inflate_posterior(factor=inflation_factor, scope=scope, actions={new_arm})
+        assert merged_inflated.actions[new_arm].model_params == merged_base.actions[new_arm].model_params

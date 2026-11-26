@@ -44,7 +44,7 @@ import numpyro
 import optax
 from loguru import logger
 from numpyro.infer import TraceMeanField_ELBO
-from pydantic import ConfigDict, NonNegativeInt, PrivateAttr, model_validator
+from pydantic import ConfigDict, NonNegativeInt, PositiveFloat, PrivateAttr, model_validator, validate_call
 
 from pybandits.base import ActionId, Reward
 from pybandits.base_model import BaseModel
@@ -58,6 +58,7 @@ from pybandits.model import (
     BayesianNeuralNetworkMO,
     BayesianNeuralNetworkMOCC,
     GaussianBayesianNeuralNetwork,
+    PosteriorInflationScope,
 )
 from pybandits.model.bnn._guide import ParameterizedScaleAutoNormal
 from pybandits.model.bnn._svi import forward_layers, per_sample_linear, run_svi
@@ -400,6 +401,32 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
         for model in self.actions.values():
             model.reset()
 
+    @validate_call
+    def inflate_posterior(
+        self,
+        factor: PositiveFloat,
+        scope: PosteriorInflationScope = "all",
+        actions: Optional[Set[ActionId]] = None,
+    ) -> None:
+        """Scale epistemic posterior standard deviations across per-arm heads (leaving any shared backbone untouched).
+
+        Parameters
+        ----------
+        factor : PositiveFloat
+            Positive multiplier applied to epistemic ``sigma`` parameters.
+        scope : PosteriorInflationScope, default="all"
+            Parameter scope forwarded to :meth:`BaseBayesianNeuralNetwork.inflate_posterior`.
+        actions : Optional[Set[ActionId]], default=None
+            Subset of action IDs to inflate. ``None`` inflates every action head in ``self.actions``.
+        """
+        target_actions = set(self.actions) if actions is None else actions
+        unknown = target_actions - set(self.actions)
+        if unknown:
+            raise KeyError(f"Unknown action IDs: {sorted(unknown)}")
+        for arm in target_actions:
+            for bnn, _, _ in self._arm_units(self.actions[arm]):
+                bnn.inflate_posterior(factor=factor, scope=scope)
+
     # --------------------------------------------------------------------- joint SVI engine
     def _joint_svi_update(
         self,
@@ -510,6 +537,9 @@ class CmabMetaModel(BaseMetaModel, Generic[CmabHeadType]):
 
         for arm in batch_arms:
             self._store_head(self.actions[arm], site_mu, site_sigma, arm)
+            n_arm_samples = len(arm_to_rows[arm])
+            for bnn, _, _ in self._arm_units(self.actions[arm]):
+                bnn._finalize_posterior(n_arm_samples)
         self._store_backbone(params, n_bb_layers)
 
     def _get_joint_optimizer(self, representative_bnn: BaseBayesianNeuralNetwork, n_bb_layers: int) -> Any:

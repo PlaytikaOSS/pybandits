@@ -213,7 +213,7 @@ class ModelTestConfig:
             kwargs["n_objectives"] = n_objectives
         if any(isinstance(model, QuantitativeModel) for model in actions.values()):
             kwargs["base_model_cold_start_kwargs"] = base_model_cold_start_kwargs
-        if decay_factor is not None:
+        if decay_factor is not None and any(not isinstance(model, QuantitativeModel) for model in actions.values()):
             kwargs["decay_factor"] = decay_factor
         return smab, actions, kwargs
 

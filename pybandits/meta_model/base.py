@@ -279,7 +279,11 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
             quantitative_model_cold_start,
             action_general_kwargs,
             quantitative_action_general_kwargs,
-        ) = cls._extract_action_model_class_and_attributes(kwargs)
+        ) = cls._extract_action_model_class_and_attributes(
+            kwargs,
+            has_regular_actions=bool(inner_action_ids),
+            has_quantitative_actions=bool(inner_quantitative_action_ids),
+        )
         actions = {}
         for _action_ids, cold_start, general_kwargs, specific_kwargs in zip(
             [inner_action_ids, inner_quantitative_action_ids],
@@ -311,7 +315,10 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
 
     @classmethod
     def _extract_action_model_class_and_attributes(
-        cls, kwargs: Dict[str, Any]
+        cls,
+        kwargs: Dict[str, Any],
+        has_regular_actions: bool = True,
+        has_quantitative_actions: bool = True,
     ) -> Tuple[Callable, Callable, Dict[str, Any], Dict[str, Any]]:
         """Extract cold-start callables and their kwargs from the manager's ``kwargs`` dict."""
         action_model_classes = cls._action_model_classes
@@ -340,7 +347,11 @@ class BaseMetaModel(PyBanditsBaseModel, ABC):
             else:
                 raise TypeError(f"Unsupported action model class: {action_model_class}")
 
-        used_kwargs = (action_general_kwargs or {}) | (quantitative_action_general_kwargs or {})
+        used_kwargs = (action_general_kwargs if has_regular_actions and action_general_kwargs else {}) | (
+            quantitative_action_general_kwargs
+            if has_quantitative_actions and quantitative_action_general_kwargs
+            else {}
+        )
         for k in used_kwargs:
             kwargs.pop(k)
 
