@@ -464,14 +464,14 @@ class TestCmabMetaModel:
         assert all(later / earlier > min_ratio for earlier, later in zip(sigmas, sigmas[1:]))
 
     @pytest.mark.parametrize("with_backbone", [False, True])
-    @pytest.mark.parametrize("scope", ["all", "last_layer"])
+    @pytest.mark.parametrize("scope", ["all", "last_layer", "weights_only"])
     def test_first_fit_inflation_with_and_without_backbone(
         self,
         with_backbone: bool,
         scope: PosteriorInflationScope,
         rng: np.random.Generator,
     ) -> None:
-        """``first_fit_inflation_factor`` scales head epistemic sigmas once while leaving the backbone untouched."""
+        """``first_fit_inflation_factor`` scales head epistemic sigmas once, re-arms on ``reset()``, and leaves the backbone untouched."""
         batch_1 = self._balanced_batch(rng)
         batch_2 = self._balanced_batch(rng)
         base = self._build_meta(with_backbone=with_backbone)
@@ -498,6 +498,20 @@ class TestCmabMetaModel:
         # Second update must not apply first-fit inflation again.
         base.update(*batch_2)
         inflated.update(*batch_2)
+        for arm_id in self.action_ids:
+            assert inflated.actions[arm_id].model_params == base.actions[arm_id].model_params
+
+        # After reset(), first-fit inflation re-arms for the next update.
+        base.reset()
+        inflated.reset()
+        base.update(*batch_1)
+        inflated.update(*batch_1)
+        if with_backbone:
+            for w_base, w_infl in zip(base.backbone.weight_arrays, inflated.backbone.weight_arrays):
+                np.testing.assert_array_equal(w_base, w_infl)
+            for b_base, b_infl in zip(base.backbone.bias_arrays, inflated.backbone.bias_arrays):
+                np.testing.assert_array_equal(b_base, b_infl)
+        base.inflate_posterior(factor=self.first_fit_inflation, scope=scope)
         for arm_id in self.action_ids:
             assert inflated.actions[arm_id].model_params == base.actions[arm_id].model_params
 

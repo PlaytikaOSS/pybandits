@@ -23,7 +23,7 @@
 import json
 from copy import deepcopy
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, get_args
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union, get_args
 from unittest.mock import patch
 
 import numpy as np
@@ -1669,6 +1669,8 @@ _GAUSSIAN_INFLATION_FACTOR = 2.5
 _GAUSSIAN_SELECTIVE_INFLATION_FACTOR = 1.5
 _GAUSSIAN_LAST_LAYER_SCOPE = "last_layer"
 _GAUSSIAN_TARGET_ARM = "a"
+_QUANT_ONLY_ACTION_IDS: Set[ActionId] = {"q1", "q2"}
+_QUANT_TARGET_ARM: ActionId = "q1"
 # Fixed identity standardization: train on the raw rewards.
 _GAUSSIAN_RAW_STANDARDIZATION: Dict[str, float] = {"reward_loc": 0.0, "reward_scale": 1.0}
 
@@ -1861,3 +1863,30 @@ def test_bernoulli_bandit_still_rejects_out_of_range_rewards(
     )
     with pytest.raises(ValueError):
         mab.update(actions=[next(iter(mab.actions))], rewards=[reward], context=np.zeros((1, n_features)))
+
+
+def test_quantitative_only_cmab_rejects_top_level_regular_head_kwargs(
+    quantitative_action_ids: Set[ActionId] = _QUANT_ONLY_ACTION_IDS,
+    target_arm: ActionId = _QUANT_TARGET_ARM,
+    n_features: int = _GAUSSIAN_N_FEATURES,
+    inflation_factor: float = _GAUSSIAN_INFLATION_FACTOR,
+    scope: str = _GAUSSIAN_LAST_LAYER_SCOPE,
+) -> None:
+    """Quantitative-only cMAB rejects top-level regular-head kwargs and accepts them in ``base_model_cold_start_kwargs``."""
+    with pytest.raises(ValueError, match="Unknown arguments"):
+        CmabBernoulli.cold_start(
+            quantitative_action_ids=quantitative_action_ids,
+            n_features=n_features,
+            first_fit_inflation_factor=inflation_factor,
+        )
+
+    mab = CmabBernoulli.cold_start(
+        quantitative_action_ids=quantitative_action_ids,
+        n_features=n_features,
+        base_model_cold_start_kwargs={
+            "first_fit_inflation_factor": inflation_factor,
+            "first_fit_inflation_scope": scope,
+        },
+    )
+    assert mab.actions[target_arm].bnn.first_fit_inflation_factor == inflation_factor
+    assert mab.actions[target_arm].bnn.first_fit_inflation_scope == scope

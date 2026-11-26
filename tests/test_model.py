@@ -370,31 +370,55 @@ class TestBnnPosteriorInflation:
     cardinality = 4
     seed = 7
     n_samples = 8
+    n_proba_samples = 200
     num_steps = 3
     inflation_factor = 2.5
     identity_factor = 1.0
+    overflow_sigma_scale = 1e300
+    overflow_factor = 1e20
+    underflow_sigma_scale = 1e-300
+    underflow_factor = 1e-30
+    inf_factor = float("inf")
     n_objectives = 2
     quant_dim = 1
+    probe_quantity = 0.5
+    probe_context_value = 0.5
+    wrapper_dist_type = "normal"
+    wrapper_dist_params_init: Dict[str, float] = {"mu": 0.0, "sigma": 0.2}
     scope_all: PosteriorInflationScope = "all"
     scope_last_layer: PosteriorInflationScope = "last_layer"
     scope_weights_only: PosteriorInflationScope = "weights_only"
     invalid_scope = "invalid_scope"
 
-    def _build_bnn(
-        self,
-        first_fit_inflation_factor: Optional[float] = None,
-        first_fit_inflation_scope: PosteriorInflationScope = "all",
-    ) -> BayesianNeuralNetwork:
-        """Build a reproducible multi-layer BNN with one categorical feature."""
-        return BayesianNeuralNetwork.cold_start(
-            n_features=self.n_features,
-            hidden_dim_list=list(self.hidden_dim_list),
-            categorical_features={self.cat_column: self.cardinality},
-            update_kwargs={"num_steps": self.num_steps},
-            random_seed=self.seed,
-            first_fit_inflation_factor=first_fit_inflation_factor,
-            first_fit_inflation_scope=first_fit_inflation_scope,
-        )
+    @pytest.fixture(scope="module")
+    def make_bnn(self) -> Callable[..., BayesianNeuralNetwork]:
+        """Factory: builds a reproducible multi-layer BNN with one categorical feature."""
+
+        def _factory(
+            first_fit_inflation_factor: Optional[float] = None,
+            first_fit_inflation_scope: PosteriorInflationScope = self.scope_all,
+        ) -> BayesianNeuralNetwork:
+            return BayesianNeuralNetwork.cold_start(
+                n_features=self.n_features,
+                hidden_dim_list=list(self.hidden_dim_list),
+                categorical_features={self.cat_column: self.cardinality},
+                update_kwargs={"num_steps": self.num_steps},
+                random_seed=self.seed,
+                first_fit_inflation_factor=first_fit_inflation_factor,
+                first_fit_inflation_scope=first_fit_inflation_scope,
+            )
+
+        return _factory
+
+    @pytest.fixture(scope="module")
+    def base_bnn(self, make_bnn: Callable[..., BayesianNeuralNetwork]) -> BayesianNeuralNetwork:
+        """Pre-built multi-layer BNN reused across property and validation tests."""
+        return make_bnn()
+
+    @pytest.fixture(scope="module")
+    def base_bnn_dump(self, base_bnn: BayesianNeuralNetwork) -> Dict[str, Any]:
+        """Serialized dict of ``base_bnn`` for fast validation checks inside Hypothesis."""
+        return base_bnn.model_dump()
 
     def _sample_batch(self, rng: np.random.Generator) -> Tuple[np.ndarray, List[int]]:
         """Generate a valid numerical + categorical context matrix and binary rewards."""
@@ -407,11 +431,12 @@ class TestBnnPosteriorInflation:
     @given(factor=st.floats(min_value=0.25, max_value=5.0, allow_nan=False, allow_infinity=False))
     def test_inflate_posterior_scales_selected_scope(
         self,
+        base_bnn: BayesianNeuralNetwork,
         scope: PosteriorInflationScope,
         factor: float,
     ) -> None:
         """``inflate_posterior`` scales only the scoped ``sigma`` arrays while preserving ``mu`` and ``nu``."""
-        bnn = self._build_bnn()
+        bnn = base_bnn.model_copy(deep=True)
         layers_before = [
             (
                 np.asarray(lp.weight.sigma),
@@ -451,9 +476,9 @@ class TestBnnPosteriorInflation:
             assert np.allclose(np.asarray(emb.mu), e_mu)
             assert np.allclose(np.asarray(emb.nu), e_nu)
 
-    def test_factor_one_is_exact_noop(self) -> None:
+    def test_factor_one_is_exact_noop(self, base_bnn: BayesianNeuralNetwork) -> None:
         """Factor equal to 1 leaves all posterior parameters unchanged."""
-        bnn = self._build_bnn()
+        bnn = base_bnn.model_copy(deep=True)
         expected = bnn.model_params.model_copy(deep=True)
         bnn.inflate_posterior(factor=self.identity_factor, scope=self.scope_all)
         assert bnn.model_params == expected
@@ -464,31 +489,59 @@ class TestBnnPosteriorInflation:
             st.just(float("nan")),
         )
     )
-    def test_rejects_non_positive_factor(self, bad_factor: float) -> None:
+    def test_rejects_non_positive_factor(
+        self,
+        base_bnn: BayesianNeuralNetwork,
+        base_bnn_dump: Dict[str, Any],
+        bad_factor: float,
+    ) -> None:
         """Zero, negative, and NaN inflation factors raise ``ValidationError``."""
-        bnn = self._build_bnn()
         with pytest.raises(ValidationError):
-            bnn.inflate_posterior(factor=bad_factor)
+            base_bnn.inflate_posterior(factor=bad_factor)
         with pytest.raises(ValidationError):
-            self._build_bnn(first_fit_inflation_factor=bad_factor)
+            BayesianNeuralNetwork.model_validate({**base_bnn_dump, "first_fit_inflation_factor": bad_factor})
 
-    def test_rejects_invalid_scope(self) -> None:
+    def test_rejects_invalid_scope(self, base_bnn: BayesianNeuralNetwork) -> None:
         """Unsupported scope names raise ``ValidationError``."""
-        bnn = self._build_bnn()
         with pytest.raises(ValidationError):
-            bnn.inflate_posterior(factor=self.inflation_factor, scope=self.invalid_scope)  # type: ignore[arg-type]
+            base_bnn.inflate_posterior(factor=self.inflation_factor, scope=self.invalid_scope)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        ("last_layer_scale", "factor"),
+        [
+            (overflow_sigma_scale, overflow_factor),
+            (underflow_sigma_scale, underflow_factor),
+            (identity_factor, inf_factor),
+        ],
+        ids=["overflow", "underflow", "inf"],
+    )
+    def test_inflate_posterior_is_atomic_on_overflow_or_underflow(
+        self,
+        base_bnn: BayesianNeuralNetwork,
+        last_layer_scale: float,
+        factor: float,
+    ) -> None:
+        """Overflow, underflow, or infinite factor raises ``ValueError`` without mutating earlier layers."""
+        bnn = base_bnn.model_copy(deep=True)
+        last_layer = bnn.model_params.bnn_layer_params[-1]
+        last_layer.weight = last_layer.weight.with_scaled_sigma(last_layer_scale)
+        snapshot = bnn.model_params.model_copy(deep=True)
+        with pytest.raises(ValueError):
+            bnn.inflate_posterior(factor=factor, scope=self.scope_all)
+        assert bnn.model_params == snapshot
 
     @pytest.mark.parametrize("scope", ["all", "last_layer", "weights_only"])
     def test_first_fit_inflation_fires_once_and_rearms_after_reset(
         self,
+        make_bnn: Callable[..., BayesianNeuralNetwork],
         scope: PosteriorInflationScope,
         rng: np.random.Generator,
     ) -> None:
         """``first_fit_inflation_factor`` runs on the first fit, skips later fits, and re-arms after ``reset()``."""
         batch_1 = self._sample_batch(rng)
         batch_2 = self._sample_batch(rng)
-        manual = self._build_bnn()
-        auto = self._build_bnn(
+        manual = make_bnn()
+        auto = make_bnn(
             first_fit_inflation_factor=self.inflation_factor,
             first_fit_inflation_scope=scope,
         )
@@ -511,44 +564,100 @@ class TestBnnPosteriorInflation:
         auto.update(context=batch_1[0], rewards=batch_1[1])
         assert auto.model_params == manual.model_params
 
-    def test_multi_objective_and_quantitative_wrappers_forward_inflation(self) -> None:
-        """MO and Quantitative BNN wrappers forward both cold-start config and ``inflate_posterior``."""
-        mo = BayesianNeuralNetworkMO.cold_start(
+    def test_multi_objective_wrapper_forwards_inflation(self, rng: np.random.Generator) -> None:
+        """``BayesianNeuralNetworkMO`` forwards config on ``update()``, widens predictive spread, and forwards ``inflate_posterior``."""
+        inflated = BayesianNeuralNetworkMO.cold_start(
             n_objectives=self.n_objectives,
             n_features=self.n_features,
             hidden_dim_list=list(self.hidden_dim_list),
+            dist_type=self.wrapper_dist_type,
+            dist_params=dict(self.wrapper_dist_params_init),
+            update_kwargs={"num_steps": self.num_steps},
             first_fit_inflation_factor=self.inflation_factor,
             first_fit_inflation_scope=self.scope_last_layer,
         )
-        mo_before = [np.asarray(m.model_params.bnn_layer_params[-1].weight.sigma) for m in mo.models]
-        mo.inflate_posterior(factor=self.inflation_factor, scope=self.scope_last_layer)
-        for sub, w_before in zip(mo.models, mo_before):
+        for sub in inflated.models:
             assert sub.first_fit_inflation_factor == self.inflation_factor
             assert sub.first_fit_inflation_scope == self.scope_last_layer
-            assert np.allclose(
-                np.asarray(sub.model_params.bnn_layer_params[-1].weight.sigma),
-                w_before * self.inflation_factor,
-            )
 
-        quant = QuantitativeBayesianNeuralNetwork.cold_start(
+        base = inflated.model_copy(deep=True)
+        for sub in base.models:
+            sub.first_fit_inflation_factor = None
+
+        context = rng.normal(size=(self.n_samples, self.n_features))
+        rewards = rng.integers(0, 2, size=(self.n_samples, self.n_objectives)).tolist()
+        base.update(context=context, rewards=rewards)
+        inflated.update(context=context, rewards=rewards)
+
+        probe_context = np.full((self.n_proba_samples, self.n_features), self.probe_context_value)
+        base_probs = np.array(
+            [
+                [p for p, _ in sample]
+                for sample in base.sample_proba(context=probe_context, rng=np.random.default_rng(self.seed))
+            ]
+        )
+        infl_probs = np.array(
+            [
+                [p for p, _ in sample]
+                for sample in inflated.sample_proba(context=probe_context, rng=np.random.default_rng(self.seed))
+            ]
+        )
+        for obj_idx in range(self.n_objectives):
+            assert np.std(infl_probs[:, obj_idx]) > np.std(base_probs[:, obj_idx])
+
+        base.inflate_posterior(factor=self.inflation_factor, scope=self.scope_last_layer)
+        for base_sub, infl_sub in zip(base.models, inflated.models):
+            assert infl_sub.model_params == base_sub.model_params
+
+    def test_quantitative_wrapper_forwards_inflation(self, rng: np.random.Generator) -> None:
+        """``QuantitativeBayesianNeuralNetwork`` forwards config on ``update()``, widens predictive spread, and forwards ``inflate_posterior``."""
+        common_bnn_kwargs: Dict[str, Any] = {
+            "hidden_dim_list": list(self.hidden_dim_list),
+            "dist_type": self.wrapper_dist_type,
+            "dist_params_init": dict(self.wrapper_dist_params_init),
+            "update_kwargs": {"num_steps": self.num_steps},
+            "random_seed": self.seed,
+        }
+        base = QuantitativeBayesianNeuralNetwork.cold_start(
+            dimension=self.quant_dim,
+            n_features=self.n_features,
+            base_model_cold_start_kwargs=dict(common_bnn_kwargs),
+        )
+        inflated = QuantitativeBayesianNeuralNetwork.cold_start(
             dimension=self.quant_dim,
             n_features=self.n_features,
             base_model_cold_start_kwargs={
-                "hidden_dim_list": list(self.hidden_dim_list),
+                **common_bnn_kwargs,
                 "first_fit_inflation_factor": self.inflation_factor,
                 "first_fit_inflation_scope": self.scope_weights_only,
             },
         )
-        q_w_before = np.asarray(quant.bnn.model_params.bnn_layer_params[-1].weight.sigma)
-        q_b_before = np.asarray(quant.bnn.model_params.bnn_layer_params[-1].bias.sigma)
-        quant.inflate_posterior(factor=self.inflation_factor, scope=self.scope_weights_only)
-        assert quant.bnn.first_fit_inflation_factor == self.inflation_factor
-        assert quant.bnn.first_fit_inflation_scope == self.scope_weights_only
-        assert np.allclose(
-            np.asarray(quant.bnn.model_params.bnn_layer_params[-1].weight.sigma),
-            q_w_before * self.inflation_factor,
+        assert inflated.bnn.first_fit_inflation_factor == self.inflation_factor
+        assert inflated.bnn.first_fit_inflation_scope == self.scope_weights_only
+
+        context = rng.normal(size=(self.n_samples, self.n_features))
+        quantities = rng.uniform(size=self.n_samples).tolist()
+        rewards = rng.integers(0, 2, size=self.n_samples).tolist()
+        base.update(quantities=quantities, rewards=rewards, context=context)
+        inflated.update(quantities=quantities, rewards=rewards, context=context)
+
+        probe_context = np.full((self.n_proba_samples, self.n_features), self.probe_context_value)
+        base_probs = np.array(
+            [
+                prob_fn(self.probe_quantity)
+                for prob_fn, _ in base.sample_proba(context=probe_context, rng=np.random.default_rng(self.seed))
+            ]
         )
-        assert np.allclose(np.asarray(quant.bnn.model_params.bnn_layer_params[-1].bias.sigma), q_b_before)
+        infl_probs = np.array(
+            [
+                prob_fn(self.probe_quantity)
+                for prob_fn, _ in inflated.sample_proba(context=probe_context, rng=np.random.default_rng(self.seed))
+            ]
+        )
+        assert np.std(infl_probs) > np.std(base_probs)
+
+        base.inflate_posterior(factor=self.inflation_factor, scope=self.scope_weights_only)
+        assert inflated.bnn.model_params == base.bnn.model_params
 
 
 ########################################################################################################################
@@ -2806,6 +2915,7 @@ _GAUSSIAN_MAX_ABS_REWARD = 1e6
 _GAUSSIAN_MAX_REWARDS = 50
 _GAUSSIAN_NOISE_SIGMA = 3.0
 _GAUSSIAN_DECAY_FACTOR = 0.5
+_GAUSSIAN_INFLATION_FACTOR = 2.5
 _GAUSSIAN_USER_LOC = 5.0
 _GAUSSIAN_USER_SCALE = 2.0
 # Fixed identity standardization: train on the raw rewards.
@@ -3242,13 +3352,12 @@ class TestGaussianBayesianNeuralNetwork:
         self,
         make_gaussian_bnn: Callable[..., GaussianBayesianNeuralNetwork],
         rng: np.random.Generator,
-        decay_factor: float = _GAUSSIAN_DECAY_FACTOR,
+        inflation_factor: float = _GAUSSIAN_INFLATION_FACTOR,
         n_samples: int = _GAUSSIAN_N_TRAIN,
         n_features: int = _GAUSSIAN_N_FEATURES,
         short_fit_kwargs: Dict[str, Any] = _GAUSSIAN_SHORT_FIT_KWARGS,
     ) -> None:
         """First-fit inflation scales epistemic sigmas while keeping means and ``noise_log_sigma`` untouched."""
-        inflation_factor = 1.0 / decay_factor
         context = rng.normal(size=(n_samples, n_features))
         rewards = rng.normal(size=n_samples).tolist()
         base = make_gaussian_bnn(fit_reward_standardization=True, **short_fit_kwargs)

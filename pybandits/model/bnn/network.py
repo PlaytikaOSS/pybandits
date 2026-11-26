@@ -115,6 +115,14 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         the layer output dimension is greater than or equal to the input dimension (default is False).
     early_stopping_config : Optional[EarlyStoppingConfig], optional
         Configuration for early stopping during VI training. If None, no early stopping is used (default is None).
+    first_fit_inflation_factor : Optional[PositiveFloat], optional
+        One-shot epistemic posterior standard-deviation multiplier applied right after the first
+        non-empty fit (and again on the first fit after :meth:`reset`). Leaves means (``mu``),
+        Student-t ``nu``, and extra likelihood sites (e.g. ``noise_log_sigma``) untouched.
+        Default is None.
+    first_fit_inflation_scope : PosteriorInflationScope, optional
+        Which epistemic parameters ``first_fit_inflation_factor`` scales: ``"all"`` (default),
+        ``"last_layer"``, or ``"weights_only"``.
 
     Examples
     --------
@@ -1557,19 +1565,24 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         target_layers = (
             [self.model_params.bnn_layer_params[-1]] if scope == "last_layer" else self.model_params.bnn_layer_params
         )
-        for layer_params in target_layers:
-            layer_params.weight = layer_params.weight.with_dist_parameters(
-                sigma=(np.asarray(layer_params.weight.params["sigma"]) * factor).tolist()
+        # Validate and build all scaled arrays before mutating so overflow/underflow leaves state intact.
+        scaled_layers = [
+            (
+                layer_params.weight.with_scaled_sigma(factor),
+                layer_params.bias.with_scaled_sigma(factor) if scope != "weights_only" else layer_params.bias,
             )
-            if scope != "weights_only":
-                layer_params.bias = layer_params.bias.with_dist_parameters(
-                    sigma=(np.asarray(layer_params.bias.params["sigma"]) * factor).tolist()
-                )
-        if scope != "last_layer" and self.model_params.embedding_params is not None:
-            self.model_params.embedding_params.embeddings = [
-                emb.with_dist_parameters(sigma=(np.asarray(emb.params["sigma"]) * factor).tolist())
-                for emb in self.model_params.embedding_params.embeddings
-            ]
+            for layer_params in target_layers
+        ]
+        scaled_embeddings = (
+            [emb.with_scaled_sigma(factor) for emb in self.model_params.embedding_params.embeddings]
+            if scope != "last_layer" and self.model_params.embedding_params is not None
+            else None
+        )
+        for layer_params, (new_weight, new_bias) in zip(target_layers, scaled_layers):
+            layer_params.weight = new_weight
+            layer_params.bias = new_bias
+        if scaled_embeddings is not None:
+            self.model_params.embedding_params.embeddings = scaled_embeddings
 
     def _prepare_prior(self, rewards: List[Any]) -> None:
         """Adjust the stored posterior before it is used as the prior of the next fit.
@@ -1619,8 +1632,6 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         random_seed: Optional[NonNegativeInt] = None,
         calibrate_output_bias: bool = False,
         decay_factor: Optional[PositiveFloat01] = None,
-        first_fit_inflation_factor: Optional[PositiveFloat] = None,
-        first_fit_inflation_scope: PosteriorInflationScope = "all",
         **kwargs,
     ) -> Self:
         """
@@ -1671,14 +1682,6 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
         decay_factor : Optional[PositiveFloat01]
             Per-update forgetting factor in (0, 1]. When set, the weight/bias/embedding posterior
             variances are inflated by ``1 / decay_factor`` before each re-fit. Default is None.
-        first_fit_inflation_factor : Optional[PositiveFloat]
-            One-shot epistemic posterior standard-deviation multiplier applied right after the first
-            non-empty fit (and again on the first fit after :meth:`reset`). Leaves means (``mu``),
-            Student-t ``nu``, and extra likelihood sites (e.g. ``noise_log_sigma``) untouched.
-            Default is None.
-        first_fit_inflation_scope : PosteriorInflationScope
-            Which epistemic parameters ``first_fit_inflation_factor`` scales: ``"all"`` (default),
-            ``"last_layer"``, or ``"weights_only"``.
         **kwargs
             Additional keyword arguments for the BayesianNeuralNetwork constructor.
 
@@ -1723,8 +1726,6 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
             random_seed=random_seed,
             calibrate_output_bias=calibrate_output_bias,
             decay_factor=decay_factor,
-            first_fit_inflation_factor=first_fit_inflation_factor,
-            first_fit_inflation_scope=first_fit_inflation_scope,
             **kwargs,
         )
 
@@ -1981,9 +1982,7 @@ class GaussianBayesianNeuralNetwork(BaseBayesianNeuralNetwork):
 
     def _inflate_extra_params(self, inflation: float) -> None:
         if self.noise_log_sigma is not None:
-            self.noise_log_sigma = self.noise_log_sigma.with_dist_parameters(
-                sigma=(self.noise_log_sigma.params["sigma"] * inflation).tolist()
-            )
+            self.noise_log_sigma = self.noise_log_sigma.with_scaled_sigma(inflation)
 
     @staticmethod
     def _noise_log_sigma_of(extra: Dict[str, Any], name: str) -> Any:
