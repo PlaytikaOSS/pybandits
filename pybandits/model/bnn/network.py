@@ -251,7 +251,8 @@ class BaseBayesianNeuralNetwork(Model, DNNMixin, ABC):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("model_params",)
+    # ``bias_calibrated`` protects a learned output bias from being initialized again.
+    _transfer_learned_keys: ClassVar[Tuple[str, ...]] = ("model_params", "bias_calibrated")
     _transfer_extendable_keys: ClassVar[Tuple[str, ...]] = ()
     _transfer_structural_keys: ClassVar[Tuple[str, ...]] = ("activation", "use_residual_connections")
 
